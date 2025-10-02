@@ -1,8 +1,8 @@
 use anyhow::Result;
 use fluent_bundle::{FluentBundle, FluentResource};
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::fs;
-use std::sync::atomic::{AtomicBool, Ordering};
 use unic_langid::LanguageIdentifier;
 
 /// Localization manager for the Ingredients Bot
@@ -104,41 +104,59 @@ impl LocalizationManager {
     }
 }
 
-/// Global localization instance - not thread-safe, use with caution in multi-threaded environments
-static mut LOCALIZATION_MANAGER: Option<LocalizationManager> = None;
-static LOCALIZATION_INITIALIZED: AtomicBool = AtomicBool::new(false);
-
-/// Initialize the global localization manager
-pub fn init_localization() -> Result<()> {
-    if !LOCALIZATION_INITIALIZED.load(Ordering::SeqCst) {
-        unsafe {
-            LOCALIZATION_MANAGER = Some(LocalizationManager::new()?);
-        }
-        LOCALIZATION_INITIALIZED.store(true, Ordering::SeqCst);
-    }
-    Ok(())
+thread_local! {
+    static LOCALIZATION_MANAGER: RefCell<Option<LocalizationManager>> = const { RefCell::new(None) };
 }
 
-/// Get the global localization manager
-#[allow(static_mut_refs)]
-pub fn get_localization_manager() -> &'static LocalizationManager {
-    unsafe {
-        LOCALIZATION_MANAGER
+/// Initialize the thread-local localization manager
+pub fn init_localization() -> Result<()> {
+    LOCALIZATION_MANAGER.with(|cell| {
+        let mut manager = cell.borrow_mut();
+        if manager.is_none() {
+            *manager = Some(LocalizationManager::new()?);
+        }
+        Ok(())
+    })
+}
+
+/// Get the thread-local localization manager
+/// Note: This function is mainly for testing/debugging. For normal usage,
+/// use the convenience functions t_lang() and t_args_lang() instead.
+pub fn with_localization_manager<F, R>(f: F) -> R
+where
+    F: FnOnce(&LocalizationManager) -> R,
+{
+    LOCALIZATION_MANAGER.with(|cell| {
+        let manager = cell.borrow();
+        let manager = manager
             .as_ref()
-            .expect("Localization manager not initialized")
-    }
+            .expect("Localization manager not initialized");
+        f(manager)
+    })
 }
 
 /// Convenience function to get a localized message in user's language
 pub fn t_lang(key: &str, language_code: Option<&str>) -> String {
     let language = detect_language(language_code);
-    get_localization_manager().get_message_in_language(key, &language, None)
+    LOCALIZATION_MANAGER.with(|cell| {
+        let manager = cell.borrow();
+        let manager = manager
+            .as_ref()
+            .expect("Localization manager not initialized");
+        manager.get_message_in_language(key, &language, None)
+    })
 }
 
 /// Convenience function to get a localized message with arguments in user's language
 pub fn t_args_lang(key: &str, args: &[(&str, &str)], language_code: Option<&str>) -> String {
     let language = detect_language(language_code);
-    get_localization_manager().get_message_with_args_in_language(key, &language, args)
+    LOCALIZATION_MANAGER.with(|cell| {
+        let manager = cell.borrow();
+        let manager = manager
+            .as_ref()
+            .expect("Localization manager not initialized");
+        manager.get_message_with_args_in_language(key, &language, args)
+    })
 }
 
 /// Detect the appropriate language based on user's Telegram language code
@@ -152,7 +170,15 @@ pub fn detect_language(language_code: Option<&str>) -> String {
         };
 
         // Check if we support this language
-        if get_localization_manager().is_language_supported(lang) {
+        let supported = LOCALIZATION_MANAGER.with(|cell| {
+            let manager = cell.borrow();
+            let manager = manager
+                .as_ref()
+                .expect("Localization manager not initialized");
+            manager.is_language_supported(lang)
+        });
+
+        if supported {
             return lang.to_string();
         }
     }

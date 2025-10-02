@@ -265,78 +265,78 @@ mod tests {
     /// Test French localization support
     #[test]
     fn test_french_localization() {
-        use ingredients::localization::{get_localization_manager, init_localization};
+        use ingredients::localization::{init_localization, with_localization_manager};
 
         // Initialize localization
         init_localization().expect("Failed to initialize localization");
 
-        let manager = get_localization_manager();
-
-        // Test that both English and French are supported
-        assert!(
-            manager.is_language_supported("en"),
-            "English should be supported"
-        );
-        // Note: French support depends on whether the fr/main.ftl file was loaded successfully
-        // In test environment, this might fail if running from wrong directory
-        let french_supported = manager.is_language_supported("fr");
-        if french_supported {
+        with_localization_manager(|manager| {
+            // Test that both English and French are supported
             assert!(
-                french_supported,
-                "French should be supported if file was loaded"
+                manager.is_language_supported("en"),
+                "English should be supported"
             );
-        } else {
-            eprintln!("French localization not loaded - likely running from wrong directory");
-        }
+            // Note: French support depends on whether the fr/main.ftl file was loaded successfully
+            // In test environment, this might fail if running from wrong directory
+            let french_supported = manager.is_language_supported("fr");
+            if french_supported {
+                assert!(
+                    french_supported,
+                    "French should be supported if file was loaded"
+                );
+            } else {
+                eprintln!("French localization not loaded - likely running from wrong directory");
+            }
 
-        assert!(
-            !manager.is_language_supported("es"),
-            "Spanish should not be supported"
-        );
-
-        // Test basic messages in English (always available)
-        let welcome_title_en = manager.get_message_in_language("welcome-title", "en", None);
-        assert!(
-            !welcome_title_en.is_empty(),
-            "English welcome-title should not be empty"
-        );
-
-        // Test messages with arguments - let's find a key that uses arguments
-        let help_step1_en = manager.get_message_in_language("help-step1", "en", None);
-        assert!(
-            !help_step1_en.is_empty(),
-            "English help-step1 should not be empty"
-        );
-
-        // Test fallback to English for unsupported language
-        let fallback = manager.get_message_in_language("welcome-title", "de", None);
-        assert_eq!(
-            fallback, welcome_title_en,
-            "Unsupported language should fallback to English"
-        );
-
-        // If French is supported, test that it's different from English
-        if french_supported {
-            let welcome_title_fr = manager.get_message_in_language("welcome-title", "fr", None);
             assert!(
-                !welcome_title_fr.is_empty(),
-                "French welcome-title should not be empty"
-            );
-            assert_ne!(
-                welcome_title_en, welcome_title_fr,
-                "English and French welcome-title should be different"
+                !manager.is_language_supported("es"),
+                "Spanish should not be supported"
             );
 
-            let help_step1_fr = manager.get_message_in_language("help-step1", "fr", None);
+            // Test basic messages in English (always available)
+            let welcome_title_en = manager.get_message_in_language("welcome-title", "en", None);
             assert!(
-                !help_step1_fr.is_empty(),
-                "French help-step1 should not be empty"
+                !welcome_title_en.is_empty(),
+                "English welcome-title should not be empty"
             );
-            assert_ne!(
-                help_step1_en, help_step1_fr,
-                "English and French help-step1 should be different"
+
+            // Test messages with arguments - let's find a key that uses arguments
+            let help_step1_en = manager.get_message_in_language("help-step1", "en", None);
+            assert!(
+                !help_step1_en.is_empty(),
+                "English help-step1 should not be empty"
             );
-        }
+
+            // Test fallback to English for unsupported language
+            let fallback = manager.get_message_in_language("welcome-title", "de", None);
+            assert_eq!(
+                fallback, welcome_title_en,
+                "Unsupported language should fallback to English"
+            );
+
+            // If French is supported, test that it's different from English
+            if french_supported {
+                let welcome_title_fr = manager.get_message_in_language("welcome-title", "fr", None);
+                assert!(
+                    !welcome_title_fr.is_empty(),
+                    "French welcome-title should not be empty"
+                );
+                assert_ne!(
+                    welcome_title_en, welcome_title_fr,
+                    "English and French welcome-title should be different"
+                );
+
+                let help_step1_fr = manager.get_message_in_language("help-step1", "fr", None);
+                assert!(
+                    !help_step1_fr.is_empty(),
+                    "French help-step1 should not be empty"
+                );
+                assert_ne!(
+                    help_step1_en, help_step1_fr,
+                    "English and French help-step1 should be different"
+                );
+            }
+        });
     }
 
     /// Test language detection functionality

@@ -25,12 +25,12 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import dialogue manager functions
 use super::dialogue_manager::{
-    handle_ingredient_edit_input, handle_ingredient_review_input, handle_recipe_name_after_confirm_input,
-    handle_recipe_name_input,
+    handle_ingredient_edit_input, handle_ingredient_review_input,
+    handle_recipe_name_after_confirm_input, handle_recipe_name_input,
 };
 
 // Import UI builder functions
-use super::ui_builder::{format_ingredients_list, create_ingredient_review_keyboard};
+use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
 
 // Create OCR configuration with default settings
 static OCR_CONFIG: std::sync::LazyLock<OcrConfig> = std::sync::LazyLock::new(OcrConfig::default);

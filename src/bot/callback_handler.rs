@@ -13,7 +13,7 @@ use crate::localization::t_lang;
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
-use super::ui_builder::{format_ingredients_list, create_ingredient_review_keyboard};
+use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
 
 /// Handle callback queries from inline keyboards
 pub async fn callback_handler(
@@ -51,8 +51,7 @@ pub async fn callback_handler(
                             ingredient.measurement.as_deref().unwrap_or(""),
                             ingredient.ingredient_name
                         );
-                        bot.send_message(msg.chat().id, edit_prompt)
-                            .await?;
+                        bot.send_message(msg.chat().id, edit_prompt).await?;
 
                         // Transition to editing state
                         dialogue
@@ -95,11 +94,15 @@ pub async fn callback_handler(
                             ]];
 
                             // Edit the original message
-                            match bot.edit_message_text(msg.chat().id, msg.id(), empty_message)
+                            match bot
+                                .edit_message_text(msg.chat().id, msg.id(), empty_message)
                                 .reply_markup(teloxide::types::InlineKeyboardMarkup::new(keyboard))
-                                .await {
+                                .await
+                            {
                                 Ok(_) => (),
-                                Err(e) => error!(user_id = %q.from.id, error = %e, "Failed to edit message for empty ingredients"),
+                                Err(e) => {
+                                    error!(user_id = %q.from.id, error = %e, "Failed to edit message for empty ingredients")
+                                }
                             }
                         } else {
                             // Update the message with remaining ingredients
@@ -119,15 +122,15 @@ pub async fn callback_handler(
                             );
 
                             // Edit the original message
-                            match bot.edit_message_text(
-                                msg.chat().id,
-                                msg.id(),
-                                review_message,
-                            )
-                            .reply_markup(keyboard)
-                            .await {
+                            match bot
+                                .edit_message_text(msg.chat().id, msg.id(), review_message)
+                                .reply_markup(keyboard)
+                                .await
+                            {
                                 Ok(_) => (),
-                                Err(e) => error!(user_id = %q.from.id, error = %e, "Failed to edit message after ingredient deletion"),
+                                Err(e) => {
+                                    error!(user_id = %q.from.id, error = %e, "Failed to edit message after ingredient deletion")
+                                }
                             }
                         }
 
@@ -140,9 +143,12 @@ pub async fn callback_handler(
                                 message_id,
                                 extracted_text: extracted_text.clone(),
                             })
-                            .await {
+                            .await
+                        {
                             Ok(_) => (),
-                            Err(e) => error!(user_id = %q.from.id, error = %e, "Failed to update dialogue state after deletion"),
+                            Err(e) => {
+                                error!(user_id = %q.from.id, error = %e, "Failed to update dialogue state after deletion")
+                            }
                         }
                     } else {
                         // Invalid index - ignore silently
@@ -155,8 +161,7 @@ pub async fn callback_handler(
                         t_lang("recipe-name-prompt-hint", dialogue_lang_code.as_deref())
                     );
 
-                    bot.send_message(msg.chat().id, recipe_name_prompt)
-                        .await?;
+                    bot.send_message(msg.chat().id, recipe_name_prompt).await?;
 
                     // Transition to waiting for recipe name after confirmation
                     dialogue
