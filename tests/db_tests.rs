@@ -194,3 +194,50 @@ async fn test_full_text_search_impl(pool: &PgPool) -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_get_user_recipes_paginated() -> Result<()> {
+    skip_if_no_db!(test_get_user_recipes_paginated_impl)
+}
+
+async fn test_get_user_recipes_paginated_impl(pool: &PgPool) -> Result<()> {
+    // Create recipes with names
+    let recipe1_id = create_recipe(pool, 12345, "flour 2 cups").await?;
+    update_recipe_recipe_name(pool, recipe1_id, "Chocolate Cake").await?;
+
+    let recipe2_id = create_recipe(pool, 12345, "butter 100g").await?;
+    update_recipe_recipe_name(pool, recipe2_id, "Apple Pie").await?;
+
+    let recipe3_id = create_recipe(pool, 12345, "sugar 1 cup").await?;
+    update_recipe_recipe_name(pool, recipe3_id, "Banana Bread").await?;
+
+    // Create recipe for different user
+    let recipe4_id = create_recipe(pool, 67890, "milk 250ml").await?;
+    update_recipe_recipe_name(pool, recipe4_id, "Pancakes").await?;
+
+    // Test pagination: limit 2, offset 0
+    let (recipes, total) = get_user_recipes_paginated(pool, 12345, 2, 0).await?;
+    assert_eq!(total, 3);
+    assert_eq!(recipes.len(), 2);
+    assert!(recipes.contains(&"Apple Pie".to_string()));
+    assert!(recipes.contains(&"Banana Bread".to_string()));
+
+    // Test pagination: limit 2, offset 2
+    let (recipes, total) = get_user_recipes_paginated(pool, 12345, 2, 2).await?;
+    assert_eq!(total, 3);
+    assert_eq!(recipes.len(), 1);
+    assert_eq!(recipes[0], "Chocolate Cake");
+
+    // Test with different user
+    let (recipes, total) = get_user_recipes_paginated(pool, 67890, 10, 0).await?;
+    assert_eq!(total, 1);
+    assert_eq!(recipes.len(), 1);
+    assert_eq!(recipes[0], "Pancakes");
+
+    // Test with no recipes
+    let (recipes, total) = get_user_recipes_paginated(pool, 99999, 10, 0).await?;
+    assert_eq!(total, 0);
+    assert_eq!(recipes.len(), 0);
+
+    Ok(())
+}

@@ -519,3 +519,39 @@ pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Res
     info!("Found {} recipes matching query", recipes.len());
     Ok(recipes)
 }
+
+/// Get paginated list of recipe names for a user
+pub async fn get_user_recipes_paginated(
+    pool: &PgPool,
+    telegram_id: i64,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<String>, i64)> {
+    debug!(telegram_id = %telegram_id, limit = %limit, offset = %offset, "Getting paginated recipes for user");
+
+    // Get total count of distinct recipe names
+    let total_row = sqlx::query(
+        "SELECT COUNT(DISTINCT recipe_name) FROM recipes WHERE telegram_id = $1 AND recipe_name IS NOT NULL"
+    )
+    .bind(telegram_id)
+    .fetch_one(pool)
+    .await
+    .context("Failed to get total recipe count")?;
+    let total: i64 = total_row.get(0);
+
+    // Get paginated recipe names
+    let rows = sqlx::query(
+        "SELECT DISTINCT recipe_name FROM recipes WHERE telegram_id = $1 AND recipe_name IS NOT NULL ORDER BY recipe_name LIMIT $2 OFFSET $3"
+    )
+    .bind(telegram_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+    .context("Failed to get paginated recipes")?;
+
+    let recipe_names: Vec<String> = rows.into_iter().map(|row| row.get(0)).collect();
+
+    debug!(total = %total, count = %recipe_names.len(), "Retrieved paginated recipes");
+    Ok((recipe_names, total))
+}
