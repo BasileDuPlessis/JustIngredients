@@ -7,13 +7,18 @@ use teloxide::prelude::*;
 use tracing::{debug, error};
 
 // Import localization
-use crate::localization::t_lang;
+use crate::localization::{init_localization, t_lang};
 
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
-use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
+use super::ui_builder::{
+    create_ingredient_review_keyboard, create_recipes_pagination_keyboard, format_ingredients_list,
+};
+
+// Import database functions
+use crate::db::get_user_recipes_paginated;
 
 /// Handle callback queries from inline keyboards
 pub async fn callback_handler(
@@ -22,6 +27,11 @@ pub async fn callback_handler(
     _pool: Arc<PgPool>,
     dialogue: RecipeDialogue,
 ) -> Result<()> {
+    // Initialize localization for this thread
+    tracing::debug!("About to initialize localization in callback_handler");
+    init_localization()?;
+    tracing::debug!("Localization initialized successfully in callback_handler");
+
     debug!(user_id = %q.from.id, "Received callback query from user");
 
     // Check dialogue state
@@ -198,12 +208,121 @@ pub async fn callback_handler(
             }
         }
         _ => {
-            // Ignore callbacks for other states
+            // Handle recipes-related callbacks (not dependent on dialogue state)
+            let data = q.data.as_deref().unwrap_or("");
+            if let Some(msg) = &q.message {
+                if data.starts_with("select_recipe:") {
+                    // Handle recipe selection
+                    let recipe_name = data.strip_prefix("select_recipe:").unwrap_or("");
+                    handle_recipe_selection(&bot, msg, recipe_name, &q.from.language_code).await?;
+                } else if data.starts_with("page:") {
+                    // Handle pagination
+                    let page_str = data.strip_prefix("page:").unwrap_or("0");
+                    let page: usize = page_str.parse().unwrap_or(0);
+                    handle_recipes_pagination(
+                        &bot,
+                        msg,
+                        page,
+                        _pool.clone(),
+                        &q.from.language_code,
+                    )
+                    .await?;
+                }
+            }
         }
     }
 
     // Answer the callback query to remove the loading state
     bot.answer_callback_query(q.id).await?;
+
+    Ok(())
+}
+
+/// Handle recipe selection callback
+async fn handle_recipe_selection(
+    bot: &Bot,
+    msg: &teloxide::types::MaybeInaccessibleMessage,
+    recipe_name: &str,
+    language_code: &Option<String>,
+) -> Result<()> {
+    debug!(recipe_name = %recipe_name, "Handling recipe selection");
+
+    // For now, just send a placeholder message
+    // TODO: Implement actual recipe details display
+    let message = format!(
+        "📖 **{}**\n\n{}",
+        recipe_name,
+        t_lang("recipe-details-coming-soon", language_code.as_deref())
+    );
+
+    // Extract chat id from the message
+    let chat_id = match msg {
+        teloxide::types::MaybeInaccessibleMessage::Regular(msg) => msg.chat.id,
+        teloxide::types::MaybeInaccessibleMessage::Inaccessible(_) => {
+            // Can't respond to inaccessible messages
+            return Ok(());
+        }
+    };
+
+    bot.send_message(chat_id, message).await?;
+
+    Ok(())
+}
+
+/// Handle recipes pagination callback
+async fn handle_recipes_pagination(
+    bot: &Bot,
+    msg: &teloxide::types::MaybeInaccessibleMessage,
+    page: usize,
+    pool: Arc<PgPool>,
+    language_code: &Option<String>,
+) -> Result<()> {
+    debug!(page = %page, "Handling recipes pagination");
+
+    // Extract chat id from the message
+    let (chat_id, message_id) = match msg {
+        teloxide::types::MaybeInaccessibleMessage::Regular(msg) => (msg.chat.id, msg.id),
+        teloxide::types::MaybeInaccessibleMessage::Inaccessible(_) => {
+            // Can't respond to inaccessible messages
+            return Ok(());
+        }
+    };
+
+    // Calculate offset
+    let limit = 5i64;
+    let offset = (page as i64) * limit;
+
+    // Get paginated recipes
+    let (recipes, total_count) =
+        get_user_recipes_paginated(&pool, chat_id.0, limit, offset).await?;
+
+    if recipes.is_empty() {
+        // This shouldn't happen in normal pagination, but handle gracefully
+        let message = t_lang("no-recipes-found", language_code.as_deref());
+        bot.send_message(chat_id, message).await?;
+        return Ok(());
+    }
+
+    // Create updated message text
+    let recipes_message = format!(
+        "📚 **{}**\n\n{}",
+        t_lang("your-recipes", language_code.as_deref()),
+        t_lang("select-recipe", language_code.as_deref())
+    );
+
+    // Create updated keyboard
+    let keyboard = create_recipes_pagination_keyboard(
+        &recipes,
+        page,
+        total_count,
+        limit,
+        language_code.as_deref(),
+    );
+
+    // Edit the original message
+    bot.edit_message_text(chat_id, message_id, recipes_message)
+        .reply_markup(keyboard)
+        .await?;
 
     Ok(())
 }

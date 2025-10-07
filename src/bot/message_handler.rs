@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 use tracing::{debug, error, info, warn};
 
 // Import localization
-use crate::localization::t_lang;
+use crate::localization::{init_localization, t_lang};
 
 // Import text processing
 use crate::text_processing::{MeasurementDetector, MeasurementMatch};
@@ -23,14 +23,19 @@ use crate::ocr_errors::OcrError;
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
+// Import database functions
+use crate::db::get_user_recipes_paginated;
+
+// Import UI builder functions
+use super::ui_builder::{
+    create_ingredient_review_keyboard, create_recipes_pagination_keyboard, format_ingredients_list,
+};
+
 // Import dialogue manager functions
 use super::dialogue_manager::{
     handle_ingredient_edit_input, handle_ingredient_review_input,
     handle_recipe_name_after_confirm_input, handle_recipe_name_input,
 };
-
-// Import UI builder functions
-use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
 
 // Create OCR configuration with default settings
 static OCR_CONFIG: std::sync::LazyLock<OcrConfig> = std::sync::LazyLock::new(OcrConfig::default);
@@ -391,6 +396,10 @@ async fn handle_text_message(
             .join("\n\n");
             bot.send_message(msg.chat.id, help_message).await?;
         }
+        // Handle /recipes command
+        else if text == "/recipes" {
+            handle_recipes_command(bot, msg, pool, language_code).await?;
+        }
         // Handle regular text messages
         else {
             bot.send_message(
@@ -483,6 +492,45 @@ async fn handle_document_message(
     Ok(())
 }
 
+async fn handle_recipes_command(
+    bot: &Bot,
+    msg: &Message,
+    pool: Arc<PgPool>,
+    language_code: Option<&str>,
+) -> Result<()> {
+    debug!(user_id = %msg.chat.id, "Handling /recipes command");
+
+    // Get paginated recipes for the user
+    let (recipes, total_count) = get_user_recipes_paginated(&pool, msg.chat.id.0, 5, 0).await?;
+
+    if recipes.is_empty() {
+        // No recipes found
+        let no_recipes_message = format!(
+            "📚 {}\n\n{}",
+            t_lang("no-recipes-found", language_code),
+            t_lang("no-recipes-suggestion", language_code)
+        );
+        bot.send_message(msg.chat.id, no_recipes_message).await?;
+    } else {
+        // Create the message text
+        let recipes_message = format!(
+            "📚 **{}**\n\n{}",
+            t_lang("your-recipes", language_code),
+            t_lang("select-recipe", language_code)
+        );
+
+        // Create the pagination keyboard
+        let keyboard =
+            create_recipes_pagination_keyboard(&recipes, 0, total_count, 5, language_code);
+
+        bot.send_message(msg.chat.id, recipes_message)
+            .reply_markup(keyboard)
+            .await?;
+    }
+
+    Ok(())
+}
+
 async fn handle_unsupported_message(bot: &Bot, msg: &Message) -> Result<()> {
     // Extract user's language code from Telegram
     let language_code = msg
@@ -513,6 +561,11 @@ pub async fn message_handler(
     pool: Arc<PgPool>,
     dialogue: RecipeDialogue,
 ) -> Result<()> {
+    // Initialize localization for this thread
+    tracing::debug!("About to initialize localization in message_handler");
+    init_localization()?;
+    tracing::debug!("Localization initialized successfully in message_handler");
+
     if msg.text().is_some() {
         handle_text_message(&bot, &msg, dialogue, pool).await?;
     } else if msg.photo().is_some() {

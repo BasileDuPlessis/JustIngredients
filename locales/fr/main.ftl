@@ -125,3 +125,10 @@ previous = Précédent
 next = Suivant
 page = Page
 of = sur
+
+# Messages de commande recettes
+no-recipes-found = Aucune recette trouvée
+no-recipes-suggestion = Envoyez-moi des images d'ingrédients pour créer votre première recette !
+your-recipes = Vos Recettes
+select-recipe = Sélectionnez une recette pour voir ses ingrédients :
+recipe-details-coming-soon = Détails de la recette bientôt disponibles !

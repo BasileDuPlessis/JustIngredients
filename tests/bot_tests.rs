@@ -832,7 +832,7 @@ mod tests {
     fn test_recipes_pagination_keyboard_creation() {
         setup_localization();
         use ingredients::bot::create_recipes_pagination_keyboard;
-        use teloxide::types::{InlineKeyboardMarkup, InlineKeyboardButtonKind};
+        use teloxide::types::{InlineKeyboardButtonKind, InlineKeyboardMarkup};
 
         // Test with multiple recipes and first page
         let recipes = vec!["Apple Pie".to_string(), "Chocolate Cake".to_string()];
@@ -840,7 +840,13 @@ mod tests {
         let total_count = 5;
         let limit = 2;
 
-        let keyboard = create_recipes_pagination_keyboard(&recipes, current_page, total_count, limit, Some("en"));
+        let keyboard = create_recipes_pagination_keyboard(
+            &recipes,
+            current_page,
+            total_count,
+            limit,
+            Some("en"),
+        );
 
         let InlineKeyboardMarkup {
             inline_keyboard: keyboard,
@@ -884,14 +890,20 @@ mod tests {
     fn test_recipes_pagination_keyboard_last_page() {
         setup_localization();
         use ingredients::bot::create_recipes_pagination_keyboard;
-        use teloxide::types::{InlineKeyboardMarkup, InlineKeyboardButtonKind};
+        use teloxide::types::{InlineKeyboardButtonKind, InlineKeyboardMarkup};
 
         let recipes = vec!["Banana Bread".to_string()];
         let current_page = 2;
         let total_count = 5;
         let limit = 2;
 
-        let keyboard = create_recipes_pagination_keyboard(&recipes, current_page, total_count, limit, Some("en"));
+        let keyboard = create_recipes_pagination_keyboard(
+            &recipes,
+            current_page,
+            total_count,
+            limit,
+            Some("en"),
+        );
 
         let InlineKeyboardMarkup {
             inline_keyboard: keyboard,
@@ -928,7 +940,13 @@ mod tests {
         let total_count = 1;
         let limit = 10;
 
-        let keyboard = create_recipes_pagination_keyboard(&recipes, current_page, total_count, limit, Some("en"));
+        let keyboard = create_recipes_pagination_keyboard(
+            &recipes,
+            current_page,
+            total_count,
+            limit,
+            Some("en"),
+        );
 
         let InlineKeyboardMarkup {
             inline_keyboard: keyboard,
@@ -955,7 +973,13 @@ mod tests {
         let total_count = 1;
         let limit = 10;
 
-        let keyboard = create_recipes_pagination_keyboard(&recipes, current_page, total_count, limit, Some("en"));
+        let keyboard = create_recipes_pagination_keyboard(
+            &recipes,
+            current_page,
+            total_count,
+            limit,
+            Some("en"),
+        );
 
         let InlineKeyboardMarkup {
             inline_keyboard: keyboard,
@@ -965,5 +989,61 @@ mod tests {
             assert!(keyboard[0][0].text.contains("..."));
             assert!(keyboard[0][0].text.len() <= 33); // 30 + "..."
         }
+    }
+
+    /// Test recipes command message formatting
+    #[test]
+    fn test_recipes_command_message_formatting() {
+        setup_localization();
+        use ingredients::localization::t_lang;
+
+        // Test that localization keys exist and return reasonable strings
+        let your_recipes = t_lang("your-recipes", Some("en"));
+        let select_recipe = t_lang("select-recipe", Some("en"));
+        let no_recipes = t_lang("no-recipes-found", Some("en"));
+        let no_recipes_suggestion = t_lang("no-recipes-suggestion", Some("en"));
+
+        assert!(!your_recipes.is_empty());
+        assert!(!select_recipe.is_empty());
+        assert!(!no_recipes.is_empty());
+        assert!(!no_recipes_suggestion.is_empty());
+
+        // Test French versions
+        let your_recipes_fr = t_lang("your-recipes", Some("fr"));
+        let select_recipe_fr = t_lang("select-recipe", Some("fr"));
+
+        assert!(!your_recipes_fr.is_empty());
+        assert!(!select_recipe_fr.is_empty());
+
+        // French and English should be different
+        assert_ne!(your_recipes, your_recipes_fr);
+        assert_ne!(select_recipe, select_recipe_fr);
+    }
+
+    /// Test callback data parsing for recipes
+    #[test]
+    fn test_recipes_callback_data_parsing() {
+        // Test recipe selection callback parsing
+        let select_callback = "select_recipe:Chocolate Cake";
+        assert!(select_callback.starts_with("select_recipe:"));
+        let recipe_name = select_callback.strip_prefix("select_recipe:").unwrap();
+        assert_eq!(recipe_name, "Chocolate Cake");
+
+        // Test pagination callback parsing
+        let page_callback = "page:2";
+        assert!(page_callback.starts_with("page:"));
+        let page_str = page_callback.strip_prefix("page:").unwrap();
+        let page: usize = page_str.parse().unwrap();
+        assert_eq!(page, 2);
+
+        // Test edge cases
+        let page_zero = "page:0";
+        let page_zero_num: usize = page_zero.strip_prefix("page:").unwrap().parse().unwrap();
+        assert_eq!(page_zero_num, 0);
+
+        // Test invalid callbacks (should not crash)
+        let invalid_callback = "invalid_data";
+        assert!(!invalid_callback.starts_with("select_recipe:"));
+        assert!(!invalid_callback.starts_with("page:"));
     }
 }

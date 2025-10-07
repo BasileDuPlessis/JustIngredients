@@ -89,6 +89,21 @@ pub async fn init_database_schema(pool: &PgPool) -> Result<()> {
     .await
     .context("Failed to create ingredients table")?;
 
+    // Add recipe_id column if it doesn't exist (for schema migration)
+    sqlx::query(
+        "ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS recipe_id BIGINT REFERENCES recipes(id)",
+    )
+    .execute(pool)
+    .await
+    .context("Failed to add recipe_id column to ingredients table")?;
+
+    // Try to add foreign key constraint (ignore if it already exists)
+    let _ = sqlx::query(
+        "ALTER TABLE ingredients ADD CONSTRAINT ingredients_recipe_id_fkey FOREIGN KEY (recipe_id) REFERENCES recipes(id)",
+    )
+    .execute(pool)
+    .await;
+
     // Create indexes for performance
     sqlx::query(
         "CREATE INDEX IF NOT EXISTS recipes_content_tsv_idx ON recipes USING GIN (content_tsv)",

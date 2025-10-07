@@ -115,7 +115,7 @@ pub fn create_recipes_pagination_keyboard(
     }
 
     // Calculate total pages
-    let total_pages = ((total_count as usize) + (limit as usize) - 1) / (limit as usize);
+    let total_pages = (total_count as usize).div_ceil(limit as usize);
 
     // Add navigation buttons if there are multiple pages
     if total_pages > 1 {

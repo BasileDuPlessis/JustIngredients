@@ -137,6 +137,11 @@ where
 
 /// Convenience function to get a localized message in user's language
 pub fn t_lang(key: &str, language_code: Option<&str>) -> String {
+    // Ensure localization manager is initialized on this thread
+    if LOCALIZATION_MANAGER.with(|cell| cell.borrow().is_none()) {
+        let _ = init_localization();
+    }
+
     let language = detect_language(language_code);
     LOCALIZATION_MANAGER.with(|cell| {
         let manager = cell.borrow();
@@ -149,6 +154,11 @@ pub fn t_lang(key: &str, language_code: Option<&str>) -> String {
 
 /// Convenience function to get a localized message with arguments in user's language
 pub fn t_args_lang(key: &str, args: &[(&str, &str)], language_code: Option<&str>) -> String {
+    // Ensure localization manager is initialized on this thread
+    if LOCALIZATION_MANAGER.with(|cell| cell.borrow().is_none()) {
+        let _ = init_localization();
+    }
+
     let language = detect_language(language_code);
     LOCALIZATION_MANAGER.with(|cell| {
         let manager = cell.borrow();
@@ -161,6 +171,11 @@ pub fn t_args_lang(key: &str, args: &[(&str, &str)], language_code: Option<&str>
 
 /// Detect the appropriate language based on user's Telegram language code
 pub fn detect_language(language_code: Option<&str>) -> String {
+    // Ensure localization manager is initialized on this thread
+    if LOCALIZATION_MANAGER.with(|cell| cell.borrow().is_none()) {
+        let _ = init_localization();
+    }
+
     if let Some(code) = language_code {
         // Extract language code (e.g., "fr-FR" -> "fr", "en-US" -> "en")
         let lang = if code.contains('-') {

@@ -125,3 +125,10 @@ previous = Previous
 next = Next
 page = Page
 of = of
+
+# Recipes command messages
+no-recipes-found = No recipes found
+no-recipes-suggestion = Send me some ingredient images to create your first recipe!
+your-recipes = Your Recipes
+select-recipe = Select a recipe to view its ingredients:
+recipe-details-coming-soon = Recipe details coming soon!
