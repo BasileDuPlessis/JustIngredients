@@ -27,12 +27,12 @@ Manages Telegram user accounts and preferences.
 - Primary key on `id`
 - Unique index on `telegram_id`
 
-### 2. OCR Entries Table (Recipes)
+### 2. Recipes Table
 Stores complete OCR-extracted text and recipe information for audit and search purposes.
 
 | Column       | Type          | Constraints                    | Description                          |
 |--------------|---------------|-------------------------------|--------------------------------------|
-| id           | BIGSERIAL     | PRIMARY KEY                   | OCR entry/recipe identifier          |
+| id           | BIGSERIAL     | PRIMARY KEY                   | Recipe identifier                    |
 | telegram_id  | BIGINT        | NOT NULL                      | Telegram user ID (for filtering)     |
 | content      | TEXT          | NOT NULL                      | Full OCR-extracted text              |
 | recipe_name  | VARCHAR(255)  | NULL                          | User-defined recipe name (blank by default) |
@@ -51,30 +51,29 @@ Stores parsed ingredient data with reference to parent recipe (OCR entry).
 |--------------|---------------|-------------------------------|--------------------------------------|
 | id           | BIGSERIAL     | PRIMARY KEY                   | Ingredient identifier                |
 | user_id      | BIGINT        | NOT NULL REFERENCES users(id) | Owner user ID                        |
-| ocr_entry_id | BIGINT        | REFERENCES ocr_entries(id)    | Parent recipe/OCR entry ID           |
+| recipe_id    | BIGINT        | REFERENCES recipes(id)        | Parent recipe ID                     |
 | name         | VARCHAR(255)  | NOT NULL                      | Ingredient name                      |
 | quantity     | DECIMAL(10,3) | NULL                          | Parsed quantity value                |
 | unit         | VARCHAR(50)   | NULL                          | Measurement unit                     |
-| raw_text     | TEXT          | NOT NULL                      | Original parsed text                 |
 | created_at   | TIMESTAMP     | DEFAULT CURRENT_TIMESTAMP     | Creation timestamp                   |
 | updated_at   | TIMESTAMP     | DEFAULT CURRENT_TIMESTAMP     | Last update timestamp                |
 
 **Indexes:**
 - Primary key on `id`
-- Foreign key indexes on `user_id` and `ocr_entry_id`
+- Foreign key indexes on `user_id` and `recipe_id`
 
 ## Relationships
 
 ### Entity Relationships
 ```
-Users (1) ──── (N) Recipes/OCR Entries
+Users (1) ──── (N) Recipes
 Users (1) ──── (N) Ingredients
-Recipes/OCR Entries (1) ──── (N) Ingredients
+Recipes (1) ──── (N) Ingredients
 ```
 
 ### Foreign Key Constraints
 - `ingredients.user_id` → `users.id` (CASCADE)
-- `ingredients.ocr_entry_id` → `ocr_entries.id` (SET NULL)
+- `ingredients.recipe_id` → `recipes.id` (SET NULL)
 - All relationships maintain referential integrity
 
 ## Full-Text Search Implementation
@@ -85,18 +84,18 @@ Recipes/OCR Entries (1) ──── (N) Ingredients
 content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
 
 -- GIN index for efficient FTS queries
-CREATE INDEX ocr_entries_content_tsv_idx ON ocr_entries USING GIN (content_tsv);
+CREATE INDEX recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
 ```
 
 ### Search Queries
 ```sql
 -- Basic full-text search
-SELECT * FROM ocr_entries
+SELECT * FROM recipes
 WHERE telegram_id = $1 AND content_tsv @@ plainto_tsquery('english', $2);
 
 -- Ranked search results
 SELECT *, ts_rank(content_tsv, query) as rank
-FROM ocr_entries, plainto_tsquery('english', $2) as query
+FROM recipes, plainto_tsquery('english', $2) as query
 WHERE telegram_id = $1 AND content_tsv @@ query
 ORDER BY rank DESC;
 ```
@@ -106,7 +105,7 @@ ORDER BY rank DESC;
 ### OCR Processing Flow
 1. **Image Reception**: User sends image to Telegram bot
 2. **OCR Processing**: Tesseract extracts text from image
-3. **Entry Creation**: Full text stored in `ocr_entries` table
+3. **Recipe Creation**: Full text stored in `recipes` table
 4. **Parsing**: Text analyzed for ingredients and measurements
 5. **Ingredient Storage**: Parsed data stored in `ingredients` table
 6. **User Association**: All data linked to authenticated user
@@ -119,11 +118,11 @@ ORDER BY rank DESC;
 SELECT i.* FROM ingredients i WHERE i.user_id = $1 ORDER BY i.created_at DESC;
 
 -- Get recent recipes for a user
-SELECT r.* FROM ocr_entries r WHERE r.telegram_id = $1 ORDER BY r.created_at DESC LIMIT 10;
+SELECT r.* FROM recipes r WHERE r.telegram_id = $1 ORDER BY r.created_at DESC LIMIT 10;
 
 -- Get ingredients for a specific recipe
 SELECT i.* FROM ingredients i 
-JOIN ocr_entries r ON i.ocr_entry_id = r.id 
+JOIN recipes r ON i.recipe_id = r.id 
 WHERE r.id = $1 AND r.telegram_id = $2;
 ```
 
@@ -131,18 +130,18 @@ WHERE r.id = $1 AND r.telegram_id = $2;
 ```sql
 -- Full-text search in recipe content
 SELECT r.*, ts_rank(r.content_tsv, q.query) as rank
-FROM ocr_entries r, plainto_tsquery('english', $2) q
+FROM recipes r, plainto_tsquery('english', $2) q
 WHERE r.telegram_id = $1 AND r.content_tsv @@ q.query
 ORDER BY rank DESC;
 
 -- Search recipes by name
-SELECT r.* FROM ocr_entries r 
+SELECT r.* FROM recipes r 
 WHERE r.telegram_id = $1 AND r.recipe_name ILIKE $2;
 
 -- Ingredient search by name
 SELECT i.*, r.recipe_name 
 FROM ingredients i 
-LEFT JOIN ocr_entries r ON i.ocr_entry_id = r.id
+LEFT JOIN recipes r ON i.recipe_id = r.id
 WHERE i.user_id = $1 AND i.name ILIKE $2;
 ```
 
@@ -154,17 +153,17 @@ INSERT INTO users (telegram_id, language_code) VALUES (123456789, 'fr');
 -- Result: id=1, telegram_id=123456789, language_code='fr'
 ```
 
-### OCR Entries Table
+### Recipes Table
 ```sql
-INSERT INTO ocr_entries (telegram_id, content, recipe_name) VALUES (123456789, '2 cups flour\n1 cup sugar\n3 eggs', NULL);
+INSERT INTO recipes (telegram_id, content, recipe_name) VALUES (123456789, '2 cups flour\n1 cup sugar\n3 eggs', NULL);
 -- Result: id=1, telegram_id=123456789, content='2 cups flour\n1 cup sugar\n3 eggs', recipe_name=NULL
 ```
 
 ### Ingredients Table
 ```sql
-INSERT INTO ingredients (user_id, ocr_entry_id, name, quantity, unit, raw_text)
-VALUES (1, 1, 'flour', 2.0, 'cups', '2 cups flour');
--- Links to user and OCR entry/recipe for full traceability
+INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit)
+VALUES (1, 1, 'flour', 2.0, 'cups');
+-- Links to user and recipe for full traceability
 ```
 
 ## Performance Considerations

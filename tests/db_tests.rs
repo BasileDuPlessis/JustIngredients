@@ -34,7 +34,7 @@ async fn setup_test_db() -> Result<PgPool> {
     sqlx::query("DROP TABLE IF EXISTS ingredients CASCADE")
         .execute(&pool)
         .await?;
-    sqlx::query("DROP TABLE IF EXISTS ocr_entries CASCADE")
+    sqlx::query("DROP TABLE IF EXISTS recipes CASCADE")
         .execute(&pool)
         .await?;
     sqlx::query("DROP TABLE IF EXISTS users CASCADE")
@@ -74,33 +74,33 @@ async fn test_user_operations_impl(pool: &PgPool) -> Result<()> {
 }
 
 #[tokio::test]
-async fn test_ocr_entry_operations() -> Result<()> {
-    skip_if_no_db!(test_ocr_entry_operations_impl)
+async fn test_recipe_operations() -> Result<()> {
+    skip_if_no_db!(test_recipe_operations_impl)
 }
 
-async fn test_ocr_entry_operations_impl(pool: &PgPool) -> Result<()> {
-    let entry_id = create_ocr_entry(pool, 12345, "Test OCR content").await?;
-    assert!(entry_id > 0);
+async fn test_recipe_operations_impl(pool: &PgPool) -> Result<()> {
+    let recipe_id = create_recipe(pool, 12345, "Test OCR content").await?;
+    assert!(recipe_id > 0);
 
-    // Read OCR entry
-    let entry = read_ocr_entry(pool, entry_id).await?;
-    assert!(entry.is_some());
-    let entry = entry.unwrap();
-    assert_eq!(entry.telegram_id, 12345);
-    assert_eq!(entry.content, "Test OCR content");
+    // Read recipe
+    let recipe = read_recipe(pool, recipe_id).await?;
+    assert!(recipe.is_some());
+    let recipe = recipe.unwrap();
+    assert_eq!(recipe.telegram_id, 12345);
+    assert_eq!(recipe.content, "Test OCR content");
 
-    // Update OCR entry
-    let updated = update_ocr_entry(pool, entry_id, "Updated content").await?;
+    // Update recipe
+    let updated = update_recipe(pool, recipe_id, "Updated content").await?;
     assert!(updated);
 
-    let updated_entry = read_ocr_entry(pool, entry_id).await?;
-    assert_eq!(updated_entry.unwrap().content, "Updated content");
+    let updated_recipe = read_recipe(pool, recipe_id).await?;
+    assert_eq!(updated_recipe.unwrap().content, "Updated content");
 
-    // Delete OCR entry
-    let deleted = delete_ocr_entry(pool, entry_id).await?;
+    // Delete recipe
+    let deleted = delete_recipe(pool, recipe_id).await?;
     assert!(deleted);
 
-    let not_found = read_ocr_entry(pool, entry_id).await?;
+    let not_found = read_recipe(pool, recipe_id).await?;
     assert!(not_found.is_none());
 
     Ok(())
@@ -114,18 +114,17 @@ async fn test_ingredient_operations() -> Result<()> {
 async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
     let user = get_or_create_user(pool, 12345, None).await?;
 
-    // Create OCR entry
-    let ocr_entry_id = create_ocr_entry(pool, 12345, "flour 2 cups").await?;
+    // Create recipe
+    let recipe_id = create_recipe(pool, 12345, "flour 2 cups").await?;
 
     // Create ingredient
     let ingredient_id = create_ingredient(
         pool,
         user.id,
-        Some(ocr_entry_id),
+        Some(recipe_id),
         "flour",
         Some(2.0),
         Some("cups"),
-        "flour 2 cups",
     )
     .await?;
     assert!(ingredient_id > 0);
@@ -135,7 +134,7 @@ async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
     assert!(ingredient.is_some());
     let ingredient = ingredient.unwrap();
     assert_eq!(ingredient.user_id, user.id);
-    assert_eq!(ingredient.ocr_entry_id, Some(ocr_entry_id));
+    assert_eq!(ingredient.recipe_id, Some(recipe_id));
     assert_eq!(ingredient.name, "flour");
     assert_eq!(ingredient.quantity, Some(2.0));
     assert_eq!(ingredient.unit, Some("cups".to_string()));
@@ -147,7 +146,6 @@ async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
         Some("bread flour"),
         Some(3.0),
         Some("cups"),
-        "bread flour 3 cups",
     )
     .await?;
     assert!(updated);
@@ -176,22 +174,22 @@ async fn test_full_text_search() -> Result<()> {
 }
 
 async fn test_full_text_search_impl(pool: &PgPool) -> Result<()> {
-    create_ocr_entry(pool, 12345, "flour 2 cups sugar 1 cup").await?;
-    create_ocr_entry(pool, 12345, "butter 100 grams milk 250 ml").await?;
-    create_ocr_entry(pool, 67890, "chocolate 200 grams").await?;
+    create_recipe(pool, 12345, "flour 2 cups sugar 1 cup").await?;
+    create_recipe(pool, 12345, "butter 100 grams milk 250 ml").await?;
+    create_recipe(pool, 67890, "chocolate 200 grams").await?;
 
     // Search for entries containing "flour"
-    let results = search_ocr_entries(pool, 12345, "flour").await?;
+    let results = search_recipes(pool, 12345, "flour").await?;
     assert_eq!(results.len(), 1);
     assert!(results[0].content.contains("flour"));
 
     // Search for entries containing "grams"
-    let results = search_ocr_entries(pool, 12345, "grams").await?;
+    let results = search_recipes(pool, 12345, "grams").await?;
     assert_eq!(results.len(), 1);
     assert!(results[0].content.contains("butter"));
 
     // Search for non-existent term
-    let results = search_ocr_entries(pool, 12345, "nonexistent").await?;
+    let results = search_recipes(pool, 12345, "nonexistent").await?;
     assert_eq!(results.len(), 0);
 
     Ok(())
