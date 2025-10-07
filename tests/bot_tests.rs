@@ -826,4 +826,144 @@ mod tests {
         // Should be formatted as a list
         assert!(formatted.contains("\n") || formatted.contains("•"));
     }
+
+    /// Test recipes pagination keyboard creation
+    #[test]
+    fn test_recipes_pagination_keyboard_creation() {
+        setup_localization();
+        use ingredients::bot::create_recipes_pagination_keyboard;
+        use teloxide::types::{InlineKeyboardMarkup, InlineKeyboardButtonKind};
+
+        // Test with multiple recipes and first page
+        let recipes = vec!["Apple Pie".to_string(), "Chocolate Cake".to_string()];
+        let current_page = 0;
+        let total_count = 5;
+        let limit = 2;
+
+        let keyboard = create_recipes_pagination_keyboard(&recipes, current_page, total_count, limit, Some("en"));
+
+        let InlineKeyboardMarkup {
+            inline_keyboard: keyboard,
+        } = keyboard;
+        {
+            // Should have 3 rows: 2 recipe rows + 1 navigation row
+            assert_eq!(keyboard.len(), 3);
+
+            // First row: Apple Pie button
+            assert_eq!(keyboard[0].len(), 1);
+            assert!(keyboard[0][0].text.contains("Apple Pie"));
+            if let InlineKeyboardButtonKind::CallbackData(data) = &keyboard[0][0].kind {
+                assert!(data.contains("select_recipe:Apple Pie"));
+            } else {
+                panic!("Expected callback button");
+            }
+
+            // Second row: Chocolate Cake button
+            assert_eq!(keyboard[1].len(), 1);
+            assert!(keyboard[1][0].text.contains("Chocolate Cake"));
+            if let InlineKeyboardButtonKind::CallbackData(data) = &keyboard[1][0].kind {
+                assert!(data.contains("select_recipe:Chocolate Cake"));
+            } else {
+                panic!("Expected callback button");
+            }
+
+            // Third row: Page info and Next button
+            assert_eq!(keyboard[2].len(), 2);
+            assert!(keyboard[2][0].text.contains("Page 1 of 3"));
+            assert!(keyboard[2][1].text.contains("Next"));
+            if let InlineKeyboardButtonKind::CallbackData(data) = &keyboard[2][1].kind {
+                assert_eq!(data, "page:1");
+            } else {
+                panic!("Expected callback button");
+            }
+        }
+    }
+
+    /// Test recipes pagination keyboard with last page
+    #[test]
+    fn test_recipes_pagination_keyboard_last_page() {
+        setup_localization();
+        use ingredients::bot::create_recipes_pagination_keyboard;
+        use teloxide::types::{InlineKeyboardMarkup, InlineKeyboardButtonKind};
+
+        let recipes = vec!["Banana Bread".to_string()];
+        let current_page = 2;
+        let total_count = 5;
+        let limit = 2;
+
+        let keyboard = create_recipes_pagination_keyboard(&recipes, current_page, total_count, limit, Some("en"));
+
+        let InlineKeyboardMarkup {
+            inline_keyboard: keyboard,
+        } = keyboard;
+        {
+            // Should have 2 rows: 1 recipe row + 1 navigation row
+            assert_eq!(keyboard.len(), 2);
+
+            // First row: Banana Bread button
+            assert_eq!(keyboard[0].len(), 1);
+            assert!(keyboard[0][0].text.contains("Banana Bread"));
+
+            // Second row: Previous button and Page info
+            assert_eq!(keyboard[1].len(), 2);
+            assert!(keyboard[1][0].text.contains("Previous"));
+            if let InlineKeyboardButtonKind::CallbackData(data) = &keyboard[1][0].kind {
+                assert_eq!(data, "page:1");
+            } else {
+                panic!("Expected callback button");
+            }
+            assert!(keyboard[1][1].text.contains("Page 3 of 3"));
+        }
+    }
+
+    /// Test recipes pagination keyboard with single page
+    #[test]
+    fn test_recipes_pagination_keyboard_single_page() {
+        setup_localization();
+        use ingredients::bot::create_recipes_pagination_keyboard;
+        use teloxide::types::InlineKeyboardMarkup;
+
+        let recipes = vec!["Simple Recipe".to_string()];
+        let current_page = 0;
+        let total_count = 1;
+        let limit = 10;
+
+        let keyboard = create_recipes_pagination_keyboard(&recipes, current_page, total_count, limit, Some("en"));
+
+        let InlineKeyboardMarkup {
+            inline_keyboard: keyboard,
+        } = keyboard;
+        {
+            // Should have only 1 row: just the recipe button (no navigation)
+            assert_eq!(keyboard.len(), 1);
+
+            // First row: Simple Recipe button
+            assert_eq!(keyboard[0].len(), 1);
+            assert!(keyboard[0][0].text.contains("Simple Recipe"));
+        }
+    }
+
+    /// Test recipes pagination keyboard with long recipe names
+    #[test]
+    fn test_recipes_pagination_keyboard_long_names() {
+        setup_localization();
+        use ingredients::bot::create_recipes_pagination_keyboard;
+        use teloxide::types::InlineKeyboardMarkup;
+
+        let recipes = vec!["Very Long Recipe Name That Should Be Truncated".to_string()];
+        let current_page = 0;
+        let total_count = 1;
+        let limit = 10;
+
+        let keyboard = create_recipes_pagination_keyboard(&recipes, current_page, total_count, limit, Some("en"));
+
+        let InlineKeyboardMarkup {
+            inline_keyboard: keyboard,
+        } = keyboard;
+        {
+            // Should truncate long names
+            assert!(keyboard[0][0].text.contains("..."));
+            assert!(keyboard[0][0].text.len() <= 33); // 30 + "..."
+        }
+    }
 }

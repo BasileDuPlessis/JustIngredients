@@ -119,3 +119,9 @@ text-received = Message texte reçu de l'utilisateur {$user_id} : {$text}
 
 # Messages non supportés
 unsupported-received = Type de message non supporté reçu de l'utilisateur {$user_id}
+
+# Messages de pagination
+previous = Précédent
+next = Suivant
+page = Page
+of = sur
