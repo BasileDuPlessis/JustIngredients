@@ -52,7 +52,7 @@ async fn main() -> Result<()> {
 
     info!("Bot initialized with 30s timeout, starting dispatcher");
 
-    // Create shared dialogue storage
+        // Create shared dialogue storage
     let dialogue_storage = InMemStorage::<RecipeDialogueState>::new();
 
     // Set up the dispatcher with shared connection and dialogue support

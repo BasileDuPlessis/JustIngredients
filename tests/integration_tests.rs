@@ -385,7 +385,7 @@ fn test_recipe_naming_dialogue_workflow() {
 /// Test multi-language end-to-end workflow
 #[test]
 fn test_multi_language_end_to_end_workflow() {
-    use ingredients::localization::{init_localization, with_localization_manager};
+    use ingredients::localization::{get_localization_manager, init_localization};
 
     // Initialize localization
     init_localization().unwrap();
@@ -437,14 +437,13 @@ fn test_multi_language_end_to_end_workflow() {
     assert!(french_oeufs.unwrap().measurement.is_none());
 
     // Test localization messages
-    with_localization_manager(|loc_manager| {
-        let english_success = loc_manager.get_message_in_language("success-extraction", "en", None);
-        let french_success = loc_manager.get_message_in_language("success-extraction", "fr", None);
+    let loc_manager = get_localization_manager();
+    let english_success = loc_manager.get_message_in_language("success-extraction", "en", None);
+    let french_success = loc_manager.get_message_in_language("success-extraction", "fr", None);
 
-        assert!(!english_success.is_empty());
-        assert!(!french_success.is_empty());
-        assert_ne!(english_success, french_success); // Should be different translations
-    });
+    assert!(!english_success.is_empty());
+    assert!(!french_success.is_empty());
+    assert_ne!(english_success, french_success); // Should be different translations
 
     println!(
         "✅ Multi-language workflow: {} English measurements, {} French measurements, localized messages working",

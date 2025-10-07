@@ -1413,7 +1413,6 @@ dependencies = [
  "lazy_static",
  "leptess",
  "log",
- "parking_lot",
  "rand",
  "regex",
  "reqwest",

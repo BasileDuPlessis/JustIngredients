@@ -156,34 +156,34 @@ CREATE TABLE users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Recipes table: Stores full OCR text blocks for audit/traceability
-CREATE TABLE recipes (
+-- OCR entries table: Stores full OCR text blocks for audit/traceability
+CREATE TABLE ocr_entries (
     id SERIAL PRIMARY KEY,
     telegram_id BIGINT NOT NULL,
     content TEXT NOT NULL,
-    recipe_name VARCHAR(255),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
 );
 
--- Ingredients table: Links to users and optionally to recipes, stores parsed data
+-- Ingredients table: Links to users and optionally to OCR entries, stores parsed data
 CREATE TABLE ingredients (
     id SERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id),
-    recipe_id BIGINT REFERENCES recipes(id),
+    ocr_entry_id BIGINT REFERENCES ocr_entries(id),
     name VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,3),
     unit VARCHAR(50),
+    raw_text TEXT NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (recipe_id) REFERENCES recipes(id)
+    FOREIGN KEY (ocr_entry_id) REFERENCES ocr_entries(id)
 );
 
 -- Indexes for performance
-CREATE INDEX recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
+CREATE INDEX ocr_entries_content_tsv_idx ON ocr_entries USING GIN (content_tsv);
 CREATE INDEX ingredients_user_id_idx ON ingredients(user_id);
-CREATE INDEX ingredients_recipe_id_idx ON ingredients(recipe_id);
+CREATE INDEX ingredients_ocr_entry_id_idx ON ingredients(ocr_entry_id);
 ```
 
 ## Contributing
@@ -205,18 +205,10 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 
 ## Changelog
 
-### v0.1.2 (2025-10-02)
-- **Renamed**: `ocr_entries` table to `recipes` for better semantic clarity
-- **Renamed**: `OcrEntry` struct to `Recipe` 
-- **Renamed**: All related functions from `*_ocr_entry*` to `*_recipe*`
-- **Updated**: Foreign key `ocr_entry_id` to `recipe_id` in ingredients table
-- **Removed**: `raw_text` field from ingredients table (deemed unnecessary)
-- **Updated**: All tests, documentation, and code references
-
 ### v0.1.1 (2025-09-29)
 - **Removed**: Conversion ratios table and related functionality
 - **Refactored**: Measurement units moved to external JSON configuration (`config/measurement_units.json`)
-- **Updated**: Database schema simplified to 3 core tables (users, recipes, ingredients)
+- **Updated**: Database schema simplified to 3 core tables (users, ocr_entries, ingredients)
 - **Improved**: Code cleanup and removal of unused imports
 - **Fixed**: Clippy warnings and placeholder tests
 
