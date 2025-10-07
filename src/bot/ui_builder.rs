@@ -88,3 +88,70 @@ pub fn create_ingredient_review_keyboard(
 
     InlineKeyboardMarkup::new(buttons)
 }
+
+/// Create inline keyboard for paginated recipe list
+pub fn create_recipes_pagination_keyboard(
+    recipes: &[String],
+    current_page: usize,
+    total_count: i64,
+    limit: i64,
+    language_code: Option<&str>,
+) -> InlineKeyboardMarkup {
+    let mut buttons = Vec::new();
+
+    // Add recipe buttons
+    for recipe_name in recipes {
+        // Truncate long recipe names for button display
+        let button_text = if recipe_name.len() > 30 {
+            format!("{}...", &recipe_name[..27])
+        } else {
+            recipe_name.clone()
+        };
+
+        buttons.push(vec![InlineKeyboardButton::callback(
+            button_text,
+            format!("select_recipe:{}", recipe_name),
+        )]);
+    }
+
+    // Calculate total pages
+    let total_pages = ((total_count as usize) + (limit as usize) - 1) / (limit as usize);
+
+    // Add navigation buttons if there are multiple pages
+    if total_pages > 1 {
+        let mut nav_buttons = Vec::new();
+
+        // Previous button
+        if current_page > 0 {
+            nav_buttons.push(InlineKeyboardButton::callback(
+                format!("⬅️ {}", t_lang("previous", language_code)),
+                format!("page:{}", current_page - 1),
+            ));
+        }
+
+        // Page info (disabled button for display)
+        let page_info = format!(
+            "{} {} {} {}",
+            t_lang("page", language_code),
+            current_page + 1,
+            t_lang("of", language_code),
+            total_pages
+        );
+        nav_buttons.push(InlineKeyboardButton::callback(
+            page_info,
+            "noop".to_string(), // No-op callback
+        ));
+
+        // Next button
+        if current_page + 1 < total_pages {
+            nav_buttons.push(InlineKeyboardButton::callback(
+                format!("{} ➡️", t_lang("next", language_code)),
+                format!("page:{}", current_page + 1),
+            ));
+        }
+
+        buttons.push(nav_buttons);
+    }
+
+    InlineKeyboardMarkup::new(buttons)
+}
