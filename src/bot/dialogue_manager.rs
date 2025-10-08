@@ -21,19 +21,76 @@ use crate::db::{create_ingredient, create_recipe, get_or_create_user, update_rec
 // Import UI builder functions
 use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
 
+/// Common context for dialogue handlers
+#[derive(Debug)]
+pub struct DialogueContext<'a> {
+    pub bot: &'a Bot,
+    pub msg: &'a Message,
+    pub dialogue: RecipeDialogue,
+    pub localization: &'a Arc<crate::localization::LocalizationManager>,
+}
+
+/// Parameters for recipe name input handling
+#[derive(Debug)]
+pub struct RecipeNameInputParams<'a> {
+    pub pool: Arc<PgPool>,
+    pub recipe_name_input: &'a str,
+    pub extracted_text: String,
+    pub ingredients: Vec<MeasurementMatch>,
+    pub language_code: Option<&'a str>,
+}
+
+/// Parameters for recipe name input after confirmation
+#[derive(Debug)]
+pub struct RecipeNameAfterConfirmInputParams<'a> {
+    pub pool: Arc<PgPool>,
+    pub recipe_name_input: &'a str,
+    pub ingredients: Vec<MeasurementMatch>,
+    pub language_code: Option<&'a str>,
+    pub extracted_text: String,
+}
+
+/// Parameters for ingredient edit input handling
+#[derive(Debug)]
+pub struct IngredientEditInputParams<'a> {
+    pub edit_input: &'a str,
+    pub recipe_name: String,
+    pub ingredients: Vec<MeasurementMatch>,
+    pub editing_index: usize,
+    pub language_code: Option<&'a str>,
+    pub message_id: Option<i32>,
+    pub extracted_text: String,
+}
+
+/// Parameters for ingredient review input handling
+#[derive(Debug)]
+pub struct IngredientReviewInputParams<'a> {
+    pub pool: Arc<PgPool>,
+    pub review_input: &'a str,
+    pub recipe_name: String,
+    pub ingredients: Vec<MeasurementMatch>,
+    pub language_code: Option<&'a str>,
+    pub extracted_text: String,
+}
+
 /// Handle recipe name input during dialogue
-#[allow(clippy::too_many_arguments)]
 pub async fn handle_recipe_name_input(
-    bot: &Bot,
-    msg: &Message,
-    dialogue: RecipeDialogue,
-    _pool: Arc<PgPool>,
-    recipe_name_input: &str,
-    extracted_text: String,
-    ingredients: Vec<MeasurementMatch>,
-    language_code: Option<&str>,
-    localization: &Arc<crate::localization::LocalizationManager>,
+    ctx: DialogueContext<'_>,
+    params: RecipeNameInputParams<'_>,
 ) -> Result<()> {
+    let DialogueContext {
+        bot,
+        msg,
+        dialogue,
+        localization,
+    } = ctx;
+    let RecipeNameInputParams {
+        pool: _pool,
+        recipe_name_input,
+        extracted_text,
+        ingredients,
+        language_code,
+    } = params;
     // Validate recipe name
     match validate_recipe_name(recipe_name_input) {
         Ok(validated_name) => {
@@ -45,7 +102,8 @@ pub async fn handle_recipe_name_input(
                 format_ingredients_list(&ingredients, language_code, localization)
             );
 
-            let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
+            let keyboard =
+                create_ingredient_review_keyboard(&ingredients, language_code, localization);
 
             let sent_message = bot
                 .send_message(msg.chat.id, review_message)
@@ -64,18 +122,27 @@ pub async fn handle_recipe_name_input(
                 .await?;
         }
         Err("empty") => {
-            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-invalid", language_code))
-                .await?;
+            bot.send_message(
+                msg.chat.id,
+                t_lang(localization, "recipe-name-invalid", language_code),
+            )
+            .await?;
             // Keep dialogue active, user can try again
         }
         Err("too_long") => {
-            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-too-long", language_code))
-                .await?;
+            bot.send_message(
+                msg.chat.id,
+                t_lang(localization, "recipe-name-too-long", language_code),
+            )
+            .await?;
             // Keep dialogue active, user can try again
         }
         Err(_) => {
-            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-invalid", language_code))
-                .await?;
+            bot.send_message(
+                msg.chat.id,
+                t_lang(localization, "recipe-name-invalid", language_code),
+            )
+            .await?;
             // Keep dialogue active, user can try again
         }
     }
@@ -84,25 +151,33 @@ pub async fn handle_recipe_name_input(
 }
 
 /// Handle recipe name input after ingredient confirmation during dialogue
-#[allow(clippy::too_many_arguments)]
 pub async fn handle_recipe_name_after_confirm_input(
-    bot: &Bot,
-    msg: &Message,
-    dialogue: RecipeDialogue,
-    pool: Arc<PgPool>,
-    recipe_name_input: &str,
-    ingredients: Vec<MeasurementMatch>,
-    language_code: Option<&str>,
-    extracted_text: String,
-    localization: &Arc<crate::localization::LocalizationManager>,
+    ctx: DialogueContext<'_>,
+    params: RecipeNameAfterConfirmInputParams<'_>,
 ) -> Result<()> {
+    let DialogueContext {
+        bot,
+        msg,
+        dialogue,
+        localization,
+    } = ctx;
+    let RecipeNameAfterConfirmInputParams {
+        pool,
+        recipe_name_input,
+        ingredients,
+        language_code,
+        extracted_text,
+    } = params;
     let input = recipe_name_input.trim().to_lowercase();
 
     // Check for cancellation commands
     if matches!(input.as_str(), "cancel" | "stop" | "back") {
         // User cancelled, end dialogue without saving
-        bot.send_message(msg.chat.id, t_lang(localization, "review-cancelled", language_code))
-            .await?;
+        bot.send_message(
+            msg.chat.id,
+            t_lang(localization, "review-cancelled", language_code),
+        )
+        .await?;
         dialogue.exit().await?;
         return Ok(());
     }
@@ -145,18 +220,27 @@ pub async fn handle_recipe_name_after_confirm_input(
             dialogue.exit().await?;
         }
         Err("empty") => {
-            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-invalid", language_code))
-                .await?;
+            bot.send_message(
+                msg.chat.id,
+                t_lang(localization, "recipe-name-invalid", language_code),
+            )
+            .await?;
             // Keep dialogue active, user can try again
         }
         Err("too_long") => {
-            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-too-long", language_code))
-                .await?;
+            bot.send_message(
+                msg.chat.id,
+                t_lang(localization, "recipe-name-too-long", language_code),
+            )
+            .await?;
             // Keep dialogue active, user can try again
         }
         Err(_) => {
-            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-invalid", language_code))
-                .await?;
+            bot.send_message(
+                msg.chat.id,
+                t_lang(localization, "recipe-name-invalid", language_code),
+            )
+            .await?;
             // Keep dialogue active, user can try again
         }
     }
@@ -165,20 +249,25 @@ pub async fn handle_recipe_name_after_confirm_input(
 }
 
 /// Handle ingredient edit input during dialogue
-#[allow(clippy::too_many_arguments)]
 pub async fn handle_ingredient_edit_input(
-    bot: &Bot,
-    msg: &Message,
-    dialogue: RecipeDialogue,
-    edit_input: &str,
-    recipe_name: String,
-    mut ingredients: Vec<MeasurementMatch>,
-    editing_index: usize,
-    language_code: Option<&str>,
-    message_id: Option<i32>,
-    extracted_text: String,
-    localization: &Arc<crate::localization::LocalizationManager>,
+    ctx: DialogueContext<'_>,
+    params: IngredientEditInputParams<'_>,
 ) -> Result<()> {
+    let DialogueContext {
+        bot,
+        msg,
+        dialogue,
+        localization,
+    } = ctx;
+    let IngredientEditInputParams {
+        edit_input,
+        recipe_name,
+        mut ingredients,
+        editing_index,
+        language_code,
+        message_id,
+        extracted_text,
+    } = params;
     let input = edit_input.trim().to_lowercase();
 
     // Check for cancellation commands
@@ -237,7 +326,8 @@ pub async fn handle_ingredient_edit_input(
                     format_ingredients_list(&ingredients, language_code, localization)
                 );
 
-                let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
+                let keyboard =
+                    create_ingredient_review_keyboard(&ingredients, language_code, localization);
 
                 // If we have a message_id, edit the existing message; otherwise send a new one
                 if let Some(msg_id) = message_id {
@@ -266,8 +356,11 @@ pub async fn handle_ingredient_edit_input(
                     .await?;
             } else {
                 // Invalid index, return to review state
-                bot.send_message(msg.chat.id, t_lang(localization, "error-invalid-edit", language_code))
-                    .await?;
+                bot.send_message(
+                    msg.chat.id,
+                    t_lang(localization, "error-invalid-edit", language_code),
+                )
+                .await?;
                 dialogue
                     .update(RecipeDialogueState::ReviewIngredients {
                         recipe_name,
@@ -452,19 +545,24 @@ fn parse_quantity(quantity_str: &str) -> Option<f64> {
 }
 
 /// Handle ingredient review input during dialogue
-#[allow(clippy::too_many_arguments)]
 pub async fn handle_ingredient_review_input(
-    bot: &Bot,
-    msg: &Message,
-    dialogue: RecipeDialogue,
-    _pool: Arc<PgPool>,
-    review_input: &str,
-    recipe_name: String,
-    ingredients: Vec<MeasurementMatch>,
-    language_code: Option<&str>,
-    extracted_text: String,
-    localization: &Arc<crate::localization::LocalizationManager>,
+    ctx: DialogueContext<'_>,
+    params: IngredientReviewInputParams<'_>,
 ) -> Result<()> {
+    let DialogueContext {
+        bot,
+        msg,
+        dialogue,
+        localization,
+    } = ctx;
+    let IngredientReviewInputParams {
+        pool: _pool,
+        review_input,
+        recipe_name,
+        ingredients,
+        language_code,
+        extracted_text,
+    } = params;
     let input = review_input.trim().to_lowercase();
 
     match input.as_str() {
@@ -505,8 +603,11 @@ pub async fn handle_ingredient_review_input(
         }
         "cancel" | "stop" => {
             // User cancelled, end dialogue without saving
-            bot.send_message(msg.chat.id, t_lang(localization, "review-cancelled", language_code))
-                .await?;
+            bot.send_message(
+                msg.chat.id,
+                t_lang(localization, "review-cancelled", language_code),
+            )
+            .await?;
             dialogue.exit().await?;
         }
         _ => {

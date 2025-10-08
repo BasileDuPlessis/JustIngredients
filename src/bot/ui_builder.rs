@@ -19,7 +19,10 @@ pub fn format_ingredients_list(
 
     for (i, ingredient) in ingredients.iter().enumerate() {
         let ingredient_display = if ingredient.ingredient_name.is_empty() {
-            format!("❓ {}", t_lang(localization, "unknown-ingredient", language_code))
+            format!(
+                "❓ {}",
+                t_lang(localization, "unknown-ingredient", language_code)
+            )
         } else {
             ingredient.ingredient_name.clone()
         };
@@ -52,7 +55,10 @@ pub fn create_ingredient_review_keyboard(
     // Create Edit and Delete buttons for each ingredient
     for (i, ingredient) in ingredients.iter().enumerate() {
         let ingredient_display = if ingredient.ingredient_name.is_empty() {
-            format!("❓ {}", t_lang(localization, "unknown-ingredient", language_code))
+            format!(
+                "❓ {}",
+                t_lang(localization, "unknown-ingredient", language_code)
+            )
         } else {
             ingredient.ingredient_name.clone()
         };
@@ -80,7 +86,10 @@ pub fn create_ingredient_review_keyboard(
     // Add Confirm and Cancel buttons at the bottom
     buttons.push(vec![
         InlineKeyboardButton::callback(
-            format!("✅ {}", t_lang(localization, "review-confirm", language_code)),
+            format!(
+                "✅ {}",
+                t_lang(localization, "review-confirm", language_code)
+            ),
             "confirm".to_string(),
         ),
         InlineKeyboardButton::callback(
@@ -88,6 +97,40 @@ pub fn create_ingredient_review_keyboard(
             "cancel_review".to_string(),
         ),
     ]);
+
+    InlineKeyboardMarkup::new(buttons)
+}
+
+/// Create inline keyboard for post-confirmation workflow
+pub fn create_post_confirmation_keyboard(
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> InlineKeyboardMarkup {
+    let buttons = vec![
+        vec![
+            InlineKeyboardButton::callback(
+                format!(
+                    "➕ {}",
+                    t_lang(localization, "workflow-add-another", language_code)
+                ),
+                "workflow_add_another".to_string(),
+            ),
+            InlineKeyboardButton::callback(
+                format!(
+                    "📚 {}",
+                    t_lang(localization, "workflow-list-recipes", language_code)
+                ),
+                "workflow_list_recipes".to_string(),
+            ),
+        ],
+        vec![InlineKeyboardButton::callback(
+            format!(
+                "🔍 {}",
+                t_lang(localization, "workflow-search-recipes", language_code)
+            ),
+            "workflow_search_recipes".to_string(),
+        )],
+    ];
 
     InlineKeyboardMarkup::new(buttons)
 }

@@ -5,6 +5,7 @@ use std::sync::Arc;
 use unic_langid::LanguageIdentifier;
 
 /// Localization manager for the Ingredients Bot
+#[derive(Debug)]
 pub struct LocalizationManager {
     // No shared state - bundles are created on demand
 }
@@ -60,7 +61,7 @@ impl LocalizationManager {
     ) -> String {
         // Try requested language first, then fallback to English
         let languages_to_try = vec![language, "en"];
-        
+
         for lang in languages_to_try {
             if let Ok(bundle) = Self::create_bundle_for_language(lang) {
                 if let Some(msg) = bundle.get_message(key) {
@@ -114,13 +115,22 @@ pub fn create_localization_manager() -> Result<Arc<LocalizationManager>> {
 }
 
 /// Convenience function to get a localized message in user's language
-pub fn t_lang(manager: &Arc<LocalizationManager>, key: &str, language_code: Option<&str>) -> String {
+pub fn t_lang(
+    manager: &Arc<LocalizationManager>,
+    key: &str,
+    language_code: Option<&str>,
+) -> String {
     let language = detect_language(manager, language_code);
     manager.get_message_in_language(key, &language, None)
 }
 
 /// Convenience function to get a localized message with arguments in user's language
-pub fn t_args_lang(manager: &Arc<LocalizationManager>, key: &str, args: &[(&str, &str)], language_code: Option<&str>) -> String {
+pub fn t_args_lang(
+    manager: &Arc<LocalizationManager>,
+    key: &str,
+    args: &[(&str, &str)],
+    language_code: Option<&str>,
+) -> String {
     let language = detect_language(manager, language_code);
     manager.get_message_with_args_in_language(key, &language, args)
 }

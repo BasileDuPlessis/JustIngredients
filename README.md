@@ -11,6 +11,8 @@ A Telegram bot that extracts text from images using OCR (Optical Character Recog
 - **Multilingual Support**: English and French language support with localized messages
 - **Circuit Breaker Pattern**: Protects against OCR failures with automatic recovery
 - **Database Storage**: Persistent storage of extracted text and user interactions
+- **Workflow Transitions**: Smooth user experience with clear next-action options after ingredient validation
+- **Recipe Management**: List, search, and organize saved recipes with intuitive navigation
 
 ## Supported Measurement Formats
 
@@ -96,6 +98,22 @@ Found 4 measurements:
 2. 2 → "œufs" (quantity-only)
 3. 1/2 litre → "lait"
 4. 2 cuillères à soupe → "sucre"
+
+### Workflow Transitions
+
+After ingredient validation, users can seamlessly continue their workflow:
+
+1. **Ingredient Review**: Users can edit individual ingredients or confirm the entire list
+2. **Post-Confirmation Options**:
+   - **Add Another Recipe**: Start processing a new recipe image
+   - **List My Recipes**: Browse and select from saved recipes
+   - **Search Recipes**: Search through recipe history (coming soon)
+3. **Recipe Management**: Paginated recipe browsing with selection and details view
+
+**Example Workflow:**
+```
+User sends recipe image → Bot extracts ingredients → User reviews/edits → User confirms → Bot shows success message with action buttons → User chooses next step
+```
 
 ## Architecture
 
@@ -204,6 +222,24 @@ CREATE INDEX ingredients_recipe_id_idx ON ingredients(recipe_id);
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Changelog
+
+### v0.1.3 (2025-10-08)
+- **New**: Workflow transitions after ingredient validation with action buttons
+  - Added confirmation message with "Add Another Recipe", "List My Recipes", and "Search Recipes" options
+  - Improved user experience by removing edit/delete buttons after confirmation
+  - Enhanced recipe management workflow with clear next-action choices
+- **Refactored**: Function signatures with too many arguments using parameter structs
+  - Created `DialogueContext`, `RecipeNameInputParams`, `RecipeNameAfterConfirmInputParams`, etc.
+  - Improved code maintainability and reduced parameter complexity
+  - Added `ImageProcessingParams` for image processing functions
+- **Enhanced**: Testing coverage for new workflow functionality
+  - Added 4 new test functions covering workflow transitions and localization
+  - Comprehensive testing of post-confirmation keyboard creation
+  - Validation of workflow message formatting in both languages
+- **Improved**: Documentation and localization
+  - Added workflow-related localization keys in English and French
+  - Updated README with workflow transition examples
+  - Enhanced copilot instructions with new feature documentation
 
 ### v0.1.2 (2025-10-02)
 - **Renamed**: `ocr_entries` table to `recipes` for better semantic clarity

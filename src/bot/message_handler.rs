@@ -34,8 +34,21 @@ use super::ui_builder::{
 // Import dialogue manager functions
 use super::dialogue_manager::{
     handle_ingredient_edit_input, handle_ingredient_review_input,
-    handle_recipe_name_after_confirm_input, handle_recipe_name_input,
+    handle_recipe_name_after_confirm_input, handle_recipe_name_input, DialogueContext,
+    IngredientEditInputParams, IngredientReviewInputParams, RecipeNameAfterConfirmInputParams,
+    RecipeNameInputParams,
 };
+
+/// Parameters for image processing
+#[derive(Debug)]
+pub struct ImageProcessingParams<'a> {
+    pub file_id: teloxide::types::FileId,
+    pub chat_id: ChatId,
+    pub success_message: &'a str,
+    pub language_code: Option<&'a str>,
+    pub dialogue: RecipeDialogue,
+    pub pool: Arc<PgPool>,
+}
 
 // Create OCR configuration with default settings
 static OCR_CONFIG: std::sync::LazyLock<OcrConfig> = std::sync::LazyLock::new(OcrConfig::default);
@@ -69,14 +82,17 @@ pub async fn download_file(bot: &Bot, file_id: teloxide::types::FileId) -> Resul
 
 pub async fn download_and_process_image(
     bot: &Bot,
-    file_id: teloxide::types::FileId,
-    chat_id: ChatId,
-    success_message: &str,
-    language_code: Option<&str>,
-    dialogue: RecipeDialogue,
-    _pool: Arc<PgPool>, // Used later in dialogue flow for saving ingredients
+    params: ImageProcessingParams<'_>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<String> {
+    let ImageProcessingParams {
+        file_id,
+        chat_id,
+        success_message,
+        language_code,
+        dialogue,
+        pool: _pool,
+    } = params;
     let temp_path = match download_file(bot, file_id).await {
         Ok(path) => {
             debug!(user_id = %chat_id, temp_path = %path, "Image downloaded successfully");
@@ -84,8 +100,11 @@ pub async fn download_and_process_image(
         }
         Err(e) => {
             error!(user_id = %chat_id, error = %e, "Failed to download image for user");
-            bot.send_message(chat_id, t_lang(localization, "error-download-failed", language_code))
-                .await?;
+            bot.send_message(
+                chat_id,
+                t_lang(localization, "error-download-failed", language_code),
+            )
+            .await?;
             return Err(e);
         }
     }; // Ensure cleanup happens even if we return early
@@ -275,15 +294,19 @@ async fn handle_text_message(
 
                 // Handle recipe name input
                 return handle_recipe_name_input(
-                    bot,
-                    msg,
-                    dialogue,
-                    pool,
-                    text,
-                    extracted_text,
-                    ingredients,
-                    effective_language_code,
-                    localization,
+                    DialogueContext {
+                        bot,
+                        msg,
+                        dialogue,
+                        localization,
+                    },
+                    RecipeNameInputParams {
+                        pool,
+                        recipe_name_input: text,
+                        extracted_text,
+                        ingredients,
+                        language_code: effective_language_code,
+                    },
                 )
                 .await;
             }
@@ -297,15 +320,19 @@ async fn handle_text_message(
 
                 // Handle recipe name input after ingredient confirmation
                 return handle_recipe_name_after_confirm_input(
-                    bot,
-                    msg,
-                    dialogue,
-                    pool,
-                    text,
-                    ingredients,
-                    effective_language_code,
-                    extracted_text,
-                    localization,
+                    DialogueContext {
+                        bot,
+                        msg,
+                        dialogue,
+                        localization,
+                    },
+                    RecipeNameAfterConfirmInputParams {
+                        pool,
+                        recipe_name_input: text,
+                        ingredients,
+                        language_code: effective_language_code,
+                        extracted_text,
+                    },
                 )
                 .await;
             }
@@ -321,16 +348,20 @@ async fn handle_text_message(
 
                 // Handle ingredient review commands
                 return handle_ingredient_review_input(
-                    bot,
-                    msg,
-                    dialogue,
-                    pool,
-                    text,
-                    recipe_name,
-                    ingredients,
-                    effective_language_code,
-                    extracted_text,
-                    localization,
+                    DialogueContext {
+                        bot,
+                        msg,
+                        dialogue,
+                        localization,
+                    },
+                    IngredientReviewInputParams {
+                        pool,
+                        review_input: text,
+                        recipe_name,
+                        ingredients,
+                        language_code: effective_language_code,
+                        extracted_text,
+                    },
                 )
                 .await;
             }
@@ -347,17 +378,21 @@ async fn handle_text_message(
 
                 // Handle ingredient edit input
                 return handle_ingredient_edit_input(
-                    bot,
-                    msg,
-                    dialogue,
-                    text,
-                    recipe_name,
-                    ingredients,
-                    editing_index,
-                    effective_language_code,
-                    message_id,
-                    extracted_text,
-                    localization,
+                    DialogueContext {
+                        bot,
+                        msg,
+                        dialogue,
+                        localization,
+                    },
+                    IngredientEditInputParams {
+                        edit_input: text,
+                        recipe_name,
+                        ingredients,
+                        editing_index,
+                        language_code: effective_language_code,
+                        message_id,
+                        extracted_text,
+                    },
                 )
                 .await;
             }
@@ -442,12 +477,14 @@ async fn handle_photo_message(
         if let Some(largest_photo) = photos.last() {
             let _temp_path = download_and_process_image(
                 bot,
-                largest_photo.file.id.clone(),
-                msg.chat.id,
-                &t_lang(localization, "processing-photo", language_code),
-                language_code,
-                dialogue,
-                pool,
+                ImageProcessingParams {
+                    file_id: largest_photo.file.id.clone(),
+                    chat_id: msg.chat.id,
+                    success_message: &t_lang(localization, "processing-photo", language_code),
+                    language_code,
+                    dialogue,
+                    pool,
+                },
                 localization,
             )
             .await;
@@ -476,12 +513,18 @@ async fn handle_document_message(
                 debug!(user_id = %msg.chat.id, mime_type = %mime_type, "Received image document from user");
                 let _temp_path = download_and_process_image(
                     bot,
-                    doc.file.id.clone(),
-                    msg.chat.id,
-                    &t_lang(localization, "processing-document", language_code),
-                    language_code,
-                    dialogue,
-                    pool,
+                    ImageProcessingParams {
+                        file_id: doc.file.id.clone(),
+                        chat_id: msg.chat.id,
+                        success_message: &t_lang(
+                            localization,
+                            "processing-document",
+                            language_code,
+                        ),
+                        language_code,
+                        dialogue,
+                        pool,
+                    },
                     localization,
                 )
                 .await;
@@ -495,8 +538,11 @@ async fn handle_document_message(
             }
         } else {
             debug!(user_id = %msg.chat.id, "Received document without mime type from user");
-            bot.send_message(msg.chat.id, t_lang(localization, "error-no-mime-type", language_code))
-                .await?;
+            bot.send_message(
+                msg.chat.id,
+                t_lang(localization, "error-no-mime-type", language_code),
+            )
+            .await?;
         }
     }
     Ok(())
@@ -531,8 +577,14 @@ async fn handle_recipes_command(
         );
 
         // Create the pagination keyboard
-        let keyboard =
-            create_recipes_pagination_keyboard(&recipes, 0, total_count, 5, language_code, localization);
+        let keyboard = create_recipes_pagination_keyboard(
+            &recipes,
+            0,
+            total_count,
+            5,
+            language_code,
+            localization,
+        );
 
         bot.send_message(msg.chat.id, recipes_message)
             .reply_markup(keyboard)
@@ -542,7 +594,11 @@ async fn handle_recipes_command(
     Ok(())
 }
 
-async fn handle_unsupported_message(bot: &Bot, msg: &Message, localization: &Arc<crate::localization::LocalizationManager>) -> Result<()> {
+async fn handle_unsupported_message(
+    bot: &Bot,
+    msg: &Message,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
     // Extract user's language code from Telegram
     let language_code = msg
         .from
@@ -573,7 +629,6 @@ pub async fn message_handler(
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-
     if msg.text().is_some() {
         handle_text_message(&bot, &msg, dialogue, pool, &localization).await?;
     } else if msg.photo().is_some() {

@@ -132,3 +132,10 @@ no-recipes-suggestion = Envoyez-moi des images d'ingrédients pour créer votre 
 your-recipes = Vos Recettes
 select-recipe = Sélectionnez une recette pour voir ses ingrédients :
 recipe-details-coming-soon = Détails de la recette bientôt disponibles !
+
+# Messages de workflow post-confirmation
+workflow-recipe-saved = ✅ Recette sauvegardée avec succès !
+workflow-what-next = Que souhaitez-vous faire ensuite ?
+workflow-add-another = Ajouter une autre recette
+workflow-list-recipes = Lister mes recettes
+workflow-search-recipes = Rechercher des recettes

@@ -132,3 +132,10 @@ no-recipes-suggestion = Send me some ingredient images to create your first reci
 your-recipes = Your Recipes
 select-recipe = Select a recipe to view its ingredients:
 recipe-details-coming-soon = Recipe details coming soon!
+
+# Post-confirmation workflow messages
+workflow-recipe-saved = ✅ Recipe saved successfully!
+workflow-what-next = What would you like to do next?
+workflow-add-another = Add Another Recipe
+workflow-list-recipes = List My Recipes
+workflow-search-recipes = Search Recipes

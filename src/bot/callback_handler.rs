@@ -4,6 +4,7 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
+use teloxide::types::MaybeInaccessibleMessage;
 use tracing::{debug, error};
 
 // Import localization
@@ -14,7 +15,8 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
 use super::ui_builder::{
-    create_ingredient_review_keyboard, create_recipes_pagination_keyboard, format_ingredients_list,
+    create_ingredient_review_keyboard, create_post_confirmation_keyboard,
+    create_recipes_pagination_keyboard, format_ingredients_list,
 };
 
 // Import database functions
@@ -28,7 +30,6 @@ pub async fn callback_handler(
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-
     // Check dialogue state
     let dialogue_state = dialogue.get().await?;
     debug!(user_id = %q.from.id, dialogue_state = ?dialogue_state, "Retrieved dialogue state");
@@ -50,8 +51,16 @@ pub async fn callback_handler(
                         let ingredient = &ingredients[index];
                         let edit_prompt = format!(
                             "✏️ {}\n\n{}: **{} {}**\n\n{}",
-                            t_lang(&localization, "edit-ingredient-prompt", dialogue_lang_code.as_deref()),
-                            t_lang(&localization, "current-ingredient", dialogue_lang_code.as_deref()),
+                            t_lang(
+                                &localization,
+                                "edit-ingredient-prompt",
+                                dialogue_lang_code.as_deref()
+                            ),
+                            t_lang(
+                                &localization,
+                                "current-ingredient",
+                                dialogue_lang_code.as_deref()
+                            ),
                             ingredient.quantity,
                             ingredient.measurement.as_deref().unwrap_or(""),
                             ingredient.ingredient_name
@@ -82,14 +91,30 @@ pub async fn callback_handler(
                             // All ingredients deleted - inform user and provide options
                             let empty_message = format!(
                                 "🗑️ **{}**\n\n{}\n\n{}",
-                                t_lang(&localization, "review-title", dialogue_lang_code.as_deref()),
-                                t_lang(&localization, "review-no-ingredients", dialogue_lang_code.as_deref()),
-                                t_lang(&localization, "review-no-ingredients-help", dialogue_lang_code.as_deref())
+                                t_lang(
+                                    &localization,
+                                    "review-title",
+                                    dialogue_lang_code.as_deref()
+                                ),
+                                t_lang(
+                                    &localization,
+                                    "review-no-ingredients",
+                                    dialogue_lang_code.as_deref()
+                                ),
+                                t_lang(
+                                    &localization,
+                                    "review-no-ingredients-help",
+                                    dialogue_lang_code.as_deref()
+                                )
                             );
 
                             let keyboard = vec![vec![
                                 teloxide::types::InlineKeyboardButton::callback(
-                                    t_lang(&localization, "review-add-more", dialogue_lang_code.as_deref()),
+                                    t_lang(
+                                        &localization,
+                                        "review-add-more",
+                                        dialogue_lang_code.as_deref(),
+                                    ),
                                     "add_more",
                                 ),
                                 teloxide::types::InlineKeyboardButton::callback(
@@ -113,8 +138,16 @@ pub async fn callback_handler(
                             // Update the message with remaining ingredients
                             let review_message = format!(
                                 "📝 **{}**\n\n{}\n\n{}",
-                                t_lang(&localization, "review-title", dialogue_lang_code.as_deref()),
-                                t_lang(&localization, "review-description", dialogue_lang_code.as_deref()),
+                                t_lang(
+                                    &localization,
+                                    "review-title",
+                                    dialogue_lang_code.as_deref()
+                                ),
+                                t_lang(
+                                    &localization,
+                                    "review-description",
+                                    dialogue_lang_code.as_deref()
+                                ),
                                 format_ingredients_list(
                                     &ingredients,
                                     dialogue_lang_code.as_deref(),
@@ -125,7 +158,7 @@ pub async fn callback_handler(
                             let keyboard = create_ingredient_review_keyboard(
                                 &ingredients,
                                 dialogue_lang_code.as_deref(),
-                                &localization
+                                &localization,
                             );
 
                             // Edit the original message
@@ -161,11 +194,51 @@ pub async fn callback_handler(
                         // Invalid index - ignore silently
                     }
                 } else if data == "confirm" {
-                    // Handle confirm button - proceed to recipe name input
+                    // Handle confirm button - update the message and proceed to recipe name input
+                    let confirmation_message = format!(
+                        "✅ **{}**\n\n{}",
+                        t_lang(
+                            &localization,
+                            "workflow-recipe-saved",
+                            dialogue_lang_code.as_deref()
+                        ),
+                        t_lang(
+                            &localization,
+                            "workflow-what-next",
+                            dialogue_lang_code.as_deref()
+                        )
+                    );
+
+                    let confirmation_keyboard = create_post_confirmation_keyboard(
+                        dialogue_lang_code.as_deref(),
+                        &localization,
+                    );
+
+                    // Update the original review message
+                    match bot
+                        .edit_message_text(msg.chat().id, msg.id(), confirmation_message)
+                        .reply_markup(confirmation_keyboard)
+                        .await
+                    {
+                        Ok(_) => (),
+                        Err(e) => {
+                            error!(user_id = %q.from.id, error = %e, "Failed to update message after confirmation")
+                        }
+                    }
+
+                    // Send recipe name prompt
                     let recipe_name_prompt = format!(
                         "🏷️ **{}**\n\n{}",
-                        t_lang(&localization, "recipe-name-prompt", dialogue_lang_code.as_deref()),
-                        t_lang(&localization, "recipe-name-prompt-hint", dialogue_lang_code.as_deref())
+                        t_lang(
+                            &localization,
+                            "recipe-name-prompt",
+                            dialogue_lang_code.as_deref()
+                        ),
+                        t_lang(
+                            &localization,
+                            "recipe-name-prompt-hint",
+                            dialogue_lang_code.as_deref()
+                        )
                     );
 
                     bot.send_message(msg.chat().id, recipe_name_prompt).await?;
@@ -196,12 +269,47 @@ pub async fn callback_handler(
                     // Handle cancel button - end dialogue without saving
                     bot.send_message(
                         msg.chat().id,
-                        t_lang(&localization, "review-cancelled", dialogue_lang_code.as_deref()),
+                        t_lang(
+                            &localization,
+                            "review-cancelled",
+                            dialogue_lang_code.as_deref(),
+                        ),
                     )
                     .await?;
 
                     // End the dialogue
                     dialogue.exit().await?;
+                } else if data == "workflow_add_another" {
+                    // Handle add another recipe - reset to start state
+                    bot.send_message(
+                        msg.chat().id,
+                        t_lang(
+                            &localization,
+                            "workflow-what-next",
+                            dialogue_lang_code.as_deref(),
+                        ),
+                    )
+                    .await?;
+
+                    // Reset dialogue to start state
+                    dialogue.update(RecipeDialogueState::Start).await?;
+                } else if data == "workflow_list_recipes" {
+                    // Handle list recipes - show user's recipes
+                    handle_list_recipes(
+                        &bot,
+                        msg,
+                        _pool.clone(),
+                        &q.from.language_code,
+                        &localization,
+                    )
+                    .await?;
+                } else if data == "workflow_search_recipes" {
+                    // Handle search recipes - for now, just show a placeholder
+                    bot.send_message(
+                        msg.chat().id,
+                        "🔍 Recipe search coming soon! For now, use the 'List My Recipes' button.",
+                    )
+                    .await?;
                 }
             }
         }
@@ -212,7 +320,14 @@ pub async fn callback_handler(
                 if data.starts_with("select_recipe:") {
                     // Handle recipe selection
                     let recipe_name = data.strip_prefix("select_recipe:").unwrap_or("");
-                    handle_recipe_selection(&bot, msg, recipe_name, &q.from.language_code, &localization).await?;
+                    handle_recipe_selection(
+                        &bot,
+                        msg,
+                        recipe_name,
+                        &q.from.language_code,
+                        &localization,
+                    )
+                    .await?;
                 } else if data.starts_with("page:") {
                     // Handle pagination
                     let page_str = data.strip_prefix("page:").unwrap_or("0");
@@ -252,7 +367,11 @@ async fn handle_recipe_selection(
     let message = format!(
         "📖 **{}**\n\n{}",
         recipe_name,
-        t_lang(localization, "recipe-details-coming-soon", language_code.as_deref())
+        t_lang(
+            localization,
+            "recipe-details-coming-soon",
+            language_code.as_deref()
+        )
     );
 
     // Extract chat id from the message
@@ -323,6 +442,71 @@ async fn handle_recipes_pagination(
 
     // Edit the original message
     bot.edit_message_text(chat_id, message_id, recipes_message)
+        .reply_markup(keyboard)
+        .await?;
+
+    Ok(())
+}
+
+/// Handle list recipes workflow callback
+async fn handle_list_recipes(
+    bot: &Bot,
+    msg: &MaybeInaccessibleMessage,
+    pool: Arc<PgPool>,
+    language_code: &Option<String>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    debug!("Handling list recipes workflow");
+
+    // Extract chat id from the message
+    let chat_id = match msg {
+        MaybeInaccessibleMessage::Regular(msg) => msg.chat.id,
+        MaybeInaccessibleMessage::Inaccessible(_) => {
+            // Can't respond to inaccessible messages
+            return Ok(());
+        }
+    };
+
+    // Get user's recipes (first page)
+    let limit = 5i64;
+    let offset = 0i64;
+    let (recipes, total_count) =
+        get_user_recipes_paginated(&pool, chat_id.0, limit, offset).await?;
+
+    if recipes.is_empty() {
+        // No recipes found
+        let message = format!(
+            "📚 **{}**\n\n{}",
+            t_lang(localization, "your-recipes", language_code.as_deref()),
+            t_lang(
+                localization,
+                "no-recipes-suggestion",
+                language_code.as_deref()
+            )
+        );
+        bot.send_message(chat_id, message).await?;
+        return Ok(());
+    }
+
+    // Create message text
+    let recipes_message = format!(
+        "📚 **{}**\n\n{}",
+        t_lang(localization, "your-recipes", language_code.as_deref()),
+        t_lang(localization, "select-recipe", language_code.as_deref())
+    );
+
+    // Create keyboard
+    let keyboard = create_recipes_pagination_keyboard(
+        &recipes,
+        0, // current page
+        total_count,
+        limit,
+        language_code.as_deref(),
+        localization,
+    );
+
+    // Send the message with keyboard
+    bot.send_message(chat_id, recipes_message)
         .reply_markup(keyboard)
         .await?;
 

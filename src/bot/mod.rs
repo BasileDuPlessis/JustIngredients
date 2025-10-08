@@ -21,5 +21,6 @@ pub use message_handler::{
     download_and_process_image, download_file, process_ingredients_and_extract_matches,
 };
 pub use ui_builder::{
-    create_ingredient_review_keyboard, create_recipes_pagination_keyboard, format_ingredients_list,
+    create_ingredient_review_keyboard, create_post_confirmation_keyboard,
+    create_recipes_pagination_keyboard, format_ingredients_list,
 };

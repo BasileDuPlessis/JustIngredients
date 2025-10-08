@@ -23,6 +23,8 @@ This is a Telegram bot that extracts text from images using OCR (Optical Charact
 - **Multi-Language UI**: Localized responses in English and French based on user preferences
 - **Error Recovery**: Graceful handling of processing failures with user-friendly messages
 - **Dialogue System**: Interactive recipe name input with validation and state management
+- **Workflow Transitions**: Post-confirmation workflow with action buttons (Add Another, List Recipes, Search)
+- **Confirmation Flow**: Clear user experience after ingredient validation with next-action choices
 - **Command Support**: /start, /help commands with comprehensive user guidance
 
 ### Data Persistence & Search
@@ -152,6 +154,16 @@ cargo test                    # Run complete test suite (93 tests)
 - **Background Processing**: Image downloads and OCR run asynchronously
 - **Dialogue State**: Persistent conversation state using `InMemStorage`
 
+### Code Refactoring Patterns
+- **Parameter Structs**: Functions with >6 parameters use dedicated parameter structs for maintainability
+  - Common structs: `DialogueContext` (bot, message, dialogue, localization)
+  - Function-specific structs: `RecipeNameInputParams`, `IngredientEditInputParams`, etc.
+  - Reduces complexity from 8-11 parameters to 2-3 parameters
+- **Workflow Transitions**: Post-confirmation UX with action buttons replacing edit/delete options
+  - `create_post_confirmation_keyboard()` provides Add Another/List Recipes/Search options
+  - Improves user flow after ingredient validation
+- **Type Safety**: Parameter structs ensure compile-time validation of required fields
+
 ### Testing Patterns
 - **Unit Tests**: Pure logic testing without external dependencies
 - **Integration Tests**: Database and OCR operations with proper setup/teardown
@@ -244,12 +256,15 @@ cargo test                    # Run complete test suite (93 tests)
 4. **OCR Enhancements**: Modify `ocr.rs` with new validation or processing logic and tests
 5. **Localization**: Add keys to `.ftl` files, update `localization.rs` if needed, test translations
 6. **Text Processing**: Update patterns in `measurement_patterns.rs`, add tests for new cases
+7. **UI/UX Improvements**: Add workflow transitions and keyboard functions in `dialogue_manager.rs`
+8. **Function Refactoring**: Use parameter structs for functions with >6 parameters to maintain code quality
 
 ### Debugging Issues
 - **OCR Failures**: Check circuit breaker state, Tesseract logs, temp file cleanup, test isolation
 - **Database Issues**: Verify FTS triggers, connection sharing, schema initialization, test database state
 - **Localization**: Confirm language detection, Fluent bundle loading, test translations
 - **Performance**: Monitor instance pooling, memory usage, timeout configurations
+- **UI Flow Issues**: Check workflow transitions and keyboard creation in dialogue handlers
 
 ### Deployment Considerations
 - **Environment Variables**: Secure token storage, database path configuration
