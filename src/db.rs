@@ -318,17 +318,19 @@ pub async fn create_ingredient(
     name: &str,
     quantity: Option<f64>,
     unit: Option<&str>,
+    raw_text: &str,
 ) -> Result<i64> {
     info!("Creating new ingredient for user_id: {user_id}");
 
     let row = sqlx::query(
-        "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit) VALUES ($1, $2, $3, $4, $5) RETURNING id"
+        "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit, raw_text) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
     )
     .bind(user_id)
     .bind(recipe_id)
     .bind(name)
     .bind(quantity)
     .bind(unit)
+    .bind(raw_text)
     .fetch_one(pool)
     .await
     .context("Failed to insert new ingredient")?;

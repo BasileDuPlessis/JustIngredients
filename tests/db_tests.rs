@@ -125,6 +125,7 @@ async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
         "flour",
         Some(2.0),
         Some("cups"),
+        "flour 2 cups",
     )
     .await?;
     assert!(ingredient_id > 0);

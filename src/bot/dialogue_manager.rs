@@ -656,6 +656,7 @@ pub async fn save_ingredients_to_database(
             &ingredient.ingredient_name,
             quantity,
             unit,
+            extracted_text,
         )
         .await?;
     }
