@@ -3,16 +3,17 @@
 //! This module contains unit tests for the localization functionality,
 //! testing message retrieval and formatting with various edge cases.
 
-use ingredients::localization::LocalizationManager;
+use ingredients::localization::{LocalizationManager, create_localization_manager, t_lang, t_args_lang, detect_language};
 use std::collections::HashMap;
+use std::sync::Arc;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn setup_localization() -> LocalizationManager {
-        // Create a new localization manager for each test
-        LocalizationManager::new().expect("Failed to create localization manager")
+    fn setup_localization() -> Arc<LocalizationManager> {
+        // Create a new shared localization manager for each test
+        create_localization_manager().expect("Failed to create localization manager")
     }
 
     #[test]
@@ -79,31 +80,27 @@ mod tests {
 
     #[test]
     fn test_language_detection() {
-        // Initialize the global localization manager for this test
-        ingredients::localization::init_localization().expect("Failed to initialize localization");
-        use ingredients::localization::detect_language;
+        let manager = setup_localization();
 
-        assert_eq!(detect_language(Some("en")), "en");
-        assert_eq!(detect_language(Some("en-US")), "en");
-        assert_eq!(detect_language(Some("fr")), "fr");
-        assert_eq!(detect_language(Some("fr-CA")), "fr");
-        assert_eq!(detect_language(None), "en"); // Default to English
-        assert_eq!(detect_language(Some("unsupported")), "en"); // Fallback to English
+        assert_eq!(detect_language(&manager, Some("en")), "en");
+        assert_eq!(detect_language(&manager, Some("en-US")), "en");
+        assert_eq!(detect_language(&manager, Some("fr")), "fr");
+        assert_eq!(detect_language(&manager, Some("fr-CA")), "fr");
+        assert_eq!(detect_language(&manager, None), "en"); // Default to English
+        assert_eq!(detect_language(&manager, Some("unsupported")), "en"); // Fallback to English
     }
 
     #[test]
     fn test_convenience_functions() {
-        // Initialize the global localization manager for this test
-        ingredients::localization::init_localization().expect("Failed to initialize localization");
+        let manager = setup_localization();
 
         // Test t_lang function
-        let message = ingredients::localization::t_lang("help-commands", Some("en"));
+        let message = t_lang(&manager, "help-commands", Some("en"));
         assert!(!message.is_empty());
 
         // Test t_args_lang function
         let args = vec![("recipe_name", "Test Recipe"), ("ingredient_count", "3")];
-        let message_with_args =
-            ingredients::localization::t_args_lang("recipe-complete", &args, Some("en"));
+        let message_with_args = t_args_lang(&manager, "recipe-complete", &args, Some("en"));
         assert!(!message_with_args.is_empty());
         assert!(message_with_args.contains("Test Recipe"));
         assert!(message_with_args.contains("3"));

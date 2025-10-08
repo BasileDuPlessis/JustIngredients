@@ -9,7 +9,7 @@ use tempfile::NamedTempFile;
 use tracing::{debug, error, info, warn};
 
 // Import localization
-use crate::localization::{init_localization, t_lang};
+use crate::localization::t_lang;
 
 // Import text processing
 use crate::text_processing::{MeasurementDetector, MeasurementMatch};
@@ -75,6 +75,7 @@ pub async fn download_and_process_image(
     language_code: Option<&str>,
     dialogue: RecipeDialogue,
     _pool: Arc<PgPool>, // Used later in dialogue flow for saving ingredients
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<String> {
     let temp_path = match download_file(bot, file_id).await {
         Ok(path) => {
@@ -83,7 +84,7 @@ pub async fn download_and_process_image(
         }
         Err(e) => {
             error!(user_id = %chat_id, error = %e, "Failed to download image for user");
-            bot.send_message(chat_id, t_lang("error-download-failed", language_code))
+            bot.send_message(chat_id, t_lang(localization, "error-download-failed", language_code))
                 .await?;
             return Err(e);
         }
@@ -97,7 +98,7 @@ pub async fn download_and_process_image(
         // Validate image format before OCR processing
         if !crate::ocr::is_supported_image_format(&temp_path, &OCR_CONFIG) {
             warn!(user_id = %chat_id, "Unsupported image format rejected");
-            bot.send_message(chat_id, t_lang("error-unsupported-format", language_code))
+            bot.send_message(chat_id, t_lang(localization, "error-unsupported-format", language_code))
                 .await?;
             return Ok(String::new());
         }
@@ -114,7 +115,7 @@ pub async fn download_and_process_image(
             Ok(extracted_text) => {
                 if extracted_text.is_empty() {
                     warn!(user_id = %chat_id, "OCR extraction returned empty text");
-                    bot.send_message(chat_id, t_lang("error-no-text-found", language_code))
+                    bot.send_message(chat_id, t_lang(localization, "error-no-text-found", language_code))
                         .await?;
                     Ok(String::new())
                 } else {
@@ -132,8 +133,8 @@ pub async fn download_and_process_image(
                         // No ingredients found, send message directly without dialogue
                         let no_ingredients_msg = format!(
                             "📝 {}\n\n{}\n\n```\n{}\n```",
-                            t_lang("no-ingredients-found", language_code),
-                            t_lang("no-ingredients-suggestion", language_code),
+                            t_lang(localization, "no-ingredients-found", language_code),
+                            t_lang(localization, "no-ingredients-suggestion", language_code),
                             extracted_text
                         );
                         bot.send_message(chat_id, &no_ingredients_msg).await?;
@@ -142,12 +143,12 @@ pub async fn download_and_process_image(
                         info!(user_id = %chat_id, ingredients_count = ingredients.len(), "Sending ingredients review interface");
                         let review_message = format!(
                             "📝 **{}**\n\n{}\n\n{}",
-                            t_lang("review-title", language_code),
-                            t_lang("review-description", language_code),
-                            format_ingredients_list(&ingredients, language_code)
+                            t_lang(localization, "review-title", language_code),
+                            t_lang(localization, "review-description", language_code),
+                            format_ingredients_list(&ingredients, language_code, localization)
                         );
 
-                        let keyboard = create_ingredient_review_keyboard(&ingredients, language_code);
+                                                let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
 
                         let sent_message = bot.send_message(chat_id, review_message)
                             .reply_markup(keyboard)
@@ -180,21 +181,21 @@ pub async fn download_and_process_image(
                 // Provide more specific error messages based on the error type
                 let error_message = match &e {
                     OcrError::Validation(msg) => {
-                        t_lang("error-validation", language_code).replace("{}", msg)
+                        t_lang(localization, "error-validation", language_code).replace("{}", msg)
                     }
-                    OcrError::ImageLoad(_) => t_lang("error-image-load", language_code),
+                    OcrError::ImageLoad(_) => t_lang(localization, "error-image-load", language_code),
                     OcrError::Initialization(_) => {
-                        t_lang("error-ocr-initialization", language_code)
+                        t_lang(localization, "error-ocr-initialization", language_code)
                     }
-                    OcrError::Extraction(_) => t_lang("error-ocr-extraction", language_code),
+                    OcrError::Extraction(_) => t_lang(localization, "error-ocr-extraction", language_code),
                     OcrError::Timeout(msg) => {
-                        t_lang("error-ocr-timeout", language_code).replace("{}", msg)
+                        t_lang(localization, "error-ocr-timeout", language_code).replace("{}", msg)
                     }
                     OcrError::_InstanceCorruption(_) => {
-                        t_lang("error-ocr-corruption", language_code)
+                        t_lang(localization, "error-ocr-corruption", language_code)
                     }
                     OcrError::_ResourceExhaustion(_) => {
-                        t_lang("error-ocr-exhaustion", language_code)
+                        t_lang(localization, "error-ocr-exhaustion", language_code)
                     }
                 };
 
@@ -249,6 +250,7 @@ async fn handle_text_message(
     msg: &Message,
     dialogue: RecipeDialogue,
     pool: Arc<PgPool>,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     if let Some(text) = msg.text() {
         debug!(user_id = %msg.chat.id, message_length = text.len(), "Received text message from user");
@@ -281,6 +283,7 @@ async fn handle_text_message(
                     extracted_text,
                     ingredients,
                     effective_language_code,
+                    localization,
                 )
                 .await;
             }
@@ -302,6 +305,7 @@ async fn handle_text_message(
                     ingredients,
                     effective_language_code,
                     extracted_text,
+                    localization,
                 )
                 .await;
             }
@@ -326,6 +330,7 @@ async fn handle_text_message(
                     ingredients,
                     effective_language_code,
                     extracted_text,
+                    localization,
                 )
                 .await;
             }
@@ -352,6 +357,7 @@ async fn handle_text_message(
                     effective_language_code,
                     message_id,
                     extracted_text,
+                    localization,
                 )
                 .await;
             }
@@ -364,41 +370,41 @@ async fn handle_text_message(
         if text == "/start" {
             let welcome_message = format!(
                 "👋 **{}**\n\n{}\n\n{}\n\n{}\n{}\n{}\n\n{}",
-                t_lang("welcome-title", language_code),
-                t_lang("welcome-description", language_code),
-                t_lang("welcome-features", language_code),
-                t_lang("welcome-commands", language_code),
-                t_lang("welcome-start", language_code),
-                t_lang("welcome-help", language_code),
-                t_lang("welcome-send-image", language_code)
+                t_lang(localization, "welcome-title", language_code),
+                t_lang(localization, "welcome-description", language_code),
+                t_lang(localization, "welcome-features", language_code),
+                t_lang(localization, "welcome-commands", language_code),
+                t_lang(localization, "welcome-start", language_code),
+                t_lang(localization, "welcome-help", language_code),
+                t_lang(localization, "welcome-send-image", language_code)
             );
             bot.send_message(msg.chat.id, welcome_message).await?;
         }
         // Handle /help command
         else if text == "/help" {
             let help_message = vec![
-                t_lang("help-title", language_code),
-                t_lang("help-description", language_code),
-                t_lang("help-step1", language_code),
-                t_lang("help-step2", language_code),
-                t_lang("help-step3", language_code),
-                t_lang("help-step4", language_code),
-                t_lang("help-formats", language_code),
-                t_lang("help-commands", language_code),
-                t_lang("help-start", language_code),
-                t_lang("help-tips", language_code),
-                t_lang("help-tip1", language_code),
-                t_lang("help-tip2", language_code),
-                t_lang("help-tip3", language_code),
-                t_lang("help-tip4", language_code),
-                t_lang("help-final", language_code),
+                t_lang(localization, "help-title", language_code),
+                t_lang(localization, "help-description", language_code),
+                t_lang(localization, "help-step1", language_code),
+                t_lang(localization, "help-step2", language_code),
+                t_lang(localization, "help-step3", language_code),
+                t_lang(localization, "help-step4", language_code),
+                t_lang(localization, "help-formats", language_code),
+                t_lang(localization, "help-commands", language_code),
+                t_lang(localization, "help-start", language_code),
+                t_lang(localization, "help-tips", language_code),
+                t_lang(localization, "help-tip1", language_code),
+                t_lang(localization, "help-tip2", language_code),
+                t_lang(localization, "help-tip3", language_code),
+                t_lang(localization, "help-tip4", language_code),
+                t_lang(localization, "help-final", language_code),
             ]
             .join("\n\n");
             bot.send_message(msg.chat.id, help_message).await?;
         }
         // Handle /recipes command
         else if text == "/recipes" {
-            handle_recipes_command(bot, msg, pool, language_code).await?;
+            handle_recipes_command(bot, msg, pool, language_code, localization).await?;
         }
         // Handle regular text messages
         else {
@@ -406,8 +412,8 @@ async fn handle_text_message(
                 msg.chat.id,
                 format!(
                     "{} {}",
-                    t_lang("text-response", language_code),
-                    t_lang("text-tip", language_code)
+                    t_lang(localization, "text-response", language_code),
+                    t_lang(localization, "text-tip", language_code)
                 ),
             )
             .await?;
@@ -421,6 +427,7 @@ async fn handle_photo_message(
     msg: &Message,
     dialogue: RecipeDialogue,
     pool: Arc<PgPool>,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     // Extract user's language code from Telegram
     let language_code = msg
@@ -437,10 +444,11 @@ async fn handle_photo_message(
                 bot,
                 largest_photo.file.id.clone(),
                 msg.chat.id,
-                &t_lang("processing-photo", language_code),
+                &t_lang(localization, "processing-photo", language_code),
                 language_code,
                 dialogue,
                 pool,
+                localization,
             )
             .await;
         }
@@ -453,6 +461,7 @@ async fn handle_document_message(
     msg: &Message,
     dialogue: RecipeDialogue,
     pool: Arc<PgPool>,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     // Extract user's language code from Telegram
     let language_code = msg
@@ -469,23 +478,24 @@ async fn handle_document_message(
                     bot,
                     doc.file.id.clone(),
                     msg.chat.id,
-                    &t_lang("processing-document", language_code),
+                    &t_lang(localization, "processing-document", language_code),
                     language_code,
                     dialogue,
                     pool,
+                    localization,
                 )
                 .await;
             } else {
                 debug!(user_id = %msg.chat.id, mime_type = %mime_type, "Received non-image document from user");
                 bot.send_message(
                     msg.chat.id,
-                    t_lang("error-unsupported-format", language_code),
+                    t_lang(localization, "error-unsupported-format", language_code),
                 )
                 .await?;
             }
         } else {
             debug!(user_id = %msg.chat.id, "Received document without mime type from user");
-            bot.send_message(msg.chat.id, t_lang("error-no-mime-type", language_code))
+            bot.send_message(msg.chat.id, t_lang(localization, "error-no-mime-type", language_code))
                 .await?;
         }
     }
@@ -497,6 +507,7 @@ async fn handle_recipes_command(
     msg: &Message,
     pool: Arc<PgPool>,
     language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     debug!(user_id = %msg.chat.id, "Handling /recipes command");
 
@@ -507,21 +518,21 @@ async fn handle_recipes_command(
         // No recipes found
         let no_recipes_message = format!(
             "📚 {}\n\n{}",
-            t_lang("no-recipes-found", language_code),
-            t_lang("no-recipes-suggestion", language_code)
+            t_lang(localization, "no-recipes-found", language_code),
+            t_lang(localization, "no-recipes-suggestion", language_code)
         );
         bot.send_message(msg.chat.id, no_recipes_message).await?;
     } else {
         // Create the message text
         let recipes_message = format!(
             "📚 **{}**\n\n{}",
-            t_lang("your-recipes", language_code),
-            t_lang("select-recipe", language_code)
+            t_lang(localization, "your-recipes", language_code),
+            t_lang(localization, "select-recipe", language_code)
         );
 
         // Create the pagination keyboard
         let keyboard =
-            create_recipes_pagination_keyboard(&recipes, 0, total_count, 5, language_code);
+            create_recipes_pagination_keyboard(&recipes, 0, total_count, 5, language_code, localization);
 
         bot.send_message(msg.chat.id, recipes_message)
             .reply_markup(keyboard)
@@ -531,7 +542,7 @@ async fn handle_recipes_command(
     Ok(())
 }
 
-async fn handle_unsupported_message(bot: &Bot, msg: &Message) -> Result<()> {
+async fn handle_unsupported_message(bot: &Bot, msg: &Message, localization: &Arc<crate::localization::LocalizationManager>) -> Result<()> {
     // Extract user's language code from Telegram
     let language_code = msg
         .from
@@ -543,13 +554,13 @@ async fn handle_unsupported_message(bot: &Bot, msg: &Message) -> Result<()> {
 
     let help_message = format!(
         "{}\n\n{}\n{}\n{}\n{}\n{}\n\n{}",
-        t_lang("unsupported-title", language_code),
-        t_lang("unsupported-description", language_code),
-        t_lang("unsupported-feature1", language_code),
-        t_lang("unsupported-feature2", language_code),
-        t_lang("unsupported-feature3", language_code),
-        t_lang("unsupported-feature4", language_code),
-        t_lang("unsupported-final", language_code)
+        t_lang(localization, "unsupported-title", language_code),
+        t_lang(localization, "unsupported-description", language_code),
+        t_lang(localization, "unsupported-feature1", language_code),
+        t_lang(localization, "unsupported-feature2", language_code),
+        t_lang(localization, "unsupported-feature3", language_code),
+        t_lang(localization, "unsupported-feature4", language_code),
+        t_lang(localization, "unsupported-final", language_code)
     );
     bot.send_message(msg.chat.id, help_message).await?;
     Ok(())
@@ -560,20 +571,17 @@ pub async fn message_handler(
     msg: Message,
     pool: Arc<PgPool>,
     dialogue: RecipeDialogue,
+    localization: Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    // Initialize localization for this thread
-    tracing::debug!("About to initialize localization in message_handler");
-    init_localization()?;
-    tracing::debug!("Localization initialized successfully in message_handler");
 
     if msg.text().is_some() {
-        handle_text_message(&bot, &msg, dialogue, pool).await?;
+        handle_text_message(&bot, &msg, dialogue, pool, &localization).await?;
     } else if msg.photo().is_some() {
-        handle_photo_message(&bot, &msg, dialogue, pool).await?;
+        handle_photo_message(&bot, &msg, dialogue, pool, &localization).await?;
     } else if msg.document().is_some() {
-        handle_document_message(&bot, &msg, dialogue, pool).await?;
+        handle_document_message(&bot, &msg, dialogue, pool, &localization).await?;
     } else {
-        handle_unsupported_message(&bot, &msg).await?;
+        handle_unsupported_message(&bot, &msg, &localization).await?;
     }
 
     Ok(())

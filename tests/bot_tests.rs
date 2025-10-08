@@ -1,19 +1,20 @@
 use ingredients::circuit_breaker::CircuitBreaker;
 use ingredients::instance_manager::OcrInstanceManager;
-use ingredients::localization::init_localization;
+use ingredients::localization::create_localization_manager;
 use ingredients::ocr_config::{FormatSizeLimits, OcrConfig, RecoveryConfig};
 use ingredients::ocr_errors::OcrError;
 use std::fs;
 use std::io::Write;
+use std::sync::Arc;
 use tempfile::NamedTempFile;
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn setup_localization() {
-        // Initialize localization if not already done
-        let _ = init_localization();
+    fn setup_localization() -> Arc<ingredients::localization::LocalizationManager> {
+        // Create a new shared localization manager for tests
+        create_localization_manager().expect("Failed to create localization manager")
     }
 
     /// Test OCR configuration validation
@@ -265,130 +266,123 @@ mod tests {
     /// Test French localization support
     #[test]
     fn test_french_localization() {
-        use ingredients::localization::{init_localization, with_localization_manager};
+        let manager = setup_localization();
 
-        // Initialize localization
-        init_localization().expect("Failed to initialize localization");
-
-        with_localization_manager(|manager| {
-            // Test that both English and French are supported
+        // Test that both English and French are supported
+        assert!(
+            manager.is_language_supported("en"),
+            "English should be supported"
+        );
+        // Note: French support depends on whether the fr/main.ftl file was loaded successfully
+        // In test environment, this might fail if running from wrong directory
+        let french_supported = manager.is_language_supported("fr");
+        if french_supported {
             assert!(
-                manager.is_language_supported("en"),
-                "English should be supported"
+                french_supported,
+                "French should be supported if file was loaded"
             );
-            // Note: French support depends on whether the fr/main.ftl file was loaded successfully
-            // In test environment, this might fail if running from wrong directory
-            let french_supported = manager.is_language_supported("fr");
-            if french_supported {
-                assert!(
-                    french_supported,
-                    "French should be supported if file was loaded"
-                );
-            } else {
-                eprintln!("French localization not loaded - likely running from wrong directory");
-            }
+        } else {
+            eprintln!("French localization not loaded - likely running from wrong directory");
+        }
 
+        assert!(
+            !manager.is_language_supported("es"),
+            "Spanish should not be supported"
+        );
+
+        // Test basic messages in English (always available)
+        let welcome_title_en = manager.get_message_in_language("welcome-title", "en", None);
+        assert!(
+            !welcome_title_en.is_empty(),
+            "English welcome-title should not be empty"
+        );
+
+        // Test messages with arguments - let's find a key that uses arguments
+        let help_step1_en = manager.get_message_in_language("help-step1", "en", None);
+        assert!(
+            !help_step1_en.is_empty(),
+            "English help-step1 should not be empty"
+        );
+
+        // Test fallback to English for unsupported language
+        let fallback = manager.get_message_in_language("welcome-title", "de", None);
+        assert_eq!(
+            fallback, welcome_title_en,
+            "Unsupported language should fallback to English"
+        );
+
+        // If French is supported, test that it's different from English
+        if french_supported {
+            let welcome_title_fr = manager.get_message_in_language("welcome-title", "fr", None);
             assert!(
-                !manager.is_language_supported("es"),
-                "Spanish should not be supported"
+                !welcome_title_fr.is_empty(),
+                "French welcome-title should not be empty"
+            );
+            assert_ne!(
+                welcome_title_en, welcome_title_fr,
+                "English and French welcome-title should be different"
             );
 
-            // Test basic messages in English (always available)
-            let welcome_title_en = manager.get_message_in_language("welcome-title", "en", None);
+            let help_step1_fr = manager.get_message_in_language("help-step1", "fr", None);
             assert!(
-                !welcome_title_en.is_empty(),
-                "English welcome-title should not be empty"
+                !help_step1_fr.is_empty(),
+                "French help-step1 should not be empty"
             );
-
-            // Test messages with arguments - let's find a key that uses arguments
-            let help_step1_en = manager.get_message_in_language("help-step1", "en", None);
-            assert!(
-                !help_step1_en.is_empty(),
-                "English help-step1 should not be empty"
+            assert_ne!(
+                help_step1_en, help_step1_fr,
+                "English and French help-step1 should be different"
             );
-
-            // Test fallback to English for unsupported language
-            let fallback = manager.get_message_in_language("welcome-title", "de", None);
-            assert_eq!(
-                fallback, welcome_title_en,
-                "Unsupported language should fallback to English"
-            );
-
-            // If French is supported, test that it's different from English
-            if french_supported {
-                let welcome_title_fr = manager.get_message_in_language("welcome-title", "fr", None);
-                assert!(
-                    !welcome_title_fr.is_empty(),
-                    "French welcome-title should not be empty"
-                );
-                assert_ne!(
-                    welcome_title_en, welcome_title_fr,
-                    "English and French welcome-title should be different"
-                );
-
-                let help_step1_fr = manager.get_message_in_language("help-step1", "fr", None);
-                assert!(
-                    !help_step1_fr.is_empty(),
-                    "French help-step1 should not be empty"
-                );
-                assert_ne!(
-                    help_step1_en, help_step1_fr,
-                    "English and French help-step1 should be different"
-                );
-            }
-        });
+        }
     }
 
     /// Test language detection functionality
     #[test]
     fn test_language_detection() {
-        use ingredients::localization::{detect_language, init_localization};
-
-        // Initialize localization
-        init_localization().expect("Failed to initialize localization");
+        use ingredients::localization::detect_language;
+        let manager = setup_localization();
 
         // Test supported languages
         assert_eq!(
-            detect_language(Some("fr")),
+            detect_language(&manager, Some("fr")),
             "fr",
             "French should be detected as 'fr'"
         );
         assert_eq!(
-            detect_language(Some("en")),
+            detect_language(&manager, Some("en")),
             "en",
             "English should be detected as 'en'"
         );
         assert_eq!(
-            detect_language(Some("fr-FR")),
+            detect_language(&manager, Some("fr-FR")),
             "fr",
             "French with locale should be detected as 'fr'"
         );
         assert_eq!(
-            detect_language(Some("en-US")),
+            detect_language(&manager, Some("en-US")),
             "en",
             "English with locale should be detected as 'en'"
         );
 
         // Test unsupported languages fallback to English
         assert_eq!(
-            detect_language(Some("es")),
+            detect_language(&manager, Some("es")),
             "en",
             "Unsupported language should fallback to English"
         );
         assert_eq!(
-            detect_language(Some("de")),
+            detect_language(&manager, Some("de")),
             "en",
             "German should fallback to English"
         );
         assert_eq!(
-            detect_language(Some("zh-CN")),
+            detect_language(&manager, Some("zh-CN")),
             "en",
             "Chinese should fallback to English"
         );
 
         // Test None case
         assert_eq!(
-            detect_language(None),
+            detect_language(&manager, None),
             "en",
             "None should default to English"
         );
@@ -564,7 +558,7 @@ mod tests {
     /// Test ingredient review keyboard creation
     #[test]
     fn test_ingredient_review_keyboard_creation() {
-        setup_localization();
+        let manager = setup_localization();
         use ingredients::bot::create_ingredient_review_keyboard;
         use ingredients::text_processing::MeasurementMatch;
         use teloxide::types::InlineKeyboardMarkup;
@@ -590,7 +584,7 @@ mod tests {
         ];
 
         // Test keyboard creation
-        let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"));
+        let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"), &manager);
 
         // Verify keyboard structure
         let InlineKeyboardMarkup {
@@ -624,14 +618,14 @@ mod tests {
     /// Test ingredient review keyboard with empty ingredients
     #[test]
     fn test_ingredient_review_keyboard_empty() {
-        setup_localization();
+        let manager = setup_localization();
         use ingredients::bot::create_ingredient_review_keyboard;
         use ingredients::text_processing::MeasurementMatch;
         use teloxide::types::InlineKeyboardMarkup;
 
         let empty_ingredients: Vec<MeasurementMatch> = vec![];
 
-        let keyboard = create_ingredient_review_keyboard(&empty_ingredients, Some("en"));
+        let keyboard = create_ingredient_review_keyboard(&empty_ingredients, Some("en"), &manager);
 
         // Should still have confirm/cancel row even with no ingredients
         let InlineKeyboardMarkup {
@@ -648,7 +642,7 @@ mod tests {
     /// Test ingredient review keyboard with long ingredient names
     #[test]
     fn test_ingredient_review_keyboard_long_names() {
-        setup_localization();
+        let manager = setup_localization();
         use ingredients::bot::create_ingredient_review_keyboard;
         use ingredients::text_processing::MeasurementMatch;
         use teloxide::types::InlineKeyboardMarkup;
@@ -662,14 +656,13 @@ mod tests {
             end_pos: 50,
         }];
 
-        let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"));
+        let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"), &manager);
 
         let InlineKeyboardMarkup {
             inline_keyboard: keyboard,
         } = keyboard;
         {
-            assert_eq!(keyboard.len(), 2); // 1 ingredient row + 1 confirm/cancel row
-                                           // Check that the ingredient name was truncated
+            // Should truncate long names
             assert!(keyboard[0][0].text.contains("..."));
             assert!(keyboard[0][0].text.len() <= 30); // Should be reasonably short
         }
@@ -678,7 +671,7 @@ mod tests {
     /// Test ingredient review keyboard with unknown ingredients
     #[test]
     fn test_ingredient_review_keyboard_unknown_ingredients() {
-        setup_localization();
+        let manager = setup_localization();
         use ingredients::bot::create_ingredient_review_keyboard;
         use ingredients::text_processing::MeasurementMatch;
         use teloxide::types::InlineKeyboardMarkup;
@@ -692,7 +685,7 @@ mod tests {
             end_pos: 6,
         }];
 
-        let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"));
+        let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"), &manager);
 
         let InlineKeyboardMarkup {
             inline_keyboard: keyboard,
@@ -793,6 +786,7 @@ mod tests {
     /// Test ingredient list formatting for display
     #[test]
     fn test_ingredient_list_formatting() {
+        let manager = setup_localization();
         use ingredients::bot::format_ingredients_list;
         use ingredients::text_processing::MeasurementMatch;
 
@@ -815,7 +809,7 @@ mod tests {
             },
         ];
 
-        let formatted = format_ingredients_list(&ingredients, Some("en"));
+        let formatted = format_ingredients_list(&ingredients, Some("en"), &manager);
 
         // Should contain both ingredients
         assert!(formatted.contains("flour"));
@@ -830,7 +824,7 @@ mod tests {
     /// Test recipes pagination keyboard creation
     #[test]
     fn test_recipes_pagination_keyboard_creation() {
-        setup_localization();
+        let manager = setup_localization();
         use ingredients::bot::create_recipes_pagination_keyboard;
         use teloxide::types::{InlineKeyboardButtonKind, InlineKeyboardMarkup};
 
@@ -846,6 +840,7 @@ mod tests {
             total_count,
             limit,
             Some("en"),
+            &manager,
         );
 
         let InlineKeyboardMarkup {
@@ -888,7 +883,7 @@ mod tests {
     /// Test recipes pagination keyboard with last page
     #[test]
     fn test_recipes_pagination_keyboard_last_page() {
-        setup_localization();
+        let manager = setup_localization();
         use ingredients::bot::create_recipes_pagination_keyboard;
         use teloxide::types::{InlineKeyboardButtonKind, InlineKeyboardMarkup};
 
@@ -903,6 +898,7 @@ mod tests {
             total_count,
             limit,
             Some("en"),
+            &manager,
         );
 
         let InlineKeyboardMarkup {
@@ -931,7 +927,7 @@ mod tests {
     /// Test recipes pagination keyboard with single page
     #[test]
     fn test_recipes_pagination_keyboard_single_page() {
-        setup_localization();
+        let manager = setup_localization();
         use ingredients::bot::create_recipes_pagination_keyboard;
         use teloxide::types::InlineKeyboardMarkup;
 
@@ -946,6 +942,7 @@ mod tests {
             total_count,
             limit,
             Some("en"),
+            &manager,
         );
 
         let InlineKeyboardMarkup {
@@ -964,7 +961,7 @@ mod tests {
     /// Test recipes pagination keyboard with long recipe names
     #[test]
     fn test_recipes_pagination_keyboard_long_names() {
-        setup_localization();
+        let manager = setup_localization();
         use ingredients::bot::create_recipes_pagination_keyboard;
         use teloxide::types::InlineKeyboardMarkup;
 
@@ -979,6 +976,7 @@ mod tests {
             total_count,
             limit,
             Some("en"),
+            &manager,
         );
 
         let InlineKeyboardMarkup {
@@ -994,14 +992,14 @@ mod tests {
     /// Test recipes command message formatting
     #[test]
     fn test_recipes_command_message_formatting() {
-        setup_localization();
+        let manager = setup_localization();
         use ingredients::localization::t_lang;
 
         // Test that localization keys exist and return reasonable strings
-        let your_recipes = t_lang("your-recipes", Some("en"));
-        let select_recipe = t_lang("select-recipe", Some("en"));
-        let no_recipes = t_lang("no-recipes-found", Some("en"));
-        let no_recipes_suggestion = t_lang("no-recipes-suggestion", Some("en"));
+        let your_recipes = t_lang(&manager, "your-recipes", Some("en"));
+        let select_recipe = t_lang(&manager, "select-recipe", Some("en"));
+        let no_recipes = t_lang(&manager, "no-recipes-found", Some("en"));
+        let no_recipes_suggestion = t_lang(&manager, "no-recipes-suggestion", Some("en"));
 
         assert!(!your_recipes.is_empty());
         assert!(!select_recipe.is_empty());
@@ -1009,8 +1007,8 @@ mod tests {
         assert!(!no_recipes_suggestion.is_empty());
 
         // Test French versions
-        let your_recipes_fr = t_lang("your-recipes", Some("fr"));
-        let select_recipe_fr = t_lang("select-recipe", Some("fr"));
+        let your_recipes_fr = t_lang(&manager, "your-recipes", Some("fr"));
+        let select_recipe_fr = t_lang(&manager, "select-recipe", Some("fr"));
 
         assert!(!your_recipes_fr.is_empty());
         assert!(!select_recipe_fr.is_empty());

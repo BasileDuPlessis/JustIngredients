@@ -32,6 +32,7 @@ pub async fn handle_recipe_name_input(
     extracted_text: String,
     ingredients: Vec<MeasurementMatch>,
     language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     // Validate recipe name
     match validate_recipe_name(recipe_name_input) {
@@ -39,12 +40,12 @@ pub async fn handle_recipe_name_input(
             // Recipe name is valid, transition to ingredient review state
             let review_message = format!(
                 "📝 **{}**\n\n{}\n\n{}",
-                t_lang("review-title", language_code),
-                t_lang("review-description", language_code),
-                format_ingredients_list(&ingredients, language_code)
+                t_lang(localization, "review-title", language_code),
+                t_lang(localization, "review-description", language_code),
+                format_ingredients_list(&ingredients, language_code, localization)
             );
 
-            let keyboard = create_ingredient_review_keyboard(&ingredients, language_code);
+            let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
 
             let sent_message = bot
                 .send_message(msg.chat.id, review_message)
@@ -63,17 +64,17 @@ pub async fn handle_recipe_name_input(
                 .await?;
         }
         Err("empty") => {
-            bot.send_message(msg.chat.id, t_lang("recipe-name-invalid", language_code))
+            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-invalid", language_code))
                 .await?;
             // Keep dialogue active, user can try again
         }
         Err("too_long") => {
-            bot.send_message(msg.chat.id, t_lang("recipe-name-too-long", language_code))
+            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-too-long", language_code))
                 .await?;
             // Keep dialogue active, user can try again
         }
         Err(_) => {
-            bot.send_message(msg.chat.id, t_lang("recipe-name-invalid", language_code))
+            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-invalid", language_code))
                 .await?;
             // Keep dialogue active, user can try again
         }
@@ -93,13 +94,14 @@ pub async fn handle_recipe_name_after_confirm_input(
     ingredients: Vec<MeasurementMatch>,
     language_code: Option<&str>,
     extracted_text: String,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     let input = recipe_name_input.trim().to_lowercase();
 
     // Check for cancellation commands
     if matches!(input.as_str(), "cancel" | "stop" | "back") {
         // User cancelled, end dialogue without saving
-        bot.send_message(msg.chat.id, t_lang("review-cancelled", language_code))
+        bot.send_message(msg.chat.id, t_lang(localization, "review-cancelled", language_code))
             .await?;
         dialogue.exit().await?;
         return Ok(());
@@ -122,15 +124,16 @@ pub async fn handle_recipe_name_after_confirm_input(
                 error!(error = %e, "Failed to save ingredients to database");
                 bot.send_message(
                     msg.chat.id,
-                    t_lang("error-processing-failed", language_code),
+                    t_lang(localization, "error-processing-failed", language_code),
                 )
                 .await?;
             } else {
                 // Success! Send confirmation message
                 let success_message = t_args_lang(
+                    localization,
                     "recipe-complete",
                     &[
-                        ("recipe_name", &validated_name),
+                        ("recipe_name", validated_name.as_str()),
                         ("ingredient_count", &ingredients.len().to_string()),
                     ],
                     language_code,
@@ -142,17 +145,17 @@ pub async fn handle_recipe_name_after_confirm_input(
             dialogue.exit().await?;
         }
         Err("empty") => {
-            bot.send_message(msg.chat.id, t_lang("recipe-name-invalid", language_code))
+            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-invalid", language_code))
                 .await?;
             // Keep dialogue active, user can try again
         }
         Err("too_long") => {
-            bot.send_message(msg.chat.id, t_lang("recipe-name-too-long", language_code))
+            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-too-long", language_code))
                 .await?;
             // Keep dialogue active, user can try again
         }
         Err(_) => {
-            bot.send_message(msg.chat.id, t_lang("recipe-name-invalid", language_code))
+            bot.send_message(msg.chat.id, t_lang(localization, "recipe-name-invalid", language_code))
                 .await?;
             // Keep dialogue active, user can try again
         }
@@ -174,6 +177,7 @@ pub async fn handle_ingredient_edit_input(
     language_code: Option<&str>,
     message_id: Option<i32>,
     extracted_text: String,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     let input = edit_input.trim().to_lowercase();
 
@@ -182,12 +186,12 @@ pub async fn handle_ingredient_edit_input(
         // User cancelled editing, return to review state without changes
         let review_message = format!(
             "📝 **{}**\n\n{}\n\n{}",
-            t_lang("review-title", language_code),
-            t_lang("review-description", language_code),
-            format_ingredients_list(&ingredients, language_code)
+            t_lang(localization, "review-title", language_code),
+            t_lang(localization, "review-description", language_code),
+            format_ingredients_list(&ingredients, language_code, localization)
         );
 
-        let keyboard = create_ingredient_review_keyboard(&ingredients, language_code);
+        let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
 
         // If we have a message_id, edit the existing message; otherwise send a new one
         if let Some(msg_id) = message_id {
@@ -228,12 +232,12 @@ pub async fn handle_ingredient_edit_input(
                 // Return to review state with updated ingredients
                 let review_message = format!(
                     "📝 **{}**\n\n{}\n\n{}",
-                    t_lang("review-title", language_code),
-                    t_lang("review-description", language_code),
-                    format_ingredients_list(&ingredients, language_code)
+                    t_lang(localization, "review-title", language_code),
+                    t_lang(localization, "review-description", language_code),
+                    format_ingredients_list(&ingredients, language_code, localization)
                 );
 
-                let keyboard = create_ingredient_review_keyboard(&ingredients, language_code);
+                let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
 
                 // If we have a message_id, edit the existing message; otherwise send a new one
                 if let Some(msg_id) = message_id {
@@ -262,7 +266,7 @@ pub async fn handle_ingredient_edit_input(
                     .await?;
             } else {
                 // Invalid index, return to review state
-                bot.send_message(msg.chat.id, t_lang("error-invalid-edit", language_code))
+                bot.send_message(msg.chat.id, t_lang(localization, "error-invalid-edit", language_code))
                     .await?;
                 dialogue
                     .update(RecipeDialogueState::ReviewIngredients {
@@ -279,8 +283,8 @@ pub async fn handle_ingredient_edit_input(
             // Invalid input, ask user to try again
             let error_message = format!(
                 "{}\n\n{}",
-                t_lang(error_msg, language_code),
-                t_lang("edit-try-again", language_code)
+                t_lang(localization, error_msg, language_code),
+                t_lang(localization, "edit-try-again", language_code)
             );
             bot.send_message(msg.chat.id, error_message).await?;
             // Stay in editing state for user to try again
@@ -459,6 +463,7 @@ pub async fn handle_ingredient_review_input(
     ingredients: Vec<MeasurementMatch>,
     language_code: Option<&str>,
     extracted_text: String,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     let input = review_input.trim().to_lowercase();
 
@@ -478,15 +483,16 @@ pub async fn handle_ingredient_review_input(
                 error!(error = %e, "Failed to save ingredients to database");
                 bot.send_message(
                     msg.chat.id,
-                    t_lang("error-processing-failed", language_code),
+                    t_lang(localization, "error-processing-failed", language_code),
                 )
                 .await?;
             } else {
                 // Success! Send confirmation message
                 let success_message = t_args_lang(
+                    localization,
                     "recipe-complete",
                     &[
-                        ("recipe_name", &recipe_name),
+                        ("recipe_name", recipe_name.as_str()),
                         ("ingredient_count", &ingredients.len().to_string()),
                     ],
                     language_code,
@@ -499,7 +505,7 @@ pub async fn handle_ingredient_review_input(
         }
         "cancel" | "stop" => {
             // User cancelled, end dialogue without saving
-            bot.send_message(msg.chat.id, t_lang("review-cancelled", language_code))
+            bot.send_message(msg.chat.id, t_lang(localization, "review-cancelled", language_code))
                 .await?;
             dialogue.exit().await?;
         }
@@ -507,8 +513,8 @@ pub async fn handle_ingredient_review_input(
             // Unknown command, show help
             let help_message = format!(
                 "{}\n\n{}",
-                t_lang("review-help", language_code),
-                format_ingredients_list(&ingredients, language_code)
+                t_lang(localization, "review-help", language_code),
+                format_ingredients_list(&ingredients, language_code, localization)
             );
             bot.send_message(msg.chat.id, help_message).await?;
             // Keep dialogue active

@@ -1,90 +1,93 @@
 use anyhow::Result;
 use fluent_bundle::{FluentBundle, FluentResource};
-use std::cell::RefCell;
 use std::collections::HashMap;
-use std::fs;
+use std::sync::Arc;
 use unic_langid::LanguageIdentifier;
 
 /// Localization manager for the Ingredients Bot
 pub struct LocalizationManager {
-    bundles: HashMap<String, FluentBundle<FluentResource>>,
+    // No shared state - bundles are created on demand
 }
 
 impl LocalizationManager {
-    /// Create a new localization manager
+    /// Create a new localization manager with embedded resources
     pub fn new() -> Result<Self> {
-        let mut bundles = HashMap::new();
-
-        // Load available locales
-        let locales = vec!["en", "fr"];
-
-        for locale_str in locales {
-            let locale: LanguageIdentifier = locale_str.parse()?;
-            let bundle = Self::create_bundle(&locale)?;
-            bundles.insert(locale_str.to_string(), bundle);
-        }
-
-        Ok(Self { bundles })
+        // No initialization needed - bundles are created on demand
+        Ok(Self {})
     }
 
-    /// Create a fluent bundle for a specific locale
-    fn create_bundle(locale: &LanguageIdentifier) -> Result<FluentBundle<FluentResource>> {
+    /// Create a fluent bundle for a specific locale using embedded resources
+    fn create_bundle(
+        locale_str: &str,
+        locale: &LanguageIdentifier,
+    ) -> Result<FluentBundle<FluentResource>> {
         let mut bundle = FluentBundle::new(vec![locale.clone()]);
 
-        // Load the main resource file - path relative to Cargo.toml
-        let manifest_dir = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
-        let resource_path = format!("{}/locales/{}/main.ftl", manifest_dir, locale);
-        if let Ok(content) = fs::read_to_string(&resource_path) {
-            if let Ok(resource) = FluentResource::try_new(content) {
-                let _ = bundle.add_resource(resource);
-            }
-        }
+        // Load embedded resource based on locale
+        let content = match locale_str {
+            "en" => include_str!("../locales/en/main.ftl"),
+            "fr" => include_str!("../locales/fr/main.ftl"),
+            _ => return Err(anyhow::anyhow!("Unsupported locale: {}", locale_str)),
+        };
+
+        let resource = FluentResource::try_new(content.to_string()).map_err(|(_, errors)| {
+            anyhow::anyhow!(
+                "Failed to parse localization resource for {}: {:?}",
+                locale_str,
+                errors
+            )
+        })?;
+
+        bundle
+            .add_resource(resource)
+            .map_err(|e| anyhow::anyhow!("Failed to add resource for {}: {:?}", locale_str, e))?;
 
         Ok(bundle)
     }
 
-    /// Get a localized message in a specific language
+    /// Create a bundle for a specific language
+    fn create_bundle_for_language(language: &str) -> Result<FluentBundle<FluentResource>> {
+        let locale: LanguageIdentifier = language.parse()?;
+        Self::create_bundle(language, &locale)
+    }
+
+    /// Get a localized message in a specific language with graceful fallback
     pub fn get_message_in_language(
         &self,
         key: &str,
         language: &str,
         args: Option<&HashMap<&str, &str>>,
     ) -> String {
-        let bundle = match self.bundles.get(language) {
-            Some(bundle) => bundle,
-            None => {
-                // Fallback to English if language not found
-                match self.bundles.get("en") {
-                    Some(bundle) => bundle,
-                    None => return format!("Missing translation: {}", key),
+        // Try requested language first, then fallback to English
+        let languages_to_try = vec![language, "en"];
+        
+        for lang in languages_to_try {
+            if let Ok(bundle) = Self::create_bundle_for_language(lang) {
+                if let Some(msg) = bundle.get_message(key) {
+                    if let Some(pattern) = msg.value() {
+                        let mut value = String::new();
+
+                        let fluent_args = args.map(|args_map| {
+                            fluent_bundle::FluentArgs::from_iter(
+                                args_map
+                                    .iter()
+                                    .map(|(k, v)| (*k, fluent_bundle::FluentValue::from(*v))),
+                            )
+                        });
+
+                        if bundle
+                            .write_pattern(&mut value, pattern, fluent_args.as_ref(), &mut vec![])
+                            .is_ok()
+                        {
+                            return value;
+                        }
+                    }
                 }
             }
-        };
-
-        let msg = match bundle.get_message(key) {
-            Some(msg) => msg,
-            None => return format!("Missing translation: {}", key),
-        };
-
-        let pattern = match msg.value() {
-            Some(pattern) => pattern,
-            None => return format!("Missing value for key: {}", key),
-        };
-
-        let mut value = String::new();
-
-        if let Some(args) = args {
-            let fluent_args = fluent_bundle::FluentArgs::from_iter(
-                args.iter()
-                    .map(|(k, v)| (*k, fluent_bundle::FluentValue::from(*v))),
-            );
-
-            let _ = bundle.write_pattern(&mut value, pattern, Some(&fluent_args), &mut vec![]);
-        } else {
-            let _ = bundle.write_pattern(&mut value, pattern, None, &mut vec![]);
         }
 
-        value
+        // Fallback: return a user-friendly message
+        format!("Missing translation: {}", key)
     }
 
     /// Get a localized message with arguments in a specific language
@@ -100,82 +103,30 @@ impl LocalizationManager {
 
     /// Check if a language is supported
     pub fn is_language_supported(&self, language: &str) -> bool {
-        self.bundles.contains_key(language)
+        matches!(language, "en" | "fr")
     }
 }
 
-thread_local! {
-    static LOCALIZATION_MANAGER: RefCell<Option<LocalizationManager>> = const { RefCell::new(None) };
-}
-
-/// Initialize the thread-local localization manager
-pub fn init_localization() -> Result<()> {
-    LOCALIZATION_MANAGER.with(|cell| {
-        let mut manager = cell.borrow_mut();
-        if manager.is_none() {
-            *manager = Some(LocalizationManager::new()?);
-        }
-        Ok(())
-    })
-}
-
-/// Get the thread-local localization manager
-/// Note: This function is mainly for testing/debugging. For normal usage,
-/// use the convenience functions t_lang() and t_args_lang() instead.
-pub fn with_localization_manager<F, R>(f: F) -> R
-where
-    F: FnOnce(&LocalizationManager) -> R,
-{
-    LOCALIZATION_MANAGER.with(|cell| {
-        let manager = cell.borrow();
-        let manager = manager
-            .as_ref()
-            .expect("Localization manager not initialized");
-        f(manager)
-    })
+/// Create a new shared localization manager
+/// This should be called once at application startup
+pub fn create_localization_manager() -> Result<Arc<LocalizationManager>> {
+    Ok(Arc::new(LocalizationManager::new()?))
 }
 
 /// Convenience function to get a localized message in user's language
-pub fn t_lang(key: &str, language_code: Option<&str>) -> String {
-    // Ensure localization manager is initialized on this thread
-    if LOCALIZATION_MANAGER.with(|cell| cell.borrow().is_none()) {
-        let _ = init_localization();
-    }
-
-    let language = detect_language(language_code);
-    LOCALIZATION_MANAGER.with(|cell| {
-        let manager = cell.borrow();
-        let manager = manager
-            .as_ref()
-            .expect("Localization manager not initialized");
-        manager.get_message_in_language(key, &language, None)
-    })
+pub fn t_lang(manager: &Arc<LocalizationManager>, key: &str, language_code: Option<&str>) -> String {
+    let language = detect_language(manager, language_code);
+    manager.get_message_in_language(key, &language, None)
 }
 
 /// Convenience function to get a localized message with arguments in user's language
-pub fn t_args_lang(key: &str, args: &[(&str, &str)], language_code: Option<&str>) -> String {
-    // Ensure localization manager is initialized on this thread
-    if LOCALIZATION_MANAGER.with(|cell| cell.borrow().is_none()) {
-        let _ = init_localization();
-    }
-
-    let language = detect_language(language_code);
-    LOCALIZATION_MANAGER.with(|cell| {
-        let manager = cell.borrow();
-        let manager = manager
-            .as_ref()
-            .expect("Localization manager not initialized");
-        manager.get_message_with_args_in_language(key, &language, args)
-    })
+pub fn t_args_lang(manager: &Arc<LocalizationManager>, key: &str, args: &[(&str, &str)], language_code: Option<&str>) -> String {
+    let language = detect_language(manager, language_code);
+    manager.get_message_with_args_in_language(key, &language, args)
 }
 
 /// Detect the appropriate language based on user's Telegram language code
-pub fn detect_language(language_code: Option<&str>) -> String {
-    // Ensure localization manager is initialized on this thread
-    if LOCALIZATION_MANAGER.with(|cell| cell.borrow().is_none()) {
-        let _ = init_localization();
-    }
-
+pub fn detect_language(manager: &Arc<LocalizationManager>, language_code: Option<&str>) -> String {
     if let Some(code) = language_code {
         // Extract language code (e.g., "fr-FR" -> "fr", "en-US" -> "en")
         let lang = if code.contains('-') {
@@ -184,16 +135,8 @@ pub fn detect_language(language_code: Option<&str>) -> String {
             code
         };
 
-        // Check if we support this language
-        let supported = LOCALIZATION_MANAGER.with(|cell| {
-            let manager = cell.borrow();
-            let manager = manager
-                .as_ref()
-                .expect("Localization manager not initialized");
-            manager.is_language_supported(lang)
-        });
-
-        if supported {
+        // Check if we support this language using the shared manager
+        if manager.is_language_supported(lang) {
             return lang.to_string();
         }
     }

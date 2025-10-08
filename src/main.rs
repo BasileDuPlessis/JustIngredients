@@ -17,8 +17,8 @@ async fn main() -> Result<()> {
     // Initialize structured logging with module-specific filtering
     init_tracing();
 
-    // Initialize localization
-    localization::init_localization()?;
+    // Initialize localization manager
+    let localization_manager = localization::create_localization_manager()?;
 
     info!("Starting Ingredients Telegram Bot");
 
@@ -60,19 +60,23 @@ async fn main() -> Result<()> {
         .branch(Update::filter_message().endpoint({
             let pool = Arc::clone(&shared_pool);
             let storage = dialogue_storage.clone();
+            let localization = Arc::clone(&localization_manager);
             move |bot: Bot, msg: Message| {
                 let pool = Arc::clone(&pool);
                 let storage = storage.clone();
+                let localization = Arc::clone(&localization);
                 let dialogue = RecipeDialogue::new(storage, msg.chat.id);
-                async move { bot::message_handler(bot, msg, pool, dialogue).await }
+                async move { bot::message_handler(bot, msg, pool, dialogue, localization).await }
             }
         }))
         .branch(Update::filter_callback_query().endpoint({
             let pool = Arc::clone(&shared_pool);
             let storage = dialogue_storage.clone();
+            let localization = Arc::clone(&localization_manager);
             move |bot: Bot, q: CallbackQuery| {
                 let pool = Arc::clone(&pool);
                 let storage = storage.clone();
+                let localization = Arc::clone(&localization);
                 // Use the chat ID from the original message that contained the inline keyboard
                 let chat_id = match &q.message {
                     Some(msg) => match msg {
@@ -84,7 +88,7 @@ async fn main() -> Result<()> {
                     None => ChatId::from(q.from.id),
                 };
                 let dialogue = RecipeDialogue::new(storage, chat_id);
-                async move { bot::callback_handler(bot, q, pool, dialogue).await }
+                async move { bot::callback_handler(bot, q, pool, dialogue, localization).await }
             }
         }));
 

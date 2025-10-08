@@ -4,6 +4,7 @@ use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
 // Import localization
 use crate::localization::t_lang;
+use std::sync::Arc;
 
 // Import text processing types
 use crate::text_processing::MeasurementMatch;
@@ -12,12 +13,13 @@ use crate::text_processing::MeasurementMatch;
 pub fn format_ingredients_list(
     ingredients: &[MeasurementMatch],
     language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> String {
     let mut result = String::new();
 
     for (i, ingredient) in ingredients.iter().enumerate() {
         let ingredient_display = if ingredient.ingredient_name.is_empty() {
-            format!("❓ {}", t_lang("unknown-ingredient", language_code))
+            format!("❓ {}", t_lang(localization, "unknown-ingredient", language_code))
         } else {
             ingredient.ingredient_name.clone()
         };
@@ -43,13 +45,14 @@ pub fn format_ingredients_list(
 pub fn create_ingredient_review_keyboard(
     ingredients: &[MeasurementMatch],
     language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
     let mut buttons = Vec::new();
 
     // Create Edit and Delete buttons for each ingredient
     for (i, ingredient) in ingredients.iter().enumerate() {
         let ingredient_display = if ingredient.ingredient_name.is_empty() {
-            format!("❓ {}", t_lang("unknown-ingredient", language_code))
+            format!("❓ {}", t_lang(localization, "unknown-ingredient", language_code))
         } else {
             ingredient.ingredient_name.clone()
         };
@@ -77,11 +80,11 @@ pub fn create_ingredient_review_keyboard(
     // Add Confirm and Cancel buttons at the bottom
     buttons.push(vec![
         InlineKeyboardButton::callback(
-            format!("✅ {}", t_lang("review-confirm", language_code)),
+            format!("✅ {}", t_lang(localization, "review-confirm", language_code)),
             "confirm".to_string(),
         ),
         InlineKeyboardButton::callback(
-            format!("❌ {}", t_lang("cancel", language_code)),
+            format!("❌ {}", t_lang(localization, "cancel", language_code)),
             "cancel_review".to_string(),
         ),
     ]);
@@ -96,6 +99,7 @@ pub fn create_recipes_pagination_keyboard(
     total_count: i64,
     limit: i64,
     language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
     let mut buttons = Vec::new();
 
@@ -124,7 +128,7 @@ pub fn create_recipes_pagination_keyboard(
         // Previous button
         if current_page > 0 {
             nav_buttons.push(InlineKeyboardButton::callback(
-                format!("⬅️ {}", t_lang("previous", language_code)),
+                format!("⬅️ {}", t_lang(localization, "previous", language_code)),
                 format!("page:{}", current_page - 1),
             ));
         }
@@ -132,9 +136,9 @@ pub fn create_recipes_pagination_keyboard(
         // Page info (disabled button for display)
         let page_info = format!(
             "{} {} {} {}",
-            t_lang("page", language_code),
+            t_lang(localization, "page", language_code),
             current_page + 1,
-            t_lang("of", language_code),
+            t_lang(localization, "of", language_code),
             total_pages
         );
         nav_buttons.push(InlineKeyboardButton::callback(
@@ -145,7 +149,7 @@ pub fn create_recipes_pagination_keyboard(
         // Next button
         if current_page + 1 < total_pages {
             nav_buttons.push(InlineKeyboardButton::callback(
-                format!("{} ➡️", t_lang("next", language_code)),
+                format!("{} ➡️", t_lang(localization, "next", language_code)),
                 format!("page:{}", current_page + 1),
             ));
         }
