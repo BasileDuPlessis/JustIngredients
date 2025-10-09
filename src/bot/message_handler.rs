@@ -48,6 +48,7 @@ pub struct ImageProcessingParams<'a> {
     pub language_code: Option<&'a str>,
     pub dialogue: RecipeDialogue,
     pub pool: Arc<PgPool>,
+    pub caption: Option<String>,
 }
 
 // Create OCR configuration with default settings
@@ -92,6 +93,7 @@ pub async fn download_and_process_image(
         language_code,
         dialogue,
         pool: _pool,
+        caption,
     } = params;
     let temp_path = match download_file(bot, file_id).await {
         Ok(path) => {
@@ -475,6 +477,9 @@ async fn handle_photo_message(
 
     if let Some(photos) = msg.photo() {
         if let Some(largest_photo) = photos.last() {
+            // Extract caption if present - this will be used as recipe name candidate
+            let caption = msg.caption().map(|s| s.to_string());
+
             let _temp_path = download_and_process_image(
                 bot,
                 ImageProcessingParams {
@@ -484,6 +489,7 @@ async fn handle_photo_message(
                     language_code,
                     dialogue,
                     pool,
+                    caption,
                 },
                 localization,
             )
@@ -524,6 +530,7 @@ async fn handle_document_message(
                         language_code,
                         dialogue,
                         pool,
+                        caption: None, // Documents don't have captions like photos do
                     },
                     localization,
                 )
