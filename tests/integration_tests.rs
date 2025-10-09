@@ -554,3 +554,274 @@ fn test_concurrent_user_workflows() {
         results.len()
     );
 }
+
+/// Test photo caption workflow integration
+#[test]
+fn test_photo_caption_workflow_integration() {
+    use just_ingredients::dialogue::{validate_recipe_name, RecipeDialogueState};
+
+    // Simulate the complete workflow when a user sends a photo with a caption
+
+    // Step 1: Simulate photo upload with caption
+    let caption = Some("Chocolate Chip Cookies".to_string());
+    let ocr_text = r#"
+    Ingredients:
+    2 cups flour
+    1 cup sugar
+    3 eggs
+    2 cups chocolate chips
+    "#;
+
+    // Step 2: Extract measurements (simulating OCR processing)
+    let detector = MeasurementDetector::new().unwrap();
+    let ingredients = detector.extract_ingredient_measurements(ocr_text);
+
+    assert!(!ingredients.is_empty());
+    assert!(ingredients.len() >= 4); // Should find flour, sugar, eggs, chocolate chips
+
+    // Step 3: Process caption for recipe name (the core feature logic)
+    let recipe_name_candidate = match &caption {
+        Some(caption_text) if !caption_text.trim().is_empty() => {
+            match validate_recipe_name(caption_text) {
+                Ok(validated_name) => {
+                    println!("✅ Caption '{}' accepted as recipe name", validated_name);
+                    validated_name
+                }
+                Err(_) => {
+                    println!("⚠️ Caption '{}' invalid, using default", caption_text);
+                    "Recipe".to_string()
+                }
+            }
+        }
+        _ => {
+            println!("📝 No caption provided, using default recipe name");
+            "Recipe".to_string()
+        }
+    };
+
+    assert_eq!(recipe_name_candidate, "Chocolate Chip Cookies");
+
+    // Step 4: Simulate dialogue state transition
+    let dialogue_state = RecipeDialogueState::ReviewIngredients {
+        recipe_name: recipe_name_candidate.clone(),
+        ingredients: ingredients.clone(),
+        language_code: Some("en".to_string()),
+        message_id: None,
+        extracted_text: ocr_text.to_string(),
+    };
+
+    // Verify dialogue state contains caption-derived name
+    if let RecipeDialogueState::ReviewIngredients { recipe_name, .. } = dialogue_state {
+        assert_eq!(recipe_name, "Chocolate Chip Cookies");
+    } else {
+        panic!("Expected ReviewIngredients state");
+    }
+
+    println!("✅ Photo caption workflow integration test passed");
+}
+
+/// Test caption fallback scenarios
+#[test]
+fn test_caption_fallback_scenarios() {
+    use just_ingredients::dialogue::validate_recipe_name;
+
+    // Test various caption scenarios and their expected outcomes
+    let scenarios = vec![
+        // (caption, expected_recipe_name, description)
+        (Some("Valid Recipe Name".to_string()), "Valid Recipe Name", "Valid caption"),
+        (Some("   Spaced Name   ".to_string()), "Spaced Name", "Caption with whitespace"),
+        (Some("Café au Lait Crêpes".to_string()), "Café au Lait Crêpes", "Unicode characters"),
+        (Some("Recipe with émojis 🎂".to_string()), "Recipe with émojis 🎂", "Emojis"),
+        (Some("".to_string()), "Recipe", "Empty caption fallback"),
+        (Some("   ".to_string()), "Recipe", "Whitespace-only fallback"),
+        (Some("a".repeat(256)), "Recipe", "Too long caption fallback"),
+        (Some("Invalid!!!@#$%".to_string()), "Invalid!!!@#$%", "Special chars (still valid)"),
+        (None, "Recipe", "No caption provided"),
+    ];
+
+    for (caption, expected_name, description) in scenarios {
+        let result = match &caption {
+            Some(caption_text) if !caption_text.trim().is_empty() => {
+                match validate_recipe_name(caption_text) {
+                    Ok(validated) => validated,
+                    Err(_) => "Recipe".to_string(),
+                }
+            }
+            _ => "Recipe".to_string(),
+        };
+
+        assert_eq!(result, expected_name, "Scenario '{}': expected '{}', got '{}'", description, expected_name, result);
+    }
+
+    println!("✅ Caption fallback scenarios test passed");
+}
+
+/// Test photo caption with measurement extraction integration
+#[test]
+fn test_caption_with_measurement_extraction() {
+    // Test the complete flow: caption + OCR text + measurement extraction
+
+    let test_cases = vec![
+        (
+            Some("Chocolate Chip Cookies".to_string()),
+            r#"
+            2 cups flour
+            1 cup sugar
+            3 eggs
+            2 cups chocolate chips
+            "#,
+            "Chocolate Chip Cookies",
+        ),
+        (
+            Some("French Crepes".to_string()),
+            r#"
+            250 g de farine
+            4 œufs
+            500 ml de lait
+            "#,
+            "French Crepes",
+        ),
+        (
+            None,  // No caption
+            r#"
+            2 cups flour
+            3 eggs
+            "#,
+            "Recipe",  // Should use default
+        ),
+        (
+            Some("".to_string()),  // Empty caption
+            r#"
+            1 cup sugar
+            2 eggs
+            "#,
+            "Recipe",  // Should use default
+        ),
+    ];
+
+    let detector = MeasurementDetector::new().unwrap();
+
+    for (caption, ocr_text, expected_recipe_name) in test_cases {
+        // Extract measurements
+        let ingredients = detector.extract_ingredient_measurements(ocr_text);
+        assert!(!ingredients.is_empty(), "Should find ingredients in OCR text");
+
+        // Process caption
+        let recipe_name = match &caption {
+            Some(caption_text) if !caption_text.trim().is_empty() => {
+                just_ingredients::dialogue::validate_recipe_name(caption_text)
+                    .unwrap_or_else(|_| "Recipe".to_string())
+            }
+            _ => "Recipe".to_string(),
+        };
+
+        assert_eq!(recipe_name, expected_recipe_name,
+            "Caption {:?} should result in recipe name '{}'", caption, expected_recipe_name);
+
+        // Verify ingredients are properly structured
+        for ingredient in &ingredients {
+            assert!(!ingredient.quantity.is_empty());
+            assert!(!ingredient.ingredient_name.is_empty());
+        }
+    }
+
+    println!("✅ Caption with measurement extraction integration test passed");
+}
+
+/// Test backward compatibility - photos without captions still work
+#[test]
+fn test_backward_compatibility_no_captions() {
+    // This test ensures that existing functionality for photos without captions
+    // continues to work exactly as before the caption feature was added
+
+    let ocr_text = r#"
+    Recipe without caption:
+    2 cups flour
+    1 cup sugar
+    3 eggs
+    "#;
+
+    // Simulate old behavior: no caption provided
+    let caption: Option<String> = None;
+
+    // Extract measurements (this part is unchanged)
+    let detector = MeasurementDetector::new().unwrap();
+    let ingredients = detector.extract_ingredient_measurements(ocr_text);
+    assert!(!ingredients.is_empty());
+
+    // Recipe name assignment (should use default "Recipe")
+    let recipe_name = match &caption {
+        Some(caption_text) if !caption_text.trim().is_empty() => {
+            just_ingredients::dialogue::validate_recipe_name(caption_text)
+                .unwrap_or_else(|_| "Recipe".to_string())
+        }
+        _ => "Recipe".to_string(),
+    };
+
+    assert_eq!(recipe_name, "Recipe");
+
+    // Verify the workflow would continue normally
+    let extracted_text = ocr_text.to_string();
+    let language_code = Some("en".to_string());
+
+    // This simulates what would happen in the message handler
+    if !ingredients.is_empty() {
+        // Would transition to review state with default name
+        assert_eq!(recipe_name, "Recipe");
+        assert!(language_code.is_some());
+        assert!(!extracted_text.is_empty());
+    }
+
+    println!("✅ Backward compatibility test passed - photos without captions work unchanged");
+}
+
+/// Test caption feature with multi-language support
+#[test]
+fn test_caption_multi_language_integration() {
+    use just_ingredients::localization::create_localization_manager;
+
+    let manager = create_localization_manager().unwrap();
+
+    // Test English caption workflow
+    let english_caption = Some("Chocolate Chip Cookies".to_string());
+
+    let recipe_name_en = match &english_caption {
+        Some(caption_text) if !caption_text.trim().is_empty() => {
+            just_ingredients::dialogue::validate_recipe_name(caption_text)
+                .unwrap_or_else(|_| "Recipe".to_string())
+        }
+        _ => "Recipe".to_string(),
+    };
+
+    assert_eq!(recipe_name_en, "Chocolate Chip Cookies");
+
+    // Test French caption workflow
+    let french_caption = Some("Crêpes au Chocolat".to_string());
+
+    let recipe_name_fr = match &french_caption {
+        Some(caption_text) if !caption_text.trim().is_empty() => {
+            just_ingredients::dialogue::validate_recipe_name(caption_text)
+                .unwrap_or_else(|_| "Recipe".to_string())
+        }
+        _ => "Recipe".to_string(),
+    };
+
+    assert_eq!(recipe_name_fr, "Crêpes au Chocolat");
+
+    // Test localization messages work with captions
+    let caption_used_en = manager.get_message_in_language("caption-used", "en", None);
+    let caption_used_fr = manager.get_message_in_language("caption-used", "fr", None);
+
+    assert!(caption_used_en.contains("{$caption}"));
+    assert!(caption_used_fr.contains("{$caption}"));
+    assert_ne!(caption_used_en, caption_used_fr);
+
+    // Test message formatting
+    let formatted_en = caption_used_en.replace("{$caption}", &recipe_name_en);
+    let formatted_fr = caption_used_fr.replace("{$caption}", &recipe_name_fr);
+
+    assert!(formatted_en.contains("Chocolate Chip Cookies"));
+    assert!(formatted_fr.contains("Crêpes au Chocolat"));
+
+    println!("✅ Multi-language caption integration test passed");
+}

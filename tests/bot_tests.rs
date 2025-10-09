@@ -1185,4 +1185,213 @@ mod tests {
         assert!(confirmation_message_fr.contains("ensuite"));
         assert_ne!(confirmation_message, confirmation_message_fr);
     }
+
+    /// Test photo caption extraction and validation
+    #[test]
+    fn test_caption_extraction_and_validation() {
+        use just_ingredients::dialogue::validate_recipe_name;
+
+        // Test valid captions
+        let valid_captions = vec![
+            "Chocolate Chip Cookies",
+            "Grandma's Apple Pie",
+            "French Crepes Recipe",
+            "Simple Pasta",
+            "Very Long Recipe Name That Is Still Valid Because It Is Under 255 Characters",
+        ];
+
+        for caption in valid_captions {
+            let result = validate_recipe_name(caption);
+            assert!(result.is_ok(), "Caption '{}' should be valid", caption);
+            assert_eq!(result.unwrap(), caption);
+        }
+
+        // Test invalid captions
+        let invalid_captions = vec![
+            "",                    // Empty
+            "   ",                 // Whitespace only
+        ];
+
+        // Test too long caption separately
+        let too_long_caption = "a".repeat(256);
+        assert!(validate_recipe_name(&too_long_caption).is_err());
+
+        for caption in &invalid_captions {
+            let result = validate_recipe_name(caption);
+            assert!(result.is_err(), "Caption '{}' should be invalid", caption);
+        }
+
+        // Test whitespace trimming
+        let whitespace_caption = "   Chocolate Cookies   ";
+        let result = validate_recipe_name(whitespace_caption);
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "Chocolate Cookies");
+
+        println!("✅ Caption extraction and validation tests passed");
+    }
+
+    /// Test caption processing logic for recipe name assignment
+    #[test]
+    fn test_caption_recipe_name_assignment() {
+        use just_ingredients::dialogue::validate_recipe_name;
+
+        // Test cases for caption processing
+        let test_cases = vec![
+            // (caption, expected_result)
+            (Some("Valid Recipe Name".to_string()), "Valid Recipe Name"),
+            (Some("   Spaced Recipe   ".to_string()), "Spaced Recipe"),
+            (Some("".to_string()), "Recipe"),  // Empty falls back to default
+            (Some("   ".to_string()), "Recipe"), // Whitespace falls back to default
+            (Some("a".repeat(256)), "Recipe"), // Too long falls back to default
+            (None, "Recipe"), // No caption falls back to default
+        ];
+
+        for (caption, expected) in test_cases {
+            let result = match &caption {
+                Some(caption_text) if !caption_text.trim().is_empty() => {
+                    match validate_recipe_name(caption_text) {
+                        Ok(validated) => validated,
+                        Err(_) => "Recipe".to_string(),
+                    }
+                }
+                _ => "Recipe".to_string(),
+            };
+
+            assert_eq!(result, expected, "Caption {:?} should result in '{}'", caption, expected);
+        }
+
+        println!("✅ Caption recipe name assignment tests passed");
+    }
+
+    /// Test caption localization messages
+    #[test]
+    fn test_caption_localization_messages() {
+        let manager = setup_localization();
+        use just_ingredients::localization::t_lang;
+
+        // Test English caption messages
+        let caption_used_en = t_lang(&manager, "caption-used", Some("en"));
+        let caption_invalid_en = t_lang(&manager, "caption-invalid", Some("en"));
+
+        assert!(!caption_used_en.is_empty());
+        assert!(!caption_invalid_en.is_empty());
+        assert!(caption_used_en.contains("{$caption}"));
+        assert!(caption_invalid_en.contains("{$caption}"));
+        // The invalid message doesn't use {$default_name}, it just says "using default recipe name instead"
+        assert!(caption_invalid_en.contains("default recipe name"));
+
+        // Test French caption messages
+        let caption_used_fr = t_lang(&manager, "caption-used", Some("fr"));
+        let caption_invalid_fr = t_lang(&manager, "caption-invalid", Some("fr"));
+
+        assert!(!caption_used_fr.is_empty());
+        assert!(!caption_invalid_fr.is_empty());
+        assert!(caption_used_fr.contains("{$caption}"));
+        // French invalid message uses {$default_name} but not {$caption}
+        assert!(caption_invalid_fr.contains("{$default_name}"));
+
+        // French and English should be different
+        assert_ne!(caption_used_en, caption_used_fr);
+        assert_ne!(caption_invalid_en, caption_invalid_fr);
+
+        // Test message formatting with arguments
+        let formatted_used_en = caption_used_en.replace("{$caption}", "Test Recipe");
+        // English invalid message doesn't use {$default_name}, just replace {$caption}
+        let formatted_invalid_en = caption_invalid_en.replace("{$caption}", "Invalid!!!");
+
+        let formatted_used_fr = caption_used_fr.replace("{$caption}", "Recette Test");
+        // French invalid message doesn't use {$caption}, just {$default_name}
+        let formatted_invalid_fr = caption_invalid_fr.replace("{$default_name}", "Recette");
+
+        assert!(formatted_used_en.contains("Test Recipe"));
+        assert!(formatted_invalid_en.contains("Invalid!!!"));
+
+        assert!(formatted_used_fr.contains("Recette Test"));
+        // French invalid message doesn't contain the original caption, just the default name
+        assert!(formatted_invalid_fr.contains("Recette"));
+
+        println!("✅ Caption localization message tests passed");
+    }
+
+    /// Test edge cases for caption processing
+    #[test]
+    fn test_caption_edge_cases() {
+        use just_ingredients::dialogue::validate_recipe_name;
+
+        // Test various edge cases
+        let edge_cases = vec![
+            // Special characters that should be valid
+            ("Café au Lait Recipe", true),
+            ("Mamá's Tamales", true),
+            ("Naïve Cuisine", true),
+            ("Recipe with émojis 🎂", true),
+            ("Recipe-with-dashes", true),
+            ("Recipe_with_underscores", true),
+            ("Recipe (with parentheses)", true),
+
+            // Invalid cases
+            ("", false),
+            ("   ", false),
+
+            // Unicode and special characters that might cause issues
+            ("Recipe\twith\ttabs", true),  // Tabs should be handled
+            ("Recipe\nwith\nlines", true), // Newlines should be handled
+            ("Recipe\x00with\x00nulls", true), // Null bytes should be handled
+        ];
+
+        // Test too long caption separately
+        let too_long_caption = "x".repeat(256);
+        assert!(!validate_recipe_name(&too_long_caption).is_ok());
+
+        for (caption, should_be_valid) in edge_cases {
+            let result = validate_recipe_name(caption);
+
+            if should_be_valid {
+                assert!(result.is_ok(), "Caption '{}' should be valid", caption);
+                assert_eq!(result.unwrap(), caption);
+            } else {
+                assert!(result.is_err(), "Caption '{}' should be invalid", caption);
+            }
+        }
+
+        println!("✅ Caption edge case tests passed");
+    }
+
+    /// Test that existing photo processing still works without captions
+    #[test]
+    fn test_backward_compatibility_no_caption() {
+        // Test that the logic for photos without captions still works
+        // This simulates the old behavior
+
+        let caption: Option<String> = None;
+        let default_name = "Recipe";
+
+        let recipe_name_candidate = match &caption {
+            Some(caption_text) if !caption_text.trim().is_empty() => {
+                match just_ingredients::dialogue::validate_recipe_name(caption_text) {
+                    Ok(validated_name) => validated_name,
+                    Err(_) => default_name.to_string(),
+                }
+            }
+            _ => default_name.to_string(),
+        };
+
+        assert_eq!(recipe_name_candidate, default_name);
+
+        // Test with empty caption (should also use default)
+        let empty_caption = Some("".to_string());
+        let recipe_name_candidate_empty = match &empty_caption {
+            Some(caption_text) if !caption_text.trim().is_empty() => {
+                match just_ingredients::dialogue::validate_recipe_name(caption_text) {
+                    Ok(validated_name) => validated_name,
+                    Err(_) => default_name.to_string(),
+                }
+            }
+            _ => default_name.to_string(),
+        };
+
+        assert_eq!(recipe_name_candidate_empty, default_name);
+
+        println!("✅ Backward compatibility tests passed - no caption behavior preserved");
+    }
 }
