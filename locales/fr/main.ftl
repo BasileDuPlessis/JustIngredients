@@ -15,7 +15,7 @@ welcome-send-image = Envoyez-moi simplement une image et je m'occupe du reste ! 
 
 help-title = 🆘 Aide d'Ingredients Bot
 help-description = Comment m'utiliser :
-help-step1 = 1. 📸 Envoyer une photo de texte à extraire
+help-step1 = 1. 📸 Envoyer une photo de texte à extraire (la légende devient le nom de la recette)
 help-step2 = 2. 📎 Ou envoyer un fichier image (PNG, JPG, JPEG, BMP, TIFF, TIF)
 help-step3 = 3. ⏳ Je le traiterai avec la technologie OCR
 help-step4 = 4. 📝 Vous recevrez le texte extrait
@@ -139,3 +139,7 @@ workflow-what-next = Que souhaitez-vous faire ensuite ?
 workflow-add-another = Ajouter une autre recette
 workflow-list-recipes = Lister mes recettes
 workflow-search-recipes = Rechercher des recettes
+
+# Messages de légende photo
+caption-used = 📝 Utilisation de la légende de la photo comme nom de recette : "{$caption}"
+caption-invalid = ⚠️ La légende de la photo était invalide, utilisation du nom par défaut : "{$default_name}"

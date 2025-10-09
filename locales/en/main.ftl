@@ -5,7 +5,8 @@ welcome-title = Welcome to Ingredients Bot!
 welcome-description = I'm your OCR assistant that can extract text from images. Here's what I can do:
 welcome-features =
     📸 **Send me photos** of ingredient lists, recipes, or any text you want to extract
-    📄 **Send me image files** (PNG, JPG, JPEG, BMP, TIFF, TIF)
+    � **Add captions** to automatically name your recipes
+    �📄 **Send me image files** (PNG, JPG, JPEG, BMP, TIFF, TIF)
     🔍 **I'll process them with OCR** and send back the extracted text
     💾 **All extracted text is stored** for future reference
 welcome-commands = Commands:
@@ -16,9 +17,10 @@ welcome-send-image = Just send me an image and I'll do the rest! 🚀
 help-title = 🆘 Ingredients Bot Help
 help-description = How to use me:
 help-step1 = 1. 📸 Send a photo of text you want to extract
-help-step2 = 2. 📎 Or send an image file (PNG, JPG, JPEG, BMP, TIFF, TIF)
-help-step3 = 3. ⏳ I'll process it with OCR technology
-help-step4 = 4. 📝 You'll receive the extracted text
+help-step2 = 2. � Add a caption to name your recipe (optional)
+help-step3 = 3. �📎 Or send an image file (PNG, JPG, JPEG, BMP, TIFF, TIF)
+help-step4 = 4. ⏳ I'll process it with OCR technology
+help-step5 = 5. 📝 You'll receive the extracted text and can review/edit ingredients
 help-formats = Supported formats: PNG, JPG, JPEG, BMP, TIFF, TIF
 help-limits = File size limit: 10MB for JPEG, 5MB for other formats
 help-commands = Commands:
@@ -28,7 +30,8 @@ help-tips = Tips:
 help-tip1 = • Use clear, well-lit images
 help-tip2 = • Ensure text is readable and not too small
 help-tip3 = • Avoid blurry or distorted images
-help-tip4 = • Supported languages: English + French
+help-tip4 = • Add a caption to automatically name your recipe
+help-tip5 = • Supported languages: English + French
 help-final = Need help? Just send me an image! 😊
 
 # Error messages
@@ -83,6 +86,11 @@ recipe-name-prompt-hint = Please enter a name for your recipe (e.g., "Chocolate 
 recipe-name-invalid = ❌ Recipe name cannot be empty. Please enter a valid name for your recipe.
 recipe-name-too-long = ❌ Recipe name is too long (maximum 255 characters). Please enter a shorter name.
 recipe-complete = ✅ Recipe "{$recipe_name}" saved successfully with {$ingredient_count} ingredients!
+
+# Caption-related messages
+caption-used = 📝 Using your caption "{$caption}" as the recipe name
+caption-invalid = ⚠️ Caption "{$caption}" is invalid, using default recipe name instead
+caption-empty = 💡 Tip: Add a caption to your photo to automatically name your recipe!
 
 # Ingredient review messages
 review-title = Review Your Ingredients
