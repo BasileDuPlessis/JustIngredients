@@ -38,7 +38,8 @@ pub async fn callback_handler(
 
     match dialogue_state {
         Some(RecipeDialogueState::ReviewIngredients { .. }) => {
-            handle_review_ingredients_callbacks(&bot, &q, data, pool, &dialogue, &localization).await?;
+            handle_review_ingredients_callbacks(&bot, &q, data, pool, &dialogue, &localization)
+                .await?;
         }
         _ => {
             handle_general_callbacks(&bot, &q, data, pool, &dialogue, &localization).await?;
@@ -82,7 +83,8 @@ async fn handle_review_ingredients_callbacks(
                     extracted_text: &extracted_text,
                     dialogue,
                     localization,
-                }).await?;
+                })
+                .await?;
             } else if data.starts_with("delete_") {
                 handle_delete_button(DeleteButtonParams {
                     bot,
@@ -95,13 +97,24 @@ async fn handle_review_ingredients_callbacks(
                     extracted_text: &extracted_text,
                     dialogue,
                     localization,
-                }).await?;
+                })
+                .await?;
             } else if data == "confirm" {
-                handle_confirm_button(bot, q, &ingredients, &dialogue_lang_code, &extracted_text, dialogue, localization).await?;
+                handle_confirm_button(
+                    bot,
+                    q,
+                    &ingredients,
+                    &dialogue_lang_code,
+                    &extracted_text,
+                    dialogue,
+                    localization,
+                )
+                .await?;
             } else if data == "add_more" {
                 handle_add_more_button(bot, q, &dialogue_lang_code, dialogue, localization).await?;
             } else if data == "cancel_review" {
-                handle_cancel_review_button(bot, q, &dialogue_lang_code, dialogue, localization).await?;
+                handle_cancel_review_button(bot, q, &dialogue_lang_code, dialogue, localization)
+                    .await?;
             } else if data.starts_with("workflow_") {
                 handle_workflow_button(bot, q, data, &pool, dialogue, localization).await?;
             }
@@ -124,7 +137,8 @@ async fn handle_general_callbacks(
         if data.starts_with("select_recipe:") {
             handle_recipe_selection(bot, msg, data, &q.from.language_code, localization).await?;
         } else if data.starts_with("page:") {
-            handle_recipes_pagination(bot, msg, data, pool, &q.from.language_code, localization).await?;
+            handle_recipes_pagination(bot, msg, data, pool, &q.from.language_code, localization)
+                .await?;
         } else if data.starts_with("workflow_") {
             handle_workflow_button(bot, q, data, &pool, dialogue, localization).await?;
         }
@@ -346,13 +360,22 @@ async fn handle_edit_button(params: EditButtonParams<'_>) -> Result<()> {
         let ingredient = &ingredients[index];
         let edit_prompt = format!(
             "✏️ {}\n\n{}: **{} {}**\n\n{}",
-            t_lang(localization, "edit-ingredient-prompt", dialogue_lang_code.as_deref()),
-            t_lang(localization, "current-ingredient", dialogue_lang_code.as_deref()),
+            t_lang(
+                localization,
+                "edit-ingredient-prompt",
+                dialogue_lang_code.as_deref()
+            ),
+            t_lang(
+                localization,
+                "current-ingredient",
+                dialogue_lang_code.as_deref()
+            ),
             ingredient.quantity,
             ingredient.measurement.as_deref().unwrap_or(""),
             ingredient.ingredient_name
         );
-        bot.send_message(q.message.as_ref().unwrap().chat().id, edit_prompt).await?;
+        bot.send_message(q.message.as_ref().unwrap().chat().id, edit_prompt)
+            .await?;
 
         // Transition to editing state
         dialogue
@@ -371,7 +394,12 @@ async fn handle_edit_button(params: EditButtonParams<'_>) -> Result<()> {
 
 /// Handle delete button in review ingredients state
 async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
-    let index: usize = params.data.strip_prefix("delete_").unwrap().parse().unwrap_or(0);
+    let index: usize = params
+        .data
+        .strip_prefix("delete_")
+        .unwrap()
+        .parse()
+        .unwrap_or(0);
 
     if index < params.ingredients.len() {
         params.ingredients.remove(index);
@@ -381,25 +409,50 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
             // All ingredients deleted - inform user and provide options
             let empty_message = format!(
                 "🗑️ **{}**\n\n{}\n\n{}",
-                t_lang(params.localization, "review-title", params.dialogue_lang_code.as_deref()),
-                t_lang(params.localization, "review-no-ingredients", params.dialogue_lang_code.as_deref()),
-                t_lang(params.localization, "review-no-ingredients-help", params.dialogue_lang_code.as_deref())
+                t_lang(
+                    params.localization,
+                    "review-title",
+                    params.dialogue_lang_code.as_deref()
+                ),
+                t_lang(
+                    params.localization,
+                    "review-no-ingredients",
+                    params.dialogue_lang_code.as_deref()
+                ),
+                t_lang(
+                    params.localization,
+                    "review-no-ingredients-help",
+                    params.dialogue_lang_code.as_deref()
+                )
             );
 
             let keyboard = vec![vec![
                 teloxide::types::InlineKeyboardButton::callback(
-                    t_lang(params.localization, "review-add-more", params.dialogue_lang_code.as_deref()),
+                    t_lang(
+                        params.localization,
+                        "review-add-more",
+                        params.dialogue_lang_code.as_deref(),
+                    ),
                     "add_more",
                 ),
                 teloxide::types::InlineKeyboardButton::callback(
-                    t_lang(params.localization, "cancel", params.dialogue_lang_code.as_deref()),
+                    t_lang(
+                        params.localization,
+                        "cancel",
+                        params.dialogue_lang_code.as_deref(),
+                    ),
                     "cancel_empty",
                 ),
             ]];
 
             // Edit the original message
-            match params.bot
-                .edit_message_text(params.q.message.as_ref().unwrap().chat().id, params.q.message.as_ref().unwrap().id(), empty_message)
+            match params
+                .bot
+                .edit_message_text(
+                    params.q.message.as_ref().unwrap().chat().id,
+                    params.q.message.as_ref().unwrap().id(),
+                    empty_message,
+                )
                 .reply_markup(teloxide::types::InlineKeyboardMarkup::new(keyboard))
                 .await
             {
@@ -412,9 +465,21 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
             // Update the message with remaining ingredients
             let review_message = format!(
                 "📝 **{}**\n\n{}\n\n{}",
-                t_lang(params.localization, "review-title", params.dialogue_lang_code.as_deref()),
-                t_lang(params.localization, "review-description", params.dialogue_lang_code.as_deref()),
-                format_ingredients_list(params.ingredients, params.dialogue_lang_code.as_deref(), params.localization)
+                t_lang(
+                    params.localization,
+                    "review-title",
+                    params.dialogue_lang_code.as_deref()
+                ),
+                t_lang(
+                    params.localization,
+                    "review-description",
+                    params.dialogue_lang_code.as_deref()
+                ),
+                format_ingredients_list(
+                    params.ingredients,
+                    params.dialogue_lang_code.as_deref(),
+                    params.localization
+                )
             );
 
             let keyboard = create_ingredient_review_keyboard(
@@ -424,8 +489,13 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
             );
 
             // Edit the original message
-            match params.bot
-                .edit_message_text(params.q.message.as_ref().unwrap().chat().id, params.q.message.as_ref().unwrap().id(), review_message)
+            match params
+                .bot
+                .edit_message_text(
+                    params.q.message.as_ref().unwrap().chat().id,
+                    params.q.message.as_ref().unwrap().id(),
+                    review_message,
+                )
                 .reply_markup(keyboard)
                 .await
             {
@@ -437,7 +507,8 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
         }
 
         // Update dialogue state with modified ingredients
-        match params.dialogue
+        match params
+            .dialogue
             .update(RecipeDialogueState::ReviewIngredients {
                 recipe_name: params.recipe_name.to_string(),
                 ingredients: params.ingredients.clone(),
@@ -468,18 +539,28 @@ async fn handle_confirm_button(
 ) -> Result<()> {
     let confirmation_message = format!(
         "✅ **{}**\n\n{}",
-        t_lang(localization, "workflow-recipe-saved", dialogue_lang_code.as_deref()),
-        t_lang(localization, "workflow-what-next", dialogue_lang_code.as_deref())
+        t_lang(
+            localization,
+            "workflow-recipe-saved",
+            dialogue_lang_code.as_deref()
+        ),
+        t_lang(
+            localization,
+            "workflow-what-next",
+            dialogue_lang_code.as_deref()
+        )
     );
 
-    let confirmation_keyboard = create_post_confirmation_keyboard(
-        dialogue_lang_code.as_deref(),
-        localization,
-    );
+    let confirmation_keyboard =
+        create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), localization);
 
     // Update the original review message
     match bot
-        .edit_message_text(q.message.as_ref().unwrap().chat().id, q.message.as_ref().unwrap().id(), confirmation_message)
+        .edit_message_text(
+            q.message.as_ref().unwrap().chat().id,
+            q.message.as_ref().unwrap().id(),
+            confirmation_message,
+        )
         .reply_markup(confirmation_keyboard)
         .await
     {
@@ -492,11 +573,20 @@ async fn handle_confirm_button(
     // Send recipe name prompt
     let recipe_name_prompt = format!(
         "🏷️ **{}**\n\n{}",
-        t_lang(localization, "recipe-name-prompt", dialogue_lang_code.as_deref()),
-        t_lang(localization, "recipe-name-prompt-hint", dialogue_lang_code.as_deref())
+        t_lang(
+            localization,
+            "recipe-name-prompt",
+            dialogue_lang_code.as_deref()
+        ),
+        t_lang(
+            localization,
+            "recipe-name-prompt-hint",
+            dialogue_lang_code.as_deref()
+        )
     );
 
-    bot.send_message(q.message.as_ref().unwrap().chat().id, recipe_name_prompt).await?;
+    bot.send_message(q.message.as_ref().unwrap().chat().id, recipe_name_prompt)
+        .await?;
 
     // Transition to waiting for recipe name after confirmation
     dialogue
@@ -520,7 +610,11 @@ async fn handle_add_more_button(
 ) -> Result<()> {
     bot.send_message(
         q.message.as_ref().unwrap().chat().id,
-        t_lang(localization, "review-add-more-instructions", dialogue_lang_code.as_deref()),
+        t_lang(
+            localization,
+            "review-add-more-instructions",
+            dialogue_lang_code.as_deref(),
+        ),
     )
     .await?;
 
@@ -539,7 +633,11 @@ async fn handle_cancel_review_button(
 ) -> Result<()> {
     bot.send_message(
         q.message.as_ref().unwrap().chat().id,
-        t_lang(localization, "review-cancelled", dialogue_lang_code.as_deref()),
+        t_lang(
+            localization,
+            "review-cancelled",
+            dialogue_lang_code.as_deref(),
+        ),
     )
     .await?;
 
@@ -561,7 +659,11 @@ async fn handle_workflow_button(
         "workflow_add_another" => {
             bot.send_message(
                 q.message.as_ref().unwrap().chat().id,
-                t_lang(localization, "workflow-what-next", q.from.language_code.as_deref()),
+                t_lang(
+                    localization,
+                    "workflow-what-next",
+                    q.from.language_code.as_deref(),
+                ),
             )
             .await?;
             dialogue.update(RecipeDialogueState::Start).await?;

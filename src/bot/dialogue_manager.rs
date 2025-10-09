@@ -1,11 +1,11 @@
 //! Dialogue Manager module for handling dialogue state transitions
 
+use crate::localization::{t_args_lang, t_lang};
 use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
 use tracing::error;
-use crate::localization::{t_args_lang, t_lang};
 
 // Import text processing types
 use crate::text_processing::{MeasurementDetector, MeasurementMatch};
@@ -215,7 +215,8 @@ pub async fn handle_recipe_name_after_confirm_input(
 
     // Check for cancellation commands
     if is_cancellation_command(&input) {
-        return handle_recipe_name_cancellation(bot, msg, dialogue, localization, language_code).await;
+        return handle_recipe_name_cancellation(bot, msg, dialogue, localization, language_code)
+            .await;
     }
 
     // Validate and save recipe name
@@ -235,7 +236,8 @@ pub async fn handle_recipe_name_after_confirm_input(
             .await
         }
         Err(error_type) => {
-            handle_recipe_name_validation_error(bot, msg, localization, error_type, language_code).await
+            handle_recipe_name_validation_error(bot, msg, localization, error_type, language_code)
+                .await
         }
     }
 }
@@ -384,9 +386,7 @@ pub async fn handle_ingredient_edit_input(
             })
             .await
         }
-        Err(error_msg) => {
-            handle_edit_error(bot, msg, localization, error_msg, language_code).await
-        }
+        Err(error_msg) => handle_edit_error(bot, msg, localization, error_msg, language_code).await,
     }
 }
 
@@ -421,9 +421,13 @@ async fn handle_edit_cancellation(params: EditCancellationParams<'_>) -> Result<
 
     // If we have a message_id, edit the existing message; otherwise send a new one
     if let Some(msg_id) = message_id {
-        bot.edit_message_text(msg.chat.id, teloxide::types::MessageId(msg_id), review_message)
-            .reply_markup(keyboard)
-            .await?;
+        bot.edit_message_text(
+            msg.chat.id,
+            teloxide::types::MessageId(msg_id),
+            review_message,
+        )
+        .reply_markup(keyboard)
+        .await?;
     } else {
         bot.send_message(msg.chat.id, review_message)
             .reply_markup(keyboard)
@@ -476,9 +480,13 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
 
         // If we have a message_id, edit the existing message; otherwise send a new one
         if let Some(msg_id) = message_id {
-            bot.edit_message_text(msg.chat.id, teloxide::types::MessageId(msg_id), review_message)
-                .reply_markup(keyboard)
-                .await?;
+            bot.edit_message_text(
+                msg.chat.id,
+                teloxide::types::MessageId(msg_id),
+                review_message,
+            )
+            .reply_markup(keyboard)
+            .await?;
         } else {
             bot.send_message(msg.chat.id, review_message)
                 .reply_markup(keyboard)
