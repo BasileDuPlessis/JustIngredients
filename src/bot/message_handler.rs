@@ -175,10 +175,33 @@ pub async fn download_and_process_image(
                             .reply_markup(keyboard)
                             .await?;
 
-                        // Update dialogue state to review ingredients with default recipe name
+                        // Determine recipe name: use caption if valid, otherwise "Recipe"
+                        let recipe_name_candidate = match &caption {
+                            Some(caption_text) if !caption_text.trim().is_empty() => {
+                                // Validate the caption as a recipe name
+                                match crate::dialogue::validate_recipe_name(caption_text) {
+                                    Ok(validated_name) => {
+                                        info!(user_id = %chat_id, recipe_name = %validated_name, "Using caption as recipe name");
+                                        validated_name
+                                    }
+                                    Err(_) => {
+                                        // Caption is invalid, fall back to default
+                                        warn!(user_id = %chat_id, caption = %caption_text, "Caption is invalid, using default recipe name");
+                                        "Recipe".to_string()
+                                    }
+                                }
+                            }
+                            _ => {
+                                // No caption or empty caption, use default
+                                debug!(user_id = %chat_id, "No caption provided, using default recipe name");
+                                "Recipe".to_string()
+                            }
+                        };
+
+                        // Update dialogue state to review ingredients with caption-derived recipe name
                         dialogue
                             .update(RecipeDialogueState::ReviewIngredients {
-                                recipe_name: "Recipe".to_string(), // Default recipe name
+                                recipe_name: recipe_name_candidate,
                                 ingredients,
                                 language_code: language_code.map(|s| s.to_string()),
                                 message_id: Some(sent_message.id.0 as i32),
