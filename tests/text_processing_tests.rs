@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod tests {
-    use ingredients::text_processing::{MeasurementConfig, MeasurementDetector};
+    use just_ingredients::text_processing::{MeasurementConfig, MeasurementDetector};
 
     fn create_detector() -> MeasurementDetector {
         MeasurementDetector::new().unwrap()

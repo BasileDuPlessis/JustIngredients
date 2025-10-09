@@ -43,8 +43,8 @@ impl CircuitBreaker {
     /// # Examples
     ///
     /// ```rust
-    /// use ingredients::ocr_config::RecoveryConfig;
-    /// use ingredients::circuit_breaker::CircuitBreaker;
+    /// use just_ingredients::ocr_config::RecoveryConfig;
+    /// use just_ingredients::circuit_breaker::CircuitBreaker;
     ///
     /// let config = RecoveryConfig::default();
     /// let circuit_breaker = CircuitBreaker::new(config);

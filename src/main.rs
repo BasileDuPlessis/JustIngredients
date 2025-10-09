@@ -1,8 +1,8 @@
 use anyhow::Result;
-use ingredients::bot;
-use ingredients::db;
-use ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
-use ingredients::localization;
+use just_ingredients::bot;
+use just_ingredients::db;
+use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
+use just_ingredients::localization;
 use sqlx::postgres::PgPool;
 use std::env;
 use std::sync::Arc;
@@ -20,7 +20,7 @@ async fn main() -> Result<()> {
     // Initialize localization manager
     let localization_manager = localization::create_localization_manager()?;
 
-    info!("Starting Ingredients Telegram Bot");
+    info!("Starting JustIngredients Telegram Bot");
 
     // Load environment variables from .env file
     dotenv::dotenv().ok();

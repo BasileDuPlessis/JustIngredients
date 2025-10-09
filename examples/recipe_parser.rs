@@ -6,7 +6,7 @@
 //! quantity-only ingredients (e.g., "6 oeufs", "4 pommes") that don't have
 //! measurement units.
 
-use ingredients::text_processing::{MeasurementConfig, MeasurementDetector};
+use just_ingredients::text_processing::{MeasurementConfig, MeasurementDetector};
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("🍳 Recipe Measurement Parser Example");

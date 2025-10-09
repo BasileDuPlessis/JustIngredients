@@ -1,9 +1,9 @@
 //! # Integration Tests
 //!
-//! This module contains integration tests for the Ingredients Telegram bot,
+//! This module contains integration tests for the JustIngredients Telegram bot,
 //! testing end-to-end functionality including quantity-only ingredient detection.
 
-use ingredients::text_processing::{MeasurementConfig, MeasurementDetector};
+use just_ingredients::text_processing::{MeasurementConfig, MeasurementDetector};
 #[test]
 fn test_quantity_only_integration() {
     // Create a measurement detector
@@ -316,7 +316,7 @@ fn test_end_to_end_ocr_to_database_workflow() {
 /// Test complete user dialogue flow for recipe naming
 #[test]
 fn test_recipe_naming_dialogue_workflow() {
-    use ingredients::dialogue::{validate_recipe_name, RecipeDialogueState};
+    use just_ingredients::dialogue::{validate_recipe_name, RecipeDialogueState};
 
     // Simulate the complete dialogue flow for naming a recipe
 
@@ -327,7 +327,7 @@ fn test_recipe_naming_dialogue_workflow() {
     // Step 2: User uploads image, bot asks for recipe name
     let extracted_text = "2 cups flour\n3 eggs\n1 cup sugar";
     let ingredients = vec![
-        ingredients::MeasurementMatch {
+        just_ingredients::MeasurementMatch {
             quantity: "2".to_string(),
             measurement: Some("cups".to_string()),
             ingredient_name: "flour".to_string(),
@@ -335,7 +335,7 @@ fn test_recipe_naming_dialogue_workflow() {
             start_pos: 0,
             end_pos: 6,
         },
-        ingredients::MeasurementMatch {
+        just_ingredients::MeasurementMatch {
             quantity: "3".to_string(),
             measurement: None,
             ingredient_name: "eggs".to_string(),
@@ -385,7 +385,7 @@ fn test_recipe_naming_dialogue_workflow() {
 /// Test multi-language end-to-end workflow
 #[test]
 fn test_multi_language_end_to_end_workflow() {
-    use ingredients::localization::create_localization_manager;
+    use just_ingredients::localization::create_localization_manager;
 
     let manager = create_localization_manager().unwrap();
 
@@ -453,8 +453,8 @@ fn test_multi_language_end_to_end_workflow() {
 /// Test error handling in complete workflows
 #[test]
 fn test_error_handling_end_to_end_workflow() {
-    use ingredients::circuit_breaker::CircuitBreaker;
-    use ingredients::ocr_config::{OcrConfig, RecoveryConfig};
+    use just_ingredients::circuit_breaker::CircuitBreaker;
+    use just_ingredients::ocr_config::{OcrConfig, RecoveryConfig};
     use std::time::Duration;
 
     // Test circuit breaker integration in workflow

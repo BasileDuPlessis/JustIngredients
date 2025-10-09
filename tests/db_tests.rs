@@ -1,5 +1,5 @@
 use anyhow::{Context, Result};
-use ingredients::db::*;
+use just_ingredients::db::*;
 use sqlx::PgPool;
 use std::env;
 

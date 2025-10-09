@@ -5,14 +5,14 @@
 
 #[cfg(test)]
 mod tests {
-    use ingredients::circuit_breaker::CircuitBreaker;
-    use ingredients::instance_manager::OcrInstanceManager;
-    use ingredients::ocr::{
+    use just_ingredients::circuit_breaker::CircuitBreaker;
+    use just_ingredients::instance_manager::OcrInstanceManager;
+    use just_ingredients::ocr::{
         calculate_retry_delay, estimate_memory_usage, is_supported_image_format,
         validate_image_path, validate_image_with_format_limits,
     };
-    use ingredients::ocr_config::{FormatSizeLimits, OcrConfig, RecoveryConfig};
-    use ingredients::ocr_errors::OcrError;
+    use just_ingredients::ocr_config::{FormatSizeLimits, OcrConfig, RecoveryConfig};
+    use just_ingredients::ocr_errors::OcrError;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
@@ -298,7 +298,7 @@ mod tests {
 
         // Test that function can be called with circuit breaker parameter
         // This verifies the function signature accepts the circuit breaker
-        let _future = ingredients::ocr::extract_text_from_image(
+        let _future = just_ingredients::ocr::extract_text_from_image(
             &temp_path,
             &config,
             &instance_manager,

@@ -249,7 +249,7 @@ pub fn validate_image_with_format_limits(
 /// # Examples
 ///
 /// ```rust
-/// use ingredients::ocr::estimate_memory_usage;
+/// use just_ingredients::ocr::estimate_memory_usage;
 /// use image::ImageFormat;
 ///
 /// // 1MB PNG file
@@ -308,7 +308,7 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ingredients::ocr::{extract_text_from_image, OcrConfig, OcrInstanceManager, CircuitBreaker};
+/// use just_ingredients::ocr::{extract_text_from_image, OcrConfig, OcrInstanceManager, CircuitBreaker};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = OcrConfig::default();
@@ -555,7 +555,7 @@ async fn perform_ocr_extraction(
 /// # Examples
 ///
 /// ```rust
-/// use ingredients::ocr::{calculate_retry_delay, RecoveryConfig};
+/// use just_ingredients::ocr::{calculate_retry_delay, RecoveryConfig};
 ///
 /// let config = RecoveryConfig::default();
 /// // First retry: ~1000-1250ms (1000ms + jitter)
@@ -623,7 +623,7 @@ pub fn calculate_retry_delay(attempt: u32, recovery: &crate::ocr_config::Recover
 /// # Examples
 ///
 /// ```rust,no_run
-/// use ingredients::ocr::{is_supported_image_format, OcrConfig};
+/// use just_ingredients::ocr::{is_supported_image_format, OcrConfig};
 ///
 /// let config = OcrConfig::default();
 /// if is_supported_image_format("/path/to/image.jpg", &config) {

@@ -50,7 +50,7 @@ impl OcrInstanceManager {
     /// # Examples
     ///
     /// ```rust
-    /// use ingredients::instance_manager::OcrInstanceManager;
+    /// use just_ingredients::instance_manager::OcrInstanceManager;
     ///
     /// let manager = OcrInstanceManager::new();
     /// // Manager is ready to provide OCR instances
@@ -77,8 +77,8 @@ impl OcrInstanceManager {
     /// # Examples
     ///
     /// ```rust,no_run
-    /// use ingredients::instance_manager::OcrInstanceManager;
-    /// use ingredients::ocr_config::OcrConfig;
+    /// use just_ingredients::instance_manager::OcrInstanceManager;
+    /// use just_ingredients::ocr_config::OcrConfig;
     ///
     /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
     /// let manager = OcrInstanceManager::new();

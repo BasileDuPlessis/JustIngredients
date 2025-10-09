@@ -1,7 +1,7 @@
 use anyhow::Result;
 
-use ingredients::dialogue::{validate_recipe_name, RecipeDialogueState};
-use ingredients::text_processing::MeasurementMatch;
+use just_ingredients::dialogue::{validate_recipe_name, RecipeDialogueState};
+use just_ingredients::text_processing::MeasurementMatch;
 
 /// Integration test for recipe name dialogue validation
 #[tokio::test]
@@ -171,7 +171,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
 /// Test ingredient editing validation
 #[test]
 fn test_ingredient_edit_validation() {
-    use ingredients::bot::parse_ingredient_from_text;
+    use just_ingredients::bot::parse_ingredient_from_text;
 
     // Test valid edits
     let result = parse_ingredient_from_text("2 cups flour");

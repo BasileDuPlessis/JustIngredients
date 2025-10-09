@@ -3,7 +3,7 @@
 //! This module contains unit tests for the localization functionality,
 //! testing message retrieval and formatting with various edge cases.
 
-use ingredients::localization::{
+use just_ingredients::localization::{
     create_localization_manager, detect_language, t_args_lang, t_lang, LocalizationManager,
 };
 use std::collections::HashMap;

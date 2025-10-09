@@ -1,8 +1,8 @@
-use ingredients::circuit_breaker::CircuitBreaker;
-use ingredients::instance_manager::OcrInstanceManager;
-use ingredients::localization::create_localization_manager;
-use ingredients::ocr_config::{FormatSizeLimits, OcrConfig, RecoveryConfig};
-use ingredients::ocr_errors::OcrError;
+use just_ingredients::circuit_breaker::CircuitBreaker;
+use just_ingredients::instance_manager::OcrInstanceManager;
+use just_ingredients::localization::create_localization_manager;
+use just_ingredients::ocr_config::{FormatSizeLimits, OcrConfig, RecoveryConfig};
+use just_ingredients::ocr_errors::OcrError;
 use std::fs;
 use std::io::Write;
 use std::sync::Arc;
@@ -12,7 +12,7 @@ use tempfile::NamedTempFile;
 mod tests {
     use super::*;
 
-    fn setup_localization() -> Arc<ingredients::localization::LocalizationManager> {
+    fn setup_localization() -> Arc<just_ingredients::localization::LocalizationManager> {
         // Create a new shared localization manager for tests
         create_localization_manager().expect("Failed to create localization manager")
     }
@@ -180,7 +180,7 @@ mod tests {
     #[test]
     fn test_image_format_validation() {
         // Test with a non-existent file (should return false)
-        let result = ingredients::ocr::is_supported_image_format(
+        let result = just_ingredients::ocr::is_supported_image_format(
             "/non/existent/file.png",
             &OcrConfig::default(),
         );
@@ -338,7 +338,7 @@ mod tests {
     /// Test language detection functionality
     #[test]
     fn test_language_detection() {
-        use ingredients::localization::detect_language;
+        use just_ingredients::localization::detect_language;
         let manager = setup_localization();
 
         // Test supported languages
@@ -391,7 +391,7 @@ mod tests {
     /// Test delete ingredient callback functionality
     #[test]
     fn test_delete_ingredient_callback() {
-        use ingredients::text_processing::MeasurementMatch;
+        use just_ingredients::text_processing::MeasurementMatch;
 
         // Create test ingredients
         let mut ingredients = vec![
@@ -464,8 +464,8 @@ mod tests {
     /// Test dialogue state updates after ingredient deletion
     #[test]
     fn test_dialogue_state_after_deletion() {
-        use ingredients::dialogue::RecipeDialogueState;
-        use ingredients::text_processing::MeasurementMatch;
+        use just_ingredients::dialogue::RecipeDialogueState;
+        use just_ingredients::text_processing::MeasurementMatch;
 
         // Create initial dialogue state
         let recipe_name = "Test Recipe".to_string();
@@ -559,8 +559,8 @@ mod tests {
     #[test]
     fn test_ingredient_review_keyboard_creation() {
         let manager = setup_localization();
-        use ingredients::bot::create_ingredient_review_keyboard;
-        use ingredients::text_processing::MeasurementMatch;
+        use just_ingredients::bot::create_ingredient_review_keyboard;
+        use just_ingredients::text_processing::MeasurementMatch;
         use teloxide::types::InlineKeyboardMarkup;
 
         // Create test ingredients
@@ -619,8 +619,8 @@ mod tests {
     #[test]
     fn test_ingredient_review_keyboard_empty() {
         let manager = setup_localization();
-        use ingredients::bot::create_ingredient_review_keyboard;
-        use ingredients::text_processing::MeasurementMatch;
+        use just_ingredients::bot::create_ingredient_review_keyboard;
+        use just_ingredients::text_processing::MeasurementMatch;
         use teloxide::types::InlineKeyboardMarkup;
 
         let empty_ingredients: Vec<MeasurementMatch> = vec![];
@@ -643,8 +643,8 @@ mod tests {
     #[test]
     fn test_ingredient_review_keyboard_long_names() {
         let manager = setup_localization();
-        use ingredients::bot::create_ingredient_review_keyboard;
-        use ingredients::text_processing::MeasurementMatch;
+        use just_ingredients::bot::create_ingredient_review_keyboard;
+        use just_ingredients::text_processing::MeasurementMatch;
         use teloxide::types::InlineKeyboardMarkup;
 
         let ingredients = vec![MeasurementMatch {
@@ -672,8 +672,8 @@ mod tests {
     #[test]
     fn test_ingredient_review_keyboard_unknown_ingredients() {
         let manager = setup_localization();
-        use ingredients::bot::create_ingredient_review_keyboard;
-        use ingredients::text_processing::MeasurementMatch;
+        use just_ingredients::bot::create_ingredient_review_keyboard;
+        use just_ingredients::text_processing::MeasurementMatch;
         use teloxide::types::InlineKeyboardMarkup;
 
         let ingredients = vec![MeasurementMatch {
@@ -723,7 +723,7 @@ mod tests {
     /// Test ingredient display formatting
     #[test]
     fn test_ingredient_display_formatting() {
-        use ingredients::text_processing::MeasurementMatch;
+        use just_ingredients::text_processing::MeasurementMatch;
 
         let ingredients = vec![
             MeasurementMatch {
@@ -787,8 +787,8 @@ mod tests {
     #[test]
     fn test_ingredient_list_formatting() {
         let manager = setup_localization();
-        use ingredients::bot::format_ingredients_list;
-        use ingredients::text_processing::MeasurementMatch;
+        use just_ingredients::bot::format_ingredients_list;
+        use just_ingredients::text_processing::MeasurementMatch;
 
         let ingredients = vec![
             MeasurementMatch {
@@ -825,7 +825,7 @@ mod tests {
     #[test]
     fn test_recipes_pagination_keyboard_creation() {
         let manager = setup_localization();
-        use ingredients::bot::create_recipes_pagination_keyboard;
+        use just_ingredients::bot::create_recipes_pagination_keyboard;
         use teloxide::types::{InlineKeyboardButtonKind, InlineKeyboardMarkup};
 
         // Test with multiple recipes and first page
@@ -884,7 +884,7 @@ mod tests {
     #[test]
     fn test_recipes_pagination_keyboard_last_page() {
         let manager = setup_localization();
-        use ingredients::bot::create_recipes_pagination_keyboard;
+        use just_ingredients::bot::create_recipes_pagination_keyboard;
         use teloxide::types::{InlineKeyboardButtonKind, InlineKeyboardMarkup};
 
         let recipes = vec!["Banana Bread".to_string()];
@@ -928,7 +928,7 @@ mod tests {
     #[test]
     fn test_recipes_pagination_keyboard_single_page() {
         let manager = setup_localization();
-        use ingredients::bot::create_recipes_pagination_keyboard;
+        use just_ingredients::bot::create_recipes_pagination_keyboard;
         use teloxide::types::InlineKeyboardMarkup;
 
         let recipes = vec!["Simple Recipe".to_string()];
@@ -962,7 +962,7 @@ mod tests {
     #[test]
     fn test_recipes_pagination_keyboard_long_names() {
         let manager = setup_localization();
-        use ingredients::bot::create_recipes_pagination_keyboard;
+        use just_ingredients::bot::create_recipes_pagination_keyboard;
         use teloxide::types::InlineKeyboardMarkup;
 
         let recipes = vec!["Very Long Recipe Name That Should Be Truncated".to_string()];
@@ -993,7 +993,7 @@ mod tests {
     #[test]
     fn test_recipes_command_message_formatting() {
         let manager = setup_localization();
-        use ingredients::localization::t_lang;
+        use just_ingredients::localization::t_lang;
 
         // Test that localization keys exist and return reasonable strings
         let your_recipes = t_lang(&manager, "your-recipes", Some("en"));
@@ -1049,7 +1049,7 @@ mod tests {
     #[test]
     fn test_post_confirmation_keyboard_creation() {
         let manager = setup_localization();
-        use ingredients::bot::create_post_confirmation_keyboard;
+        use just_ingredients::bot::create_post_confirmation_keyboard;
         use teloxide::types::{InlineKeyboardButtonKind, InlineKeyboardMarkup};
 
         // Test keyboard creation for English
@@ -1110,7 +1110,7 @@ mod tests {
     #[test]
     fn test_workflow_localization_keys() {
         let manager = setup_localization();
-        use ingredients::localization::t_lang;
+        use just_ingredients::localization::t_lang;
 
         // Test English workflow keys
         let recipe_saved_en = t_lang(&manager, "workflow-recipe-saved", Some("en"));
@@ -1164,7 +1164,7 @@ mod tests {
     #[test]
     fn test_workflow_message_formatting() {
         let manager = setup_localization();
-        use ingredients::localization::t_lang;
+        use just_ingredients::localization::t_lang;
 
         // Test confirmation message formatting
         let recipe_saved = t_lang(&manager, "workflow-recipe-saved", Some("en"));

@@ -1399,36 +1399,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "ingredients"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "chrono",
- "dotenv",
- "env_logger",
- "fluent",
- "fluent-bundle 0.15.3",
- "fluent-resmgr",
- "image",
- "lazy_static",
- "leptess",
- "log",
- "parking_lot",
- "rand",
- "regex",
- "reqwest",
- "serde",
- "serde_json",
- "sqlx",
- "teloxide",
- "tempfile",
- "tokio",
- "tracing",
- "tracing-subscriber",
- "unic-langid",
-]
-
-[[package]]
 name = "intl-memoizer"
 version = "0.5.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1536,6 +1506,36 @@ checksum = "0c0b063578492ceec17683ef2f8c5e89121fbd0b172cbc280635ab7567db2738"
 dependencies = [
  "once_cell",
  "wasm-bindgen",
+]
+
+[[package]]
+name = "just-ingredients"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "chrono",
+ "dotenv",
+ "env_logger",
+ "fluent",
+ "fluent-bundle 0.15.3",
+ "fluent-resmgr",
+ "image",
+ "lazy_static",
+ "leptess",
+ "log",
+ "parking_lot",
+ "rand",
+ "regex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sqlx",
+ "teloxide",
+ "tempfile",
+ "tokio",
+ "tracing",
+ "tracing-subscriber",
+ "unic-langid",
 ]
 
 [[package]]

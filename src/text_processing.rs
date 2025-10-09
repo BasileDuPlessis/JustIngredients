@@ -174,7 +174,7 @@ impl MeasurementDetector {
     /// # Examples
     ///
     /// ```rust
-    /// use ingredients::text_processing::MeasurementDetector;
+    /// use just_ingredients::text_processing::MeasurementDetector;
     ///
     /// let detector = MeasurementDetector::new();
     /// ```
@@ -195,7 +195,7 @@ impl MeasurementDetector {
     /// # Examples
     ///
     /// ```rust
-    /// use ingredients::text_processing::MeasurementDetector;
+    /// use just_ingredients::text_processing::MeasurementDetector;
     ///
     /// let custom_pattern = r"\b\d+\s*(?:cups?|tablespoons?)\b";
     /// let detector = MeasurementDetector::with_pattern(custom_pattern)?;
@@ -210,7 +210,7 @@ impl MeasurementDetector {
     /// # Examples
     ///
     /// ```rust
-    /// use ingredients::text_processing::MeasurementDetector;
+    /// use just_ingredients::text_processing::MeasurementDetector;
     ///
     /// let custom_pattern = r"\b\d+\s*(?:cups?|tablespoons?)\b";
     /// let detector = MeasurementDetector::with_pattern(custom_pattern)?;
@@ -234,7 +234,7 @@ impl MeasurementDetector {
     /// # Examples
     ///
     /// ```rust
-    /// use ingredients::text_processing::{MeasurementDetector, MeasurementConfig};
+    /// use just_ingredients::text_processing::{MeasurementDetector, MeasurementConfig};
     ///
     /// let config = MeasurementConfig {
     ///     enable_ingredient_postprocessing: true,
@@ -277,7 +277,7 @@ impl MeasurementDetector {
     /// # Examples
     ///
     /// ```rust
-    /// use ingredients::text_processing::MeasurementDetector;
+    /// use just_ingredients::text_processing::MeasurementDetector;
     ///
     /// let detector = MeasurementDetector::new()?;
     /// let text = "2 cups flour\n1 tablespoon sugar\nsome salt";
@@ -383,7 +383,7 @@ impl MeasurementDetector {
     /// # Examples
     ///
     /// ```rust
-    /// use ingredients::text_processing::MeasurementDetector;
+    /// use just_ingredients::text_processing::MeasurementDetector;
     ///
     /// let detector = MeasurementDetector::new()?;
     /// let text = "2 cups flour\n1/2 cup sugar\nsome salt\n3 sachets yeast\n6 oeufs\n4 pommes";
@@ -419,7 +419,7 @@ impl MeasurementDetector {
     /// # Examples
     ///
     /// ```rust
-    /// use ingredients::text_processing::MeasurementDetector;
+    /// use just_ingredients::text_processing::MeasurementDetector;
     ///
     /// let detector = MeasurementDetector::new()?;
     /// assert!(detector.has_measurements("2 cups flour"));
@@ -538,7 +538,7 @@ impl MeasurementDetector {
     /// # Examples
     ///
     /// ```rust
-    /// use ingredients::text_processing::MeasurementDetector;
+    /// use just_ingredients::text_processing::MeasurementDetector;
     /// use std::collections::HashSet;
     ///
     /// let detector = MeasurementDetector::new()?;

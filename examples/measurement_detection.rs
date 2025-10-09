@@ -3,7 +3,7 @@
 //! This example demonstrates how to use the measurement detection functionality
 //! implemented for issue #36.
 
-use ingredients::text_processing::MeasurementDetector;
+use just_ingredients::text_processing::MeasurementDetector;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Create a measurement detector

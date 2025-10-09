@@ -1,4 +1,4 @@
-# Ingredients Telegram Bot
+# JustIngredients Telegram Bot
 
 A Telegram bot that extracts text from images using OCR (Optical Character Recognition) and stores ingredient lists in a searchable database.
 
@@ -35,8 +35,8 @@ A Telegram bot that extracts text from images using OCR (Optical Character Recog
 ### Setup
 1. Clone the repository:
    ```bash
-   git clone https://github.com/BasileDuPlessis/ingredients.git
-   cd ingredients
+   git clone https://github.com/BasileDuPlessis/JustIngredients.git
+   cd JustIngredients
    ```
 
 2. Install dependencies:
