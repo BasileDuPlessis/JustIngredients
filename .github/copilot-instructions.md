@@ -19,6 +19,8 @@ This is a Telegram bot that extracts text from images using OCR (Optical Charact
 ### Telegram Bot Interface
 - **Photo Processing**: Accepts photos sent directly in Telegram chats
 - **Document Support**: Handles image files uploaded as documents (PNG, JPEG, BMP, TIFF)
+- **Photo Caption Support**: Automatically uses photo captions as recipe name candidates with validation
+- **Caption Validation**: Intelligent fallback to "Recipe" for invalid/empty captions
 - **Real-Time Feedback**: Provides processing status updates and formatted results
 - **Multi-Language UI**: Localized responses in English and French based on user preferences
 - **Error Recovery**: Graceful handling of processing failures with user-friendly messages

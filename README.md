@@ -7,6 +7,7 @@ A Telegram bot that extracts text from images using OCR (Optical Character Recog
 - **OCR Text Extraction**: Uses Tesseract OCR to extract text from images and photos
 - **Ingredient Parsing**: Automatically detects and parses measurements and ingredients from recipe text
 - **Quantity-Only Support**: Recognizes ingredients with quantities but no measurement units (e.g., "6 oeufs", "4 pommes")
+- **Photo Caption Support**: Uses photo captions as recipe name candidates with intelligent fallback
 - **Full-Text Search**: PostgreSQL full-text search for efficient content searching
 - **Multilingual Support**: English and French language support with localized messages
 - **Circuit Breaker Pattern**: Protects against OCR failures with automatic recovery
@@ -78,6 +79,21 @@ A Telegram bot that extracts text from images using OCR (Optical Character Recog
    - Parse measurements and ingredients
    - Store the results in the database
    - Confirm successful processing
+
+### Photo Caption Support
+
+The bot intelligently uses photo captions as recipe name suggestions:
+
+- **Add a caption** to your photo (e.g., "Chocolate Chip Cookies") and it will be used as the recipe name
+- **No caption needed** - the bot falls back to "Recipe" automatically
+- **Invalid captions** (empty, too long, etc.) gracefully fall back to the default
+- **Full editability** - you can always change the recipe name during the review process
+
+**Example with Caption:**
+```
+User sends photo with caption: "Grandma's Apple Pie"
+Bot responds: "📝 Using photo caption as recipe name: 'Grandma's Apple Pie'"
+```
 
 ### Example Interactions
 
@@ -222,6 +238,22 @@ CREATE INDEX ingredients_recipe_id_idx ON ingredients(recipe_id);
 This project is licensed under the MIT License - see the LICENSE file for details.
 
 ## Changelog
+
+### v0.1.4 (2025-10-09)
+- **New**: Photo caption support for automatic recipe naming
+  - Uses photo captions as recipe name candidates with intelligent validation
+  - Graceful fallback to "Recipe" for missing or invalid captions
+  - User feedback messages when captions are used or rejected
+  - Full backward compatibility - no caption required
+- **Enhanced**: User experience with real-time caption feedback
+  - Clear messages when captions are accepted: "📝 Using photo caption as recipe name: 'Chocolate Cookies'"
+  - Informative messages for invalid captions: "⚠️ Caption is invalid, using default recipe name instead"
+  - Multi-language support for all caption-related messages
+- **Improved**: Testing coverage for caption functionality
+  - 9 new tests covering caption extraction, validation, and processing
+  - Integration tests for complete photo-with-caption workflows
+  - Edge case testing for Unicode, special characters, and boundary conditions
+  - Backward compatibility verification ensuring existing functionality preserved
 
 ### v0.1.3 (2025-10-08)
 - **New**: Workflow transitions after ingredient validation with action buttons

@@ -176,9 +176,12 @@ pub async fn download_and_process_image(
                             .await?;
 
                         // Determine recipe name: use caption if valid, otherwise "Recipe"
+                        // PHOTO CAPTION FEATURE: Automatically uses photo captions as recipe name candidates
+                        // This enhances UX by allowing users to name recipes directly when sending photos
                         let recipe_name_candidate = match &caption {
                             Some(caption_text) if !caption_text.trim().is_empty() => {
-                                // Validate the caption as a recipe name
+                                // Validate the caption as a recipe name using existing validation logic
+                                // This ensures captions meet the same standards as manually entered names
                                 match crate::dialogue::validate_recipe_name(caption_text) {
                                     Ok(validated_name) => {
                                         info!(user_id = %chat_id, recipe_name = %validated_name, "Using caption as recipe name");
@@ -189,7 +192,8 @@ pub async fn download_and_process_image(
                                         validated_name
                                     }
                                     Err(_) => {
-                                        // Caption is invalid, fall back to default
+                                        // Caption is invalid (empty, too long, etc.), fall back to default
+                                        // This provides graceful degradation and maintains functionality
                                         warn!(user_id = %chat_id, caption = %caption_text, "Caption is invalid, using default recipe name");
                                         let default_name = "Recipe".to_string();
                                         // Send feedback message about invalid caption
@@ -203,6 +207,7 @@ pub async fn download_and_process_image(
                             }
                             _ => {
                                 // No caption or empty caption, use default
+                                // This maintains backward compatibility - existing users see no change
                                 debug!(user_id = %chat_id, "No caption provided, using default recipe name");
                                 "Recipe".to_string()
                             }
@@ -511,6 +516,7 @@ async fn handle_photo_message(
     if let Some(photos) = msg.photo() {
         if let Some(largest_photo) = photos.last() {
             // Extract caption if present - this will be used as recipe name candidate
+            // PHOTO CAPTION FEATURE: Captions provide automatic recipe naming for better UX
             let caption = msg.caption().map(|s| s.to_string());
 
             let _temp_path = download_and_process_image(
