@@ -497,6 +497,7 @@ mod tests {
             language_code: language_code.clone(),
             message_id: None,
             extracted_text: "Test OCR text".to_string(),
+            recipe_name_from_caption: None,
         };
 
         // Simulate deleting an ingredient
@@ -509,6 +510,7 @@ mod tests {
             language_code: language_code.clone(),
             message_id: None,
             extracted_text: "Test OCR text".to_string(),
+            recipe_name_from_caption: None,
         };
 
         // Verify the states are different
@@ -541,6 +543,7 @@ mod tests {
             language_code,
             message_id: None,
             extracted_text: "Test OCR text".to_string(),
+            recipe_name_from_caption: None,
         };
 
         match empty_state {

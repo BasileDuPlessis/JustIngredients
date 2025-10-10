@@ -147,3 +147,4 @@ workflow-what-next = What would you like to do next?
 workflow-add-another = Add Another Recipe
 workflow-list-recipes = List My Recipes
 workflow-search-recipes = Search Recipes
+caption-recipe-saved = Recipe saved as: "{$recipe_name}"

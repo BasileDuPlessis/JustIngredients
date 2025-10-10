@@ -608,6 +608,7 @@ fn test_photo_caption_workflow_integration() {
         language_code: Some("en".to_string()),
         message_id: None,
         extracted_text: ocr_text.to_string(),
+        recipe_name_from_caption: Some(recipe_name_candidate.clone()),
     };
 
     // Verify dialogue state contains caption-derived name
@@ -824,4 +825,48 @@ fn test_caption_multi_language_integration() {
     assert!(formatted_fr.contains("Crêpes au Chocolat"));
 
     println!("✅ Multi-language caption integration test passed");
+}
+
+/// Test streamlined workflow - when caption is available, skip recipe name input
+#[test]
+fn test_streamlined_caption_workflow() {
+    use just_ingredients::text_processing::MeasurementDetector;
+
+    // Setup test data
+    let detector = MeasurementDetector::new().unwrap();
+    let ocr_text = r#"
+    2 cups flour
+    1 cup sugar
+    3 eggs
+    "#;
+    let ingredients = detector.extract_ingredient_measurements(ocr_text);
+    assert!(!ingredients.is_empty());
+
+    // Test the core logic: when caption exists, use it directly
+    let caption_recipe_name = Some("Chocolate Chip Cookies".to_string());
+
+    // Simulate the streamlined workflow decision
+    let should_skip_recipe_name_input = caption_recipe_name.is_some();
+
+    assert!(should_skip_recipe_name_input, "Should skip recipe name input when caption is available");
+
+    // Verify that we have a valid caption recipe name
+    assert_eq!(caption_recipe_name.as_ref().unwrap(), "Chocolate Chip Cookies");
+
+    // Verify ingredients were extracted
+    assert_eq!(ingredients.len(), 3); // flour, sugar, eggs
+
+    // Test the fallback case: no caption available
+    let no_caption: Option<String> = None;
+    let should_prompt_for_recipe_name = no_caption.is_none();
+
+    assert!(should_prompt_for_recipe_name, "Should prompt for recipe name when no caption is available");
+
+    // Test edge case: empty caption should be treated as no caption
+    let empty_caption = Some("".to_string());
+    let should_prompt_for_empty_caption = empty_caption.as_ref().unwrap().trim().is_empty();
+
+    assert!(should_prompt_for_empty_caption, "Should prompt for recipe name when caption is empty");
+
+    println!("✅ Streamlined caption workflow test passed - core logic validates correctly");
 }

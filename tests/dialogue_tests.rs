@@ -94,6 +94,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
         language_code: Some("en".to_string()),
         message_id: Some(123),
         extracted_text: "Test OCR text".to_string(),
+        recipe_name_from_caption: None,
     };
 
     // Verify state structure
@@ -104,6 +105,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             language_code,
             message_id,
             extracted_text,
+            recipe_name_from_caption: _,
         } => {
             assert_eq!(recipe_name, "Test Recipe");
             assert_eq!(ingr.len(), 2);
@@ -150,6 +152,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
         ingredients: ingredients.clone(),
         language_code: Some("en".to_string()),
         extracted_text: "Test OCR text".to_string(),
+        recipe_name_from_caption: None,
     };
 
     match confirm_state {
@@ -157,6 +160,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             ingredients: ingr,
             language_code,
             extracted_text,
+            recipe_name_from_caption: _,
         } => {
             assert_eq!(ingr.len(), 2);
             assert_eq!(language_code, Some("en".to_string()));

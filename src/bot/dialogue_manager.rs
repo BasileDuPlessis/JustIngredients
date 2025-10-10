@@ -160,6 +160,7 @@ pub async fn handle_recipe_name_input(
                     language_code: language_code.map(|s| s.to_string()),
                     message_id: Some(sent_message.id.0 as i32),
                     extracted_text,
+                    recipe_name_from_caption: None, // Recipe name came from user input, not caption
                 })
                 .await?;
         }
@@ -442,6 +443,7 @@ async fn handle_edit_cancellation(params: EditCancellationParams<'_>) -> Result<
             language_code: language_code.map(|s| s.to_string()),
             message_id,
             extracted_text,
+            recipe_name_from_caption: None, // Recipe name came from user input, not caption
         })
         .await?;
 
@@ -501,6 +503,7 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
                 language_code: language_code.map(|s| s.to_string()),
                 message_id,
                 extracted_text,
+                recipe_name_from_caption: None, // Recipe name came from user input, not caption
             })
             .await?;
     } else {
@@ -517,6 +520,7 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
                 language_code: language_code.map(|s| s.to_string()),
                 message_id,
                 extracted_text,
+                recipe_name_from_caption: None, // Recipe name came from user input, not caption
             })
             .await?;
     }

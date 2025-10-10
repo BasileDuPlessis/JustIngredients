@@ -139,6 +139,7 @@ workflow-what-next = Que souhaitez-vous faire ensuite ?
 workflow-add-another = Ajouter une autre recette
 workflow-list-recipes = Lister mes recettes
 workflow-search-recipes = Rechercher des recettes
+caption-recipe-saved = Recette sauvegardée sous : "{$recipe_name}"
 
 # Messages de légende photo
 caption-used = 📝 Utilisation de la légende de la photo comme nom de recette : "{$caption}"

@@ -221,6 +221,7 @@ pub async fn download_and_process_image(
                                 language_code: language_code.map(|s| s.to_string()),
                                 message_id: Some(sent_message.id.0 as i32),
                                 extracted_text: extracted_text.clone(),
+                                recipe_name_from_caption: caption.clone(), // Track if recipe name came from caption
                             })
                             .await?;
 
@@ -354,6 +355,7 @@ async fn handle_text_message(
                 ingredients,
                 language_code: dialogue_lang_code,
                 extracted_text,
+                recipe_name_from_caption: _,
             }) => {
                 // Use dialogue language code if available, otherwise fall back to message language
                 let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
@@ -382,6 +384,7 @@ async fn handle_text_message(
                 language_code: dialogue_lang_code,
                 message_id: _,
                 extracted_text,
+                recipe_name_from_caption: _,
             }) => {
                 // Use dialogue language code if available, otherwise fall back to message language
                 let effective_language_code = dialogue_lang_code.as_deref().or(language_code);

@@ -8,7 +8,7 @@ use teloxide::types::MaybeInaccessibleMessage;
 use tracing::{debug, error};
 
 // Import localization
-use crate::localization::t_lang;
+use crate::localization::{t_args_lang, t_lang};
 
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
@@ -21,6 +21,9 @@ use super::ui_builder::{
 
 // Import database functions
 use crate::db::get_user_recipes_paginated;
+
+// Import dialogue manager functions
+use super::dialogue_manager::save_ingredients_to_database;
 
 /// Handle callback queries from inline keyboards
 pub async fn callback_handler(
@@ -68,6 +71,7 @@ async fn handle_review_ingredients_callbacks(
         language_code: dialogue_lang_code,
         message_id,
         extracted_text,
+        recipe_name_from_caption,
     }) = dialogue_state
     {
         if q.message.is_some() {
@@ -106,7 +110,9 @@ async fn handle_review_ingredients_callbacks(
                     &ingredients,
                     &dialogue_lang_code,
                     &extracted_text,
+                    &recipe_name_from_caption,
                     dialogue,
+                    &pool,
                     localization,
                 )
                 .await?;
@@ -515,6 +521,7 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
                 language_code: params.dialogue_lang_code.clone(),
                 message_id: params.message_id,
                 extracted_text: params.extracted_text.to_string(),
+                recipe_name_from_caption: None, // Not relevant for deletion operations
             })
             .await
         {
@@ -534,68 +541,143 @@ async fn handle_confirm_button(
     ingredients: &[crate::text_processing::MeasurementMatch],
     dialogue_lang_code: &Option<String>,
     extracted_text: &str,
+    recipe_name_from_caption: &Option<String>,
     dialogue: &RecipeDialogue,
+    pool: &Arc<PgPool>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    let confirmation_message = format!(
-        "✅ **{}**\n\n{}",
-        t_lang(
-            localization,
-            "workflow-recipe-saved",
-            dialogue_lang_code.as_deref()
-        ),
-        t_lang(
-            localization,
-            "workflow-what-next",
-            dialogue_lang_code.as_deref()
-        )
-    );
+    // Check if we have a recipe name from caption
+    if let Some(caption_recipe_name) = recipe_name_from_caption {
+        // STREAMLINED WORKFLOW: Skip recipe name input when caption is available
+        debug!(user_id = %q.from.id, recipe_name = %caption_recipe_name, "Using recipe name from caption, skipping name input");
 
-    let confirmation_keyboard =
-        create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), localization);
-
-    // Update the original review message
-    match bot
-        .edit_message_text(
-            q.message.as_ref().unwrap().chat().id,
-            q.message.as_ref().unwrap().id(),
-            confirmation_message,
+        // Save ingredients directly to database
+        if let Err(e) = save_ingredients_to_database(
+            pool,
+            q.from.id.0 as i64,
+            extracted_text,
+            ingredients,
+            caption_recipe_name,
+            dialogue_lang_code.as_deref(),
         )
-        .reply_markup(confirmation_keyboard)
         .await
-    {
-        Ok(_) => (),
-        Err(e) => {
-            error!(user_id = %q.from.id, error = %e, "Failed to update message after confirmation")
+        {
+            error!(error = %e, "Failed to save ingredients to database");
+            bot.send_message(
+                q.message.as_ref().unwrap().chat().id,
+                t_lang(localization, "error-processing-failed", dialogue_lang_code.as_deref()),
+            )
+            .await?;
+            return Ok(());
         }
+
+        // Show confirmation with caption recipe name
+        let confirmation_message = format!(
+            "✅ **{}**\n\n📝 {}\n\n{}",
+            t_lang(
+                localization,
+                "workflow-recipe-saved",
+                dialogue_lang_code.as_deref()
+            ),
+            t_args_lang(
+                localization,
+                "caption-recipe-saved",
+                &[("recipe_name", caption_recipe_name.as_str())],
+                dialogue_lang_code.as_deref()
+            ),
+            t_lang(
+                localization,
+                "workflow-what-next",
+                dialogue_lang_code.as_deref()
+            )
+        );
+
+        let confirmation_keyboard =
+            create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), localization);
+
+        // Update the original review message
+        match bot
+            .edit_message_text(
+                q.message.as_ref().unwrap().chat().id,
+                q.message.as_ref().unwrap().id(),
+                confirmation_message,
+            )
+            .reply_markup(confirmation_keyboard)
+            .await
+        {
+            Ok(_) => (),
+            Err(e) => {
+                error!(user_id = %q.from.id, error = %e, "Failed to update message after confirmation")
+            }
+        }
+
+        // End the dialogue - workflow complete
+        dialogue.exit().await?;
+    } else {
+        // LEGACY WORKFLOW: No caption available, ask for recipe name
+        debug!(user_id = %q.from.id, "No caption available, proceeding with recipe name input");
+
+        let confirmation_message = format!(
+            "✅ **{}**\n\n{}",
+            t_lang(
+                localization,
+                "workflow-recipe-saved",
+                dialogue_lang_code.as_deref()
+            ),
+            t_lang(
+                localization,
+                "workflow-what-next",
+                dialogue_lang_code.as_deref()
+            )
+        );
+
+        let confirmation_keyboard =
+            create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), localization);
+
+        // Update the original review message
+        match bot
+            .edit_message_text(
+                q.message.as_ref().unwrap().chat().id,
+                q.message.as_ref().unwrap().id(),
+                confirmation_message,
+            )
+            .reply_markup(confirmation_keyboard)
+            .await
+        {
+            Ok(_) => (),
+            Err(e) => {
+                error!(user_id = %q.from.id, error = %e, "Failed to update message after confirmation")
+            }
+        }
+
+        // Send recipe name prompt
+        let recipe_name_prompt = format!(
+            "🏷️ **{}**\n\n{}",
+            t_lang(
+                localization,
+                "recipe-name-prompt",
+                dialogue_lang_code.as_deref()
+            ),
+            t_lang(
+                localization,
+                "recipe-name-prompt-hint",
+                dialogue_lang_code.as_deref()
+            )
+        );
+
+        bot.send_message(q.message.as_ref().unwrap().chat().id, recipe_name_prompt)
+            .await?;
+
+        // Transition to waiting for recipe name after confirmation
+        dialogue
+            .update(RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
+                ingredients: ingredients.to_vec(),
+                language_code: dialogue_lang_code.clone(),
+                extracted_text: extracted_text.to_string(),
+                recipe_name_from_caption: None, // No caption available
+            })
+            .await?;
     }
-
-    // Send recipe name prompt
-    let recipe_name_prompt = format!(
-        "🏷️ **{}**\n\n{}",
-        t_lang(
-            localization,
-            "recipe-name-prompt",
-            dialogue_lang_code.as_deref()
-        ),
-        t_lang(
-            localization,
-            "recipe-name-prompt-hint",
-            dialogue_lang_code.as_deref()
-        )
-    );
-
-    bot.send_message(q.message.as_ref().unwrap().chat().id, recipe_name_prompt)
-        .await?;
-
-    // Transition to waiting for recipe name after confirmation
-    dialogue
-        .update(RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
-            ingredients: ingredients.to_vec(),
-            language_code: dialogue_lang_code.clone(),
-            extracted_text: extracted_text.to_string(),
-        })
-        .await?;
 
     Ok(())
 }
