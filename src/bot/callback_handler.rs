@@ -99,6 +99,7 @@ async fn handle_review_ingredients_callbacks(
                     dialogue_lang_code: &dialogue_lang_code,
                     message_id,
                     extracted_text: &extracted_text,
+                    recipe_name_from_caption: &recipe_name_from_caption,
                     dialogue,
                     localization,
                 })
@@ -342,6 +343,7 @@ struct DeleteButtonParams<'a> {
     dialogue_lang_code: &'a Option<String>,
     message_id: Option<i32>,
     extracted_text: &'a str,
+    recipe_name_from_caption: &'a Option<String>,
     dialogue: &'a RecipeDialogue,
     localization: &'a Arc<crate::localization::LocalizationManager>,
 }
@@ -400,63 +402,75 @@ async fn handle_edit_button(params: EditButtonParams<'_>) -> Result<()> {
 
 /// Handle delete button in review ingredients state
 async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
-    let index: usize = params
-        .data
+    let DeleteButtonParams {
+        bot,
+        q,
+        data,
+        ingredients,
+        recipe_name,
+        dialogue_lang_code,
+        message_id,
+        extracted_text,
+        recipe_name_from_caption,
+        dialogue,
+        localization,
+    } = params;
+
+    let index: usize = data
         .strip_prefix("delete_")
         .unwrap()
         .parse()
         .unwrap_or(0);
 
-    if index < params.ingredients.len() {
-        params.ingredients.remove(index);
+    if index < ingredients.len() {
+        ingredients.remove(index);
 
         // Check if all ingredients were deleted
-        if params.ingredients.is_empty() {
+        if ingredients.is_empty() {
             // All ingredients deleted - inform user and provide options
             let empty_message = format!(
                 "🗑️ **{}**\n\n{}\n\n{}",
                 t_lang(
-                    params.localization,
+                    localization,
                     "review-title",
-                    params.dialogue_lang_code.as_deref()
+                    dialogue_lang_code.as_deref()
                 ),
                 t_lang(
-                    params.localization,
+                    localization,
                     "review-no-ingredients",
-                    params.dialogue_lang_code.as_deref()
+                    dialogue_lang_code.as_deref()
                 ),
                 t_lang(
-                    params.localization,
+                    localization,
                     "review-no-ingredients-help",
-                    params.dialogue_lang_code.as_deref()
+                    dialogue_lang_code.as_deref()
                 )
             );
 
             let keyboard = vec![vec![
                 teloxide::types::InlineKeyboardButton::callback(
                     t_lang(
-                        params.localization,
+                        localization,
                         "review-add-more",
-                        params.dialogue_lang_code.as_deref(),
+                        dialogue_lang_code.as_deref(),
                     ),
                     "add_more",
                 ),
                 teloxide::types::InlineKeyboardButton::callback(
                     t_lang(
-                        params.localization,
+                        localization,
                         "cancel",
-                        params.dialogue_lang_code.as_deref(),
+                        dialogue_lang_code.as_deref(),
                     ),
                     "cancel_empty",
                 ),
             ]];
 
             // Edit the original message
-            match params
-                .bot
+            match bot
                 .edit_message_text(
-                    params.q.message.as_ref().unwrap().chat().id,
-                    params.q.message.as_ref().unwrap().id(),
+                    q.message.as_ref().unwrap().chat().id,
+                    q.message.as_ref().unwrap().id(),
                     empty_message,
                 )
                 .reply_markup(teloxide::types::InlineKeyboardMarkup::new(keyboard))
@@ -464,7 +478,7 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
             {
                 Ok(_) => (),
                 Err(e) => {
-                    error!(user_id = %params.q.from.id, error = %e, "Failed to edit message for empty ingredients")
+                    error!(user_id = %q.from.id, error = %e, "Failed to edit message for empty ingredients")
                 }
             }
         } else {
@@ -472,34 +486,33 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
             let review_message = format!(
                 "📝 **{}**\n\n{}\n\n{}",
                 t_lang(
-                    params.localization,
+                    localization,
                     "review-title",
-                    params.dialogue_lang_code.as_deref()
+                    dialogue_lang_code.as_deref()
                 ),
                 t_lang(
-                    params.localization,
+                    localization,
                     "review-description",
-                    params.dialogue_lang_code.as_deref()
+                    dialogue_lang_code.as_deref()
                 ),
                 format_ingredients_list(
-                    params.ingredients,
-                    params.dialogue_lang_code.as_deref(),
-                    params.localization
+                    ingredients,
+                    dialogue_lang_code.as_deref(),
+                    localization
                 )
             );
 
             let keyboard = create_ingredient_review_keyboard(
-                params.ingredients,
-                params.dialogue_lang_code.as_deref(),
-                params.localization,
+                ingredients,
+                dialogue_lang_code.as_deref(),
+                localization,
             );
 
             // Edit the original message
-            match params
-                .bot
+            match bot
                 .edit_message_text(
-                    params.q.message.as_ref().unwrap().chat().id,
-                    params.q.message.as_ref().unwrap().id(),
+                    q.message.as_ref().unwrap().chat().id,
+                    q.message.as_ref().unwrap().id(),
                     review_message,
                 )
                 .reply_markup(keyboard)
@@ -507,27 +520,26 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
             {
                 Ok(_) => (),
                 Err(e) => {
-                    error!(user_id = %params.q.from.id, error = %e, "Failed to edit message after ingredient deletion")
+                    error!(user_id = %q.from.id, error = %e, "Failed to edit message after ingredient deletion")
                 }
             }
         }
 
         // Update dialogue state with modified ingredients
-        match params
-            .dialogue
+        match dialogue
             .update(RecipeDialogueState::ReviewIngredients {
-                recipe_name: params.recipe_name.to_string(),
-                ingredients: params.ingredients.clone(),
-                language_code: params.dialogue_lang_code.clone(),
-                message_id: params.message_id,
-                extracted_text: params.extracted_text.to_string(),
-                recipe_name_from_caption: None, // Not relevant for deletion operations
+                recipe_name: recipe_name.to_string(),
+                ingredients: ingredients.clone(),
+                language_code: dialogue_lang_code.clone(),
+                message_id,
+                extracted_text: extracted_text.to_string(),
+                recipe_name_from_caption: recipe_name_from_caption.clone(), // Preserve caption info
             })
             .await
         {
             Ok(_) => (),
             Err(e) => {
-                error!(user_id = %params.q.from.id, error = %e, "Failed to update dialogue state after deletion")
+                error!(user_id = %q.from.id, error = %e, "Failed to update dialogue state after deletion")
             }
         }
     }

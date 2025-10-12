@@ -178,7 +178,7 @@ pub async fn download_and_process_image(
                         // Determine recipe name: use caption if valid, otherwise "Recipe"
                         // PHOTO CAPTION FEATURE: Automatically uses photo captions as recipe name candidates
                         // This enhances UX by allowing users to name recipes directly when sending photos
-                        let recipe_name_candidate = match &caption {
+                        let (recipe_name_candidate, recipe_name_from_caption) = match &caption {
                             Some(caption_text) if !caption_text.trim().is_empty() => {
                                 // Validate the caption as a recipe name using existing validation logic
                                 // This ensures captions meet the same standards as manually entered names
@@ -189,7 +189,7 @@ pub async fn download_and_process_image(
                                         let caption_msg = t_lang(localization, "caption-used", language_code)
                                             .replace("{$caption}", &validated_name);
                                         bot.send_message(chat_id, caption_msg).await?;
-                                        validated_name
+                                        (validated_name, Some(caption_text.clone())) // Caption was successfully used
                                     }
                                     Err(_) => {
                                         // Caption is invalid (empty, too long, etc.), fall back to default
@@ -201,7 +201,7 @@ pub async fn download_and_process_image(
                                             .replace("{$caption}", caption_text)
                                             .replace("{$default_name}", &default_name);
                                         bot.send_message(chat_id, invalid_caption_msg).await?;
-                                        default_name
+                                        (default_name, None) // Caption was not used
                                     }
                                 }
                             }
@@ -209,7 +209,7 @@ pub async fn download_and_process_image(
                                 // No caption or empty caption, use default
                                 // This maintains backward compatibility - existing users see no change
                                 debug!(user_id = %chat_id, "No caption provided, using default recipe name");
-                                "Recipe".to_string()
+                                ("Recipe".to_string(), None) // No caption available
                             }
                         };
 
@@ -221,7 +221,7 @@ pub async fn download_and_process_image(
                                 language_code: language_code.map(|s| s.to_string()),
                                 message_id: Some(sent_message.id.0 as i32),
                                 extracted_text: extracted_text.clone(),
-                                recipe_name_from_caption: caption.clone(), // Track if recipe name came from caption
+                                recipe_name_from_caption, // Only set when caption was successfully validated and used
                             })
                             .await?;
 
