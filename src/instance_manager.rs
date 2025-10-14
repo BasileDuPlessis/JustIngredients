@@ -6,6 +6,7 @@
 use leptess::LepTess;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
+use tracing::info;
 
 use crate::ocr_config::OcrConfig;
 
@@ -110,7 +111,7 @@ impl OcrInstanceManager {
         }
 
         // Create new instance if none exists
-        log::info!("Creating new OCR instance for languages: {key}");
+        info!("Creating new OCR instance for languages: {key}");
         let tess = LepTess::new(None, &key)
             .map_err(|e| anyhow::anyhow!("Failed to initialize Tesseract OCR instance: {}", e))?;
 
@@ -129,7 +130,7 @@ impl OcrInstanceManager {
     pub fn _remove_instance(&self, languages: &str) {
         let mut instances = self.instances.lock().unwrap();
         if instances.remove(languages).is_some() {
-            log::info!("Removed OCR instance for languages: {languages}");
+            info!("Removed OCR instance for languages: {languages}");
         }
     }
 
@@ -139,7 +140,7 @@ impl OcrInstanceManager {
         let count = instances.len();
         instances.clear();
         if count > 0 {
-            log::info!("Cleared {count} OCR instances");
+            info!("Cleared {count} OCR instances");
         }
     }
 

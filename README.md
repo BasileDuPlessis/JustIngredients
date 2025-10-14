@@ -56,12 +56,40 @@ A Telegram bot that extracts text from images using OCR (Optical Character Recog
    cargo run
    ```
 
-## Configuration
+## Monitoring & Observability
 
-### Environment Variables
-- `TELEGRAM_BOT_TOKEN`: Your Telegram bot token from @BotFather
-- `DATABASE_URL`: PostgreSQL database connection string (e.g., `postgresql://user:pass@localhost/db`)
-- `HEALTH_PORT`: Optional health check port (default: 8080)
+JustIngredients includes a comprehensive monitoring stack for production deployments:
+
+### Features
+- **Metrics Collection**: Prometheus metrics for requests, OCR operations, database queries, and system health
+- **Distributed Tracing**: OpenTelemetry traces for request tracking and performance analysis
+- **Structured Logging**: JSON logs with full context for production debugging
+- **Health Checks**: Liveness and readiness probes for container orchestration
+- **Grafana Dashboards**: Pre-built dashboards for bot overview and OCR performance monitoring
+- **Alerting**: Configurable alerts for critical issues and performance degradation
+
+### Quick Start
+```bash
+# Start the monitoring stack
+cd grafana
+./setup.sh
+
+# Access services
+# Grafana: http://localhost:3000 (admin/admin)
+# Prometheus: http://localhost:9090
+# Alertmanager: http://localhost:9093
+```
+
+### Metrics Endpoints
+- **Metrics**: `http://localhost:8080/metrics` (Prometheus format)
+- **Health (Liveness)**: `http://localhost:8080/health/live`
+- **Health (Readiness)**: `http://localhost:8080/health/ready`
+
+### Dashboards
+- **Bot Overview**: Request rates, error rates, latency, message processing
+- **OCR Performance**: Processing throughput, success rates, image sizes, memory usage
+
+See `grafana/README.md` for detailed setup instructions and configuration options.
 
 ### OCR Configuration
 - **Languages**: English + French (`eng+fra`)

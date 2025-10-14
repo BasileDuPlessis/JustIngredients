@@ -681,6 +681,12 @@ pub async fn message_handler(
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
+    let span = crate::observability::telegram_span(
+        "message_handler",
+        msg.from.as_ref().map(|u| u.id.0 as i64),
+    );
+    let _enter = span.enter();
+
     let start_time = std::time::Instant::now();
     let message_type = if msg.text().is_some() {
         "text"

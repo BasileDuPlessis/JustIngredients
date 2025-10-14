@@ -629,14 +629,38 @@ fn test_caption_fallback_scenarios() {
     // Test various caption scenarios and their expected outcomes
     let scenarios = vec![
         // (caption, expected_recipe_name, description)
-        (Some("Valid Recipe Name".to_string()), "Valid Recipe Name", "Valid caption"),
-        (Some("   Spaced Name   ".to_string()), "Spaced Name", "Caption with whitespace"),
-        (Some("Café au Lait Crêpes".to_string()), "Café au Lait Crêpes", "Unicode characters"),
-        (Some("Recipe with émojis 🎂".to_string()), "Recipe with émojis 🎂", "Emojis"),
+        (
+            Some("Valid Recipe Name".to_string()),
+            "Valid Recipe Name",
+            "Valid caption",
+        ),
+        (
+            Some("   Spaced Name   ".to_string()),
+            "Spaced Name",
+            "Caption with whitespace",
+        ),
+        (
+            Some("Café au Lait Crêpes".to_string()),
+            "Café au Lait Crêpes",
+            "Unicode characters",
+        ),
+        (
+            Some("Recipe with émojis 🎂".to_string()),
+            "Recipe with émojis 🎂",
+            "Emojis",
+        ),
         (Some("".to_string()), "Recipe", "Empty caption fallback"),
-        (Some("   ".to_string()), "Recipe", "Whitespace-only fallback"),
+        (
+            Some("   ".to_string()),
+            "Recipe",
+            "Whitespace-only fallback",
+        ),
         (Some("a".repeat(256)), "Recipe", "Too long caption fallback"),
-        (Some("Invalid!!!@#$%".to_string()), "Invalid!!!@#$%", "Special chars (still valid)"),
+        (
+            Some("Invalid!!!@#$%".to_string()),
+            "Invalid!!!@#$%",
+            "Special chars (still valid)",
+        ),
         (None, "Recipe", "No caption provided"),
     ];
 
@@ -651,7 +675,11 @@ fn test_caption_fallback_scenarios() {
             _ => "Recipe".to_string(),
         };
 
-        assert_eq!(result, expected_name, "Scenario '{}': expected '{}', got '{}'", description, expected_name, result);
+        assert_eq!(
+            result, expected_name,
+            "Scenario '{}': expected '{}', got '{}'",
+            description, expected_name, result
+        );
     }
 
     println!("✅ Caption fallback scenarios test passed");
@@ -683,20 +711,20 @@ fn test_caption_with_measurement_extraction() {
             "French Crepes",
         ),
         (
-            None,  // No caption
+            None, // No caption
             r#"
             2 cups flour
             3 eggs
             "#,
-            "Recipe",  // Should use default
+            "Recipe", // Should use default
         ),
         (
-            Some("".to_string()),  // Empty caption
+            Some("".to_string()), // Empty caption
             r#"
             1 cup sugar
             2 eggs
             "#,
-            "Recipe",  // Should use default
+            "Recipe", // Should use default
         ),
     ];
 
@@ -705,7 +733,10 @@ fn test_caption_with_measurement_extraction() {
     for (caption, ocr_text, expected_recipe_name) in test_cases {
         // Extract measurements
         let ingredients = detector.extract_ingredient_measurements(ocr_text);
-        assert!(!ingredients.is_empty(), "Should find ingredients in OCR text");
+        assert!(
+            !ingredients.is_empty(),
+            "Should find ingredients in OCR text"
+        );
 
         // Process caption
         let recipe_name = match &caption {
@@ -716,8 +747,11 @@ fn test_caption_with_measurement_extraction() {
             _ => "Recipe".to_string(),
         };
 
-        assert_eq!(recipe_name, expected_recipe_name,
-            "Caption {:?} should result in recipe name '{}'", caption, expected_recipe_name);
+        assert_eq!(
+            recipe_name, expected_recipe_name,
+            "Caption {:?} should result in recipe name '{}'",
+            caption, expected_recipe_name
+        );
 
         // Verify ingredients are properly structured
         for ingredient in &ingredients {
@@ -848,10 +882,16 @@ fn test_streamlined_caption_workflow() {
     // Simulate the streamlined workflow decision
     let should_skip_recipe_name_input = caption_recipe_name.is_some();
 
-    assert!(should_skip_recipe_name_input, "Should skip recipe name input when caption is available");
+    assert!(
+        should_skip_recipe_name_input,
+        "Should skip recipe name input when caption is available"
+    );
 
     // Verify that we have a valid caption recipe name
-    assert_eq!(caption_recipe_name.as_ref().unwrap(), "Chocolate Chip Cookies");
+    assert_eq!(
+        caption_recipe_name.as_ref().unwrap(),
+        "Chocolate Chip Cookies"
+    );
 
     // Verify ingredients were extracted
     assert_eq!(ingredients.len(), 3); // flour, sugar, eggs
@@ -860,13 +900,19 @@ fn test_streamlined_caption_workflow() {
     let no_caption: Option<String> = None;
     let should_prompt_for_recipe_name = no_caption.is_none();
 
-    assert!(should_prompt_for_recipe_name, "Should prompt for recipe name when no caption is available");
+    assert!(
+        should_prompt_for_recipe_name,
+        "Should prompt for recipe name when no caption is available"
+    );
 
     // Test edge case: empty caption should be treated as no caption
     let empty_caption = Some("".to_string());
     let should_prompt_for_empty_caption = empty_caption.as_ref().unwrap().trim().is_empty();
 
-    assert!(should_prompt_for_empty_caption, "Should prompt for recipe name when caption is empty");
+    assert!(
+        should_prompt_for_empty_caption,
+        "Should prompt for recipe name when caption is empty"
+    );
 
     println!("✅ Streamlined caption workflow test passed - core logic validates correctly");
 }
@@ -901,7 +947,11 @@ fn test_caption_preservation_after_ingredient_deletion() {
     };
 
     // Verify initial state has caption info
-    if let RecipeDialogueState::ReviewIngredients { recipe_name_from_caption: initial_caption, .. } = &initial_state {
+    if let RecipeDialogueState::ReviewIngredients {
+        recipe_name_from_caption: initial_caption,
+        ..
+    } = &initial_state
+    {
         assert_eq!(initial_caption, &Some(caption.clone()));
     }
 
@@ -920,8 +970,16 @@ fn test_caption_preservation_after_ingredient_deletion() {
     };
 
     // Verify the caption info is still preserved after deletion
-    if let RecipeDialogueState::ReviewIngredients { recipe_name_from_caption: updated_caption, .. } = &updated_state {
-        assert_eq!(updated_caption, &Some(caption), "recipe_name_from_caption should be preserved after ingredient deletion");
+    if let RecipeDialogueState::ReviewIngredients {
+        recipe_name_from_caption: updated_caption,
+        ..
+    } = &updated_state
+    {
+        assert_eq!(
+            updated_caption,
+            &Some(caption),
+            "recipe_name_from_caption should be preserved after ingredient deletion"
+        );
     }
 
     // Simulate user confirming ingredients - should use streamlined workflow

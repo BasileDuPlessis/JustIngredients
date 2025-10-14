@@ -14,15 +14,7 @@ use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize complete observability stack (metrics, tracing, logging)
-    observability::init_observability().await?;
-
-    // Initialize localization manager
-    let localization_manager = localization::create_localization_manager()?;
-
-    info!("Starting JustIngredients Telegram Bot");
-
-    // Load environment variables from .env file
+    // Load environment variables from .env file first
     dotenv::dotenv().ok();
 
     // Get bot token from environment
@@ -41,6 +33,16 @@ async fn main() -> Result<()> {
 
     // Wrap pool in Arc for sharing across async tasks
     let shared_pool = Arc::new(pool);
+
+    // Initialize complete observability stack with health checks (metrics, tracing, logging)
+    observability::init_observability_with_health_checks(
+        Some(Arc::clone(&shared_pool)),
+        Some(bot_token.clone()),
+    )
+    .await?;
+
+    // Initialize localization manager
+    let localization_manager = localization::create_localization_manager()?;
 
     // Initialize the bot with custom client configuration for better reliability
     let client = reqwest::Client::builder()

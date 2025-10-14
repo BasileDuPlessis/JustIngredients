@@ -32,9 +32,9 @@ use tracing::{error, info, warn};
 // Re-export types for easier access from documentation and external usage
 pub use crate::circuit_breaker::CircuitBreaker;
 pub use crate::instance_manager::OcrInstanceManager;
+pub use crate::observability;
 pub use crate::ocr_config::{OcrConfig, RecoveryConfig};
 pub use crate::ocr_errors::OcrError;
-pub use crate::observability;
 
 /// Validate image file path and basic properties
 pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConfig) -> Result<()> {
@@ -359,6 +359,10 @@ pub async fn extract_text_from_image(
     instance_manager: &crate::instance_manager::OcrInstanceManager,
     circuit_breaker: &crate::circuit_breaker::CircuitBreaker,
 ) -> Result<String, crate::ocr_errors::OcrError> {
+    // Create a tracing span for the OCR operation
+    let span = crate::observability::ocr_span("extract_text_from_image");
+    let _enter = span.enter();
+
     // Start timing the entire OCR operation
     let start_time = std::time::Instant::now();
 
@@ -395,7 +399,11 @@ pub async fn extract_text_from_image(
                 observability::update_circuit_breaker_state(false);
 
                 // Record OCR metrics
-                observability::record_ocr_metrics(true, total_duration, std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0));
+                observability::record_ocr_metrics(
+                    true,
+                    total_duration,
+                    std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0),
+                );
 
                 info!("OCR extraction completed successfully on attempt {} in {}ms. Extracted {} characters of text",
                       attempt, total_ms, text.len());
@@ -411,7 +419,11 @@ pub async fn extract_text_from_image(
                     observability::update_circuit_breaker_state(circuit_breaker.is_open());
 
                     // Record OCR metrics
-                    observability::record_ocr_metrics(false, total_duration, std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0));
+                    observability::record_ocr_metrics(
+                        false,
+                        total_duration,
+                        std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0),
+                    );
 
                     error!("OCR extraction failed after {max_attempts} attempts ({total_ms}ms total): {err:?}");
                     return Err(err);

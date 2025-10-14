@@ -11,7 +11,6 @@ sqlx = { version = "0.8", features = [ "postgres", "runtime-tokio-native-tls", "
 tokio = { version = "1.47.1", features = ["full"] }
 dotenv = "0.15.0"
 anyhow = "1.0"
-log = "0.4"
 env_logger = "0.11"
 tempfile = "3.0"
 reqwest = { version = "0.12", features = ["json"] }
@@ -33,6 +32,7 @@ parking_lot = "0.12" # Efficient synchronization primitives
 metrics = "0.23" # Metrics collection
 metrics-exporter-prometheus = "0.15" # Prometheus metrics exporter
 opentelemetry = "0.23" # OpenTelemetry for distributed tracing
+opentelemetry_sdk = { version = "0.23", features = ["rt-tokio"] } # OpenTelemetry SDK for tracing
 opentelemetry-otlp = { version = "0.16", features = ["grpc-tonic"] } # OTLP exporter for traces
 tracing-opentelemetry = "0.24" # Tracing integration with OpenTelemetry
 axum = "0.7" # HTTP server for health checks and metrics endpoints

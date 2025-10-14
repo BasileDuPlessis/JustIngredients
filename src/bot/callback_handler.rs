@@ -36,6 +36,9 @@ pub async fn callback_handler(
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
+    let span = crate::observability::telegram_span("callback_handler", Some(q.from.id.0 as i64));
+    let _enter = span.enter();
+
     let start_time = std::time::Instant::now();
 
     // Check dialogue state
@@ -49,9 +52,7 @@ pub async fn callback_handler(
             handle_review_ingredients_callbacks(&bot, &q, data, pool, &dialogue, &localization)
                 .await
         }
-        _ => {
-            handle_general_callbacks(&bot, &q, data, pool, &dialogue, &localization).await
-        }
+        _ => handle_general_callbacks(&bot, &q, data, pool, &dialogue, &localization).await,
     };
 
     // Answer the callback query to remove the loading state
@@ -424,11 +425,7 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
         localization,
     } = params;
 
-    let index: usize = data
-        .strip_prefix("delete_")
-        .unwrap()
-        .parse()
-        .unwrap_or(0);
+    let index: usize = data.strip_prefix("delete_").unwrap().parse().unwrap_or(0);
 
     if index < ingredients.len() {
         ingredients.remove(index);
@@ -438,11 +435,7 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
             // All ingredients deleted - inform user and provide options
             let empty_message = format!(
                 "🗑️ **{}**\n\n{}\n\n{}",
-                t_lang(
-                    localization,
-                    "review-title",
-                    dialogue_lang_code.as_deref()
-                ),
+                t_lang(localization, "review-title", dialogue_lang_code.as_deref()),
                 t_lang(
                     localization,
                     "review-no-ingredients",
@@ -465,11 +458,7 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
                     "add_more",
                 ),
                 teloxide::types::InlineKeyboardButton::callback(
-                    t_lang(
-                        localization,
-                        "cancel",
-                        dialogue_lang_code.as_deref(),
-                    ),
+                    t_lang(localization, "cancel", dialogue_lang_code.as_deref()),
                     "cancel_empty",
                 ),
             ]];
@@ -493,21 +482,13 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
             // Update the message with remaining ingredients
             let review_message = format!(
                 "📝 **{}**\n\n{}\n\n{}",
-                t_lang(
-                    localization,
-                    "review-title",
-                    dialogue_lang_code.as_deref()
-                ),
+                t_lang(localization, "review-title", dialogue_lang_code.as_deref()),
                 t_lang(
                     localization,
                     "review-description",
                     dialogue_lang_code.as_deref()
                 ),
-                format_ingredients_list(
-                    ingredients,
-                    dialogue_lang_code.as_deref(),
-                    localization
-                )
+                format_ingredients_list(ingredients, dialogue_lang_code.as_deref(), localization)
             );
 
             let keyboard = create_ingredient_review_keyboard(
@@ -555,6 +536,7 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
 }
 
 /// Handle confirm button in review ingredients state
+#[allow(clippy::too_many_arguments)]
 async fn handle_confirm_button(
     bot: &Bot,
     q: &teloxide::types::CallbackQuery,
@@ -585,7 +567,11 @@ async fn handle_confirm_button(
             error!(error = %e, "Failed to save ingredients to database");
             bot.send_message(
                 q.message.as_ref().unwrap().chat().id,
-                t_lang(localization, "error-processing-failed", dialogue_lang_code.as_deref()),
+                t_lang(
+                    localization,
+                    "error-processing-failed",
+                    dialogue_lang_code.as_deref(),
+                ),
             )
             .await?;
             return Ok(());

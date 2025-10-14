@@ -131,15 +131,19 @@ pub async fn init_database_schema(pool: &PgPool) -> Result<()> {
 
 /// Create a new recipe in the database
 pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Result<i64> {
+    let span = crate::observability::db_span("create_recipe", "recipes");
+    let _enter = span.enter();
+
     let start_time = std::time::Instant::now();
     debug!(telegram_id = %telegram_id, "Creating new recipe");
 
-    let result = sqlx::query("INSERT INTO recipes (telegram_id, content) VALUES ($1, $2) RETURNING id")
-        .bind(telegram_id)
-        .bind(content)
-        .fetch_one(pool)
-        .await
-        .context("Failed to insert new recipe");
+    let result =
+        sqlx::query("INSERT INTO recipes (telegram_id, content) VALUES ($1, $2) RETURNING id")
+            .bind(telegram_id)
+            .bind(content)
+            .fetch_one(pool)
+            .await
+            .context("Failed to insert new recipe");
 
     let duration = start_time.elapsed();
     observability::record_db_metrics("create_recipe", duration);
@@ -147,7 +151,7 @@ pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Re
     match result {
         Ok(row) => {
             let recipe_id: i64 = row.get(0);
-            debug!(recipe_id = %recipe_id, "Recipe created successfully");
+            debug!(recipe_id = %recipe_id, duration_ms = %duration.as_millis(), telegram_id = %telegram_id, "Recipe created successfully");
             Ok(recipe_id)
         }
         Err(e) => Err(e),
@@ -330,6 +334,9 @@ pub async fn create_ingredient(
     unit: Option<&str>,
     raw_text: &str,
 ) -> Result<i64> {
+    let span = crate::observability::db_span("create_ingredient", "ingredients");
+    let _enter = span.enter();
+
     let start_time = std::time::Instant::now();
     info!("Creating new ingredient for user_id: {user_id}");
 
@@ -352,7 +359,7 @@ pub async fn create_ingredient(
     match result {
         Ok(row) => {
             let ingredient_id: i64 = row.get(0);
-            info!("Ingredient created with ID: {ingredient_id}");
+            info!(ingredient_id = %ingredient_id, duration_ms = %duration.as_millis(), user_id = %user_id, recipe_id = ?recipe_id, name = %name, "Ingredient created successfully");
             Ok(ingredient_id)
         }
         Err(e) => Err(e),
@@ -551,7 +558,7 @@ pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Res
         })
         .collect();
 
-    info!("Found {} recipes matching query", recipes.len());
+    info!(telegram_id = %telegram_id, query = %query, result_count = recipes.len(), "Recipe search completed");
     Ok(recipes)
 }
 

@@ -1211,8 +1211,8 @@ mod tests {
 
         // Test invalid captions
         let invalid_captions = vec![
-            "",                    // Empty
-            "   ",                 // Whitespace only
+            "",    // Empty
+            "   ", // Whitespace only
         ];
 
         // Test too long caption separately
@@ -1243,10 +1243,10 @@ mod tests {
             // (caption, expected_result)
             (Some("Valid Recipe Name".to_string()), "Valid Recipe Name"),
             (Some("   Spaced Recipe   ".to_string()), "Spaced Recipe"),
-            (Some("".to_string()), "Recipe"),  // Empty falls back to default
+            (Some("".to_string()), "Recipe"), // Empty falls back to default
             (Some("   ".to_string()), "Recipe"), // Whitespace falls back to default
             (Some("a".repeat(256)), "Recipe"), // Too long falls back to default
-            (None, "Recipe"), // No caption falls back to default
+            (None, "Recipe"),                 // No caption falls back to default
         ];
 
         for (caption, expected) in test_cases {
@@ -1260,7 +1260,11 @@ mod tests {
                 _ => "Recipe".to_string(),
             };
 
-            assert_eq!(result, expected, "Caption {:?} should result in '{}'", caption, expected);
+            assert_eq!(
+                result, expected,
+                "Caption {:?} should result in '{}'",
+                caption, expected
+            );
         }
 
         println!("✅ Caption recipe name assignment tests passed");
@@ -1331,20 +1335,18 @@ mod tests {
             ("Recipe-with-dashes", true),
             ("Recipe_with_underscores", true),
             ("Recipe (with parentheses)", true),
-
             // Invalid cases
             ("", false),
             ("   ", false),
-
             // Unicode and special characters that might cause issues
-            ("Recipe\twith\ttabs", true),  // Tabs should be handled
-            ("Recipe\nwith\nlines", true), // Newlines should be handled
+            ("Recipe\twith\ttabs", true),      // Tabs should be handled
+            ("Recipe\nwith\nlines", true),     // Newlines should be handled
             ("Recipe\x00with\x00nulls", true), // Null bytes should be handled
         ];
 
         // Test too long caption separately
         let too_long_caption = "x".repeat(256);
-        assert!(!validate_recipe_name(&too_long_caption).is_ok());
+        assert!(validate_recipe_name(&too_long_caption).is_err());
 
         for (caption, should_be_valid) in edge_cases {
             let result = validate_recipe_name(caption);
