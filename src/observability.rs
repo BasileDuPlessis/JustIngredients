@@ -7,7 +7,11 @@
 //! - Health check endpoints
 
 use anyhow::Result;
+use hyper::server::conn::http1;
+use hyper_util::rt::TokioIo;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
+use std::net::SocketAddr;
+use tokio::net::TcpListener;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Initialize the complete observability stack
@@ -69,10 +73,62 @@ async fn init_opentelemetry_tracing() -> Result<()> {
 }
 
 /// Start HTTP server for metrics and health check endpoints
-async fn start_metrics_server(_metrics_handle: PrometheusHandle) -> Result<()> {
-    // For now, skip starting the metrics server
-    // This can be implemented later with proper server setup
-    tracing::info!("Metrics server setup skipped (server implementation pending)");
+async fn start_metrics_server(metrics_handle: PrometheusHandle) -> Result<()> {
+    let addr = SocketAddr::from(([0, 0, 0, 0], 9090));
+    tracing::info!("Starting metrics server on {}", addr);
+
+    let listener = TcpListener::bind(addr).await?;
+    tracing::info!("Metrics server listening on {}", addr);
+
+    tokio::spawn(async move {
+        loop {
+            match listener.accept().await {
+                Ok((stream, _)) => {
+                    let metrics_handle = metrics_handle.clone();
+
+                    tokio::spawn(async move {
+                        let io = TokioIo::new(stream);
+
+                        let service = hyper::service::service_fn(move |req: hyper::Request<hyper::body::Incoming>| {
+                            let metrics_handle = metrics_handle.clone();
+                            async move {
+                                match (req.method(), req.uri().path()) {
+                                    (&hyper::Method::GET, "/metrics") => {
+                                        let metrics = metrics_handle.render();
+                                        Ok::<_, std::convert::Infallible>(
+                                            hyper::Response::new(metrics)
+                                        )
+                                    },
+                                    (&hyper::Method::GET, "/health/live") => {
+                                        Ok(hyper::Response::new("OK".to_string()))
+                                    },
+                                    (&hyper::Method::GET, "/health/ready") => {
+                                        Ok(hyper::Response::new("OK".to_string()))
+                                    },
+                                    _ => {
+                                        let mut response = hyper::Response::new("Not Found".to_string());
+                                        *response.status_mut() = hyper::StatusCode::NOT_FOUND;
+                                        Ok(response)
+                                    }
+                                }
+                            }
+                        });
+
+                        if let Err(err) = http1::Builder::new()
+                            .serve_connection(io, service)
+                            .await
+                        {
+                            tracing::error!("Error serving connection: {:?}", err);
+                        }
+                    });
+                }
+                Err(e) => {
+                    tracing::error!("Error accepting connection: {}", e);
+                }
+            }
+        }
+    });
+
     Ok(())
 }
 

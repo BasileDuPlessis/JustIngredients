@@ -38,6 +38,7 @@ tracing-opentelemetry = "0.24" # Tracing integration with OpenTelemetry
 axum = "0.7" # HTTP server for health checks and metrics endpoints
 hyper = "1.0" # HTTP implementation
 hyper-util = { version = "0.1", features = ["tokio"] } # Hyper utilities
+tokio-util = { version = "0.7", features = ["io"] } # Tokio utilities
 
 [[example]]
 name = "recipe_parser"

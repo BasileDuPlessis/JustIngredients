@@ -1879,6 +1879,7 @@ dependencies = [
  "teloxide",
  "tempfile",
  "tokio",
+ "tokio-util",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",

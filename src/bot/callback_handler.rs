@@ -25,6 +25,9 @@ use crate::db::get_user_recipes_paginated;
 // Import dialogue manager functions
 use super::dialogue_manager::save_ingredients_to_database;
 
+// Import observability
+use crate::observability;
+
 /// Handle callback queries from inline keyboards
 pub async fn callback_handler(
     bot: Bot,
@@ -33,26 +36,31 @@ pub async fn callback_handler(
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
+    let start_time = std::time::Instant::now();
+
     // Check dialogue state
     let dialogue_state = dialogue.get().await?;
     debug!(user_id = %q.from.id, dialogue_state = ?dialogue_state, "Retrieved dialogue state");
 
     let data = q.data.as_deref().unwrap_or("");
 
-    match dialogue_state {
+    let result = match dialogue_state {
         Some(RecipeDialogueState::ReviewIngredients { .. }) => {
             handle_review_ingredients_callbacks(&bot, &q, data, pool, &dialogue, &localization)
-                .await?;
+                .await
         }
         _ => {
-            handle_general_callbacks(&bot, &q, data, pool, &dialogue, &localization).await?;
+            handle_general_callbacks(&bot, &q, data, pool, &dialogue, &localization).await
         }
-    }
+    };
 
     // Answer the callback query to remove the loading state
     bot.answer_callback_query(q.id).await?;
 
-    Ok(())
+    let duration = start_time.elapsed();
+    observability::record_request_metrics("telegram_callback", 200, duration);
+
+    result
 }
 
 /// Handle callbacks when in ReviewIngredients dialogue state

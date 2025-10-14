@@ -34,6 +34,7 @@ pub use crate::circuit_breaker::CircuitBreaker;
 pub use crate::instance_manager::OcrInstanceManager;
 pub use crate::ocr_config::{OcrConfig, RecoveryConfig};
 pub use crate::ocr_errors::OcrError;
+pub use crate::observability;
 
 /// Validate image file path and basic properties
 pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConfig) -> Result<()> {
@@ -364,10 +365,12 @@ pub async fn extract_text_from_image(
     // Check circuit breaker before processing
     if circuit_breaker.is_open() {
         warn!("Circuit breaker is open, rejecting OCR request for image: {image_path}");
+        observability::update_circuit_breaker_state(true);
         return Err(crate::ocr_errors::OcrError::Extraction(
             "OCR service is temporarily unavailable due to repeated failures. Please try again later.".to_string()
         ));
     }
+    observability::update_circuit_breaker_state(false);
 
     // Validate input with enhanced format-specific validation
     validate_image_with_format_limits(image_path, config)
@@ -389,6 +392,10 @@ pub async fn extract_text_from_image(
 
                 // Record success in circuit breaker
                 circuit_breaker.record_success();
+                observability::update_circuit_breaker_state(false);
+
+                // Record OCR metrics
+                observability::record_ocr_metrics(true, total_duration, std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0));
 
                 info!("OCR extraction completed successfully on attempt {} in {}ms. Extracted {} characters of text",
                       attempt, total_ms, text.len());
@@ -401,6 +408,10 @@ pub async fn extract_text_from_image(
 
                     // Record failure in circuit breaker
                     circuit_breaker.record_failure();
+                    observability::update_circuit_breaker_state(circuit_breaker.is_open());
+
+                    // Record OCR metrics
+                    observability::record_ocr_metrics(false, total_duration, std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0));
 
                     error!("OCR extraction failed after {max_attempts} attempts ({total_ms}ms total): {err:?}");
                     return Err(err);

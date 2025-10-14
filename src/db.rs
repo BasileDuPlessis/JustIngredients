@@ -4,6 +4,9 @@ use sqlx::postgres::PgPool;
 use sqlx::Row;
 use tracing::{debug, info};
 
+// Re-export types for easier access
+pub use crate::observability;
+
 /// Represents a user in the database
 #[derive(Debug, Clone, PartialEq)]
 pub struct User {
@@ -128,20 +131,27 @@ pub async fn init_database_schema(pool: &PgPool) -> Result<()> {
 
 /// Create a new recipe in the database
 pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Result<i64> {
+    let start_time = std::time::Instant::now();
     debug!(telegram_id = %telegram_id, "Creating new recipe");
 
-    let row =
-        sqlx::query("INSERT INTO recipes (telegram_id, content) VALUES ($1, $2) RETURNING id")
-            .bind(telegram_id)
-            .bind(content)
-            .fetch_one(pool)
-            .await
-            .context("Failed to insert new recipe")?;
+    let result = sqlx::query("INSERT INTO recipes (telegram_id, content) VALUES ($1, $2) RETURNING id")
+        .bind(telegram_id)
+        .bind(content)
+        .fetch_one(pool)
+        .await
+        .context("Failed to insert new recipe");
 
-    let recipe_id: i64 = row.get(0);
-    debug!(recipe_id = %recipe_id, "Recipe created successfully");
+    let duration = start_time.elapsed();
+    observability::record_db_metrics("create_recipe", duration);
 
-    Ok(recipe_id)
+    match result {
+        Ok(row) => {
+            let recipe_id: i64 = row.get(0);
+            debug!(recipe_id = %recipe_id, "Recipe created successfully");
+            Ok(recipe_id)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Read a recipe from the database by ID
@@ -320,9 +330,10 @@ pub async fn create_ingredient(
     unit: Option<&str>,
     raw_text: &str,
 ) -> Result<i64> {
+    let start_time = std::time::Instant::now();
     info!("Creating new ingredient for user_id: {user_id}");
 
-    let row = sqlx::query(
+    let result = sqlx::query(
         "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit, raw_text) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
     )
     .bind(user_id)
@@ -333,12 +344,19 @@ pub async fn create_ingredient(
     .bind(raw_text)
     .fetch_one(pool)
     .await
-    .context("Failed to insert new ingredient")?;
+    .context("Failed to insert new ingredient");
 
-    let ingredient_id: i64 = row.get(0);
-    info!("Ingredient created with ID: {ingredient_id}");
+    let duration = start_time.elapsed();
+    observability::record_db_metrics("create_ingredient", duration);
 
-    Ok(ingredient_id)
+    match result {
+        Ok(row) => {
+            let ingredient_id: i64 = row.get(0);
+            info!("Ingredient created with ID: {ingredient_id}");
+            Ok(ingredient_id)
+        }
+        Err(e) => Err(e),
+    }
 }
 
 /// Read a single ingredient by ID

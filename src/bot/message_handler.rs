@@ -39,6 +39,9 @@ use super::dialogue_manager::{
     RecipeNameInputParams,
 };
 
+// Import observability
+use crate::observability;
+
 /// Parameters for image processing
 #[derive(Debug)]
 pub struct ImageProcessingParams<'a> {
@@ -678,15 +681,31 @@ pub async fn message_handler(
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    if msg.text().is_some() {
-        handle_text_message(&bot, &msg, dialogue, pool, &localization).await?;
+    let start_time = std::time::Instant::now();
+    let message_type = if msg.text().is_some() {
+        "text"
     } else if msg.photo().is_some() {
-        handle_photo_message(&bot, &msg, dialogue, pool, &localization).await?;
+        "photo"
     } else if msg.document().is_some() {
-        handle_document_message(&bot, &msg, dialogue, pool, &localization).await?;
+        "document"
     } else {
-        handle_unsupported_message(&bot, &msg, &localization).await?;
-    }
+        "unsupported"
+    };
 
-    Ok(())
+    observability::record_telegram_message(message_type);
+
+    let result = if msg.text().is_some() {
+        handle_text_message(&bot, &msg, dialogue, pool, &localization).await
+    } else if msg.photo().is_some() {
+        handle_photo_message(&bot, &msg, dialogue, pool, &localization).await
+    } else if msg.document().is_some() {
+        handle_document_message(&bot, &msg, dialogue, pool, &localization).await
+    } else {
+        handle_unsupported_message(&bot, &msg, &localization).await
+    };
+
+    let duration = start_time.elapsed();
+    observability::record_request_metrics("telegram_message", 200, duration);
+
+    result
 }
