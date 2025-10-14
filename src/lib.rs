@@ -10,6 +10,7 @@ pub mod dialogue;
 pub mod instance_manager;
 pub mod localization;
 pub mod measurement_patterns;
+pub mod observability;
 pub mod ocr;
 pub mod ocr_config;
 pub mod ocr_errors;

@@ -3,19 +3,19 @@ use just_ingredients::bot;
 use just_ingredients::db;
 use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
 use just_ingredients::localization;
+use just_ingredients::observability;
 use sqlx::postgres::PgPool;
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
 use teloxide::dispatching::dialogue::InMemStorage;
 use teloxide::prelude::*;
-use tracing::{info, Level};
-use tracing_subscriber::{fmt, layer::SubscriberExt, util::SubscriberInitExt, EnvFilter};
+use tracing::info;
 
 #[tokio::main]
 async fn main() -> Result<()> {
-    // Initialize structured logging with module-specific filtering
-    init_tracing();
+    // Initialize complete observability stack (metrics, tracing, logging)
+    observability::init_observability().await?;
 
     // Initialize localization manager
     let localization_manager = localization::create_localization_manager()?;
@@ -99,28 +99,4 @@ async fn main() -> Result<()> {
         .await;
 
     Ok(())
-}
-
-fn init_tracing() {
-    // Create a filter that allows INFO level by default, but DEBUG for specific modules
-    let filter = EnvFilter::builder()
-        .with_default_directive(Level::INFO.into())
-        // Allow environment variable override
-        .with_env_var("RUST_LOG")
-        .from_env_lossy();
-
-    // Initialize tracing with JSON formatting for production readiness
-    let log_format = env::var("LOG_FORMAT").unwrap_or_else(|_| "pretty".to_string());
-
-    if log_format == "json" {
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(fmt::layer().json())
-            .init();
-    } else {
-        tracing_subscriber::registry()
-            .with(filter)
-            .with(fmt::layer().pretty())
-            .init();
-    }
 }

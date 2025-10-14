@@ -29,6 +29,16 @@ tracing = "0.1" # Structured logging
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] } # Tracing subscriber with filtering
 parking_lot = "0.12" # Efficient synchronization primitives
 
+# Observability dependencies
+metrics = "0.23" # Metrics collection
+metrics-exporter-prometheus = "0.15" # Prometheus metrics exporter
+opentelemetry = "0.23" # OpenTelemetry for distributed tracing
+opentelemetry-otlp = { version = "0.16", features = ["grpc-tonic"] } # OTLP exporter for traces
+tracing-opentelemetry = "0.24" # Tracing integration with OpenTelemetry
+axum = "0.7" # HTTP server for health checks and metrics endpoints
+hyper = "1.0" # HTTP implementation
+hyper-util = { version = "0.1", features = ["tokio"] } # Hyper utilities
+
 [[example]]
 name = "recipe_parser"
 path = "examples/recipe_parser.rs"
