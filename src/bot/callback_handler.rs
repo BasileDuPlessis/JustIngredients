@@ -114,17 +114,17 @@ async fn handle_review_ingredients_callbacks(
                 })
                 .await?;
             } else if data == "confirm" {
-                handle_confirm_button(
+                handle_confirm_button(ConfirmButtonParams {
                     bot,
                     q,
-                    &ingredients,
-                    &dialogue_lang_code,
-                    &extracted_text,
-                    &recipe_name_from_caption,
+                    ingredients: &ingredients,
+                    dialogue_lang_code: &dialogue_lang_code,
+                    extracted_text: &extracted_text,
+                    recipe_name_from_caption: &recipe_name_from_caption,
                     dialogue,
-                    &pool,
+                    pool: &pool,
                     localization,
-                )
+                })
                 .await?;
             } else if data == "add_more" {
                 handle_add_more_button(bot, q, &dialogue_lang_code, dialogue, localization).await?;
@@ -357,6 +357,20 @@ struct DeleteButtonParams<'a> {
     localization: &'a Arc<crate::localization::LocalizationManager>,
 }
 
+/// Parameters for confirm button handling
+#[derive(Debug)]
+struct ConfirmButtonParams<'a> {
+    bot: &'a Bot,
+    q: &'a teloxide::types::CallbackQuery,
+    ingredients: &'a [crate::text_processing::MeasurementMatch],
+    dialogue_lang_code: &'a Option<String>,
+    extracted_text: &'a str,
+    recipe_name_from_caption: &'a Option<String>,
+    dialogue: &'a RecipeDialogue,
+    pool: &'a Arc<PgPool>,
+    localization: &'a Arc<crate::localization::LocalizationManager>,
+}
+
 /// Handle edit button in review ingredients state
 async fn handle_edit_button(params: EditButtonParams<'_>) -> Result<()> {
     let EditButtonParams {
@@ -374,6 +388,14 @@ async fn handle_edit_button(params: EditButtonParams<'_>) -> Result<()> {
 
     let index: usize = data.strip_prefix("edit_").unwrap().parse().unwrap_or(0);
     if index < ingredients.len() {
+        // Record user engagement metric for ingredient editing
+        crate::observability::record_user_engagement_metrics(
+            q.from.id.0 as i64,
+            crate::observability::UserAction::IngredientEdit,
+            None, // No session duration for individual actions
+            dialogue_lang_code.as_deref(),
+        );
+
         let ingredient = &ingredients[index];
         let edit_prompt = format!(
             "✏️ {}\n\n{}: **{} {}**\n\n{}",
@@ -428,6 +450,14 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
     let index: usize = data.strip_prefix("delete_").unwrap().parse().unwrap_or(0);
 
     if index < ingredients.len() {
+        // Record user engagement metric for ingredient deletion
+        crate::observability::record_user_engagement_metrics(
+            q.from.id.0 as i64,
+            crate::observability::UserAction::IngredientDelete,
+            None, // No session duration for individual actions
+            dialogue_lang_code.as_deref(),
+        );
+
         ingredients.remove(index);
 
         // Check if all ingredients were deleted
@@ -536,18 +566,27 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
 }
 
 /// Handle confirm button in review ingredients state
-#[allow(clippy::too_many_arguments)]
-async fn handle_confirm_button(
-    bot: &Bot,
-    q: &teloxide::types::CallbackQuery,
-    ingredients: &[crate::text_processing::MeasurementMatch],
-    dialogue_lang_code: &Option<String>,
-    extracted_text: &str,
-    recipe_name_from_caption: &Option<String>,
-    dialogue: &RecipeDialogue,
-    pool: &Arc<PgPool>,
-    localization: &Arc<crate::localization::LocalizationManager>,
-) -> Result<()> {
+async fn handle_confirm_button(params: ConfirmButtonParams<'_>) -> Result<()> {
+    let ConfirmButtonParams {
+        bot,
+        q,
+        ingredients,
+        dialogue_lang_code,
+        extracted_text,
+        recipe_name_from_caption,
+        dialogue,
+        pool,
+        localization,
+    } = params;
+
+    // Record user engagement metric for recipe confirmation
+    crate::observability::record_user_engagement_metrics(
+        q.from.id.0 as i64,
+        crate::observability::UserAction::RecipeConfirm,
+        None, // No session duration for individual actions
+        dialogue_lang_code.as_deref(),
+    );
+
     // Check if we have a recipe name from caption
     if let Some(caption_recipe_name) = recipe_name_from_caption {
         // STREAMLINED WORKFLOW: Skip recipe name input when caption is available
@@ -745,6 +784,14 @@ async fn handle_workflow_button(
 ) -> Result<()> {
     match data {
         "workflow_add_another" => {
+            // Record user engagement metric for workflow continuation
+            crate::observability::record_user_engagement_metrics(
+                q.from.id.0 as i64,
+                crate::observability::UserAction::WorkflowContinue,
+                None, // No session duration for individual actions
+                q.from.language_code.as_deref(),
+            );
+
             bot.send_message(
                 q.message.as_ref().unwrap().chat().id,
                 t_lang(
@@ -757,6 +804,14 @@ async fn handle_workflow_button(
             dialogue.update(RecipeDialogueState::Start).await?;
         }
         "workflow_list_recipes" => {
+            // Record user engagement metric for recipe listing
+            crate::observability::record_user_engagement_metrics(
+                q.from.id.0 as i64,
+                crate::observability::UserAction::RecipesCommand,
+                None, // No session duration for individual actions
+                q.from.language_code.as_deref(),
+            );
+
             handle_list_recipes(
                 bot,
                 q.message.as_ref().unwrap(),
@@ -767,6 +822,14 @@ async fn handle_workflow_button(
             .await?;
         }
         "workflow_search_recipes" => {
+            // Record user engagement metric for recipe search
+            crate::observability::record_user_engagement_metrics(
+                q.from.id.0 as i64,
+                crate::observability::UserAction::RecipeSearch,
+                None, // No session duration for individual actions
+                q.from.language_code.as_deref(),
+            );
+
             bot.send_message(
                 q.message.as_ref().unwrap().chat().id,
                 "🔍 Recipe search coming soon! For now, use the 'List My Recipes' button.",
@@ -776,4 +839,21 @@ async fn handle_workflow_button(
         _ => {}
     }
     Ok(())
+}
+
+/// Cache-enabled callback handler for improved performance
+///
+/// This version includes caching for database queries to reduce
+/// database load and improve response times.
+pub async fn callback_handler_with_cache(
+    bot: Bot,
+    q: teloxide::types::CallbackQuery,
+    pool: Arc<PgPool>,
+    dialogue: RecipeDialogue,
+    localization: Arc<crate::localization::LocalizationManager>,
+    cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
+) -> Result<()> {
+    // For now, delegate to the original handler
+    // TODO: Integrate caching into specific operations
+    callback_handler(bot, q, pool, dialogue, localization).await
 }

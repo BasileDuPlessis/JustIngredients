@@ -45,15 +45,13 @@ impl ObservabilityConfig {
     /// Load configuration from environment variables
     pub fn from_env() -> Self {
         Self {
-            environment: env::var("ENVIRONMENT")
-                .unwrap_or_else(|_| "development".to_string()),
+            environment: env::var("ENVIRONMENT").unwrap_or_else(|_| "development".to_string()),
             otlp_endpoint: env::var("OTLP_ENDPOINT").ok(),
             metrics_port: env::var("METRICS_PORT")
                 .unwrap_or_else(|_| "9090".to_string())
                 .parse()
                 .unwrap_or(9090),
-            log_level: env::var("OBSERVABILITY_LOG_LEVEL")
-                .unwrap_or_else(|_| "info".to_string()),
+            log_level: env::var("OBSERVABILITY_LOG_LEVEL").unwrap_or_else(|_| "info".to_string()),
             enable_trace_sampling: env::var("ENABLE_TRACE_SAMPLING")
                 .unwrap_or_else(|_| "false".to_string())
                 .parse()
@@ -74,10 +72,12 @@ impl ObservabilityConfig {
     #[allow(dead_code)]
     fn add_default_tags(&mut self) {
         // Add environment tag
-        self.tags.push(("environment".to_string(), self.environment.clone()));
+        self.tags
+            .push(("environment".to_string(), self.environment.clone()));
 
         // Add service name
-        self.tags.push(("service".to_string(), "just-ingredients-bot".to_string()));
+        self.tags
+            .push(("service".to_string(), "just-ingredients-bot".to_string()));
 
         // Add version if available
         if let Ok(version) = env::var("SERVICE_VERSION") {
@@ -110,18 +110,21 @@ impl ObservabilityConfig {
         // Validate OTLP endpoint format if provided
         if let Some(endpoint) = &self.otlp_endpoint {
             if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
-                return Err(format!("Invalid OTLP endpoint format: {}", endpoint));
+                return Err(format!("[CONFIG_OBSERVABILITY] Invalid OTLP endpoint format: {}", endpoint));
             }
         }
 
         // Validate sampling ratio
         if !(0.0..=1.0).contains(&self.trace_sampling_ratio) {
-            return Err(format!("Invalid trace sampling ratio: {}", self.trace_sampling_ratio));
+            return Err(format!(
+                "[CONFIG_OBSERVABILITY] Invalid trace sampling ratio: {}",
+                self.trace_sampling_ratio
+            ));
         }
 
         // Validate port range
         if self.metrics_port == 0 {
-            return Err(format!("Invalid metrics port: {}", self.metrics_port));
+            return Err(format!("[CONFIG_OBSERVABILITY] Invalid metrics port: {}", self.metrics_port));
         }
 
         Ok(())
@@ -130,8 +133,8 @@ impl ObservabilityConfig {
 
 /// Parse tags from environment variable string
 /// Format: "key1=value1,key2=value2,key3=value3"
-    #[allow(dead_code)]
-    fn parse_tags(tags_str: &str) -> Vec<(String, String)> {
+#[allow(dead_code)]
+fn parse_tags(tags_str: &str) -> Vec<(String, String)> {
     tags_str
         .split(',')
         .filter_map(|pair| {
@@ -191,7 +194,7 @@ pub mod presets {
         ObservabilityConfig {
             environment: "minimal".to_string(),
             enable_trace_sampling: true,
-            trace_sampling_ratio: 0.01, // Sample only 1% of traces
+            trace_sampling_ratio: 0.01,   // Sample only 1% of traces
             enable_metrics_export: false, // Disable metrics export
             log_level: "error".to_string(),
             ..Default::default()

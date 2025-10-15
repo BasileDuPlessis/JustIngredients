@@ -235,7 +235,7 @@ cargo test                    # Run complete test suite (93 tests)
 
 - **Clippy Enforcement**: All code must pass `cargo clippy --all-targets --all-features -- -D warnings`
   - Treats all warnings as errors for maximum code quality
-  - Use `#[allow(clippy::lint_name)]` only for justified exceptions with comments
+  - Use clippy allow attributes only for justified exceptions with comments
   - Common allowed lints: `too_many_arguments` for database functions
 - **Rustfmt Enforcement**: All code must be formatted with `rustfmt`
   - Run `cargo fmt --all -- --check` to verify formatting

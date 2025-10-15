@@ -32,16 +32,16 @@ help-tip4 = • Langues supportées : Anglais + Français
 help-final = Besoin d'aide ? Envoyez-moi simplement une image ! 😊
 
 # Messages d'erreur
-error-download-failed = ❌ Échec du téléchargement de l'image. Veuillez réessayer.
-error-unsupported-format = ❌ Format d'image non supporté. Veuillez utiliser les formats PNG, JPG, JPEG, BMP, TIFF ou TIF.
-error-no-text-found = ⚠️ Aucun texte n'a été trouvé dans l'image. Essayez avec une image plus claire contenant du texte visible.
-error-ocr-initialization = ❌ L'initialisation du moteur OCR a échoué. Veuillez réessayer plus tard.
-error-ocr-extraction = ❌ Échec de l'extraction du texte de l'image. Essayez avec une image différente.
-error-ocr-timeout = ❌ Le traitement OCR a expiré : {$msg}
-error-ocr-corruption = ❌ Le moteur OCR a rencontré une erreur interne. Veuillez réessayer.
-error-ocr-exhaustion = ❌ Les ressources système sont épuisées. Veuillez réessayer plus tard.
-error-validation = ❌ La validation de l'image a échoué : {$msg}
-error-image-load = ❌ Le format d'image n'est pas supporté ou l'image est corrompue. Essayez avec une image PNG, JPG ou BMP.
+error-download-failed = [DOWNLOAD] Échec du téléchargement de l'image. Veuillez réessayer.
+error-unsupported-format = [FORMAT] Format d'image non supporté. Veuillez utiliser les formats PNG, JPG, JPEG, BMP, TIFF ou TIF.
+error-no-text-found = [OCR_RESULT] Aucun texte n'a été trouvé dans l'image. Essayez avec une image plus claire contenant du texte visible.
+error-ocr-initialization = [OCR_INIT] L'initialisation du moteur OCR a échoué. Veuillez réessayer plus tard.
+error-ocr-extraction = [OCR_EXTRACT] Échec de l'extraction du texte de l'image. Essayez avec une image différente.
+error-ocr-timeout = [OCR_TIMEOUT] Le traitement OCR a expiré : {$msg}
+error-ocr-corruption = [OCR_CORRUPT] Le moteur OCR a rencontré une erreur interne. Veuillez réessayer.
+error-ocr-exhaustion = [OCR_RESOURCE] Les ressources système sont épuisées. Veuillez réessayer plus tard.
+error-validation = [VALIDATION] La validation de l'image a échoué : {$msg}
+error-image-load = [IMAGE_LOAD] Le format d'image n'est pas supporté ou l'image est corrompue. Essayez avec une image PNG, JPG ou BMP.
 
 # Messages de succès
 success-extraction = ✅ **Texte extrait avec succès !**
@@ -57,7 +57,7 @@ line = Ligne
 unknown-ingredient = Ingrédient inconnu
 total-ingredients = Total des ingrédients trouvés
 original-text = Texte extrait original
-error-processing-failed = Échec du traitement des ingrédients
+error-processing-failed = [INGREDIENT_PROCESSING] Échec du traitement des ingrédients
 error-try-again = Veuillez réessayer avec une image différente.
 
 # Messages de traitement
@@ -80,15 +80,15 @@ text-tip = 💡 Conseil : Envoyez-moi une image avec du texte pour l'extraire av
 # Messages de dialogue pour le nom de recette
 recipe-name-prompt = 🏷️ Comment souhaitez-vous nommer cette recette ?
 recipe-name-prompt-hint = Veuillez entrer un nom pour votre recette (par ex. "Cookies aux pépites de chocolat", "Lasagnes de Maman")
-recipe-name-invalid = ❌ Le nom de recette ne peut pas être vide. Veuillez entrer un nom valide pour votre recette.
-recipe-name-too-long = ❌ Le nom de recette est trop long (maximum 255 caractères). Veuillez entrer un nom plus court.
+recipe-name-invalid = [RECIPE_NAME] Le nom de recette ne peut pas être vide. Veuillez entrer un nom valide pour votre recette.
+recipe-name-too-long = [RECIPE_NAME] Le nom de recette est trop long (maximum 255 caractères). Veuillez entrer un nom plus court.
 recipe-complete = ✅ Recette "{$recipe_name}" sauvegardée avec succès avec {$ingredient_count} ingrédients !
 
 # Messages de révision des ingrédients
 review-title = Révisez vos ingrédients
 review-description = Veuillez réviser les ingrédients extraits ci-dessous. Utilisez les boutons pour modifier ou supprimer des éléments, puis confirmez quand vous êtes prêt.
 review-confirm = Confirmer et sauvegarder
-review-cancelled = ❌ Révision des ingrédients annulée. Aucun ingrédient n'a été sauvegardé.
+review-cancelled = [REVIEW_CANCEL] Révision des ingrédients annulée. Aucun ingrédient n'a été sauvegardé.
 review-no-ingredients = Aucun ingrédient restant
 review-no-ingredients-help = Tous les ingrédients ont été supprimés. Vous pouvez ajouter plus d'ingrédients en envoyant une autre image, ou annuler cette recette.
 review-add-more = Ajouter plus d'ingrédients
@@ -102,7 +102,7 @@ edit-too-long = Le texte d'ingrédient est trop long (maximum 200 caractères). 
 edit-no-ingredient-name = Veuillez spécifier un nom d'ingrédient (par ex. "2 tasses de farine" et non pas seulement "2 tasses").
 edit-ingredient-name-too-long = Le nom d'ingrédient est trop long (maximum 100 caractères). Veuillez utiliser un nom plus court.
 edit-invalid-quantity = Quantité invalide. Veuillez utiliser un nombre positif (par ex. "2,5 tasses de farine").
-error-invalid-edit = Index d'ingrédient invalide pour l'édition.
+error-invalid-edit = [INGREDIENT_EDIT] Index d'ingrédient invalide pour l'édition.
 cancel = Annuler
 review-help = Veuillez répondre avec "confirm" pour sauvegarder ces ingrédients, ou "cancel" pour les annuler.
 
@@ -143,4 +143,4 @@ caption-recipe-saved = Recette sauvegardée sous : "{$recipe_name}"
 
 # Messages de légende photo
 caption-used = 📝 Utilisation de la légende de la photo comme nom de recette : "{$caption}"
-caption-invalid = ⚠️ La légende de la photo était invalide, utilisation du nom par défaut : "{$default_name}"
+caption-invalid = [CAPTION] La légende de la photo était invalide, utilisation du nom par défaut : "{$default_name}"

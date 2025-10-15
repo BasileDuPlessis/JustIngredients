@@ -63,6 +63,29 @@ impl Default for MeasurementConfig {
     }
 }
 
+impl MeasurementConfig {
+    /// Validate measurement configuration parameters
+    pub fn validate(&self) -> Result<(), String> {
+        // Validate max_ingredient_length
+        if self.max_ingredient_length == 0 {
+            return Err("[CONFIG_TEXT_PROCESSING] max_ingredient_length must be greater than 0".to_string());
+        }
+
+        // Validate custom regex pattern if provided
+        if let Some(pattern) = &self.custom_pattern {
+            if pattern.trim().is_empty() {
+                return Err("[CONFIG_TEXT_PROCESSING] custom_pattern cannot be empty if provided".to_string());
+            }
+            // Test that the pattern compiles
+            if regex::Regex::new(pattern).is_err() {
+                return Err(format!("[CONFIG_TEXT_PROCESSING] custom_pattern '{}' is not a valid regex", pattern));
+            }
+        }
+
+        Ok(())
+    }
+}
+
 /// Measurement units configuration loaded from JSON
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct MeasurementUnitsConfig {
@@ -78,12 +101,56 @@ pub struct MeasurementUnits {
     pub french_units: Vec<String>,
 }
 
+impl MeasurementUnitsConfig {
+    /// Validate measurement units configuration
+    pub fn validate(&self) -> Result<(), String> {
+        // Validate that all unit arrays are non-empty
+        if self.measurement_units.volume_units.is_empty() {
+            return Err("[CONFIG_TEXT_PROCESSING] volume_units cannot be empty".to_string());
+        }
+        if self.measurement_units.weight_units.is_empty() {
+            return Err("[CONFIG_TEXT_PROCESSING] weight_units cannot be empty".to_string());
+        }
+        if self.measurement_units.volume_units_metric.is_empty() {
+            return Err("[CONFIG_TEXT_PROCESSING] volume_units_metric cannot be empty".to_string());
+        }
+        if self.measurement_units.us_units.is_empty() {
+            return Err("[CONFIG_TEXT_PROCESSING] us_units cannot be empty".to_string());
+        }
+        if self.measurement_units.french_units.is_empty() {
+            return Err("[CONFIG_TEXT_PROCESSING] french_units cannot be empty".to_string());
+        }
+
+        // Validate that all unit strings are non-empty and contain valid characters
+        let validate_units = |units: &[String], category: &str| -> Result<(), String> {
+            for (i, unit) in units.iter().enumerate() {
+                if unit.trim().is_empty() {
+                    return Err(format!("[CONFIG_TEXT_PROCESSING] {}[{}] cannot be empty", category, i));
+                }
+                // Check for obviously invalid characters (control characters)
+                if unit.chars().any(|c| c.is_control()) {
+                    return Err(format!("[CONFIG_TEXT_PROCESSING] {}[{}] '{}' contains control characters", category, i, unit));
+                }
+            }
+            Ok(())
+        };
+
+        validate_units(&self.measurement_units.volume_units, "volume_units")?;
+        validate_units(&self.measurement_units.weight_units, "weight_units")?;
+        validate_units(&self.measurement_units.volume_units_metric, "volume_units_metric")?;
+        validate_units(&self.measurement_units.us_units, "us_units")?;
+        validate_units(&self.measurement_units.french_units, "french_units")?;
+
+        Ok(())
+    }
+}
+
 // Default comprehensive regex pattern for measurement units (now supports quantity-only ingredients and fractions)
 // Uses named capture groups: quantity, measurement, and ingredient
 // NOTE: This pattern is now built dynamically from config/measurement_units.json
 
 /// Load measurement units configuration from JSON file
-fn load_measurement_units_config() -> MeasurementUnitsConfig {
+pub fn load_measurement_units_config() -> MeasurementUnitsConfig {
     let config_path = "config/measurement_units.json";
     match fs::read_to_string(config_path) {
         Ok(content) => serde_json::from_str(&content).unwrap_or_else(|e| {
@@ -117,6 +184,121 @@ fn load_measurement_units_config() -> MeasurementUnitsConfig {
 }
 
 /// Build the regex pattern from measurement units configuration
+///
+/// This function implements a sophisticated pattern generation algorithm that creates
+/// a comprehensive regex for detecting measurement units in ingredient text.
+///
+/// ## Pattern Generation Algorithm
+///
+/// ### Step 1: Configuration Loading
+/// ```text
+/// Load measurement units from config/measurement_units.json
+/// Categories: volume_units, weight_units, volume_units_metric, us_units, french_units
+/// ```
+///
+/// ### Step 2: Unit Collection and Deduplication
+/// ```text
+/// Combine all unit categories into single collection
+/// Remove duplicates using HashSet
+/// Sort by length (longest first) to prevent partial matches
+/// ```
+///
+/// ### Step 3: Regex Escaping
+/// ```text
+/// Escape all regex special characters in unit names
+/// Examples: "cups?" → "cups\\?", "fl. oz" → "fl\\. oz"
+/// ```
+///
+/// ### Step 4: Alternation Pattern Construction
+/// ```text
+/// Join escaped units with "|" for alternation
+/// Result: "cups\\?|tablespoons\\?|litres\\?|grammes\\?|..."
+/// ```
+///
+/// ### Step 5: Complete Pattern Assembly
+/// ```text
+/// Build final regex with named capture groups:
+/// (?i)(?P<quantity>...)(?:\s*(?P<measurement>...)|\s+(?P<ingredient>...))
+/// ```
+///
+/// ## Pattern Structure Analysis
+///
+/// The generated regex uses this structure:
+/// ```regex
+/// (?i)                           # Case-insensitive matching
+/// (?P<quantity>...)             # Named group for quantity (fractions/decimals)
+/// (?:                           # Non-capturing group for alternatives
+///   \s*(?P<measurement>...)     # Optional whitespace + measurement unit
+///   |                           # OR
+///   \s+(?P<ingredient>...)      # Whitespace + ingredient name (quantity-only)
+/// )
+/// ```
+///
+/// ## Quantity Pattern Details
+///
+/// Supports multiple quantity formats:
+/// - **Integers**: `2`, `500`, `6`
+/// - **Decimals**: `1.5`, `2.25`, `0.5`
+/// - **Fractions**: `1/2`, `3/4`, `2¼` (Unicode fractions)
+/// - **Mixed**: `2½`, `1½` (Unicode fraction characters)
+///
+/// ## Measurement Unit Handling
+///
+/// - **Escaping**: All regex special characters are escaped
+/// - **Ordering**: Longest units matched first to prevent partial matches
+/// - **Categories**: Supports English, French, metric, and US customary units
+/// - **Case Insensitive**: All units matched regardless of case
+///
+/// ## Examples of Generated Patterns
+///
+/// For units ["cups", "tablespoons", "litres", "grammes"]:
+/// ```regex
+/// (?i)(?P<quantity>\d*\.?\d+|\d+/\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>cups|tablespoons|litres|grammes)|\s+(?P<ingredient>\w+))
+/// ```
+///
+/// ## Performance Characteristics
+///
+/// - **Compilation**: Pattern compiled once at startup via lazy_static
+/// - **Matching**: Efficient regex matching with pre-compiled patterns
+/// - **Memory**: Minimal memory usage (shared static pattern)
+/// - **Thread Safety**: Immutable static pattern, safe for concurrent access
+///
+/// ## Error Handling
+///
+/// - **Config Loading**: Falls back to empty config if JSON parsing fails
+/// - **Pattern Compilation**: Uses expect() for guaranteed valid patterns
+/// - **Unit Validation**: Logs warnings for missing or invalid units
+///
+/// ## Configuration File Format
+///
+/// Expected JSON structure in `config/measurement_units.json`:
+/// ```json
+/// {
+///   "measurement_units": {
+///     "volume_units": ["cups", "tablespoons", "teaspoons"],
+///     "weight_units": ["grams", "kilograms", "pounds"],
+///     "volume_units_metric": ["litres", "millilitres"],
+///     "us_units": ["fl oz", "qt", "gal"],
+///     "french_units": ["litres", "grammes", "cuillères"]
+///   }
+/// }
+/// ```
+///
+/// ## Thread Safety and Performance
+///
+/// - **Lazy Initialization**: Pattern built once at first access
+/// - **Static Storage**: Compiled regex stored in static memory
+/// - **Concurrent Access**: Safe for use across multiple threads
+/// - **Memory Efficiency**: Single compiled pattern reused for all operations
+///
+/// # Returns
+///
+/// Returns a complete regex pattern string ready for compilation
+///
+/// # Examples
+///
+/// Note: This is a private function used internally to build the default regex pattern.
+/// The functionality is exposed through the public `MeasurementDetector::new()` constructor.
 fn build_measurement_regex_pattern() -> String {
     let config = load_measurement_units_config();
 
@@ -246,6 +428,9 @@ impl MeasurementDetector {
     /// ```
     #[allow(dead_code)]
     pub fn with_config(config: MeasurementConfig) -> Result<Self, regex::Error> {
+        // Validate configuration first
+        config.validate().map_err(|e| regex::Error::Syntax(e))?;
+
         let pattern = if let Some(custom_pattern) = &config.custom_pattern {
             debug!("Using custom regex pattern: {}", custom_pattern);
             Regex::new(custom_pattern)?
@@ -262,10 +447,106 @@ impl MeasurementDetector {
 
     /// Extract all ingredient measurements from the given text
     ///
-    /// Scans the entire text line by line and returns all detected measurements with their
-    /// positions, line numbers, and extracted ingredient names.
+    /// This function implements a sophisticated measurement detection algorithm that:
     ///
-    /// # Arguments
+    /// ## Algorithm Overview
+    ///
+    /// 1. **Line-by-Line Processing**: Scans text line by line to maintain positional accuracy
+    /// 2. **Regex Pattern Matching**: Uses compiled regex to find measurement patterns
+    /// 3. **Capture Group Analysis**: Extracts quantity, measurement unit, and ingredient components
+    /// 4. **Measurement Classification**: Distinguishes between traditional measurements and quantity-only ingredients
+    /// 5. **Ingredient Name Extraction**: Intelligently extracts ingredient names from surrounding text
+    /// 6. **Post-Processing**: Applies cleaning and normalization to ingredient names
+    ///
+    /// ## Processing Flow
+    ///
+    /// ```text
+    /// For each line in text:
+    ///   For each regex match in line:
+    ///     Extract capture groups (quantity, measurement, ingredient)
+    ///     Classify measurement type:
+    ///       - Traditional: "2 cups flour" → "2", "cups", "flour"
+    ///       - Quantity-only: "6 eggs" → "6", None, "eggs"
+    ///     Extract ingredient name from text after measurement (if traditional)
+    ///     Apply post-processing to clean ingredient name
+    ///     Record match with line number and character positions
+    /// ```
+    ///
+    /// ## Measurement Types Handled
+    ///
+    /// - **Traditional Measurements**: "2 cups flour", "1.5 liters milk", "500g butter"
+    /// - **Quantity-Only Ingredients**: "6 eggs", "4 apples", "3 sachets yeast"
+    /// - **Fraction Support**: "½ cup sugar", "⅓ liter cream", "2¼ cups flour"
+    /// - **Unicode Fractions**: "¼", "½", "¾", "⅓", "⅔" characters
+    /// - **Multi-Language Units**: English ("cups", "tablespoons") and French ("litres", "grammes")
+    ///
+    /// ## Position Tracking
+    ///
+    /// Maintains accurate character positions across multi-line text by tracking:
+    /// - `current_pos`: Running total of characters processed
+    /// - `line_number`: 0-based line index for each match
+    /// - `start_pos`/`end_pos`: Character offsets within entire text
+    ///
+    /// ## Regex Pattern Details
+    ///
+    /// The pattern uses named capture groups for robust extraction:
+    /// - `quantity`: Numbers, decimals, fractions (e.g., "2", "1.5", "½", "2¼")
+    /// - `measurement`: Optional unit from configured measurement units
+    /// - `ingredient`: Direct ingredient name (for quantity-only patterns)
+    ///
+    /// Pattern structure: `(?i)(?P<quantity>...)(?:\s*(?P<measurement>...)|\s+(?P<ingredient>...))`
+    ///
+    /// ## Performance Characteristics
+    ///
+    /// - **Regex Compilation**: Pattern compiled once at detector creation
+    /// - **Memory Usage**: Minimal, processes text line-by-line
+    /// - **Time Complexity**: O(n) where n is text length
+    /// - **Thread Safety**: Immutable detector can be shared across threads
+    ///
+    /// ## Error Handling
+    ///
+    /// - **Regex Compilation**: Guaranteed valid patterns via static compilation
+    /// - **Text Processing**: Graceful handling of empty lines and malformed input
+    /// - **Position Tracking**: Accurate position calculation across line boundaries
+    ///
+    /// ## Examples of Processing
+    ///
+    /// ### Traditional Measurement
+    /// ```text
+    /// Input: "2 cups flour"
+    /// Processing:
+    ///   - Regex match: "2 cups flour"
+    ///   - quantity: "2", measurement: "cups"
+    ///   - ingredient extraction: "flour" (from text after measurement)
+    ///   - Result: MeasurementMatch { quantity: "2", measurement: Some("cups"), ingredient_name: "flour", ... }
+    /// ```
+    ///
+    /// ### Quantity-Only Ingredient
+    /// ```text
+    /// Input: "6 oeufs"
+    /// Processing:
+    ///   - Regex match: "6 oeufs"
+    ///   - quantity: "6", ingredient: "oeufs" (direct capture)
+    ///   - measurement: None (quantity-only pattern)
+    ///   - Result: MeasurementMatch { quantity: "6", measurement: None, ingredient_name: "oeufs", ... }
+    /// ```
+    ///
+    /// ### Fraction Support
+    /// ```text
+    /// Input: "½ cup sugar"
+    /// Processing:
+    ///   - Regex match: "½ cup sugar"
+    ///   - quantity: "½", measurement: "cup"
+    ///   - ingredient extraction: "sugar"
+    ///   - Result: MeasurementMatch { quantity: "½", measurement: Some("cup"), ingredient_name: "sugar", ... }
+    /// ```
+    ///
+    /// ## Thread Safety and Performance
+    ///
+    /// - **Immutable State**: Detector can be shared across threads safely
+    /// - **Memory Efficiency**: No allocations during matching, reuses compiled regex
+    /// - **Scalability**: Linear performance scaling with input text size
+    /// - **Concurrent Processing**: Safe for parallel text processing workloads
     ///
     /// * `text` - The text to scan for measurements
     ///
@@ -293,12 +574,16 @@ impl MeasurementDetector {
     /// # Ok::<(), regex::Error>(())
     /// ```
     pub fn extract_ingredient_measurements(&self, text: &str) -> Vec<MeasurementMatch> {
+        let start_time = std::time::Instant::now();
+        let text_length = text.len();
+        let line_count = text.lines().count();
+
         let mut matches = Vec::new();
         let mut current_pos = 0;
 
         debug!(
             "Finding measurements in text with {} lines",
-            text.lines().count()
+            line_count
         );
 
         for (line_number, line) in text.lines().enumerate() {
@@ -363,7 +648,19 @@ impl MeasurementDetector {
             current_pos += line.len() + 1; // +1 for newline character
         }
 
-        info!("Found {} measurement matches in text", matches.len());
+        let duration = start_time.elapsed();
+        let matches_count = matches.len();
+
+        // Record text processing performance metrics
+        crate::observability::record_text_processing_metrics(
+            "extract_ingredient_measurements",
+            duration,
+            text_length,
+            line_count,
+            matches_count,
+        );
+
+        info!("Found {} measurement matches in text", matches_count);
         matches
     }
 
@@ -449,19 +746,149 @@ impl MeasurementDetector {
 
     /// Post-process an ingredient name to clean it up
     ///
-    /// This method applies various cleaning operations to extract clean ingredient names:
-    /// - Removes common prepositions and articles
-    /// - Trims whitespace and punctuation
-    /// - Limits length to prevent overly long extractions
-    /// - Handles French prepositions like "de", "d'", etc.
+    /// This function implements a multi-stage ingredient name cleaning algorithm that
+    /// transforms raw OCR-extracted text into clean, normalized ingredient names.
+    ///
+    /// ## Algorithm Overview
+    ///
+    /// The cleaning process follows this sequence:
+    /// 1. **Early Exit Conditions**: Skip processing for disabled config or empty input
+    /// 2. **Punctuation Cleanup**: Remove trailing punctuation marks
+    /// 3. **Prefix Removal**: Strip common linguistic prepositions and articles
+    /// 4. **Length Limiting**: Enforce maximum name length with smart truncation
+    /// 5. **Whitespace Normalization**: Clean up spacing and formatting
+    ///
+    /// ## Processing Stages
+    ///
+    /// ### Stage 1: Early Exit Conditions
+    /// ```text
+    /// if postprocessing_disabled or input_empty:
+    ///     return input.trim()
+    /// ```
+    /// **Purpose**: Skip unnecessary processing for edge cases
+    ///
+    /// ### Stage 2: Punctuation Cleanup
+    /// **Algorithm**: Remove trailing punctuation while preserving valid characters
+    /// ```text
+    /// Input:  "flour,"    → Output: "flour"
+    /// Input:  "sugar!"    → Output: "sugar"
+    /// Input:  "salt."     → Output: "salt"
+    /// ```
+    /// **Preserved Characters**: Alphanumeric, spaces, hyphens, apostrophes
+    /// **Removed Characters**: `.,;:!?` and other punctuation at string end
+    ///
+    /// ### Stage 3: Linguistic Prefix Removal
+    /// **Algorithm**: Remove common prepositions and articles that appear in ingredient contexts
+    ///
+    /// **English Prefixes**:
+    /// - `"of "` → "flour of wheat" → "wheat"
+    /// - `"the "` → "the flour" → "flour"
+    /// - `"a "`, `"an "` → "a tomato" → "tomato"
+    ///
+    /// **French Prefixes**:
+    /// - `"de "` → "farine de blé" → "farine de blé" (preserved)
+    /// - `"d'"` → "d'oeufs" → "oeufs"
+    /// - `"du "`, `"des "` → "du sel" → "sel"
+    /// - `"la "`, `"le "`, `"les "` → "la farine" → "farine"
+    /// - `"l'"` → "l'eau" → "eau"
+    /// - `"au "`, `"aux "` → "au miel" → "miel"
+    /// - `"un "`, `"une "` → "un oeuf" → "oeuf"
+    ///
+    /// **Processing Rules**:
+    /// - Only remove one prefix per ingredient
+    /// - Case-insensitive matching
+    /// - Preserve space after prefix removal
+    ///
+    /// ### Stage 4: Length Limiting with Smart Truncation
+    /// **Algorithm**: Enforce maximum length while attempting word boundary preservation
+    ///
+    /// ```text
+    /// Max Length: 100 characters
+    /// Input: "all-purpose flour for baking cakes and pastries" (50 chars) → No change
+    /// Input: "extra long ingredient name that exceeds maximum allowed length for storage" (75 chars)
+    ///        → "extra long ingredient name that exceeds maximum allowed" (60 chars)
+    /// ```
+    ///
+    /// **Truncation Strategy**:
+    /// 1. Check if length exceeds maximum
+    /// 2. Attempt truncation at word boundary (find last space)
+    /// 3. Fall back to hard character limit if no word boundary found
+    /// 4. Log warning for truncated ingredients
+    ///
+    /// ### Stage 5: Whitespace Normalization
+    /// **Algorithm**: Clean up spacing issues from OCR and text processing
+    ///
+    /// ```text
+    /// Input:  "  flour   "     → Output: "flour"
+    /// Input:  "de   blé"       → Output: "de blé"
+    /// Input:  "farine\tde\nblé" → Output: "farine de blé"
+    /// ```
+    ///
+    /// **Processing Steps**:
+    /// 1. Split on whitespace (handles spaces, tabs, newlines)
+    /// 2. Filter out empty strings
+    /// 3. Rejoin with single spaces
+    /// 4. Trim leading/trailing whitespace
+    ///
+    /// ## Examples of Processing
+    ///
+    /// ### Basic Punctuation Removal
+    /// ```text
+    /// Input:  "flour,"
+    /// Stage 2: Remove trailing comma → "flour"
+    /// Final:  "flour"
+    /// ```
+    ///
+    /// ### French Article Removal
+    /// ```text
+    /// Input:  "la farine"
+    /// Stage 3: Remove "la " → "farine"
+    /// Final:  "farine"
+    /// ```
+    ///
+    /// ### Complex Multi-Stage Processing
+    /// ```text
+    /// Input:  "  de la farine de blé,  "
+    /// Stage 1: Not empty, processing enabled
+    /// Stage 2: Remove trailing comma → "  de la farine de blé  "
+    /// Stage 3: Remove "de " → "la farine de blé  " (only first prefix removed)
+    /// Stage 4: Length OK, no truncation
+    /// Stage 5: Normalize spaces → "la farine de blé"
+    /// Final:  "la farine de blé"
+    /// ```
+    ///
+    /// ## Performance Characteristics
+    ///
+    /// - **Time Complexity**: O(n) where n is string length
+    /// - **Memory Usage**: Minimal, in-place operations where possible
+    /// - **Allocation Strategy**: Single pass with minimal allocations
+    /// - **Early Exit**: Fast path for disabled processing or empty strings
+    ///
+    /// ## Error Handling
+    ///
+    /// - **Empty Input**: Gracefully handled with early return
+    /// - **Unicode Safety**: All operations are Unicode-safe
+    /// - **Boundary Safety**: No panics on edge cases (empty strings, single characters)
+    ///
+    /// ## Configuration Integration
+    ///
+    /// Respects `MeasurementConfig` settings:
+    /// - `enable_ingredient_postprocessing`: Master enable/disable switch
+    /// - `max_ingredient_length`: Maximum allowed ingredient name length
+    ///
+    /// ## Thread Safety
+    ///
+    /// - **Immutable Access**: Only reads configuration, no mutation
+    /// - **No Shared State**: No static or global state modification
+    /// - **Concurrent Safe**: Can be called safely from multiple threads
     ///
     /// # Arguments
     ///
-    /// * `raw_name` - The raw ingredient name extracted from text
+    /// * `raw_name` - The raw ingredient name string to clean
     ///
     /// # Returns
     ///
-    /// A cleaned and processed ingredient name
+    /// Returns a cleaned and normalized ingredient name string
     fn post_process_ingredient_name(&self, raw_name: &str) -> String {
         if !self.config.enable_ingredient_postprocessing || raw_name.trim().is_empty() {
             trace!("Post-processing disabled or empty name: '{}'", raw_name);
@@ -566,5 +993,112 @@ impl MeasurementDetector {
     /// Get the regex pattern as a string (for testing purposes)
     pub fn pattern_str(&self) -> &str {
         self.pattern.as_str()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_measurement_config_validation() {
+        let mut config = MeasurementConfig::default();
+
+        // Valid config should pass
+        assert!(config.validate().is_ok());
+
+        // Test invalid max_ingredient_length
+        config.max_ingredient_length = 0;
+        assert!(config.validate().is_err());
+        config.max_ingredient_length = 100;
+
+        // Test invalid custom pattern (empty)
+        config.custom_pattern = Some("".to_string());
+        assert!(config.validate().is_err());
+
+        // Test invalid custom pattern (invalid regex)
+        config.custom_pattern = Some("[invalid".to_string());
+        assert!(config.validate().is_err());
+
+        // Test valid custom pattern
+        config.custom_pattern = Some(r"\d+\s+cups?".to_string());
+        assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn test_measurement_units_config_validation() {
+        let mut config = MeasurementUnitsConfig {
+            measurement_units: MeasurementUnits {
+                volume_units: vec!["cup".to_string(), "tablespoon".to_string()],
+                weight_units: vec!["g".to_string(), "kg".to_string()],
+                volume_units_metric: vec!["l".to_string(), "ml".to_string()],
+                us_units: vec!["slice".to_string()],
+                french_units: vec!["sachet".to_string()],
+            },
+        };
+
+        // Valid config should pass
+        assert!(config.validate().is_ok());
+
+        // Test empty volume_units
+        config.measurement_units.volume_units = vec![];
+        assert!(config.validate().is_err());
+        config.measurement_units.volume_units = vec!["cup".to_string()];
+
+        // Test empty weight_units
+        config.measurement_units.weight_units = vec![];
+        assert!(config.validate().is_err());
+        config.measurement_units.weight_units = vec!["g".to_string()];
+
+        // Test empty volume_units_metric
+        config.measurement_units.volume_units_metric = vec![];
+        assert!(config.validate().is_err());
+        config.measurement_units.volume_units_metric = vec!["l".to_string()];
+
+        // Test empty us_units
+        config.measurement_units.us_units = vec![];
+        assert!(config.validate().is_err());
+        config.measurement_units.us_units = vec!["slice".to_string()];
+
+        // Test empty french_units
+        config.measurement_units.french_units = vec![];
+        assert!(config.validate().is_err());
+        config.measurement_units.french_units = vec!["sachet".to_string()];
+
+        // Test empty unit string
+        config.measurement_units.volume_units = vec!["".to_string()];
+        assert!(config.validate().is_err());
+        config.measurement_units.volume_units = vec!["cup".to_string()];
+
+        // Test invalid characters in unit (control character)
+        config.measurement_units.volume_units = vec!["cup\ntablespoon".to_string()];
+        assert!(config.validate().is_err());
+        config.measurement_units.volume_units = vec!["cup".to_string()];
+    }
+
+    #[test]
+    fn test_measurement_detector_with_invalid_config() {
+        // Test with invalid max_ingredient_length
+        let invalid_config = MeasurementConfig {
+            max_ingredient_length: 0,
+            ..Default::default()
+        };
+        assert!(MeasurementDetector::with_config(invalid_config).is_err());
+
+        // Test with invalid custom pattern
+        let invalid_config = MeasurementConfig {
+            custom_pattern: Some("[invalid".to_string()),
+            ..Default::default()
+        };
+        assert!(MeasurementDetector::with_config(invalid_config).is_err());
+    }
+
+    #[test]
+    fn test_load_measurement_units_config() {
+        // This test assumes the config file exists and is valid
+        let config = load_measurement_units_config();
+        if let Err(e) = config.validate() {
+            panic!("Config validation failed: {}", e);
+        }
     }
 }

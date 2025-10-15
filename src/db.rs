@@ -4,6 +4,9 @@ use sqlx::postgres::PgPool;
 use sqlx::Row;
 use tracing::{debug, info};
 
+// Import cache types
+use crate::cache::Cache;
+
 // Re-export types for easier access
 pub use crate::observability;
 
@@ -146,7 +149,12 @@ pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Re
             .context("Failed to insert new recipe");
 
     let duration = start_time.elapsed();
-    observability::record_db_metrics("create_recipe", duration);
+    observability::record_db_performance_metrics(
+        "create_recipe",
+        duration,
+        1,
+        crate::observability::QueryComplexity::Simple,
+    );
 
     match result {
         Ok(row) => {
@@ -293,17 +301,15 @@ pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<
     }
 }
 
-/// Get a user by internal ID
+/// Get a user by internal database ID
 pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>> {
-    info!("Getting user by ID: {user_id}");
+    debug!(user_id = %user_id, "Getting user by internal ID");
 
-    let row = sqlx::query(
-        "SELECT id, telegram_id, language_code, created_at, updated_at FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .context("Failed to get user by ID")?;
+    let row = sqlx::query("SELECT id, telegram_id, language_code, created_at, updated_at FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await
+        .context("Failed to get user by internal ID")?;
 
     match row {
         Some(row) => {
@@ -314,14 +320,96 @@ pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>>
                 created_at: row.get(3),
                 updated_at: row.get(4),
             };
-            info!("User found with ID: {}", user.id);
+            debug!(user_id = %user.id, "User found by internal ID");
             Ok(Some(user))
         }
         None => {
-            info!("No user found with ID: {user_id}");
+            debug!(user_id = %user_id, "No user found with internal ID");
             Ok(None)
         }
     }
+}
+
+/// Get or create a user by Telegram ID with caching
+pub async fn get_or_create_user_cached(
+    pool: &PgPool,
+    telegram_id: i64,
+    language_code: Option<&str>,
+    cache: &std::sync::Mutex<crate::cache::CacheManager>,
+) -> Result<User> {
+    // Try cache first
+    {
+        let mut cache_manager = cache.lock().unwrap();
+        if let Some(user) = cache_manager.user_cache.get(&telegram_id) {
+            debug!(telegram_id = %telegram_id, "User found in cache");
+            return Ok(user);
+        }
+    }
+
+    // Cache miss - fetch from database
+    let user = get_or_create_user(pool, telegram_id, language_code).await?;
+
+    // Cache the result
+    {
+        let mut cache_manager = cache.lock().unwrap();
+        cache_manager.user_cache.insert(telegram_id, user.clone(), std::time::Duration::from_secs(300)); // 5 minutes
+    }
+
+    Ok(user)
+}
+
+/// Get a user by Telegram ID with caching
+pub async fn get_user_by_telegram_id_cached(
+    pool: &PgPool,
+    telegram_id: i64,
+    cache: &std::sync::Mutex<crate::cache::CacheManager>,
+) -> Result<Option<User>> {
+    // Try cache first
+    {
+        let cache_manager = cache.lock().unwrap();
+        if let Some(user) = cache_manager.user_cache.get(&telegram_id) {
+            debug!(telegram_id = %telegram_id, "User found in cache");
+            return Ok(Some(user));
+        }
+    }
+
+    // Cache miss - fetch from database
+    let user = get_user_by_telegram_id(pool, telegram_id).await?;
+
+    // Cache the result if found
+    if let Some(ref user) = user {
+        let mut cache_manager = cache.lock().unwrap();
+        cache_manager.user_cache.insert(telegram_id, user.clone(), std::time::Duration::from_secs(300)); // 5 minutes
+    }
+
+    Ok(user)
+}
+
+/// Get a user by internal ID with caching
+pub async fn get_user_by_id_cached(
+    pool: &PgPool,
+    user_id: i64,
+    cache: &std::sync::Mutex<crate::cache::CacheManager>,
+) -> Result<Option<User>> {
+    // Try cache first using the helper method
+    {
+        let cache_manager = cache.lock().unwrap();
+        if let Some(user) = cache_manager.find_user_by_id(user_id) {
+            debug!(user_id = %user_id, "User found in cache by ID");
+            return Ok(Some(user));
+        }
+    }
+
+    // Cache miss - fetch from database
+    let user = get_user_by_id(pool, user_id).await?;
+
+    // Cache the result if found (by telegram_id for future lookups)
+    if let Some(ref user) = user {
+        let mut cache_manager = cache.lock().unwrap();
+        cache_manager.user_cache.insert(user.telegram_id, user.clone(), std::time::Duration::from_secs(300));
+    }
+
+    Ok(user)
 }
 
 /// Create a new ingredient in the database
@@ -354,7 +442,12 @@ pub async fn create_ingredient(
     .context("Failed to insert new ingredient");
 
     let duration = start_time.elapsed();
-    observability::record_db_metrics("create_ingredient", duration);
+    observability::record_db_performance_metrics(
+        "create_ingredient",
+        duration,
+        1,
+        crate::observability::QueryComplexity::Simple,
+    );
 
     match result {
         Ok(row) => {
@@ -569,6 +662,20 @@ pub async fn get_user_recipes_paginated(
     limit: i64,
     offset: i64,
 ) -> Result<(Vec<String>, i64)> {
+    // Validate pagination parameters to prevent DoS attacks
+    if !(1..=100).contains(&limit) {
+        return Err(anyhow::anyhow!(
+            "Invalid pagination limit: {} (must be between 1 and 100)",
+            limit
+        ));
+    }
+    if !(0..=10000).contains(&offset) {
+        return Err(anyhow::anyhow!(
+            "Invalid pagination offset: {} (must be between 0 and 10000)",
+            offset
+        ));
+    }
+
     debug!(telegram_id = %telegram_id, limit = %limit, offset = %offset, "Getting paginated recipes for user");
 
     // Get total count of distinct recipe names

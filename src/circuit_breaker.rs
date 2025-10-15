@@ -11,21 +11,68 @@ use crate::ocr_config::RecoveryConfig;
 
 /// Circuit breaker for OCR operations
 ///
-/// Implements circuit breaker pattern to prevent cascading failures in OCR processing.
-/// When OCR operations fail repeatedly, the circuit breaker "opens" to stop further
-/// attempts and allow the system to recover.
+/// Implements the circuit breaker pattern to prevent cascading failures in OCR processing.
+/// This pattern protects the system by temporarily stopping requests when OCR operations
+/// fail repeatedly, allowing time for recovery.
 ///
-/// # State Machine
+/// ## State Machine Algorithm
 ///
-/// - **Closed**: Normal operation, requests pass through
-/// - **Open**: Failure threshold exceeded, requests fail fast
-/// - **Half-Open**: Testing if service has recovered
+/// The circuit breaker operates with three states and transitions based on failure patterns:
 ///
-/// # Configuration
+/// ```text
+/// CLOSED ────failures ≥ threshold────► OPEN
+///    ▲                                      │
+///    │                                      │
+///    └─────────reset timeout───────────────┘
+///                    │
+///                    ▼
+///                 HALF-OPEN ───success───► CLOSED
+///                    │
+///                    └────failure───────► OPEN
+/// ```
 ///
-/// Uses `RecoveryConfig` for:
+/// ## State Transitions
+///
+/// - **CLOSED → OPEN**: When failure count reaches `circuit_breaker_threshold`
+/// - **OPEN → HALF-OPEN**: After `circuit_breaker_reset_secs` timeout elapses
+/// - **HALF-OPEN → CLOSED**: On first successful operation
+/// - **HALF-OPEN → OPEN**: On operation failure during testing
+///
+/// ## Failure Threshold Logic
+///
+/// The circuit breaker opens when the failure count reaches the configured threshold.
+/// It automatically resets after the specified timeout period to allow testing of service recovery.
+///
+/// ```text
+/// if failure_count >= threshold {
+///     if time_since_last_failure < reset_timeout {
+///         return OPEN;  // Block requests
+///     } else {
+///         reset_counter();  // Allow testing
+///         return CLOSED;
+///     }
+/// }
+/// return CLOSED;  // Normal operation
+/// ```
+///
+/// ## Thread Safety
+///
+/// All state mutations use `Mutex<T>` for thread-safe access:
+/// - `failure_count`: Tracks consecutive failures
+/// - `last_failure_time`: Timestamp of most recent failure
+/// - Atomic state transitions prevent race conditions
+///
+/// ## Configuration Parameters
+///
 /// - `circuit_breaker_threshold`: Failures before opening (default: 5)
-/// - `circuit_breaker_reset_secs`: Time before attempting reset (default: 60s)
+/// - `circuit_breaker_reset_secs`: Seconds before reset attempt (default: 60)
+///
+/// ## Benefits
+///
+/// - **Fast Failure**: Prevents wasting resources on failing operations
+/// - **Automatic Recovery**: Self-healing after timeout period
+/// - **Load Protection**: Prevents cascade failures during outages
+/// - **Configurable**: Adjustable thresholds for different environments
 #[derive(Debug)]
 pub struct CircuitBreaker {
     failure_count: Mutex<u32>,
@@ -58,6 +105,37 @@ impl CircuitBreaker {
     }
 
     /// Check if circuit breaker is open (blocking requests)
+    ///
+    /// Implements the core circuit breaker state machine logic with automatic reset handling.
+    ///
+    /// ## Algorithm Flow
+    ///
+    /// ```text
+    /// 1. Check failure count against threshold
+    /// 2. If threshold exceeded:
+    ///    a. Check time since last failure
+    ///    b. If reset timeout not elapsed: OPEN (block requests)
+    ///    c. If reset timeout elapsed: Reset counters, CLOSED (allow testing)
+    /// 3. If threshold not exceeded: CLOSED (normal operation)
+    /// ```
+    ///
+    /// ## State Determination Logic
+    ///
+    /// The method atomically checks the current failure state and determines if requests
+    /// should be blocked. It automatically resets the circuit breaker after the configured
+    /// timeout period to allow testing of service recovery.
+    ///
+    /// ## Automatic Reset Behavior
+    ///
+    /// - **No Manual Intervention**: Circuit automatically resets after timeout
+    /// - **Single Test Request**: First request after reset tests service health
+    /// - **State Preservation**: Reset only occurs when timeout expires
+    ///
+    /// ## Thread Safety Considerations
+    ///
+    /// - Uses `Mutex` for atomic state access
+    /// - Read operations don't block writes
+    /// - State transitions are atomic and consistent
     ///
     /// # Returns
     ///

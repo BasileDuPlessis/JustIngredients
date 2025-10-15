@@ -58,11 +58,11 @@ mod tests {
     fn test_error_message_formatting() {
         let validation_error = OcrError::Validation("Test validation error".to_string());
         let display_msg = format!("{}", validation_error);
-        assert_eq!(display_msg, "Validation error: Test validation error");
+        assert_eq!(display_msg, "[VALIDATION] Image validation failed: Test validation error");
 
         let timeout_error = OcrError::Timeout("Test timeout".to_string());
         let display_msg = format!("{}", timeout_error);
-        assert_eq!(display_msg, "Timeout error: Test timeout");
+        assert_eq!(display_msg, "[OCR_TIMEOUT] OCR processing timed out: Test timeout");
     }
 
     /// Test temporary file cleanup
@@ -197,11 +197,11 @@ mod tests {
         let timeout_err = OcrError::Timeout("test".to_string());
 
         // Test that all variants can be formatted
-        assert!(format!("{}", validation_err).contains("Validation error"));
-        assert!(format!("{}", init_err).contains("Initialization error"));
-        assert!(format!("{}", load_err).contains("Image load error"));
-        assert!(format!("{}", extract_err).contains("Extraction error"));
-        assert!(format!("{}", timeout_err).contains("Timeout error"));
+        assert!(format!("{}", validation_err).contains("[VALIDATION]"));
+        assert!(format!("{}", init_err).contains("[OCR_INIT]"));
+        assert!(format!("{}", load_err).contains("[IMAGE_LOAD]"));
+        assert!(format!("{}", extract_err).contains("[OCR_EXTRACT]"));
+        assert!(format!("{}", timeout_err).contains("[OCR_TIMEOUT]"));
     }
 
     /// Test configuration structure

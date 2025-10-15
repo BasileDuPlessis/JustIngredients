@@ -25,13 +25,13 @@ pub enum OcrError {
 impl std::fmt::Display for OcrError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            OcrError::Validation(msg) => write!(f, "Validation error: {msg}"),
-            OcrError::Initialization(msg) => write!(f, "Initialization error: {msg}"),
-            OcrError::ImageLoad(msg) => write!(f, "Image load error: {msg}"),
-            OcrError::Extraction(msg) => write!(f, "Extraction error: {msg}"),
-            OcrError::_InstanceCorruption(msg) => write!(f, "Instance corruption error: {msg}"),
-            OcrError::Timeout(msg) => write!(f, "Timeout error: {msg}"),
-            OcrError::_ResourceExhaustion(msg) => write!(f, "Resource exhaustion error: {msg}"),
+            OcrError::Validation(msg) => write!(f, "[VALIDATION] Image validation failed: {}", msg),
+            OcrError::Initialization(msg) => write!(f, "[OCR_INIT] OCR engine initialization failed: {}", msg),
+            OcrError::ImageLoad(msg) => write!(f, "[IMAGE_LOAD] Failed to load image for OCR processing: {}", msg),
+            OcrError::Extraction(msg) => write!(f, "[OCR_EXTRACT] Text extraction from image failed: {}", msg),
+            OcrError::_InstanceCorruption(msg) => write!(f, "[OCR_CORRUPT] OCR instance corruption detected: {}", msg),
+            OcrError::Timeout(msg) => write!(f, "[OCR_TIMEOUT] OCR processing timed out: {}", msg),
+            OcrError::_ResourceExhaustion(msg) => write!(f, "[OCR_RESOURCE] System resources exhausted during OCR: {}", msg),
         }
     }
 }

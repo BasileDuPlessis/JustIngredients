@@ -12,8 +12,8 @@ pub mod message_handler;
 pub mod ui_builder;
 
 // Re-export main handler functions for use in main.rs
-pub use callback_handler::callback_handler;
-pub use message_handler::message_handler;
+pub use callback_handler::{callback_handler, callback_handler_with_cache};
+pub use message_handler::{message_handler, message_handler_with_cache};
 
 // Re-export utility functions that might be used elsewhere
 pub use dialogue_manager::{parse_ingredient_from_text, save_ingredients_to_database};

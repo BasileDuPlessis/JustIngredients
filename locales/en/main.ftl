@@ -35,16 +35,16 @@ help-tip5 = • Supported languages: English + French
 help-final = Need help? Just send me an image! 😊
 
 # Error messages
-error-download-failed = ❌ Failed to download the image. Please try again.
-error-unsupported-format = ❌ Unsupported image format. Please use PNG, JPG, JPEG, BMP, TIFF, or TIF formats.
-error-no-text-found = ⚠️ No text was found in the image. Please try a clearer image with visible text.
-error-ocr-initialization = ❌ OCR engine initialization failed. Please try again later.
-error-ocr-extraction = ❌ Failed to extract text from the image. Please try again with a different image.
-error-ocr-timeout = ❌ OCR processing timed out: {$msg}
-error-ocr-corruption = ❌ OCR engine encountered an internal error. Please try again.
-error-ocr-exhaustion = ❌ System resources are exhausted. Please try again later.
-error-validation = ❌ Image validation failed: {$msg}
-error-image-load = ❌ The image format is not supported or the image is corrupted. Please try with a PNG, JPG, or BMP image.
+error-download-failed = [DOWNLOAD] Failed to download the image. Please try again.
+error-unsupported-format = [FORMAT] Unsupported image format. Please use PNG, JPG, JPEG, BMP, TIFF, or TIF formats.
+error-no-text-found = [OCR_RESULT] No text was found in the image. Please try a clearer image with visible text.
+error-ocr-initialization = [OCR_INIT] OCR engine initialization failed. Please try again later.
+error-ocr-extraction = [OCR_EXTRACT] Failed to extract text from the image. Please try again with a different image.
+error-ocr-timeout = [OCR_TIMEOUT] OCR processing timed out: {$msg}
+error-ocr-corruption = [OCR_CORRUPT] OCR engine encountered an internal error. Please try again.
+error-ocr-exhaustion = [OCR_RESOURCE] System resources are exhausted. Please try again later.
+error-validation = [VALIDATION] Image validation failed: {$msg}
+error-image-load = [IMAGE_LOAD] The image format is not supported or the image is corrupted. Please try with a PNG, JPG, or BMP image.
 
 # Success messages
 success-extraction = ✅ **Text extracted successfully!**
@@ -60,7 +60,7 @@ line = Line
 unknown-ingredient = Unknown ingredient
 total-ingredients = Total ingredients found
 original-text = Original extracted text
-error-processing-failed = Failed to process ingredients
+error-processing-failed = [INGREDIENT_PROCESSING] Failed to process ingredients
 error-try-again = Please try again with a different image.
 
 # Processing messages
@@ -83,20 +83,20 @@ text-tip = 💡 Tip: Send me an image with text to extract it using OCR!
 # Recipe name dialogue messages
 recipe-name-prompt = 🏷️ What would you like to call this recipe?
 recipe-name-prompt-hint = Please enter a name for your recipe (e.g., "Chocolate Chip Cookies", "Mom's Lasagna")
-recipe-name-invalid = ❌ Recipe name cannot be empty. Please enter a valid name for your recipe.
-recipe-name-too-long = ❌ Recipe name is too long (maximum 255 characters). Please enter a shorter name.
+recipe-name-invalid = [RECIPE_NAME] Recipe name cannot be empty. Please enter a valid name for your recipe.
+recipe-name-too-long = [RECIPE_NAME] Recipe name is too long (maximum 255 characters). Please enter a shorter name.
 recipe-complete = ✅ Recipe "{$recipe_name}" saved successfully with {$ingredient_count} ingredients!
 
 # Caption-related messages
 caption-used = 📝 Using your caption "{$caption}" as the recipe name
-caption-invalid = ⚠️ Caption "{$caption}" is invalid, using default recipe name instead
+caption-invalid = [CAPTION] Caption "{$caption}" is invalid, using default recipe name instead
 caption-empty = 💡 Tip: Add a caption to your photo to automatically name your recipe!
 
 # Ingredient review messages
 review-title = Review Your Ingredients
 review-description = Please review the extracted ingredients below. Use the buttons to edit or delete items, then confirm when ready.
 review-confirm = Confirm and Save
-review-cancelled = ❌ Ingredient review cancelled. No ingredients were saved.
+review-cancelled = [REVIEW_CANCEL] Ingredient review cancelled. No ingredients were saved.
 review-no-ingredients = No ingredients remaining
 review-no-ingredients-help = All ingredients have been deleted. You can add more ingredients by sending another image, or cancel this recipe.
 review-add-more = Add More Ingredients
@@ -111,7 +111,7 @@ edit-too-long = Ingredient text is too long (maximum 200 characters). Please ent
 edit-no-ingredient-name = Please specify an ingredient name (e.g., "2 cups flour" not just "2 cups").
 edit-ingredient-name-too-long = Ingredient name is too long (maximum 100 characters). Please use a shorter name.
 edit-invalid-quantity = Invalid quantity. Please use a positive number (e.g., "2.5 cups flour").
-error-invalid-edit = Invalid ingredient index for editing.
+error-invalid-edit = [INGREDIENT_EDIT] Invalid ingredient index for editing.
 review-help = Please reply with "confirm" to save these ingredients, or "cancel" to discard them.
 
 # Document messages

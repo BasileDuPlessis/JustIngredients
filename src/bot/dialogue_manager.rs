@@ -120,6 +120,7 @@ pub async fn handle_recipe_name_input(
     ctx: DialogueContext<'_>,
     params: RecipeNameInputParams<'_>,
 ) -> Result<()> {
+    let start_time = std::time::Instant::now();
     let DialogueContext {
         bot,
         msg,
@@ -133,6 +134,9 @@ pub async fn handle_recipe_name_input(
         ingredients,
         language_code,
     } = params;
+
+    let ingredients_count = ingredients.len();
+
     // Validate recipe name
     match validate_recipe_name(recipe_name_input) {
         Ok(validated_name) => {
@@ -189,6 +193,15 @@ pub async fn handle_recipe_name_input(
             // Keep dialogue active, user can try again
         }
     }
+
+    let duration = start_time.elapsed();
+    crate::observability::record_dialogue_metrics(
+        msg.chat.id.0,
+        crate::observability::DialogueType::RecipeNaming,
+        true, // completed
+        ingredients_count,
+        duration,
+    );
 
     Ok(())
 }
@@ -286,7 +299,16 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
     )
     .await
     {
-        error!(error = %e, "Failed to save ingredients to database");
+        error!(
+            error = %e,
+            user_id = msg.chat.id.0,
+            recipe_name = %validated_name,
+            ingredient_count = ingredients.len(),
+            "Failed to save recipe '{}' with {} ingredients to database for user {}",
+            validated_name,
+            ingredients.len(),
+            msg.chat.id.0
+        );
         bot.send_message(
             msg.chat.id,
             t_lang(localization, "error-processing-failed", language_code),
@@ -548,6 +570,221 @@ async fn handle_edit_error(
 }
 
 /// Parse ingredient text input and create a MeasurementMatch
+///
+/// This function implements a multi-stage parsing algorithm for ingredient editing:
+///
+/// ## Parsing Algorithm
+///
+/// 1. **Basic Validation**: Check input length and emptiness constraints
+/// 2. **Measurement Detection**: Attempt to extract measurements using the standard detector
+/// 3. **Fallback Parsing**: If no measurements found, use alternative parsing strategies
+/// 4. **Validation & Normalization**: Apply comprehensive validation and normalization
+///
+/// ## Processing Stages
+///
+/// ### Stage 1: Basic Input Validation
+/// ```text
+/// - Empty input → Error: "edit-empty"
+/// - Input > 200 chars → Error: "edit-too-long"
+/// - Otherwise → Proceed to measurement detection
+/// ```
+///
+/// ### Stage 2: Standard Measurement Detection
+/// - Uses `MeasurementDetector` to find standard measurement patterns
+/// - Handles traditional measurements: "2 cups flour", "500g butter"
+/// - Handles quantity-only ingredients: "6 eggs", "4 apples"
+/// - Supports fractions and Unicode characters
+///
+/// ### Stage 3: Fallback Parsing (when no measurements detected)
+/// - **Quantity Pattern Matching**: Look for simple numeric patterns (`-?\d+(?:\.\d+)?(?:\s*\d+/\d+)?`)
+/// - **Quantity-Only Parsing**: Extract quantity and treat remainder as ingredient name
+/// - **Default Quantity**: If no quantity found, default to "1"
+///
+/// ### Stage 4: Validation & Normalization
+/// - **Measurement Validation**: Verify measurement match integrity
+/// - **Quantity Range Check**: Ensure quantity is between 0 and 10,000
+/// - **Negative Quantity Handling**: Detect and handle negative quantities (e.g., "-2 cups")
+/// - **Ingredient Name Validation**: Check length and content constraints
+///
+/// ## Error Conditions
+///
+/// - `"edit-empty"`: Input is empty or whitespace-only
+/// - `"edit-too-long"`: Input exceeds 200 characters
+/// - `"edit-no-ingredient-name"`: No ingredient name found after quantity
+/// - `"edit-ingredient-name-too-long"`: Ingredient name exceeds 100 characters
+/// - `"edit-invalid-quantity"`: Quantity is ≤ 0 or > 10,000
+/// - `"error-processing-failed"`: Measurement detector initialization failed
+///
+/// ## Thread Safety
+///
+/// This function is thread-safe as it creates new instances of `MeasurementDetector`
+/// and doesn't rely on shared mutable state.
+///
+/// ## Performance
+///
+/// - **Fast Path**: Standard measurement detection (most common case)
+/// - **Fallback Path**: Regex-based quantity extraction (slower but robust)
+/// - **Memory**: Minimal allocations, reuses detector instances
+/// Parse an ingredient from user input text during dialogue editing
+///
+/// This function implements a sophisticated multi-stage parsing algorithm that converts
+/// user-provided ingredient text into structured `MeasurementMatch` objects. It handles
+/// various input formats and provides comprehensive validation and error handling.
+///
+/// ## Algorithm Overview
+///
+/// The parsing process follows this sequence:
+/// 1. **Input Validation**: Basic length and emptiness checks
+/// 2. **Measurement Detection**: Attempt extraction using the main measurement detector
+/// 3. **Match Validation**: Verify extracted measurements meet requirements
+/// 4. **Quantity Adjustment**: Handle negative quantities and special cases
+/// 5. **Range Validation**: Ensure quantities are within reasonable bounds
+/// 6. **Fallback Parsing**: Alternative parsing strategies when detector fails
+///
+/// ## Processing Stages
+///
+/// ### Stage 1: Basic Input Validation
+/// **Algorithm**: Early rejection of invalid inputs before complex processing
+///
+/// **Validation Rules**:
+/// - **Empty Input**: Reject completely empty strings
+/// - **Length Limit**: Maximum 200 characters to prevent abuse
+/// - **Trimming**: Automatic whitespace removal
+///
+/// **Error Codes**:
+/// - `"edit-empty"`: Input is empty or whitespace-only
+/// - `"edit-too-long"`: Input exceeds 200 character limit
+///
+/// ### Stage 2: Primary Measurement Detection
+/// **Algorithm**: Leverage the main `MeasurementDetector` for comprehensive parsing
+///
+/// **Processing Steps**:
+/// 1. Create temporary text wrapper: `"temp: {input}"`
+/// 2. Run full measurement extraction pipeline
+/// 3. Extract first (best) measurement match
+/// 4. Validate match quality and completeness
+///
+/// **Success Path**: If measurement found, proceed to validation
+/// **Failure Path**: Fall back to alternative parsing strategies
+///
+/// ### Stage 3: Measurement Match Validation
+/// **Algorithm**: Comprehensive validation of extracted measurement components
+///
+/// **Validation Checks**:
+/// - **Ingredient Name Presence**: Must have non-empty ingredient name
+/// - **Name Length Limits**: Maximum 100 characters for ingredient names
+/// - **Raw Text Verification**: Cross-check against original input
+/// - **Measurement Completeness**: Ensure all required fields are present
+///
+/// **Error Codes**:
+/// - `"edit-no-ingredient-name"`: Missing or empty ingredient name
+/// - `"edit-ingredient-name-too-long"`: Ingredient name exceeds 100 characters
+///
+/// ### Stage 4: Quantity Adjustment for Negatives
+/// **Algorithm**: Detect and handle negative quantity indicators in text
+///
+/// **Detection Logic**:
+/// ```text
+/// Input: "-2 cups flour"
+/// Analysis:
+///   - Find quantity start position in temp text
+///   - Check for '-' character immediately before quantity
+///   - Verify '-' is preceded by space or at start (not part of word)
+///   - Prepend '-' to quantity string if valid
+/// ```
+///
+/// **Examples**:
+/// - `"-2 cups flour"` → quantity: `"-2"`
+/// - `"some -2 cups"` → quantity: `"2"` (invalid position)
+/// - `"minus 2 cups"` → quantity: `"2"` (not detected)
+///
+/// ### Stage 5: Quantity Range Validation
+/// **Algorithm**: Ensure quantities are within practical and safe bounds
+///
+/// **Range Limits**:
+/// - **Minimum**: > 0.0 (must be positive)
+/// - **Maximum**: ≤ 10000.0 (prevents unreasonable values)
+/// - **Fraction Support**: Handles decimal and fractional quantities
+/// - **Unicode Fractions**: Supports ½, ¼, ¾, ⅓, ⅔ characters
+///
+/// **Error Codes**:
+/// - `"edit-invalid-quantity"`: Quantity outside valid range
+///
+/// ### Stage 6: Fallback Parsing Strategies
+/// **Algorithm**: Alternative parsing when primary detector fails
+///
+/// **Strategy 1: Quantity Pattern Matching**
+/// ```regex
+/// Pattern: ^(-?\d+(?:\.\d+)?(?:\s*\d+/\d+)?)
+/// Examples: "2", "1.5", "2 1/2", "-3"
+/// ```
+///
+/// **Strategy 2: Ingredient-Only Parsing**
+/// - No quantity detected → assume quantity = 1
+/// - Entire input becomes ingredient name
+/// - Length validation still applies
+///
+/// ## Measurement Match Construction
+///
+/// ### Successful Parsing Result
+/// When parsing succeeds, a `MeasurementMatch` struct is returned containing:
+/// - `quantity`: The parsed quantity string (e.g., "2", "½", "1.5")
+/// - `measurement`: Optional unit string (e.g., Some("cups"), None for quantity-only)
+/// - `ingredient_name`: Cleaned ingredient name (e.g., "flour", "sugar")
+/// - `line_number`: Always 0 for single input parsing
+/// - `start_pos`: Always 0 for single input parsing
+/// - `end_pos`: Length of the input string
+///
+/// ## Error Handling and Recovery
+///
+/// ### Comprehensive Error Coverage
+/// - **Input Validation**: Early rejection with specific error codes
+/// - **Measurement Detection**: Graceful fallback to alternative strategies
+/// - **Validation Failures**: Detailed error messages for user feedback
+/// - **Parsing Errors**: Safe handling of malformed input
+///
+/// ### Error Code Mapping
+/// - `"edit-empty"`: Empty input string
+/// - `"edit-too-long"`: Input exceeds length limits
+/// - `"error-processing-failed"`: Measurement detector initialization failure
+/// - `"edit-no-ingredient-name"`: Missing ingredient name
+/// - `"edit-ingredient-name-too-long"`: Ingredient name too long
+/// - `"edit-invalid-quantity"`: Quantity outside valid range
+///
+/// ## Performance Characteristics
+///
+/// - **Time Complexity**: O(n) where n is input length
+/// - **Memory Usage**: Minimal allocations, reuses detector instances
+/// - **Regex Efficiency**: Pre-compiled patterns for fast matching
+/// - **Early Exit**: Fast rejection of invalid inputs
+/// - **Fallback Efficiency**: Alternative strategies for edge cases
+///
+/// ## Thread Safety
+///
+/// - **Immutable Access**: No shared mutable state
+/// - **Detector Reuse**: MeasurementDetector can be safely shared
+/// - **Concurrent Safe**: Can be called from multiple threads
+///
+/// ## Integration Points
+///
+/// - **MeasurementDetector**: Primary parsing engine with regex patterns
+/// - **Localization**: Error messages support multiple languages
+/// - **Dialogue System**: Provides structured input for conversation flow
+/// - **Database Layer**: Parsed results feed into ingredient storage
+///
+/// # Arguments
+///
+/// * `input` - The raw ingredient text input from user (e.g., "2 cups flour", "3 eggs")
+///
+/// # Returns
+///
+/// Returns a `MeasurementMatch` containing parsed quantity, measurement, and ingredient name,
+/// or an error string key for localization
+///
+/// # Examples
+///
+/// Note: This function is used internally by the dialogue system.
+/// For usage examples, see the dialogue handling functions in the bot module.
 pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, &'static str> {
     let trimmed = input.trim();
 
@@ -764,7 +1001,16 @@ pub async fn handle_ingredient_review_input(
             )
             .await
             {
-                error!(error = %e, "Failed to save ingredients to database");
+                error!(
+                    error = %e,
+                    user_id = msg.chat.id.0,
+                    recipe_name = %recipe_name,
+                    ingredient_count = ingredients.len(),
+                    "Failed to save recipe '{}' with {} ingredients to database for user {}",
+                    recipe_name,
+                    ingredients.len(),
+                    msg.chat.id.0
+                );
                 bot.send_message(
                     msg.chat.id,
                     t_lang(localization, "error-processing-failed", language_code),
@@ -820,6 +1066,8 @@ pub async fn save_ingredients_to_database(
     recipe_name: &str,
     language_code: Option<&str>,
 ) -> Result<()> {
+    let start_time = std::time::Instant::now();
+
     // Get or create user
     let user = get_or_create_user(pool, telegram_id, language_code).await?;
 
@@ -846,6 +1094,24 @@ pub async fn save_ingredients_to_database(
         )
         .await?;
     }
+
+    let processing_duration = start_time.elapsed();
+
+    // Record business metrics
+    let naming_method = if recipe_name == "Recipe" {
+        crate::observability::RecipeNamingMethod::Default
+    } else {
+        // For now, assume manual naming - could be enhanced to detect caption usage
+        crate::observability::RecipeNamingMethod::Manual
+    };
+
+    crate::observability::record_recipe_metrics(
+        recipe_name,
+        ingredients.len(),
+        naming_method,
+        processing_duration,
+        user.id,
+    );
 
     Ok(())
 }

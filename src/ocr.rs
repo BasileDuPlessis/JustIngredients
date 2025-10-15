@@ -40,18 +40,59 @@ pub use crate::ocr_errors::OcrError;
 pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConfig) -> Result<()> {
     // Check if path is provided
     if image_path.is_empty() {
-        return Err(anyhow::anyhow!("Image path cannot be empty"));
+        return Err(anyhow::anyhow!(
+            "Image path validation failed: path cannot be empty"
+        ));
+    }
+
+    // Check for path traversal attacks
+    if image_path.contains("..") || image_path.contains('\0') {
+        return Err(anyhow::anyhow!(
+            "Image path validation failed: path contains dangerous characters (.. or null byte)"
+        ));
+    }
+
+    // Additional path traversal protection: check for absolute paths and normalize
+    let path = std::path::Path::new(image_path);
+    if path.is_absolute() {
+        // For absolute paths, ensure they don't escape intended directories
+        // Allow common temp directories and system paths that are safe
+        if let Some(parent) = path.parent() {
+            let parent_str = parent.to_string_lossy();
+            // Allow common temp directories but prevent access to system directories
+            let allowed_prefixes = ["/tmp", "/var/tmp", "/private/tmp", "/private/var/tmp"];
+            let dangerous_prefixes = ["/etc", "/usr", "/bin", "/sbin", "/System", "/Library"];
+
+            let is_allowed = allowed_prefixes
+                .iter()
+                .any(|prefix| parent_str.starts_with(prefix));
+            let is_dangerous = dangerous_prefixes
+                .iter()
+                .any(|prefix| parent_str.starts_with(prefix));
+
+            if is_dangerous && !is_allowed {
+                return Err(anyhow::anyhow!(
+                    "Image path validation failed: path not in allowed directory ({})",
+                    parent_str
+                ));
+            }
+        }
     }
 
     // Check if file exists
-    let path = std::path::Path::new(image_path);
     if !path.exists() {
-        return Err(anyhow::anyhow!("Image file does not exist: {}", image_path));
+        return Err(anyhow::anyhow!(
+            "Image path validation failed: file does not exist ({})",
+            image_path
+        ));
     }
 
     // Check if it's actually a file (not a directory)
     if !path.is_file() {
-        return Err(anyhow::anyhow!("Path is not a file: {}", image_path));
+        return Err(anyhow::anyhow!(
+            "Image path validation failed: path is not a file ({})",
+            image_path
+        ));
     }
 
     // Check file size
@@ -60,18 +101,21 @@ pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConf
             let file_size = metadata.len();
             if file_size > config.max_file_size {
                 return Err(anyhow::anyhow!(
-                    "Image file too large: {} bytes (maximum allowed: {} bytes)",
+                    "Image validation failed: file too large ({} bytes, maximum allowed: {} bytes)",
                     file_size,
                     config.max_file_size
                 ));
             }
             if file_size == 0 {
-                return Err(anyhow::anyhow!("Image file is empty: {}", image_path));
+                return Err(anyhow::anyhow!(
+                    "Image validation failed: file is empty ({})",
+                    image_path
+                ));
             }
         }
         Err(e) => {
             return Err(anyhow::anyhow!(
-                "Cannot read file metadata: {} - {}",
+                "Image validation failed: cannot read file metadata ({}) - {}",
                 image_path,
                 e
             ));
@@ -289,11 +333,65 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
     file_size_mb * memory_factor
 }
 
-/// Extract text from an image using Tesseract OCR with instance reuse
+/// Extract text from an image file using OCR with comprehensive error handling and retry logic
 ///
-/// This is the main entry point for OCR processing. It handles image validation,
-/// OCR instance management, retry logic with exponential backoff, and comprehensive
-/// error handling with circuit breaker protection.
+/// This function implements a robust OCR processing pipeline with the following algorithm:
+///
+/// ## Processing Algorithm
+///
+/// ```text
+/// 1. Circuit Breaker Check
+///    - Check if circuit breaker is open (service unavailable)
+///    - Return early if open to prevent cascading failures
+///
+/// 2. Input Validation
+///    - Validate image format and size limits
+///    - Pre-calculate memory requirements
+///
+/// 3. Retry Loop (up to max_retries + 1 attempts)
+///    For each attempt:
+///      a. Perform OCR extraction with timeout
+///      b. On success: Record success, update metrics, return result
+///      c. On failure: Calculate delay, wait, retry
+///      d. After max attempts: Record failure, return error
+///
+/// 4. Circuit Breaker Updates
+///    - Record success/failure to track system health
+///    - Update circuit breaker state based on thresholds
+/// ```
+///
+/// ## Circuit Breaker Integration
+///
+/// The circuit breaker prevents system overload during OCR failures:
+/// - **Open State**: When failure threshold exceeded, rejects requests fast
+/// - **Closed State**: Normal operation, allows all requests
+/// - **Half-Open State**: Testing recovery after timeout
+///
+/// ## Retry Strategy
+///
+/// Implements exponential backoff with jitter to prevent thundering herd:
+/// - **Base Delay**: Configurable starting delay (default: 1000ms)
+/// - **Exponential Growth**: Delay doubles each retry (2^(attempt-1))
+/// - **Maximum Cap**: Prevents excessively long delays (default: 10000ms)
+/// - **Jitter**: Random variation prevents synchronized retries
+///
+/// ## Performance Monitoring
+///
+/// Comprehensive metrics collection:
+/// - **Timing**: Total duration and OCR-specific processing time
+/// - **Success Rates**: Attempt counts and failure patterns
+/// - **Resource Usage**: Memory estimates and file size tracking
+/// - **Circuit State**: Breaker state changes and threshold tracking
+///
+/// ## Error Recovery Flow
+///
+/// ```text
+/// OCR Failure → Check Retry Count → Max Retries Exceeded?
+///     ├── Yes → Record Circuit Failure → Return Error
+///     └── No → Calculate Delay → Wait → Retry
+///
+/// Circuit Open → Fast Fail → Return Service Unavailable
+/// ```
 ///
 /// # Arguments
 ///
@@ -328,7 +426,7 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// - PNG (Portable Network Graphics) - up to 15MB
 /// - JPEG/JPG (Joint Photographic Experts Group) - up to 10MB
 /// - BMP (Bitmap) - up to 5MB
-/// - TIFF/TIF (Tagged Image File Format) - up to 20MB
+/// - TIFF/Tagged Image File Format) - up to 20MB
 ///
 /// # Performance
 ///
@@ -353,6 +451,235 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// - `ImageLoadError` - Could not load the image file
 /// - `ExtractionError` - OCR processing failed
 /// - `TimeoutError` - Operation exceeded timeout (30s default)
+/// Extract text from an image using OCR with comprehensive error handling and performance monitoring
+///
+/// This function implements a robust OCR extraction pipeline that handles image processing,
+/// text recognition, and failure recovery. It includes circuit breaker protection, retry logic,
+/// format validation, and detailed performance monitoring.
+///
+/// ## Algorithm Overview
+///
+/// The OCR extraction process follows this sequence:
+/// 1. **Circuit Breaker Check**: Verify service availability before processing
+/// 2. **Input Validation**: Comprehensive format and size validation
+/// 3. **Retry Loop**: Exponential backoff retry logic for transient failures
+/// 4. **OCR Processing**: Core Tesseract text extraction with timeout protection
+/// 5. **Success Handling**: Record metrics and return extracted text
+/// 6. **Failure Handling**: Circuit breaker updates and error propagation
+///
+/// ## Processing Stages
+///
+/// ### Stage 1: Circuit Breaker Protection
+/// **Algorithm**: Prevent system overload during OCR service failures
+///
+/// **Protection Logic**:
+/// ```text
+/// if circuit_breaker.is_open():
+///     return "OCR service temporarily unavailable"
+/// ```
+///
+/// **Purpose**: Maintain system stability during extended OCR failures
+/// **State Tracking**: Updates observability metrics for monitoring
+/// **Recovery**: Automatic recovery when service becomes available again
+///
+/// ### Stage 2: Enhanced Input Validation
+/// **Algorithm**: Multi-layer validation of image files before processing
+///
+/// **Validation Checks**:
+/// - **File Existence**: Verify image file is accessible
+/// - **Format Detection**: Identify image format from magic bytes
+/// - **Size Limits**: Format-specific size constraints
+///   - PNG: 15MB maximum
+///   - JPEG: 10MB maximum
+///   - BMP: 5MB maximum
+///   - TIFF: 20MB maximum
+/// - **Memory Estimation**: Pre-calculate processing memory requirements
+///
+/// **Error Handling**: Detailed validation errors with specific failure reasons
+///
+/// ### Stage 3: Retry Logic with Exponential Backoff
+/// **Algorithm**: Intelligent retry strategy for transient OCR failures
+///
+/// **Retry Configuration**:
+/// - **Max Attempts**: Configurable retry count (default: 3)
+/// - **Backoff Strategy**: Exponential delay with jitter
+/// - **Delay Calculation**: `delay = min(base_delay * 2^(attempt-1), max_delay) + jitter`
+/// - **Jitter Range**: Random component (0 to delay/4) to prevent thundering herd
+///
+/// **Retry Progression**:
+/// | Attempt | Base Delay | Range (with jitter) |
+/// |---------|------------|---------------------|
+/// | 1       | 1000ms     | 1000-1250ms        |
+/// | 2       | 2000ms     | 2000-2500ms        |
+/// | 3       | 4000ms     | 4000-5000ms        |
+///
+/// ### Stage 4: Core OCR Processing
+/// **Algorithm**: Tesseract-based text extraction with timeout protection
+///
+/// **Processing Steps**:
+/// 1. **Instance Acquisition**: Get or create OCR instance from pool
+/// 2. **Image Loading**: Load image into Tesseract engine
+/// 3. **Text Extraction**: Perform OCR recognition
+/// 4. **Text Cleanup**: Remove extra whitespace and empty lines
+/// 5. **Timeout Protection**: 30-second operation timeout
+///
+/// **Instance Management**:
+/// - **Reuse Strategy**: Cached instances by language combination
+/// - **Performance Benefit**: Eliminates 100-500ms initialization overhead
+/// - **Thread Safety**: Protected by mutex for concurrent access
+///
+/// ### Stage 5: Success Path Handling
+/// **Algorithm**: Comprehensive success processing and metric recording
+///
+/// **Success Actions**:
+/// - **Circuit Breaker**: Record success to improve availability
+/// - **Performance Metrics**: Record timing, size, and resource usage
+/// - **Observability**: Update monitoring systems with success data
+/// - **Logging**: Detailed success information with character counts
+///
+/// **Metrics Collected**:
+/// - Total processing duration
+/// - OCR-specific processing time
+/// - Image file size
+/// - Retry attempt count
+/// - Memory usage estimation
+/// - Character count of extracted text
+///
+/// ### Stage 6: Failure Path Handling
+/// **Algorithm**: Comprehensive failure processing and system protection
+///
+/// **Failure Actions**:
+/// - **Circuit Breaker**: Record failure to trigger protection if needed
+/// - **Retry Logic**: Continue retry loop or fail permanently
+/// - **Error Propagation**: Return detailed error information
+/// - **Logging**: Comprehensive failure diagnostics
+///
+/// ## Error Types and Handling
+///
+/// ### Circuit Breaker Errors
+/// - **Trigger**: Service temporarily unavailable due to repeated failures
+/// - **User Message**: "OCR service is temporarily unavailable..."
+/// - **Recovery**: Automatic when circuit breaker resets
+///
+/// ### Validation Errors
+/// - **File Access**: Cannot read image file
+/// - **Format Unsupported**: Image format not supported by Tesseract
+/// - **Size Limits**: File exceeds format-specific size limits
+/// - **Corruption**: File appears corrupted or invalid
+///
+/// ### Processing Errors
+/// - **Timeout**: Operation exceeded 30-second limit
+/// - **OCR Failure**: Tesseract processing failed
+/// - **Instance Error**: Could not acquire OCR instance
+/// - **Memory Error**: Insufficient memory for processing
+///
+/// ## Performance Characteristics
+///
+/// - **Memory Usage**: Pre-calculated estimates prevent OOM conditions
+/// - **CPU Usage**: Tesseract processing is CPU-intensive but optimized
+/// - **I/O Patterns**: Minimal I/O with format detection buffers
+/// - **Concurrent Safety**: Thread-safe with mutex-protected instances
+/// - **Scalability**: Instance pooling supports multiple concurrent requests
+///
+/// ## Observability and Monitoring
+///
+/// ### Metrics Tracked
+/// - **Success Rate**: OCR operation success/failure ratios
+/// - **Processing Time**: Total and OCR-specific durations
+/// - **Retry Patterns**: Attempt counts and delay distributions
+/// - **Resource Usage**: Memory and file size correlations
+/// - **Circuit Breaker State**: Protection mechanism status
+///
+/// ### Logging Levels
+/// - **Info**: Successful extractions with performance data
+/// - **Warn**: Retries and timeouts with timing information
+/// - **Error**: Permanent failures with comprehensive diagnostics
+/// - **Debug**: Detailed processing steps and intermediate results
+///
+/// ## Configuration Integration
+///
+/// ### OCR Configuration (`OcrConfig`)
+/// - **Language Settings**: Tesseract language combinations (eng+fra)
+/// - **Timeout Settings**: Operation timeout limits (30 seconds)
+/// - **Size Limits**: Format-specific file size constraints
+/// - **Buffer Sizes**: Format detection buffer configuration
+///
+/// ### Recovery Configuration (`RecoveryConfig`)
+/// - **Retry Settings**: Maximum attempts and delay parameters
+/// - **Circuit Breaker**: Failure thresholds and reset timeouts
+/// - **Timeout Protection**: Operation timeout enforcement
+///
+/// ## Thread Safety and Concurrency
+///
+/// - **Instance Pooling**: Thread-safe OCR instance management
+/// - **Circuit Breaker**: Atomic state updates for concurrent access
+/// - **File Access**: Safe concurrent file operations
+/// - **Metrics Recording**: Thread-safe observability updates
+///
+/// ## Integration Points
+///
+/// - **Circuit Breaker**: Fault tolerance and system protection
+/// - **Instance Manager**: OCR instance lifecycle management
+/// - **Observability**: Performance monitoring and alerting
+/// - **Configuration**: Runtime behavior customization
+/// - **Error Handling**: Comprehensive error classification
+///
+/// # Arguments
+///
+/// * `image_path` - Absolute path to the image file for OCR processing
+/// * `config` - OCR configuration with timeout, language, and size limit settings
+/// * `instance_manager` - Manager for OCR instance reuse and lifecycle
+/// * `circuit_breaker` - Circuit breaker for fault tolerance and overload protection
+///
+/// # Returns
+///
+/// Returns the extracted text as a `String` on success, or an `OcrError` on failure
+///
+/// # Examples
+///
+/// ```rust,no_run
+/// use just_ingredients::ocr::{extract_text_from_image, OcrConfig, OcrInstanceManager, CircuitBreaker};
+/// use just_ingredients::ocr_config::RecoveryConfig;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// // Initialize components
+/// let config = OcrConfig::default();
+/// let instance_manager = OcrInstanceManager::new();
+/// let recovery_config = RecoveryConfig::default();
+/// let circuit_breaker = CircuitBreaker::new(recovery_config);
+///
+/// // Extract text from image
+/// let extracted_text = extract_text_from_image(
+///     "/path/to/ingredients.jpg",
+///     &config,
+///     &instance_manager,
+///     &circuit_breaker
+/// ).await?;
+///
+/// println!("Extracted text: {}", extracted_text);
+/// # Ok(())
+/// # }
+/// ```
+///
+/// # Error Examples
+///
+/// ```rust,no_run
+/// use just_ingredients::ocr::{extract_text_from_image, OcrConfig, OcrInstanceManager, CircuitBreaker};
+///
+/// # async fn error_example() -> Result<(), Box<dyn std::error::Error>> {
+/// let config = OcrConfig::default();
+/// let instance_manager = OcrInstanceManager::new();
+/// let recovery_config = just_ingredients::ocr_config::RecoveryConfig::default();
+/// let circuit_breaker = CircuitBreaker::new(recovery_config);
+///
+/// // Circuit breaker open
+/// match extract_text_from_image("/large/image.png", &config, &instance_manager, &circuit_breaker).await {
+///     Ok(text) => println!("Success: {}", text),
+///     Err(e) => println!("Error: {:?}", e), // May be circuit breaker error
+/// }
+/// # Ok(())
+/// # }
+/// ```
 pub async fn extract_text_from_image(
     image_path: &str,
     config: &crate::ocr_config::OcrConfig,
@@ -390,7 +717,7 @@ pub async fn extract_text_from_image(
         attempt += 1;
 
         match perform_ocr_extraction(image_path, config, instance_manager).await {
-            Ok(text) => {
+            Ok((text, ocr_duration)) => {
                 let total_duration = start_time.elapsed();
                 let total_ms = total_duration.as_millis();
 
@@ -398,11 +725,19 @@ pub async fn extract_text_from_image(
                 circuit_breaker.record_success();
                 observability::update_circuit_breaker_state(false);
 
-                // Record OCR metrics
-                observability::record_ocr_metrics(
-                    true,
-                    total_duration,
-                    std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0),
+                // Record OCR metrics with enhanced performance data
+                let image_size = std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0);
+                let memory_estimate =
+                    crate::ocr::estimate_memory_usage(image_size, &image::ImageFormat::Png);
+                observability::record_ocr_performance_metrics(
+                    observability::OcrPerformanceMetricsParams {
+                        success: true,
+                        total_duration,
+                        ocr_duration,
+                        image_size,
+                        attempt_count: attempt,
+                        memory_estimate_mb: memory_estimate,
+                    },
                 );
 
                 info!("OCR extraction completed successfully on attempt {} in {}ms. Extracted {} characters of text",
@@ -418,11 +753,19 @@ pub async fn extract_text_from_image(
                     circuit_breaker.record_failure();
                     observability::update_circuit_breaker_state(circuit_breaker.is_open());
 
-                    // Record OCR metrics
-                    observability::record_ocr_metrics(
-                        false,
-                        total_duration,
-                        std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0),
+                    // Record OCR metrics with enhanced performance data
+                    let image_size = std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0);
+                    let memory_estimate =
+                        crate::ocr::estimate_memory_usage(image_size, &image::ImageFormat::Png);
+                    observability::record_ocr_performance_metrics(
+                        observability::OcrPerformanceMetricsParams {
+                            success: false,
+                            total_duration,
+                            ocr_duration: std::time::Duration::from_millis(0), // No successful OCR duration on failure
+                            image_size,
+                            attempt_count: attempt,
+                            memory_estimate_mb: memory_estimate,
+                        },
                     );
 
                     error!("OCR extraction failed after {max_attempts} attempts ({total_ms}ms total): {err:?}");
@@ -481,7 +824,7 @@ async fn perform_ocr_extraction(
     image_path: &str,
     config: &crate::ocr_config::OcrConfig,
     instance_manager: &crate::instance_manager::OcrInstanceManager,
-) -> Result<String, crate::ocr_errors::OcrError> {
+) -> Result<(String, std::time::Duration), crate::ocr_errors::OcrError> {
     // Start timing the actual OCR processing
     let ocr_start_time = std::time::Instant::now();
 
@@ -533,7 +876,7 @@ async fn perform_ocr_extraction(
                 ocr_ms,
                 text.len()
             );
-            Ok(text)
+            Ok((text, ocr_duration))
         }
         Ok(Err(e)) => {
             warn!("OCR processing failed after {ocr_ms}ms: {e:?}");
@@ -558,6 +901,83 @@ async fn perform_ocr_extraction(
 /// Delay increases exponentially with each retry attempt, with random jitter added
 /// to distribute retry attempts over time.
 ///
+/// ## Algorithm Overview
+///
+/// The function calculates retry delays using this formula:
+/// ```text
+/// delay = min(base_delay * (2^(attempt-1)), max_delay)
+/// jitter = random(0, delay/4)
+/// final_delay = delay + jitter
+/// ```
+///
+/// ## Exponential Backoff Logic
+///
+/// - **Base Delay**: Starting delay for first retry (typically 1000ms)
+/// - **Exponential Growth**: Delay doubles with each retry attempt
+/// - **Maximum Cap**: Prevents excessively long delays
+/// - **Jitter Addition**: Random component prevents synchronized retries
+///
+/// ## Delay Progression Examples
+///
+/// | Attempt | Base Delay | Exponential | Jitter Range | Final Delay Range |
+/// |---------|------------|-------------|--------------|-------------------|
+/// | 1       | 1000ms     | 1000ms      | 0-250ms      | 1000-1250ms      |
+/// | 2       | 1000ms     | 2000ms      | 0-500ms      | 2000-2500ms      |
+/// | 3       | 1000ms     | 4000ms      | 0-1000ms     | 4000-5000ms      |
+/// | 4       | 1000ms     | 8000ms      | 0-2000ms     | 8000-10000ms     |
+/// | 5+      | 1000ms     | 10000ms*    | 0-2500ms     | 10000-12500ms    |
+///
+/// *Capped at max_retry_delay_ms
+///
+/// ## Jitter Implementation
+///
+/// Jitter is calculated as a random value between 0 and delay/4:
+/// - **Purpose**: Distribute retry attempts over time
+/// - **Range**: 0 to 25% of the base delay
+/// - **Randomness**: Uses `rand::random()` for uniform distribution
+/// - **Thread Safety**: Each call generates independent random values
+///
+/// ## Configuration Parameters
+///
+/// - `base_retry_delay_ms`: Base delay for first retry (default: 1000ms)
+/// - `max_retry_delay_ms`: Maximum delay cap (default: 10000ms)
+/// - `attempt`: Current retry attempt number (1-based)
+///
+/// ## Benefits
+///
+/// - **Load Distribution**: Prevents server overload during failures
+/// - **Thundering Herd Prevention**: Jitter distributes retry attempts
+/// - **Configurable**: Adjustable for different environments
+/// - **Predictable**: Exponential growth with known bounds
+/// - **Resource Protection**: Gives failing services time to recover
+///
+/// ## Usage in Retry Logic
+///
+/// ```rust
+/// use just_ingredients::ocr_config::RecoveryConfig;
+/// use just_ingredients::ocr::calculate_retry_delay;
+///
+/// let config = RecoveryConfig::default();
+/// // Simulate retry logic
+/// let mut results = Vec::new();
+/// for attempt in 1..=3 {
+///     let delay = calculate_retry_delay(attempt, &config);
+///     results.push(delay);
+///     // In real code: tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+/// }
+/// // Results will be different due to jitter, but within expected ranges
+/// assert!(results[0] >= 1000 && results[0] <= 1250); // ~1000ms + jitter
+/// assert!(results[1] >= 2000 && results[1] <= 2500); // ~2000ms + jitter
+/// assert!(results[2] >= 4000 && results[2] <= 5000); // ~4000ms + jitter
+/// ```
+///
+/// ## Performance Considerations
+///
+/// - **Computation**: Minimal CPU overhead (bit operations + random generation)
+/// - **Memory**: No allocations, uses only primitive types
+/// - **Thread Safety**: Safe for concurrent use
+/// - **Predictability**: Deterministic exponential growth with random jitter
+///
 /// # Arguments
 ///
 /// * `attempt` - Current retry attempt number (1-based, first retry = 1)
@@ -566,14 +986,6 @@ async fn perform_ocr_extraction(
 /// # Returns
 ///
 /// Returns delay in milliseconds before next retry attempt
-///
-/// # Algorithm
-///
-/// ```text
-/// delay = min(base_delay * (2^(attempt-1)), max_delay)
-/// jitter = random(0, delay/4)
-/// final_delay = delay + jitter
-/// ```
 ///
 /// # Examples
 ///
@@ -588,17 +1000,6 @@ async fn perform_ocr_extraction(
 /// // Third retry: ~4000-5000ms (4000ms + jitter)
 /// let delay3 = calculate_retry_delay(3, &config);
 /// ```
-///
-/// # Configuration Parameters
-///
-/// - `base_retry_delay_ms`: Base delay for first retry (default: 1000ms)
-/// - `max_retry_delay_ms`: Maximum delay cap (default: 10000ms)
-///
-/// # Benefits
-///
-/// - **Exponential Backoff**: Reduces server load during failures
-/// - **Jitter**: Prevents synchronized retry storms
-/// - **Configurable**: Adjustable for different environments
 /// - **Capped**: Prevents excessively long delays
 pub fn calculate_retry_delay(attempt: u32, recovery: &crate::ocr_config::RecoveryConfig) -> u64 {
     // Calculate exponential backoff with minimal precision loss

@@ -190,7 +190,7 @@ mod tests {
         // Test Display implementation
         let error = OcrError::Validation("test".to_string());
         let display = format!("{}", error);
-        assert_eq!(display, "Validation error: test");
+        assert_eq!(display, "[VALIDATION] Image validation failed: test");
     }
 
     /// Test format detection with mock PNG file

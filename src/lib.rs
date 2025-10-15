@@ -4,6 +4,7 @@
 //! ingredient measurements in a database with full-text search capabilities.
 
 pub mod bot;
+pub mod cache;
 pub mod circuit_breaker;
 pub mod db;
 pub mod dialogue;

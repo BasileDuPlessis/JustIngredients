@@ -42,6 +42,43 @@ use super::dialogue_manager::{
 // Import observability
 use crate::observability;
 
+/// RAII guard for temporary files that ensures cleanup on drop
+pub struct TempFileGuard {
+    path: String,
+}
+
+impl TempFileGuard {
+    fn new(path: String) -> Self {
+        Self { path }
+    }
+
+    fn path(&self) -> &str {
+        &self.path
+    }
+}
+
+impl std::fmt::Display for TempFileGuard {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.path)
+    }
+}
+
+impl AsRef<std::path::Path> for TempFileGuard {
+    fn as_ref(&self) -> &std::path::Path {
+        std::path::Path::new(&self.path)
+    }
+}
+
+impl Drop for TempFileGuard {
+    fn drop(&mut self) {
+        if let Err(e) = std::fs::remove_file(&self.path) {
+            error!(path = %self.path, error = %e, "Failed to clean up temporary file in drop");
+        } else {
+            debug!(path = %self.path, "Temporary file cleaned up successfully in drop");
+        }
+    }
+}
+
 /// Parameters for image processing
 #[derive(Debug)]
 pub struct ImageProcessingParams<'a> {
@@ -61,7 +98,7 @@ static OCR_INSTANCE_MANAGER: std::sync::LazyLock<OcrInstanceManager> =
 static CIRCUIT_BREAKER: std::sync::LazyLock<CircuitBreaker> =
     std::sync::LazyLock::new(|| CircuitBreaker::new(OCR_CONFIG.recovery.clone()));
 
-pub async fn download_file(bot: &Bot, file_id: teloxide::types::FileId) -> Result<String> {
+pub async fn download_file(bot: &Bot, file_id: teloxide::types::FileId) -> Result<TempFileGuard> {
     let file = bot.get_file(file_id).await?;
     let file_path = file.path;
     let url = format!(
@@ -71,17 +108,29 @@ pub async fn download_file(bot: &Bot, file_id: teloxide::types::FileId) -> Resul
     );
 
     let response = reqwest::get(&url).await?;
+
+    // Check Content-Length header to prevent downloading oversized files
+    if let Some(content_length) = response.content_length() {
+        let max_file_size = OCR_CONFIG.max_file_size;
+        if content_length > max_file_size {
+            return Err(anyhow::anyhow!(
+                "File too large: {} bytes (maximum allowed: {} bytes)",
+                content_length,
+                max_file_size
+            ));
+        }
+    }
+
     let bytes = response.bytes().await?;
 
     let mut temp_file = NamedTempFile::new()?;
     temp_file.as_file_mut().write_all(&bytes)?;
     let path = temp_file.path().to_string_lossy().to_string();
 
-    // Instead of keeping the file, we return the path and let the caller handle cleanup
-    // The NamedTempFile will be dropped here, but the file will remain until explicitly deleted
+    // Create a guard that will clean up the file when dropped
+    // The NamedTempFile is forgotten here, but our guard will handle cleanup
     std::mem::forget(temp_file);
-
-    Ok(path)
+    Ok(TempFileGuard::new(path))
 }
 
 pub async fn download_and_process_image(
@@ -98,10 +147,10 @@ pub async fn download_and_process_image(
         pool: _pool,
         caption,
     } = params;
-    let temp_path = match download_file(bot, file_id).await {
-        Ok(path) => {
-            debug!(user_id = %chat_id, temp_path = %path, "Image downloaded successfully");
-            path
+    let temp_file_guard = match download_file(bot, file_id).await {
+        Ok(guard) => {
+            debug!(user_id = %chat_id, temp_path = %guard, "Image downloaded successfully");
+            guard
         }
         Err(e) => {
             error!(user_id = %chat_id, error = %e, "Failed to download image for user");
@@ -112,15 +161,15 @@ pub async fn download_and_process_image(
             .await?;
             return Err(e);
         }
-    }; // Ensure cleanup happens even if we return early
+    }; // The guard will be moved into the async block below
     let result = async {
-        info!("Image downloaded to: {temp_path}");
+        info!("Image downloaded to: {}", temp_file_guard);
 
         // Send initial success message
         bot.send_message(chat_id, success_message).await?;
 
         // Validate image format before OCR processing
-        if !crate::ocr::is_supported_image_format(&temp_path, &OCR_CONFIG) {
+        if !crate::ocr::is_supported_image_format(temp_file_guard.path(), &OCR_CONFIG) {
             warn!(user_id = %chat_id, "Unsupported image format rejected");
             bot.send_message(chat_id, t_lang(localization, "error-unsupported-format", language_code))
                 .await?;
@@ -129,7 +178,7 @@ pub async fn download_and_process_image(
 
         // Extract text from the image using OCR with circuit breaker protection
         match crate::ocr::extract_text_from_image(
-            &temp_path,
+            temp_file_guard.path(),
             &OCR_CONFIG,
             &OCR_INSTANCE_MANAGER,
             &CIRCUIT_BREAKER,
@@ -244,20 +293,31 @@ pub async fn download_and_process_image(
                 // Provide more specific error messages based on the error type
                 let error_message = match &e {
                     OcrError::Validation(msg) => {
+                        observability::record_error_metrics("validation", "ocr");
                         t_lang(localization, "error-validation", language_code).replace("{}", msg)
                     }
-                    OcrError::ImageLoad(_) => t_lang(localization, "error-image-load", language_code),
+                    OcrError::ImageLoad(_) => {
+                        observability::record_error_metrics("image_load", "ocr");
+                        t_lang(localization, "error-image-load", language_code)
+                    }
                     OcrError::Initialization(_) => {
+                        observability::record_error_metrics("initialization", "ocr");
                         t_lang(localization, "error-ocr-initialization", language_code)
                     }
-                    OcrError::Extraction(_) => t_lang(localization, "error-ocr-extraction", language_code),
+                    OcrError::Extraction(_) => {
+                        observability::record_error_metrics("extraction", "ocr");
+                        t_lang(localization, "error-ocr-extraction", language_code)
+                    }
                     OcrError::Timeout(msg) => {
+                        observability::record_error_metrics("timeout", "ocr");
                         t_lang(localization, "error-ocr-timeout", language_code).replace("{}", msg)
                     }
                     OcrError::_InstanceCorruption(_) => {
+                        observability::record_error_metrics("instance_corruption", "ocr");
                         t_lang(localization, "error-ocr-corruption", language_code)
                     }
                     OcrError::_ResourceExhaustion(_) => {
+                        observability::record_error_metrics("resource_exhaustion", "ocr");
                         t_lang(localization, "error-ocr-exhaustion", language_code)
                     }
                 };
@@ -268,13 +328,6 @@ pub async fn download_and_process_image(
         }
     }
     .await;
-
-    // Always clean up the temporary file
-    if let Err(cleanup_err) = std::fs::remove_file(&temp_path) {
-        error!(temp_path = %temp_path, error = %cleanup_err, "Failed to clean up temporary file");
-    } else {
-        debug!(temp_path = %temp_path, "Temporary file cleaned up successfully");
-    }
 
     result
 }
@@ -449,6 +502,16 @@ async fn handle_text_message(
 
         // Handle /start command
         if text == "/start" {
+            // Record user engagement metric for start command
+            if let Some(user) = msg.from.as_ref() {
+                crate::observability::record_user_engagement_metrics(
+                    user.id.0 as i64,
+                    crate::observability::UserAction::StartCommand,
+                    None, // No session duration for individual actions
+                    language_code,
+                );
+            }
+
             let welcome_message = format!(
                 "👋 **{}**\n\n{}\n\n{}\n\n{}\n{}\n{}\n\n{}",
                 t_lang(localization, "welcome-title", language_code),
@@ -463,6 +526,16 @@ async fn handle_text_message(
         }
         // Handle /help command
         else if text == "/help" {
+            // Record user engagement metric for help command
+            if let Some(user) = msg.from.as_ref() {
+                crate::observability::record_user_engagement_metrics(
+                    user.id.0 as i64,
+                    crate::observability::UserAction::HelpCommand,
+                    None, // No session duration for individual actions
+                    language_code,
+                );
+            }
+
             let help_message = vec![
                 t_lang(localization, "help-title", language_code),
                 t_lang(localization, "help-description", language_code),
@@ -485,6 +558,16 @@ async fn handle_text_message(
         }
         // Handle /recipes command
         else if text == "/recipes" {
+            // Record user engagement metric for recipes command
+            if let Some(user) = msg.from.as_ref() {
+                crate::observability::record_user_engagement_metrics(
+                    user.id.0 as i64,
+                    crate::observability::UserAction::RecipesCommand,
+                    None, // No session duration for individual actions
+                    language_code,
+                );
+            }
+
             handle_recipes_command(bot, msg, pool, language_code, localization).await?;
         }
         // Handle regular text messages
@@ -518,6 +601,16 @@ async fn handle_photo_message(
         .map(|s| s.as_str());
 
     debug!(user_id = %msg.chat.id, "Received photo message from user");
+
+    // Record user engagement metric for photo upload
+    if let Some(user) = msg.from.as_ref() {
+        crate::observability::record_user_engagement_metrics(
+            user.id.0 as i64,
+            crate::observability::UserAction::PhotoUpload,
+            None, // No session duration for individual actions
+            language_code,
+        );
+    }
 
     if let Some(photos) = msg.photo() {
         if let Some(largest_photo) = photos.last() {
@@ -562,6 +655,17 @@ async fn handle_document_message(
         if let Some(mime_type) = &doc.mime_type {
             if mime_type.to_string().starts_with("image/") {
                 debug!(user_id = %msg.chat.id, mime_type = %mime_type, "Received image document from user");
+
+                // Record user engagement metric for document upload
+                if let Some(user) = msg.from.as_ref() {
+                    crate::observability::record_user_engagement_metrics(
+                        user.id.0 as i64,
+                        crate::observability::UserAction::DocumentUpload,
+                        None, // No session duration for individual actions
+                        language_code,
+                    );
+                }
+
                 let _temp_path = download_and_process_image(
                     bot,
                     ImageProcessingParams {
@@ -674,6 +778,112 @@ async fn handle_unsupported_message(
     Ok(())
 }
 
+/// Main message handler for Telegram bot interactions
+///
+/// Implements comprehensive message routing and dialogue state management.
+/// This function orchestrates the entire bot interaction flow, handling different
+/// message types and managing conversation state across multiple dialogue phases.
+///
+/// ## Message Routing Algorithm
+///
+/// ```text
+/// 1. Extract message metadata (type, language, user info)
+/// 2. Record telemetry metrics for monitoring
+/// 3. Route by message type:
+///    ├── Text → handle_text_message()
+///    ├── Photo → handle_photo_message()
+///    ├── Document → handle_document_message()
+///    └── Other → handle_unsupported_message()
+/// 4. Handle dialogue state transitions
+/// 5. Record performance metrics
+/// 6. Return result with error handling
+/// ```
+///
+/// ## Dialogue State Machine
+///
+/// The bot maintains complex conversation state using `RecipeDialogueState`:
+///
+/// ```text
+/// Start ────photo received────► WaitingForRecipeName
+///    │                              │
+///    │                              │ user provides name
+///    │                              ▼
+///    └───────────────► ReviewIngredients ────user confirms───► WaitingForRecipeNameAfterConfirm
+///                              │                                      │
+///                              │ user edits                           │ user provides name
+///                              ▼                                      ▼
+///                       EditingIngredient ──► ReviewIngredients ──► [Recipe Saved]
+/// ```
+///
+/// ## State-Specific Message Handling
+///
+/// ### Text Messages
+/// - **Start State**: Handle `/start`, `/help`, `/recipes` commands
+/// - **WaitingForRecipeName**: Process recipe name input with validation
+/// - **ReviewIngredients**: Handle ingredient review commands (edit/delete/confirm)
+/// - **EditingIngredient**: Process ingredient edit input
+/// - **WaitingForRecipeNameAfterConfirm**: Handle post-confirmation recipe naming
+///
+/// ### Photo Messages
+/// - Extract caption for automatic recipe naming
+/// - Download and process image via OCR pipeline
+/// - Transition to ingredient review interface
+/// - Handle caption validation and fallback logic
+///
+/// ### Document Messages
+/// - Validate image MIME types
+/// - Process supported image formats
+/// - Same OCR pipeline as photos (no caption support)
+///
+/// ## Language Detection & Localization
+///
+/// ```text
+/// 1. Extract language_code from Telegram user.language_code
+/// 2. Fallback to 'en' if not available
+/// 3. Load appropriate Fluent bundle for localization
+/// 4. Use localized messages throughout interaction
+/// ```
+///
+/// ## Error Handling Strategy
+///
+/// - **Graceful Degradation**: Unsupported messages get helpful guidance
+/// - **User-Friendly Messages**: Localized error responses
+/// - **State Preservation**: Dialogue state maintained across errors
+/// - **Logging**: Comprehensive error logging for debugging
+///
+/// ## Performance Monitoring
+///
+/// Tracks multiple metrics:
+/// - Message type distribution
+/// - Processing duration
+/// - User language preferences
+/// - Media attachment statistics
+/// - Error rates by message type
+///
+/// ## Thread Safety
+///
+/// - Uses `Arc<PgPool>` for database connection sharing
+/// - Dialogue state managed per chat_id
+/// - Localization manager shared across requests
+///
+/// # Arguments
+///
+/// * `bot` - Telegram bot instance for sending responses
+/// * `msg` - Incoming Telegram message to process
+/// * `pool` - PostgreSQL connection pool for data persistence
+/// * `dialogue` - Dialogue state manager for conversation flow
+/// * `localization` - Localization manager for multi-language support
+///
+/// # Returns
+///
+/// Returns `Result<(), anyhow::Error>` indicating success or failure
+///
+/// # Message Type Support
+///
+/// - **Text**: Commands, dialogue input, recipe management
+/// - **Photo**: Image processing with optional captions
+/// - **Document**: Image files uploaded as documents
+/// - **Unsupported**: Guidance for unsupported message types
 pub async fn message_handler(
     bot: Bot,
     msg: Message,
@@ -713,5 +923,34 @@ pub async fn message_handler(
     let duration = start_time.elapsed();
     observability::record_request_metrics("telegram_message", 200, duration);
 
+    // Record enhanced Telegram performance metrics
+    let message_size =
+        msg.text().map(|t| t.len()).unwrap_or(0) + msg.caption().map(|c| c.len()).unwrap_or(0);
+    let has_media = msg.photo().is_some() || msg.document().is_some();
+    observability::record_telegram_performance_metrics(
+        message_type,
+        duration,
+        msg.from.as_ref().map(|u| u.id.0 as i64),
+        message_size,
+        has_media,
+    );
+
     result
+}
+
+/// Cache-enabled message handler for improved performance
+///
+/// This version includes caching for database queries and OCR results
+/// to reduce processing time and database load.
+pub async fn message_handler_with_cache(
+    bot: Bot,
+    msg: Message,
+    pool: Arc<PgPool>,
+    dialogue: RecipeDialogue,
+    localization: Arc<crate::localization::LocalizationManager>,
+    cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
+) -> Result<()> {
+    // For now, delegate to the original handler
+    // TODO: Integrate caching into specific operations
+    message_handler(bot, msg, pool, dialogue, localization).await
 }

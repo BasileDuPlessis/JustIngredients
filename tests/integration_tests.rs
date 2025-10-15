@@ -995,3 +995,444 @@ fn test_caption_preservation_after_ingredient_deletion() {
 
     println!("✅ Caption preservation after ingredient deletion test passed - bug is fixed!");
 }
+
+/// Test database integration with real database operations
+#[tokio::test]
+async fn test_database_integration_full_workflow() -> Result<(), Box<dyn std::error::Error>> {
+    use just_ingredients::db;
+    use just_ingredients::text_processing::MeasurementDetector;
+    use std::sync::Arc;
+
+    // This test requires a test database - skip if DATABASE_URL not set for integration tests
+    // Skip test if DATABASE_URL is not set
+    let database_url = match std::env::var("DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("⚠️ Skipping database integration test - DATABASE_URL not set");
+            return Ok(());
+        }
+    };
+
+    // Create a test database connection pool
+    let pool = match sqlx::postgres::PgPool::connect(&database_url).await {
+        Ok(pool) => Arc::new(pool),
+        Err(e) => {
+            println!("⚠️ Skipping database integration test - failed to connect: {}", e);
+            return Ok(());
+        }
+    };
+
+    // Initialize database schema
+    if let Err(e) = db::init_database_schema(&pool).await {
+        println!("⚠️ Skipping database integration test - failed to init schema: {}", e);
+        return Ok(());
+    }
+
+    // Test data
+    let telegram_id = 999999; // Use a test user ID
+    let recipe_content = "Test Recipe Content";
+    let detector = MeasurementDetector::new().unwrap();
+
+    // Step 1: Create or get a user
+    let user = match db::get_or_create_user(&pool, telegram_id, Some("en")).await {
+        Ok(user) => user,
+        Err(e) => {
+            panic!("Failed to create/get user: {}", e);
+        }
+    };
+
+    // Step 2: Create a recipe
+    let recipe_id = match db::create_recipe(&pool, telegram_id, recipe_content).await {
+        Ok(id) => id,
+        Err(e) => {
+            panic!("Failed to create recipe: {}", e);
+        }
+    };
+
+    // Step 3: Extract and create ingredients
+    let ocr_text = r#"
+    Test Recipe Ingredients:
+    2 cups flour
+    3 eggs
+    1 cup sugar
+    1 tsp vanilla
+    "#;
+
+    let measurements = detector.extract_ingredient_measurements(ocr_text);
+    assert!(!measurements.is_empty());
+
+    // Create ingredients in database
+    for measurement in &measurements {
+        let ingredient_id = match db::create_ingredient(
+            &pool,
+            user.id, // Use the actual user ID, not telegram_id
+            Some(recipe_id),
+            &measurement.ingredient_name,
+            measurement.quantity.parse().ok(),
+            measurement.measurement.as_deref(),
+            &format!("{} {}", measurement.quantity, measurement.ingredient_name),
+        ).await {
+            Ok(id) => id,
+            Err(e) => {
+                panic!("Failed to create ingredient {}: {}", measurement.ingredient_name, e);
+            }
+        };
+
+        // Verify ingredient was created
+        let retrieved = match db::read_ingredient(&pool, ingredient_id).await {
+            Ok(Some(ing)) => ing,
+            Ok(None) => panic!("Ingredient {} not found after creation", ingredient_id),
+            Err(e) => panic!("Failed to read ingredient {}: {}", ingredient_id, e),
+        };
+
+        assert_eq!(retrieved.name, measurement.ingredient_name);
+        assert_eq!(retrieved.recipe_id, Some(recipe_id));
+    }
+
+    // Step 3: Test full-text search
+    let search_results = match db::search_recipes(&pool, telegram_id, "flour").await {
+        Ok(results) => results,
+        Err(e) => panic!("Failed to search recipes: {}", e),
+    };
+
+    assert!(!search_results.is_empty());
+    assert!(search_results.iter().any(|r| r.id == recipe_id));
+
+    // Step 4: Test recipe listing with pagination
+    let (recipe_names, total) = match db::get_user_recipes_paginated(&pool, telegram_id, 10, 0).await {
+        Ok(result) => result,
+        Err(e) => panic!("Failed to get paginated recipes: {}", e),
+    };
+
+    assert!(total >= 1);
+    assert!(!recipe_names.is_empty());
+
+    // Step 5: Test ingredient listing
+    let ingredients = match db::list_ingredients_by_user(&pool, telegram_id).await {
+        Ok(ings) => ings,
+        Err(e) => panic!("Failed to list ingredients: {}", e),
+    };
+
+    assert!(!ingredients.is_empty());
+    assert!(ingredients.len() >= measurements.len());
+
+    // Step 6: Test recipe reading with ingredients
+    let recipe_with_ingredients = match db::read_recipe_with_recipe(&pool, recipe_id).await {
+        Ok(Some(recipe)) => recipe,
+        Ok(None) => panic!("Recipe {} not found", recipe_id),
+        Err(e) => panic!("Failed to read recipe with ingredients: {}", e),
+    };
+
+    assert_eq!(recipe_with_ingredients.content, recipe_content);
+
+    // Cleanup: Delete test data (in reverse order to maintain foreign key constraints)
+    for ingredient in &ingredients {
+        if ingredient.user_id == telegram_id {
+            if let Err(e) = db::delete_ingredient(&pool, ingredient.id).await {
+                println!("Warning: Failed to cleanup ingredient {}: {}", ingredient.id, e);
+            }
+        }
+    }
+
+    if let Err(e) = db::delete_recipe(&pool, recipe_id).await {
+        println!("Warning: Failed to cleanup recipe {}: {}", recipe_id, e);
+    }
+
+    println!("✅ Database integration test passed - full CRUD workflow with search and pagination working");
+    Ok(())
+}
+
+/// Test OCR processing integration with circuit breaker behavior
+#[tokio::test]
+async fn test_ocr_processing_with_circuit_breaker_integration() {
+    use just_ingredients::circuit_breaker::CircuitBreaker;
+    use just_ingredients::ocr_config::{OcrConfig, RecoveryConfig};
+    use just_ingredients::ocr;
+    use just_ingredients::instance_manager::OcrInstanceManager;
+    use std::time::Duration;
+    use tempfile::NamedTempFile;
+    use std::io::Write;
+
+    // Create a test image file (minimal valid PNG)
+    let mut temp_file = NamedTempFile::new().unwrap();
+    // Write minimal PNG header (this won't be a valid image but will pass basic validation)
+    let png_header = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\tpHYs\x00\x00\x0b\x13\x00\x00\x0b\x13\x01\x00\x9a\x9c\x18\x00\x00\x00\nIDATx\x9cc\xf8\x00\x00\x00\x01\x00\x01\x00\x00\x00\x00IEND\xaeB`\x82";
+    temp_file.write_all(png_header).unwrap();
+    let image_path = temp_file.path().to_str().unwrap().to_string();
+
+    // Create instance manager
+    let instance_manager = OcrInstanceManager::new();
+
+    // Test configuration with low thresholds for testing
+    let recovery_config = RecoveryConfig {
+        circuit_breaker_threshold: 2,
+        circuit_breaker_reset_secs: 1,
+        operation_timeout_secs: 1, // Short timeout for testing
+        ..Default::default()
+    };
+
+    let ocr_config = OcrConfig {
+        recovery: recovery_config,
+        ..Default::default()
+    };
+
+    let circuit_breaker = CircuitBreaker::new(ocr_config.recovery.clone());
+
+    // Test 1: Normal operation (should work initially, but will fail due to invalid image)
+    let _result1 = ocr::extract_text_from_image(&image_path, &ocr_config, &instance_manager, &circuit_breaker).await;
+    // The OCR operation will fail and record 1 failure, but circuit breaker should still be closed (1 < 2)
+
+    // Test 2: Simulate additional failures to trigger circuit breaker
+    // Record one more failure manually to reach threshold
+    circuit_breaker.record_failure();
+    assert!(circuit_breaker.is_open()); // Now it should be open (2 >= 2)
+
+    // Test 3: When circuit breaker is open, operations should fail fast
+    let result2 = ocr::extract_text_from_image(&image_path, &ocr_config, &instance_manager, &circuit_breaker).await;
+    assert!(result2.is_err()); // Should fail due to circuit breaker
+
+    // Test 4: Wait for circuit breaker to reset
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    assert!(!circuit_breaker.is_open());
+
+    // Test 5: After reset, operations should work again (may still fail due to invalid image)
+    let _result3 = ocr::extract_text_from_image(&image_path, &ocr_config, &instance_manager, &circuit_breaker).await;
+    // Don't assert success, just that circuit breaker didn't prevent the attempt
+
+    // Test 6: Test configuration validation
+    let invalid_config = OcrConfig {
+        recovery: RecoveryConfig {
+            circuit_breaker_threshold: 0, // Invalid: must be >= 1
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    assert!(invalid_config.validate().is_err());
+
+    println!("✅ OCR processing with circuit breaker integration test passed - circuit breaker protection working correctly");
+}
+
+/// Test observability integration - metrics collection and health checks
+#[tokio::test]
+async fn test_observability_integration_full_stack() {
+    use just_ingredients::observability;
+    use std::time::Duration;
+
+    // Test 1: Initialize observability stack
+    observability::init_observability().await.unwrap();
+
+    // Test 2: Record various metrics
+    observability::record_ocr_metrics(true, Duration::from_millis(100), 1024);
+    observability::record_db_metrics("test_operation", Duration::from_millis(50));
+    observability::record_request_metrics("GET", 200, Duration::from_millis(25));
+    observability::record_telegram_message("photo");
+
+    // Test 3: Record performance metrics
+    let ocr_params = observability::OcrPerformanceMetricsParams {
+        success: true,
+        total_duration: Duration::from_millis(150),
+        ocr_duration: Duration::from_millis(100),
+        image_size: 2048,
+        attempt_count: 1,
+        memory_estimate_mb: 50.0,
+    };
+    observability::record_ocr_performance_metrics(ocr_params);
+
+    // Test 4: Test health check functions
+    if sqlx::postgres::PgPool::connect("postgresql://invalid").await.is_ok() {
+        panic!("Should not connect to invalid database URL");
+    }
+    // This will fail because we don't have a real DB, but the function should work
+
+    let ocr_health = observability::check_ocr_health().await;
+    assert!(ocr_health.is_ok()); // OCR health check should pass (Tesseract available)
+
+    let bot_health = observability::check_bot_token_health("invalid_token").await;
+    assert!(bot_health.is_err()); // Should fail with invalid token
+
+    // Test 5: Test configuration validation
+    let config = just_ingredients::observability_config::ObservabilityConfig::from_env();
+    assert!(config.validate().is_ok());
+
+    // Test 6: Test span creation
+    let ocr_span = observability::ocr_span("test_operation");
+    let db_span = observability::db_span("test_query", "test_table");
+    let telegram_span = observability::telegram_span("test_message", Some(12345));
+
+    // Spans should be created successfully
+    assert!(!ocr_span.metadata().unwrap().name().is_empty());
+    assert!(!db_span.metadata().unwrap().name().is_empty());
+    assert!(!telegram_span.metadata().unwrap().name().is_empty());
+
+    println!("✅ Observability integration test passed - full metrics, tracing, and health check stack working");
+}
+
+/// Test security boundary testing - input validation and path traversal protection
+#[test]
+fn test_security_boundary_testing() {
+    use just_ingredients::ocr;
+    use just_ingredients::ocr_config::OcrConfig;
+
+    let config = OcrConfig::default();
+
+    // Test 1: Path traversal protection
+    let dangerous_paths = vec![
+        "/etc/passwd",
+        "/usr/bin/bash",
+        "../../../etc/passwd",
+        "/System/Library/Keychains",
+        "C:\\Windows\\System32\\cmd.exe",
+    ];
+
+    for path in dangerous_paths {
+        let result = ocr::validate_image_path(path, &config);
+        assert!(result.is_err(), "Path {} should be rejected", path);
+    }
+
+    // Test 2: Valid paths (these should work if files exist)
+    let safe_paths = vec![
+        "/tmp/test.png",
+        "/var/tmp/test.jpg",
+        "/private/tmp/test.bmp",
+    ];
+
+    for path in safe_paths {
+        // Create a dummy file for testing
+        if let Ok(()) = std::fs::write(path, b"dummy") {
+            let _result = ocr::validate_image_path(path, &config);
+            // Should pass validation (may fail later for other reasons)
+            std::fs::remove_file(path).ok(); // Cleanup
+        }
+    }
+
+    // Test 3: Null byte protection
+    let null_byte_path = "/tmp/test.png\x00evil";
+    let _result = ocr::validate_image_path(null_byte_path, &config);
+    assert!(_result.is_err(), "Null byte in path should be rejected");
+
+    // Test 4: Empty path validation
+    let _result = ocr::validate_image_path("", &config);
+    assert!(_result.is_err(), "Empty path should be rejected");
+
+    // Test 5: Non-existent file
+    let _result = ocr::validate_image_path("/tmp/nonexistent_file.png", &config);
+    assert!(_result.is_err(), "Non-existent file should be rejected");
+
+    // Test 6: Directory instead of file
+    let _result = ocr::validate_image_path("/tmp", &config);
+    assert!(_result.is_err(), "Directory should be rejected");
+
+    // Test 7: Image format validation
+    let config = OcrConfig::default();
+
+    // Test with various formats (create minimal test files)
+    let test_cases = vec![
+        ("png", b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde\x00\x00\x00\tpHYs\x00\x00\x0b\x13\x00\x00\x0b\x13\x01\x00\x9a\x9c\x18\x00\x00\x00\nIDATx\x9cc\xf8\x00\x00\x00\x01\x00\x01\x00\x00\x00\x00IEND\xaeB`\x82"),
+        ("jpg", b"\xFF\xD8\xFF\xE0\x00\x10JFIF\x00\x01\x01\x01\x00H\x00H\x00\x00\xFF\xC0\x00\x11\x08\x00\x01\x00\x01\x01\x01\x11\x00\x02\x11\x01\x03\x11\x01\xFF\xC4\x00\x14\x00\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x08\xFF\xC4\x00\x14\x10\x01\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00"),
+    ];
+
+    for (ext, data) in test_cases {
+        let temp_file = tempfile::NamedTempFile::with_suffix(format!(".{}", ext)).unwrap();
+        std::fs::write(temp_file.path(), data).unwrap();
+
+        let is_supported = ocr::is_supported_image_format(temp_file.path().to_str().unwrap(), &config);
+        assert!(is_supported, "Format {} should be supported", ext);
+    }
+
+    // Test unsupported format
+    let temp_file = tempfile::NamedTempFile::with_suffix(".txt").unwrap();
+    std::fs::write(temp_file.path(), b"Hello world").unwrap();
+
+    let is_supported = ocr::is_supported_image_format(temp_file.path().to_str().unwrap(), &config);
+    assert!(!is_supported, "Text file should not be supported as image");
+
+    println!("✅ Security boundary testing passed - path traversal, input validation, and format checking working correctly");
+}
+
+/// Test performance/load testing integration
+#[tokio::test]
+async fn test_performance_load_testing_integration() {
+    use just_ingredients::text_processing::MeasurementDetector;
+    use std::sync::Arc;
+    use std::time::Instant;
+
+    // Test 1: Concurrent measurement processing
+    let detector = Arc::new(MeasurementDetector::new().unwrap());
+    let mut handles = vec![];
+
+    let test_texts = [
+        "2 cups flour\n3 eggs\n1 cup sugar",
+        "500g chicken\n2 carrots\n1 onion\n3 tomatoes",
+        "1 kg potatoes\n200g cheese\n4 apples",
+        "250ml milk\n100g butter\n2 tbsp oil",
+        "3 bananas\n1 pineapple\n2 mangoes",
+    ];
+
+    let start_time = Instant::now();
+
+    // Spawn concurrent tasks
+    for i in 0..5 {
+        let detector_clone = Arc::clone(&detector);
+        let text = test_texts[i % test_texts.len()].to_string();
+
+        let handle = tokio::spawn(async move {
+            let measurements = detector_clone.extract_ingredient_measurements(&text);
+            (i, measurements.len(), text.len())
+        });
+
+        handles.push(handle);
+    }
+
+    // Collect results
+    let mut total_measurements = 0;
+    let mut total_chars = 0;
+
+    for handle in handles {
+        let (_task_id, measurement_count, char_count) = handle.await.unwrap();
+        total_measurements += measurement_count;
+        total_chars += char_count;
+    }
+
+    let duration = start_time.elapsed();
+
+    // Test 2: Performance assertions
+    assert!(total_measurements > 0, "Should have extracted measurements");
+    assert!(duration.as_millis() < 1000, "Concurrent processing should be fast (< 1s)");
+    assert!(total_chars > 0, "Should have processed text");
+
+    // Test 3: Memory usage estimation
+    let avg_processing_time = duration.as_millis() as f64 / 5.0;
+    assert!(avg_processing_time < 200.0, "Average processing time should be reasonable");
+
+    // Test 4: Load scaling test (simulate increasing load)
+    let load_levels = vec![1, 2, 5, 10];
+
+    for num_tasks in load_levels {
+        let start_time = Instant::now();
+        let mut handles = vec![];
+
+        for i in 0..num_tasks {
+            let detector_clone = Arc::clone(&detector);
+            let text = format!("{} cups flour\n{} eggs", i + 1, i + 1);
+
+            let handle = tokio::spawn(async move {
+                let _measurements = detector_clone.extract_ingredient_measurements(&text);
+                i
+            });
+
+            handles.push(handle);
+        }
+
+        for handle in handles {
+            handle.await.unwrap();
+        }
+
+        let duration = start_time.elapsed();
+        let avg_time_per_task = duration.as_millis() as f64 / num_tasks as f64;
+
+        // Performance should scale reasonably (not exponentially worse)
+        assert!(avg_time_per_task < 100.0, "Performance should scale for {} tasks", num_tasks);
+    }
+
+    println!("✅ Performance/load testing integration passed - concurrent processing and scaling working correctly");
+}

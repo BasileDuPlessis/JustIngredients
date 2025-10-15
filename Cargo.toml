@@ -6,38 +6,33 @@ edition = "2021"
 [dependencies]
 teloxide = "0.17.0"
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+serde_json = "1.0.145"
 sqlx = { version = "0.8", features = [ "postgres", "runtime-tokio-native-tls", "chrono" ] }
-tokio = { version = "1.47.1", features = ["full"] }
-dotenv = "0.15.0"
-anyhow = "1.0"
-env_logger = "0.11"
-tempfile = "3.0"
+tokio = { version = "1.48.0", features = ["full"] }
+dotenvy = "0.15"
+anyhow = "1.0.100"
+tempfile = "3.23.0"
 reqwest = { version = "0.12", features = ["json"] }
 leptess = "0.14" # Rust binding for Tesseract and Leptonica
-image = "0.24"    # For image handling if needed
-rand = "0.8" # For random jitter in retry delays
-fluent = "0.16" # Internationalization library
-fluent-bundle = "0.15" # Fluent bundle for message management
-fluent-resmgr = "0.0.4" # Resource manager for fluent
+image = "0.25"    # For image handling if needed
+rand = "0.9.2" # For random jitter in retry delays
+fluent-bundle = "0.16" # Fluent bundle for message management
 unic-langid = "0.9" # Language identifier support
-regex = "1.10" # Regular expressions for text processing
-lazy_static = "1.4" # Lazy static initialization
-chrono = { version = "0.4", features = ["serde"] } # DateTime handling
+regex = "1.12" # Regular expressions for text processing
+lazy_static = "1.5.0" # Lazy static initialization
+chrono = { version = "0.4.42", features = ["serde"] } # DateTime handling
 tracing = "0.1" # Structured logging
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] } # Tracing subscriber with filtering
-parking_lot = "0.12" # Efficient synchronization primitives
+parking_lot = "0.12.5" # Efficient synchronization primitives
 
 # Observability dependencies
-metrics = "0.23" # Metrics collection
-metrics-exporter-prometheus = "0.15" # Prometheus metrics exporter
-opentelemetry = "0.23" # OpenTelemetry for distributed tracing
-opentelemetry_sdk = { version = "0.23", features = ["rt-tokio"] } # OpenTelemetry SDK for tracing
-opentelemetry-otlp = { version = "0.16", features = ["grpc-tonic"] } # OTLP exporter for traces
-tracing-opentelemetry = "0.24" # Tracing integration with OpenTelemetry
-axum = "0.7" # HTTP server for health checks and metrics endpoints
+metrics = "0.24" # Metrics collection
+metrics-exporter-prometheus = "0.17" # Prometheus metrics exporter
+opentelemetry = "0.31" # OpenTelemetry for distributed tracing
+opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] } # OpenTelemetry SDK for tracing
+opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] } # OTLP exporter for traces
 hyper = "1.0" # HTTP implementation
-hyper-util = { version = "0.1", features = ["tokio"] } # Hyper utilities
+hyper-util = { version = "0.1.17", features = ["tokio"] } # Hyper utilities
 tokio-util = { version = "0.7", features = ["io"] } # Tokio utilities
 
 [[example]]

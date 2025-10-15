@@ -15,6 +15,9 @@ pub fn format_ingredients_list(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> String {
+    let start_time = std::time::Instant::now();
+    let ingredients_count = ingredients.len();
+
     let mut result = String::new();
 
     for (i, ingredient) in ingredients.iter().enumerate() {
@@ -41,6 +44,14 @@ pub fn format_ingredients_list(
         ));
     }
 
+    let duration = start_time.elapsed();
+    crate::observability::record_ui_metrics(
+        "format_ingredients_list",
+        duration,
+        ingredients_count,
+        result.lines().count(),
+    );
+
     result
 }
 
@@ -50,6 +61,9 @@ pub fn create_ingredient_review_keyboard(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
+    let start_time = std::time::Instant::now();
+    let ingredients_count = ingredients.len();
+
     let mut buttons = Vec::new();
 
     // Create Edit and Delete buttons for each ingredient
@@ -98,6 +112,14 @@ pub fn create_ingredient_review_keyboard(
         ),
     ]);
 
+    let duration = start_time.elapsed();
+    crate::observability::record_ui_metrics(
+        "create_ingredient_review_keyboard",
+        duration,
+        ingredients_count,
+        buttons.len(),
+    );
+
     InlineKeyboardMarkup::new(buttons)
 }
 
@@ -106,6 +128,8 @@ pub fn create_post_confirmation_keyboard(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
+    let start_time = std::time::Instant::now();
+
     let buttons = vec![
         vec![
             InlineKeyboardButton::callback(
@@ -132,6 +156,14 @@ pub fn create_post_confirmation_keyboard(
         )],
     ];
 
+    let duration = start_time.elapsed();
+    crate::observability::record_ui_metrics(
+        "create_post_confirmation_keyboard",
+        duration,
+        0, // No input count for this function
+        buttons.len(),
+    );
+
     InlineKeyboardMarkup::new(buttons)
 }
 
@@ -144,6 +176,9 @@ pub fn create_recipes_pagination_keyboard(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
+    let start_time = std::time::Instant::now();
+    let recipes_count = recipes.len();
+
     let mut buttons = Vec::new();
 
     // Add recipe buttons
@@ -199,6 +234,14 @@ pub fn create_recipes_pagination_keyboard(
 
         buttons.push(nav_buttons);
     }
+
+    let duration = start_time.elapsed();
+    crate::observability::record_ui_metrics(
+        "create_recipes_pagination_keyboard",
+        duration,
+        recipes_count,
+        buttons.len(),
+    );
 
     InlineKeyboardMarkup::new(buttons)
 }
