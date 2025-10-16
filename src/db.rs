@@ -339,7 +339,7 @@ pub async fn get_or_create_user_cached(
 ) -> Result<User> {
     // Try cache first
     {
-        let mut cache_manager = cache.lock().unwrap();
+        let cache_manager = cache.lock().unwrap();
         if let Some(user) = cache_manager.user_cache.get(&telegram_id) {
             debug!(telegram_id = %telegram_id, "User found in cache");
             return Ok(user);

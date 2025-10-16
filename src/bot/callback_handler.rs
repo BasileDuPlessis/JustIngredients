@@ -851,7 +851,7 @@ pub async fn callback_handler_with_cache(
     pool: Arc<PgPool>,
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
-    cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
+    _cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
 ) -> Result<()> {
     // For now, delegate to the original handler
     // TODO: Integrate caching into specific operations

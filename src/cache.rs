@@ -234,7 +234,7 @@ pub struct OcrResultCache {
 
 impl OcrResultCache {
     /// Create a new OCR result cache
-    pub fn new(default_ttl: Duration) -> Self {
+    pub fn new(_default_ttl: Duration) -> Self {
         Self {
             cache: MemoryCache::new(),
         }
@@ -312,7 +312,7 @@ pub struct DbQueryCache {
 
 impl DbQueryCache {
     /// Create a new database query cache
-    pub fn new(default_ttl: Duration, max_size_bytes: usize) -> Self {
+    pub fn new(_default_ttl: Duration, max_size_bytes: usize) -> Self {
         Self {
             cache: MemoryCache::new(),
             max_size_bytes,
@@ -393,7 +393,7 @@ impl DbQueryCache {
         }
 
         // If we still need more space, remove additional entries
-        let mut current_size = *self.current_size_bytes.read().unwrap();
+        let current_size = *self.current_size_bytes.read().unwrap();
         let space_needed = if current_size + needed_bytes > self.max_size_bytes {
             current_size + needed_bytes - self.max_size_bytes
         } else {
@@ -453,8 +453,8 @@ impl CacheManager {
         ocr_ttl: Duration,
         db_ttl: Duration,
         db_max_size_bytes: usize,
-        user_ttl: Duration,
-        recipe_ttl: Duration,
+        _user_ttl: Duration,
+        _recipe_ttl: Duration,
     ) -> Self {
         Self {
             ocr_cache: OcrResultCache::new(ocr_ttl),
