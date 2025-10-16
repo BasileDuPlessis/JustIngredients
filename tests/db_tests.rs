@@ -204,17 +204,17 @@ async fn test_get_user_recipes_paginated() -> Result<()> {
 async fn test_get_user_recipes_paginated_impl(pool: &PgPool) -> Result<()> {
     // Create recipes with names
     let recipe1_id = create_recipe(pool, 12345, "flour 2 cups").await?;
-    update_recipe_recipe_name(pool, recipe1_id, "Chocolate Cake").await?;
+    update_recipe_name(pool, recipe1_id, "Chocolate Cake").await?;
 
     let recipe2_id = create_recipe(pool, 12345, "butter 100g").await?;
-    update_recipe_recipe_name(pool, recipe2_id, "Apple Pie").await?;
+    update_recipe_name(pool, recipe2_id, "Apple Pie").await?;
 
     let recipe3_id = create_recipe(pool, 12345, "sugar 1 cup").await?;
-    update_recipe_recipe_name(pool, recipe3_id, "Banana Bread").await?;
+    update_recipe_name(pool, recipe3_id, "Banana Bread").await?;
 
     // Create recipe for different user
     let recipe4_id = create_recipe(pool, 67890, "milk 250ml").await?;
-    update_recipe_recipe_name(pool, recipe4_id, "Pancakes").await?;
+    update_recipe_name(pool, recipe4_id, "Pancakes").await?;
 
     // Test pagination: limit 2, offset 0
     let (recipes, total) = get_user_recipes_paginated(pool, 12345, 2, 0).await?;

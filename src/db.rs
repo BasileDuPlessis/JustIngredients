@@ -574,7 +574,7 @@ pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec
 }
 
 /// Update the recipe name for a recipe
-pub async fn update_recipe_recipe_name(
+pub async fn update_recipe_name(
     pool: &PgPool,
     recipe_id: i64,
     recipe_name: &str,

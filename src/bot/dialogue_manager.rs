@@ -14,7 +14,7 @@ use crate::text_processing::{MeasurementDetector, MeasurementMatch};
 use crate::dialogue::{validate_recipe_name, RecipeDialogue, RecipeDialogueState};
 
 // Import database types
-use crate::db::{create_ingredient, create_recipe, get_or_create_user, update_recipe_recipe_name};
+use crate::db::{create_ingredient, create_recipe, get_or_create_user, update_recipe_name};
 
 // Import UI builder functions
 use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
@@ -1075,7 +1075,7 @@ pub async fn save_ingredients_to_database(
     let recipe_id = create_recipe(pool, telegram_id, extracted_text).await?;
 
     // Update recipe with recipe name
-    update_recipe_recipe_name(pool, recipe_id, recipe_name).await?;
+    update_recipe_name(pool, recipe_id, recipe_name).await?;
 
     // Save each ingredient
     for ingredient in ingredients {
