@@ -1117,7 +1117,7 @@ async fn test_database_integration_full_workflow() -> Result<(), Box<dyn std::er
     assert!(ingredients.len() >= measurements.len());
 
     // Step 6: Test recipe reading with ingredients
-    let recipe_with_ingredients = match db::read_recipe_with_recipe(&pool, recipe_id).await {
+    let recipe_with_ingredients = match db::read_recipe_with_name(&pool, recipe_id).await {
         Ok(Some(recipe)) => recipe,
         Ok(None) => panic!("Recipe {} not found", recipe_id),
         Err(e) => panic!("Failed to read recipe with ingredients: {}", e),

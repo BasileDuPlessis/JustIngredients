@@ -599,7 +599,7 @@ pub async fn update_recipe_recipe_name(
 }
 
 /// Get recipe with recipe name
-pub async fn read_recipe_with_recipe(pool: &PgPool, recipe_id: i64) -> Result<Option<Recipe>> {
+pub async fn read_recipe_with_name(pool: &PgPool, recipe_id: i64) -> Result<Option<Recipe>> {
     debug!(recipe_id = %recipe_id, "Reading recipe with recipe name");
 
     let row = sqlx::query(
