@@ -245,3 +245,98 @@ pub fn create_recipes_pagination_keyboard(
 
     InlineKeyboardMarkup::new(buttons)
 }
+
+/// Create inline keyboard for selecting specific recipe instance from duplicates
+pub fn create_recipe_instances_keyboard(
+    recipes: &[crate::db::Recipe],
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> InlineKeyboardMarkup {
+    let start_time = std::time::Instant::now();
+    let recipes_count = recipes.len();
+
+    let mut buttons = Vec::new();
+
+    // Add buttons for each recipe instance
+    for recipe in recipes {
+        let created_at = recipe.created_at.format("%b %d, %Y %H:%M");
+        let button_text = format!("📅 {}", created_at);
+
+        buttons.push(vec![InlineKeyboardButton::callback(
+            button_text,
+            format!("recipe_instance:{}", recipe.id),
+        )]);
+    }
+
+    // Add back button
+    buttons.push(vec![InlineKeyboardButton::callback(
+        format!("⬅️ {}", t_lang(localization, "back-to-recipes", language_code)),
+        "back_to_recipes".to_string(),
+    )]);
+
+    let duration = start_time.elapsed();
+    crate::observability::record_ui_metrics(
+        "create_recipe_instances_keyboard",
+        duration,
+        recipes_count,
+        buttons.len(),
+    );
+
+    InlineKeyboardMarkup::new(buttons)
+}
+
+/// Create inline keyboard for recipe details actions
+pub fn create_recipe_details_keyboard(
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> InlineKeyboardMarkup {
+    let start_time = std::time::Instant::now();
+
+    let buttons = vec![
+        vec![
+            InlineKeyboardButton::callback(
+                format!("✏️ {}", t_lang(localization, "edit-recipe-name", language_code)),
+                "recipe_action:rename".to_string(),
+            ),
+            InlineKeyboardButton::callback(
+                format!("🗑️ {}", t_lang(localization, "delete-recipe", language_code)),
+                "recipe_action:delete".to_string(),
+            ),
+        ],
+        vec![InlineKeyboardButton::callback(
+            format!("⬅️ {}", t_lang(localization, "back-to-recipes", language_code)),
+            "back_to_recipes".to_string(),
+        )],
+    ];
+
+    let duration = start_time.elapsed();
+    crate::observability::record_ui_metrics(
+        "create_recipe_details_keyboard",
+        duration,
+        0, // No dynamic content
+        buttons.len(),
+    );
+
+    InlineKeyboardMarkup::new(buttons)
+}
+
+/// Format a list of database ingredients for display
+pub fn format_database_ingredients_list(
+    ingredients: &[crate::db::Ingredient],
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> String {
+    if ingredients.is_empty() {
+        return t_lang(localization, "no-ingredients-found", language_code);
+    }
+
+    let mut result = String::new();
+    for ingredient in ingredients {
+        let quantity_text = ingredient.quantity.map_or(String::new(), |q| format!("{} ", q));
+        let unit_text = ingredient.unit.as_deref().unwrap_or("");
+        let line = format!("• {}{}{}\n", quantity_text, unit_text, ingredient.name);
+        result.push_str(&line);
+    }
+
+    result.trim_end().to_string()
+}

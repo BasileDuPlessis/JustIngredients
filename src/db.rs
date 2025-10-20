@@ -573,6 +573,34 @@ pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec
     Ok(ingredients)
 }
 
+/// List all ingredients for a specific recipe
+pub async fn get_recipe_ingredients(pool: &PgPool, recipe_id: i64) -> Result<Vec<Ingredient>> {
+    debug!(recipe_id = %recipe_id, "Getting ingredients for recipe");
+
+    let rows = sqlx::query("SELECT id, user_id, recipe_id, name, quantity, unit, created_at, updated_at FROM ingredients WHERE recipe_id = $1 ORDER BY created_at ASC")
+        .bind(recipe_id)
+        .fetch_all(pool)
+        .await
+        .context("Failed to get ingredients for recipe")?;
+
+    let ingredients: Vec<Ingredient> = rows
+        .into_iter()
+        .map(|row| Ingredient {
+            id: row.get(0),
+            user_id: row.get(1),
+            recipe_id: row.get(2),
+            name: row.get(3),
+            quantity: row.get(4),
+            unit: row.get(5),
+            created_at: row.get(6),
+            updated_at: row.get(7),
+        })
+        .collect();
+
+    debug!(recipe_id = %recipe_id, count = ingredients.len(), "Ingredients retrieved for recipe");
+    Ok(ingredients)
+}
+
 /// Update the recipe name for a recipe
 pub async fn update_recipe_name(
     pool: &PgPool,

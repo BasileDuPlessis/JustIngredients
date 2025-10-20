@@ -16,11 +16,12 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 // Import UI builder functions
 use super::ui_builder::{
     create_ingredient_review_keyboard, create_post_confirmation_keyboard,
-    create_recipes_pagination_keyboard, format_ingredients_list,
+    create_recipe_details_keyboard, create_recipe_instances_keyboard,
+    create_recipes_pagination_keyboard, format_database_ingredients_list, format_ingredients_list,
 };
 
 // Import database functions
-use crate::db::get_user_recipes_paginated;
+use crate::db::{get_recipes_by_name, get_user_recipes_paginated, read_recipe_with_name};
 
 // Import dialogue manager functions
 use super::dialogue_manager::save_ingredients_to_database;
@@ -151,7 +152,15 @@ async fn handle_general_callbacks(
 ) -> Result<()> {
     if let Some(msg) = &q.message {
         if data.starts_with("select_recipe:") {
-            handle_recipe_selection(bot, msg, data, &q.from.language_code, localization).await?;
+            handle_recipe_selection(bot, msg, data, pool.clone(), &q.from.language_code, localization).await?;
+        } else if data.starts_with("recipe_instance:") {
+            handle_recipe_instance_selection(bot, msg, data, pool.clone(), &q.from.language_code, localization).await?;
+        } else if data.starts_with("recipe_action:") {
+            handle_recipe_action(bot, msg, data, pool.clone(), &q.from.language_code, localization).await?;
+        } else if data == "back_to_recipes" {
+            handle_back_to_recipes(bot, msg, pool.clone(), &q.from.language_code, localization).await?;
+        } else if data == "confirm_delete_recipe" || data == "cancel_delete_recipe" {
+            handle_delete_recipe_confirmation(bot, msg, data, pool.clone(), &q.from.language_code, localization).await?;
         } else if data.starts_with("page:") {
             handle_recipes_pagination(bot, msg, data, pool, &q.from.language_code, localization)
                 .await?;
@@ -167,23 +176,14 @@ async fn handle_general_callbacks(
 async fn handle_recipe_selection(
     bot: &Bot,
     msg: &teloxide::types::MaybeInaccessibleMessage,
-    recipe_name: &str,
+    data: &str,
+    pool: Arc<PgPool>,
     language_code: &Option<String>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
+    // Extract recipe name from callback data (format: "select_recipe:Recipe Name")
+    let recipe_name = data.strip_prefix("select_recipe:").unwrap_or("");
     debug!(recipe_name = %recipe_name, "Handling recipe selection");
-
-    // For now, just send a placeholder message
-    // TODO: Implement actual recipe details display
-    let message = format!(
-        "📖 **{}**\n\n{}",
-        recipe_name,
-        t_lang(
-            localization,
-            "recipe-details-coming-soon",
-            language_code.as_deref()
-        )
-    );
 
     // Extract chat id from the message
     let chat_id = match msg {
@@ -194,12 +194,187 @@ async fn handle_recipe_selection(
         }
     };
 
-    bot.send_message(chat_id, message).await?;
+    // Query for all recipes with this name for the user
+    let recipes = get_recipes_by_name(&pool, chat_id.0, recipe_name).await?;
+
+    match recipes.len() {
+        0 => {
+            // This shouldn't happen if the recipe exists in the list, but handle gracefully
+            let message = format!(
+                "❌ **{}**\n\n{}",
+                t_lang(localization, "recipe-not-found", language_code.as_deref()),
+                t_lang(localization, "recipe-not-found-help", language_code.as_deref())
+            );
+            bot.send_message(chat_id, message).await?;
+        }
+        1 => {
+            // Single recipe - show details directly
+            let recipe = &recipes[0];
+            let ingredients = crate::db::get_recipe_ingredients(&pool, recipe.id).await?;
+
+            let message = format!(
+                "📖 **{}**\n\n{}\n\n{}",
+                recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe"),
+                format!("📅 {}", recipe.created_at.format("%B %d, %Y at %H:%M")),
+                if ingredients.is_empty() {
+                    t_lang(localization, "no-ingredients-found", language_code.as_deref())
+                } else {
+                    format_database_ingredients_list(&ingredients, language_code.as_deref(), localization)
+                }
+            );
+
+            let keyboard = create_recipe_details_keyboard(language_code.as_deref(), localization);
+
+            bot.send_message(chat_id, message)
+                .reply_markup(keyboard)
+                .await?;
+        }
+        _ => {
+            // Multiple recipes with same name - show disambiguation UI
+            let message = format!(
+                "📚 **{}**\n\n{}",
+                recipe_name,
+                t_lang(localization, "select-recipe-instance", language_code.as_deref())
+            );
+
+            let keyboard = create_recipe_instances_keyboard(
+                &recipes,
+                language_code.as_deref(),
+                localization,
+            );
+
+            bot.send_message(chat_id, message)
+                .reply_markup(keyboard)
+                .await?;
+        }
+    }
 
     Ok(())
 }
 
-/// Handle recipes pagination callback
+/// Handle recipe instance selection callback (when user selects a specific recipe from duplicates)
+async fn handle_recipe_instance_selection(
+    bot: &Bot,
+    msg: &teloxide::types::MaybeInaccessibleMessage,
+    data: &str,
+    pool: Arc<PgPool>,
+    language_code: &Option<String>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    // Extract recipe ID from callback data (format: "recipe_instance:123")
+    let recipe_id_str = data.strip_prefix("recipe_instance:").unwrap_or("");
+    let recipe_id: i64 = recipe_id_str.parse().unwrap_or(0);
+    debug!(recipe_id = %recipe_id, "Handling recipe instance selection");
+
+    // Extract chat id from the message
+    let chat_id = match msg {
+        teloxide::types::MaybeInaccessibleMessage::Regular(msg) => msg.chat.id,
+        teloxide::types::MaybeInaccessibleMessage::Inaccessible(_) => {
+            // Can't respond to inaccessible messages
+            return Ok(());
+        }
+    };
+
+    // Get recipe details
+    let recipe = read_recipe_with_name(&pool, recipe_id).await?
+        .ok_or_else(|| anyhow::anyhow!("Recipe not found"))?;
+    let ingredients = crate::db::get_recipe_ingredients(&pool, recipe_id).await?;
+
+    let message = format!(
+        "📖 **{}**\n\n{}\n\n{}",
+        recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe"),
+        format!("📅 {}", recipe.created_at.format("%B %d, %Y at %H:%M")),
+        if ingredients.is_empty() {
+            t_lang(localization, "no-ingredients-found", language_code.as_deref())
+        } else {
+            format_database_ingredients_list(&ingredients, language_code.as_deref(), localization)
+        }
+    );
+
+    let keyboard = create_recipe_details_keyboard(language_code.as_deref(), localization);
+
+    bot.send_message(chat_id, message)
+        .reply_markup(keyboard)
+        .await?;
+
+    Ok(())
+}
+
+/// Handle recipe action callbacks (rename, delete)
+async fn handle_recipe_action(
+    bot: &Bot,
+    msg: &teloxide::types::MaybeInaccessibleMessage,
+    data: &str,
+    pool: Arc<PgPool>,
+    language_code: &Option<String>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    let action = data.strip_prefix("recipe_action:").unwrap_or("");
+    debug!(action = %action, "Handling recipe action");
+
+    // Extract chat id from the message
+    let chat_id = match msg {
+        teloxide::types::MaybeInaccessibleMessage::Regular(msg) => msg.chat.id,
+        teloxide::types::MaybeInaccessibleMessage::Inaccessible(_) => {
+            // Can't respond to inaccessible messages
+            return Ok(());
+        }
+    };
+
+    match action {
+        "rename" => {
+            let message = format!(
+                "🏷️ **{}**\n\n{}",
+                t_lang(localization, "rename-recipe-title", language_code.as_deref()),
+                t_lang(localization, "rename-recipe-instructions", language_code.as_deref())
+            );
+            bot.send_message(chat_id, message).await?;
+        }
+        "delete" => {
+            let message = format!(
+                "🗑️ **{}**\n\n{}",
+                t_lang(localization, "delete-recipe-title", language_code.as_deref()),
+                t_lang(localization, "delete-recipe-confirmation", language_code.as_deref())
+            );
+
+            let keyboard = vec![vec![
+                teloxide::types::InlineKeyboardButton::callback(
+                    format!("✅ {}", t_lang(localization, "confirm", language_code.as_deref())),
+                    "confirm_delete_recipe",
+                ),
+                teloxide::types::InlineKeyboardButton::callback(
+                    format!("❌ {}", t_lang(localization, "cancel", language_code.as_deref())),
+                    "cancel_delete_recipe",
+                ),
+            ]];
+
+            bot.send_message(chat_id, message)
+                .reply_markup(teloxide::types::InlineKeyboardMarkup::new(keyboard))
+                .await?;
+        }
+        _ => {
+            debug!(action = %action, "Unknown recipe action");
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle back to recipes list callback
+async fn handle_back_to_recipes(
+    bot: &Bot,
+    msg: &teloxide::types::MaybeInaccessibleMessage,
+    pool: Arc<PgPool>,
+    language_code: &Option<String>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    debug!("Handling back to recipes");
+
+    // Delegate to the existing list recipes handler
+    handle_list_recipes(bot, msg, pool, language_code, localization).await?;
+
+    Ok(())
+}
 async fn handle_recipes_pagination(
     bot: &Bot,
     msg: &teloxide::types::MaybeInaccessibleMessage,
@@ -773,7 +948,46 @@ async fn handle_cancel_review_button(
     Ok(())
 }
 
-/// Handle workflow buttons (add another, list recipes, search recipes)
+/// Handle delete recipe confirmation callbacks
+async fn handle_delete_recipe_confirmation(
+    bot: &Bot,
+    msg: &teloxide::types::MaybeInaccessibleMessage,
+    data: &str,
+    pool: Arc<PgPool>,
+    language_code: &Option<String>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    debug!(data = %data, "Handling delete recipe confirmation");
+
+    // Extract chat id from the message
+    let chat_id = match msg {
+        teloxide::types::MaybeInaccessibleMessage::Regular(msg) => msg.chat.id,
+        teloxide::types::MaybeInaccessibleMessage::Inaccessible(_) => {
+            // Can't respond to inaccessible messages
+            return Ok(());
+        }
+    };
+
+    match data {
+        "confirm_delete_recipe" => {
+            // TODO: Implement actual recipe deletion
+            // For now, just show a placeholder message
+            let message = format!(
+                "🗑️ **{}**\n\n{}",
+                t_lang(localization, "recipe-deleted", language_code.as_deref()),
+                t_lang(localization, "recipe-deleted-help", language_code.as_deref())
+            );
+            bot.send_message(chat_id, message).await?;
+        }
+        "cancel_delete_recipe" => {
+            let message = t_lang(localization, "delete-cancelled", language_code.as_deref());
+            bot.send_message(chat_id, message).await?;
+        }
+        _ => {}
+    }
+
+    Ok(())
+}
 async fn handle_workflow_button(
     bot: &Bot,
     q: &teloxide::types::CallbackQuery,
