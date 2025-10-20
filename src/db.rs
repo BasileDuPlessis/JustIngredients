@@ -655,6 +655,77 @@ pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Res
     Ok(recipes)
 }
 
+/// Get all recipes with a specific name for a user
+pub async fn get_recipes_by_name(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_name: &str,
+) -> Result<Vec<Recipe>> {
+    let span = crate::observability::db_span("get_recipes_by_name", "recipes");
+    let _enter = span.enter();
+
+    let start_time = std::time::Instant::now();
+    debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, "Getting recipes by name");
+
+    let rows = sqlx::query(
+        "SELECT id, telegram_id, content, recipe_name, created_at FROM recipes WHERE telegram_id = $1 AND recipe_name = $2 ORDER BY created_at DESC"
+    )
+    .bind(telegram_id)
+    .bind(recipe_name)
+    .fetch_all(pool)
+    .await
+    .context("Failed to get recipes by name")?;
+
+    let recipes: Vec<Recipe> = rows
+        .into_iter()
+        .map(|row| Recipe {
+            id: row.get(0),
+            telegram_id: row.get(1),
+            content: row.get(2),
+            recipe_name: row.get(3),
+            created_at: row.get(4),
+        })
+        .collect();
+
+    let duration = start_time.elapsed();
+    observability::record_db_performance_metrics(
+        "get_recipes_by_name",
+        duration,
+        recipes.len() as u64,
+        crate::observability::QueryComplexity::Simple,
+    );
+
+    debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, count = recipes.len(), duration_ms = %duration.as_millis(), "Recipes by name retrieved successfully");
+    Ok(recipes)
+}
+
+/// Check if a recipe name has duplicates for a user
+pub async fn has_duplicate_recipes(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_name: &str,
+) -> Result<bool> {
+    let span = crate::observability::db_span("has_duplicate_recipes", "recipes");
+    let _enter = span.enter();
+
+    debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, "Checking for duplicate recipes");
+
+    let row = sqlx::query(
+        "SELECT COUNT(*) FROM recipes WHERE telegram_id = $1 AND recipe_name = $2"
+    )
+    .bind(telegram_id)
+    .bind(recipe_name)
+    .fetch_one(pool)
+    .await
+    .context("Failed to check for duplicate recipes")?;
+
+    let count: i64 = row.get(0);
+    let has_duplicates = count > 1;
+
+    debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, count = %count, has_duplicates = %has_duplicates, "Duplicate check completed");
+    Ok(has_duplicates)
+}
+
 /// Get paginated list of recipe names for a user
 pub async fn get_user_recipes_paginated(
     pool: &PgPool,

@@ -242,3 +242,87 @@ async fn test_get_user_recipes_paginated_impl(pool: &PgPool) -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_get_recipes_by_name() -> Result<()> {
+    skip_if_no_db!(test_get_recipes_by_name_impl)
+}
+
+async fn test_get_recipes_by_name_impl(pool: &PgPool) -> Result<()> {
+    // Create multiple recipes with the same name
+    let recipe1_id = create_recipe(pool, 12345, "flour 2 cups sugar 1 cup").await?;
+    update_recipe_name(pool, recipe1_id, "Chocolate Cake").await?;
+
+    let recipe2_id = create_recipe(pool, 12345, "butter 100g eggs 2").await?;
+    update_recipe_name(pool, recipe2_id, "Chocolate Cake").await?;
+
+    let recipe3_id = create_recipe(pool, 12345, "milk 250ml vanilla 1 tsp").await?;
+    update_recipe_name(pool, recipe3_id, "Vanilla Pudding").await?;
+
+    // Create recipe with same name for different user
+    let recipe4_id = create_recipe(pool, 67890, "flour 1 cup").await?;
+    update_recipe_name(pool, recipe4_id, "Chocolate Cake").await?;
+
+    // Test getting multiple recipes with same name
+    let recipes = get_recipes_by_name(pool, 12345, "Chocolate Cake").await?;
+    assert_eq!(recipes.len(), 2);
+
+    // Verify the recipes are returned in descending creation order (most recent first)
+    assert_eq!(recipes[0].id, recipe2_id); // Second recipe created (most recent)
+    assert_eq!(recipes[1].id, recipe1_id); // First recipe created
+    assert_eq!(recipes[0].recipe_name.as_ref().unwrap(), "Chocolate Cake");
+    assert_eq!(recipes[1].recipe_name.as_ref().unwrap(), "Chocolate Cake");
+
+    // Test getting single recipe
+    let recipes = get_recipes_by_name(pool, 12345, "Vanilla Pudding").await?;
+    assert_eq!(recipes.len(), 1);
+    assert_eq!(recipes[0].id, recipe3_id);
+    assert_eq!(recipes[0].recipe_name.as_ref().unwrap(), "Vanilla Pudding");
+
+    // Test getting recipes for different user
+    let recipes = get_recipes_by_name(pool, 67890, "Chocolate Cake").await?;
+    assert_eq!(recipes.len(), 1);
+    assert_eq!(recipes[0].id, recipe4_id);
+
+    // Test getting non-existent recipe name
+    let recipes = get_recipes_by_name(pool, 12345, "Non-existent Recipe").await?;
+    assert_eq!(recipes.len(), 0);
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_has_duplicate_recipes() -> Result<()> {
+    skip_if_no_db!(test_has_duplicate_recipes_impl)
+}
+
+async fn test_has_duplicate_recipes_impl(pool: &PgPool) -> Result<()> {
+    // Create multiple recipes with the same name
+    let recipe1_id = create_recipe(pool, 12345, "flour 2 cups").await?;
+    update_recipe_name(pool, recipe1_id, "Chocolate Cake").await?;
+
+    let recipe2_id = create_recipe(pool, 12345, "butter 100g").await?;
+    update_recipe_name(pool, recipe2_id, "Chocolate Cake").await?;
+
+    // Create single recipe with different name
+    let recipe3_id = create_recipe(pool, 12345, "milk 250ml").await?;
+    update_recipe_name(pool, recipe3_id, "Vanilla Pudding").await?;
+
+    // Test duplicate detection - should return true for "Chocolate Cake"
+    let has_duplicates = has_duplicate_recipes(pool, 12345, "Chocolate Cake").await?;
+    assert!(has_duplicates);
+
+    // Test no duplicates - should return false for "Vanilla Pudding"
+    let has_duplicates = has_duplicate_recipes(pool, 12345, "Vanilla Pudding").await?;
+    assert!(!has_duplicates);
+
+    // Test non-existent recipe name - should return false
+    let has_duplicates = has_duplicate_recipes(pool, 12345, "Non-existent Recipe").await?;
+    assert!(!has_duplicates);
+
+    // Test with different user - should return false even if name exists for another user
+    let has_duplicates = has_duplicate_recipes(pool, 67890, "Chocolate Cake").await?;
+    assert!(!has_duplicates);
+
+    Ok(())
+}
