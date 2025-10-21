@@ -324,6 +324,10 @@ pub fn create_recipe_details_keyboard(
             ),
         ],
         vec![InlineKeyboardButton::callback(
+            format!("📊 {}", t_lang(localization, "recipe-statistics", language_code)),
+            format!("recipe_action:statistics:{}", recipe_id),
+        )],
+        vec![InlineKeyboardButton::callback(
             format!("⬅️ {}", t_lang(localization, "back-to-recipes", language_code)),
             "back_to_recipes".to_string(),
         )],

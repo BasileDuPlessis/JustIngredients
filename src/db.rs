@@ -803,3 +803,124 @@ pub async fn get_user_recipes_paginated(
     debug!(total = %total, count = %recipe_names.len(), "Retrieved paginated recipes");
     Ok((recipe_names, total))
 }
+
+/// Recipe statistics data structure
+#[derive(Debug)]
+pub struct RecipeStatistics {
+    pub total_recipes: i64,
+    pub total_ingredients: i64,
+    pub average_ingredients_per_recipe: f64,
+    pub oldest_recipe_date: Option<chrono::DateTime<chrono::Utc>>,
+    pub newest_recipe_date: Option<chrono::DateTime<chrono::Utc>>,
+    pub most_common_units: Vec<(String, i64)>,
+    pub recipes_created_today: i64,
+    pub recipes_created_this_week: i64,
+    pub recipes_created_this_month: i64,
+}
+
+/// Get comprehensive recipe statistics for a user
+pub async fn get_user_recipe_statistics(pool: &PgPool, telegram_id: i64) -> Result<RecipeStatistics> {
+    debug!(telegram_id = %telegram_id, "Getting recipe statistics for user");
+
+    // Get basic counts
+    let basic_stats = sqlx::query(
+        r#"
+        SELECT
+            COUNT(DISTINCT r.id) as total_recipes,
+            COUNT(i.id) as total_ingredients,
+            COALESCE(AVG(ingredient_count), 0) as avg_ingredients
+        FROM recipes r
+        LEFT JOIN (
+            SELECT recipe_id, COUNT(*) as ingredient_count
+            FROM ingredients
+            GROUP BY recipe_id
+        ) ic ON r.id = ic.recipe_id
+        WHERE r.telegram_id = $1
+        "#,
+    )
+    .bind(telegram_id)
+    .fetch_one(pool)
+    .await
+    .context("Failed to get basic recipe statistics")?;
+
+    let total_recipes: i64 = basic_stats.get(0);
+    let total_ingredients: i64 = basic_stats.get(1);
+    let average_ingredients_per_recipe: f64 = basic_stats.get(2);
+
+    // Get date ranges
+    let date_stats = sqlx::query(
+        "SELECT MIN(created_at), MAX(created_at) FROM recipes WHERE telegram_id = $1",
+    )
+    .bind(telegram_id)
+    .fetch_one(pool)
+    .await
+    .context("Failed to get recipe date statistics")?;
+
+    let oldest_recipe_date: Option<chrono::DateTime<chrono::Utc>> = date_stats.get(0);
+    let newest_recipe_date: Option<chrono::DateTime<chrono::Utc>> = date_stats.get(1);
+
+    // Get most common units
+    let unit_rows = sqlx::query(
+        r#"
+        SELECT COALESCE(unit, 'no unit') as unit_name, COUNT(*) as count
+        FROM ingredients i
+        JOIN recipes r ON i.recipe_id = r.id
+        WHERE r.telegram_id = $1 AND i.unit IS NOT NULL AND i.unit != ''
+        GROUP BY unit
+        ORDER BY count DESC
+        LIMIT 5
+        "#,
+    )
+    .bind(telegram_id)
+    .fetch_all(pool)
+    .await
+    .context("Failed to get most common units")?;
+
+    let most_common_units: Vec<(String, i64)> = unit_rows
+        .into_iter()
+        .map(|row| (row.get(0), row.get(1)))
+        .collect();
+
+    // Get creation statistics
+    let now = chrono::Utc::now();
+    let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc();
+    let week_start = now - chrono::Duration::days(7);
+    let month_start = now - chrono::Duration::days(30);
+
+    let creation_stats = sqlx::query(
+        r#"
+        SELECT
+            COUNT(CASE WHEN created_at >= $2 THEN 1 END) as today,
+            COUNT(CASE WHEN created_at >= $3 THEN 1 END) as week,
+            COUNT(CASE WHEN created_at >= $4 THEN 1 END) as month
+        FROM recipes
+        WHERE telegram_id = $1
+        "#,
+    )
+    .bind(telegram_id)
+    .bind(today_start)
+    .bind(week_start)
+    .bind(month_start)
+    .fetch_one(pool)
+    .await
+    .context("Failed to get recipe creation statistics")?;
+
+    let recipes_created_today: i64 = creation_stats.get(0);
+    let recipes_created_this_week: i64 = creation_stats.get(1);
+    let recipes_created_this_month: i64 = creation_stats.get(2);
+
+    let stats = RecipeStatistics {
+        total_recipes,
+        total_ingredients,
+        average_ingredients_per_recipe,
+        oldest_recipe_date,
+        newest_recipe_date,
+        most_common_units,
+        recipes_created_today,
+        recipes_created_this_week,
+        recipes_created_this_month,
+    };
+
+    debug!(telegram_id = %telegram_id, stats = ?stats, "Retrieved recipe statistics");
+    Ok(stats)
+}

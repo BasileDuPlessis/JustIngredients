@@ -4,7 +4,7 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
-use teloxide::types::MaybeInaccessibleMessage;
+use teloxide::types::{MaybeInaccessibleMessage, InlineKeyboardButton, InlineKeyboardMarkup};
 use tracing::{debug, error};
 
 // Import localization
@@ -387,6 +387,9 @@ async fn handle_recipe_action(
                 .reply_markup(teloxide::types::InlineKeyboardMarkup::new(keyboard))
                 .await?;
         }
+        "statistics" => {
+            handle_recipe_statistics(bot, msg, recipe_id, pool, language_code, localization).await?;
+        }
         _ => {
             debug!(action = %action, "Unknown recipe action");
         }
@@ -407,6 +410,138 @@ async fn handle_back_to_recipes(
 
     // Delegate to the existing list recipes handler
     handle_list_recipes(bot, msg, pool, language_code, localization).await?;
+
+    Ok(())
+}
+
+/// Handle recipe statistics display
+async fn handle_recipe_statistics(
+    bot: &Bot,
+    msg: &teloxide::types::MaybeInaccessibleMessage,
+    recipe_id: i64,
+    pool: Arc<PgPool>,
+    language_code: &Option<String>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    debug!(recipe_id = %recipe_id, "Handling recipe statistics");
+
+    // Extract chat id from the message
+    let chat_id = match msg {
+        teloxide::types::MaybeInaccessibleMessage::Regular(msg) => msg.chat.id,
+        teloxide::types::MaybeInaccessibleMessage::Inaccessible(_) => {
+            // Can't respond to inaccessible messages
+            return Ok(());
+        }
+    };
+
+    // Get recipe details
+    let recipe = match crate::db::read_recipe_with_name(&pool, recipe_id).await? {
+        Some(recipe) => recipe,
+        None => {
+            let message = t_lang(localization, "recipe-not-found", language_code.as_deref());
+            bot.send_message(chat_id, message).await?;
+            return Ok(());
+        }
+    };
+
+    // Get recipe ingredients
+    let ingredients = crate::db::get_recipe_ingredients(&pool, recipe_id).await?;
+    let ingredient_count = ingredients.len() as i64;
+
+    // Get user statistics
+    let user_stats = crate::db::get_user_recipe_statistics(&pool, chat_id.0 as i64).await?;
+
+    // Format statistics message
+    let recipe_name = recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe");
+
+    let mut stats_message = format!(
+        "📊 **{}: {}**\n\n",
+        t_lang(localization, "recipe-statistics-title", language_code.as_deref()),
+        recipe_name
+    );
+
+    // Recipe-specific stats
+    stats_message.push_str(&format!(
+        "📝 **{}**\n",
+        t_lang(localization, "recipe-details", language_code.as_deref())
+    ));
+    stats_message.push_str(&format!(
+        "• {}: {}\n",
+        t_lang(localization, "ingredients-count", language_code.as_deref()),
+        ingredient_count
+    ));
+    stats_message.push_str(&format!(
+        "• {}: {}\n",
+        t_lang(localization, "created-date", language_code.as_deref()),
+        recipe.created_at.format("%B %d, %Y at %H:%M")
+    ));
+
+    // User overview stats
+    stats_message.push_str(&format!(
+        "\n📈 **{}**\n",
+        t_lang(localization, "your-statistics", language_code.as_deref())
+    ));
+    stats_message.push_str(&format!(
+        "• {}: {}\n",
+        t_lang(localization, "total-recipes", language_code.as_deref()),
+        user_stats.total_recipes
+    ));
+    stats_message.push_str(&format!(
+        "• {}: {}\n",
+        t_lang(localization, "total-ingredients", language_code.as_deref()),
+        user_stats.total_ingredients
+    ));
+    stats_message.push_str(&format!(
+        "• {}: {:.1}\n",
+        t_lang(localization, "avg-ingredients-per-recipe", language_code.as_deref()),
+        user_stats.average_ingredients_per_recipe
+    ));
+
+    // Recent activity
+    if user_stats.recipes_created_today > 0 || user_stats.recipes_created_this_week > 0 {
+        stats_message.push_str(&format!(
+            "\n🕐 **{}**\n",
+            t_lang(localization, "recent-activity", language_code.as_deref())
+        ));
+
+        if user_stats.recipes_created_today > 0 {
+            stats_message.push_str(&format!(
+                "• {}: {}\n",
+                t_lang(localization, "recipes-today", language_code.as_deref()),
+                user_stats.recipes_created_today
+            ));
+        }
+
+        if user_stats.recipes_created_this_week > 0 {
+            stats_message.push_str(&format!(
+                "• {}: {}\n",
+                t_lang(localization, "recipes-this-week", language_code.as_deref()),
+                user_stats.recipes_created_this_week
+            ));
+        }
+    }
+
+    // Most common units (if any)
+    if !user_stats.most_common_units.is_empty() {
+        stats_message.push_str(&format!(
+            "\n🏷️ **{}**\n",
+            t_lang(localization, "favorite-units", language_code.as_deref())
+        ));
+
+        for (unit, count) in user_stats.most_common_units.iter().take(3) {
+            stats_message.push_str(&format!("• {} ({})\n", unit, count));
+        }
+    }
+
+    // Add back button
+    let keyboard = vec![vec![InlineKeyboardButton::callback(
+        format!("⬅️ {}", t_lang(localization, "back-to-recipe", language_code.as_deref())),
+        format!("select_recipe:{}", recipe_name),
+    )]];
+
+    bot.send_message(chat_id, stats_message)
+        .reply_markup(InlineKeyboardMarkup::new(keyboard))
+        .await?;
 
     Ok(())
 }
