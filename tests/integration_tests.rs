@@ -1436,3 +1436,238 @@ async fn test_performance_load_testing_integration() {
 
     println!("✅ Performance/load testing integration passed - concurrent processing and scaling working correctly");
 }
+
+/// Test duplicate recipe selection flows - single recipe selection (existing behavior)
+#[tokio::test]
+async fn test_duplicate_recipes_single_selection_flow() -> Result<(), Box<dyn std::error::Error>> {
+    use just_ingredients::db;
+    use std::sync::Arc;
+
+    // Skip if no database
+    let database_url = match std::env::var("DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("⚠️ Skipping duplicate recipes test - DATABASE_URL not set");
+            return Ok(());
+        }
+    };
+
+    let pool = Arc::new(sqlx::postgres::PgPool::connect(&database_url).await?);
+    db::init_database_schema(&pool).await?;
+
+    let telegram_id = 111111; // Test user
+
+    // Create a single recipe with a unique name
+    let recipe_id = db::create_recipe(&pool, telegram_id, "Single recipe content").await?;
+    db::update_recipe_name(&pool, recipe_id, "Unique Recipe Name").await?;
+
+    // Test: get_recipes_by_name should return exactly 1 recipe
+    let recipes = db::get_recipes_by_name(&pool, telegram_id, "Unique Recipe Name").await?;
+    assert_eq!(recipes.len(), 1);
+    assert_eq!(recipes[0].id, recipe_id);
+
+    // Test: has_duplicate_recipes should return false
+    let has_duplicates = db::has_duplicate_recipes(&pool, telegram_id, "Unique Recipe Name").await?;
+    assert!(!has_duplicates);
+
+    // Cleanup
+    db::delete_recipe(&pool, recipe_id).await?;
+
+    println!("✅ Single recipe selection flow test passed");
+    Ok(())
+}
+
+/// Test duplicate recipe selection flows - multiple recipe disambiguation
+#[tokio::test]
+async fn test_duplicate_recipes_multiple_selection_flow() -> Result<(), Box<dyn std::error::Error>> {
+    use just_ingredients::db;
+    use std::sync::Arc;
+
+    // Skip if no database
+    let database_url = match std::env::var("DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("⚠️ Skipping duplicate recipes test - DATABASE_URL not set");
+            return Ok(());
+        }
+    };
+
+    let pool = Arc::new(sqlx::postgres::PgPool::connect(&database_url).await?);
+    db::init_database_schema(&pool).await?;
+
+    let telegram_id = 222222; // Test user
+
+    // Create multiple recipes with the same name
+    let recipe1_id = db::create_recipe(&pool, telegram_id, "First recipe content").await?;
+    db::update_recipe_name(&pool, recipe1_id, "Chocolate Cake").await?;
+
+    let recipe2_id = db::create_recipe(&pool, telegram_id, "Second recipe content").await?;
+    db::update_recipe_name(&pool, recipe2_id, "Chocolate Cake").await?;
+
+    let recipe3_id = db::create_recipe(&pool, telegram_id, "Third recipe content").await?;
+    db::update_recipe_name(&pool, recipe3_id, "Chocolate Cake").await?;
+
+    // Test: get_recipes_by_name should return all 3 recipes
+    let recipes = db::get_recipes_by_name(&pool, telegram_id, "Chocolate Cake").await?;
+    assert_eq!(recipes.len(), 3);
+
+    // Recipes should be ordered by creation date (most recent first)
+    assert!(recipes[0].created_at >= recipes[1].created_at);
+    assert!(recipes[1].created_at >= recipes[2].created_at);
+
+    // Test: has_duplicate_recipes should return true
+    let has_duplicates = db::has_duplicate_recipes(&pool, telegram_id, "Chocolate Cake").await?;
+    assert!(has_duplicates);
+
+    // Test: unique recipe name should not have duplicates
+    let unique_recipe_id = db::create_recipe(&pool, telegram_id, "Unique content").await?;
+    db::update_recipe_name(&pool, unique_recipe_id, "Unique Recipe").await?;
+
+    let has_duplicates_unique = db::has_duplicate_recipes(&pool, telegram_id, "Unique Recipe").await?;
+    assert!(!has_duplicates_unique);
+
+    // Cleanup
+    db::delete_recipe(&pool, recipe1_id).await?;
+    db::delete_recipe(&pool, recipe2_id).await?;
+    db::delete_recipe(&pool, recipe3_id).await?;
+    db::delete_recipe(&pool, unique_recipe_id).await?;
+
+    println!("✅ Multiple recipe disambiguation flow test passed");
+    Ok(())
+}
+
+/// Test recipe details viewing and management flows
+#[tokio::test]
+async fn test_recipe_details_viewing_flow() -> Result<(), Box<dyn std::error::Error>> {
+    use just_ingredients::db;
+    use just_ingredients::text_processing::MeasurementDetector;
+    use std::sync::Arc;
+
+    // Skip if no database
+    let database_url = match std::env::var("DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("⚠️ Skipping recipe details test - DATABASE_URL not set");
+            return Ok(());
+        }
+    };
+
+    let pool = Arc::new(sqlx::postgres::PgPool::connect(&database_url).await?);
+    db::init_database_schema(&pool).await?;
+
+    let telegram_id = 333333; // Test user
+    let detector = MeasurementDetector::new().unwrap();
+
+    // Create a recipe with ingredients
+    let recipe_id = db::create_recipe(&pool, telegram_id, "Recipe with ingredients").await?;
+    db::update_recipe_name(&pool, recipe_id, "Test Recipe").await?;
+
+    // Extract and create ingredients
+    let ocr_text = r#"
+    2 cups flour
+    3 eggs
+    1 cup sugar
+    1 tsp vanilla
+    "#;
+
+    let measurements = detector.extract_ingredient_measurements(ocr_text);
+    assert!(!measurements.is_empty());
+
+    let mut ingredient_ids = vec![];
+    for measurement in &measurements {
+        let ingredient_id = db::create_ingredient(
+            &pool,
+            telegram_id,
+            Some(recipe_id),
+            &measurement.ingredient_name,
+            measurement.quantity.parse().ok(),
+            measurement.measurement.as_deref(),
+            &format!("{} {}", measurement.quantity, measurement.ingredient_name),
+        ).await?;
+        ingredient_ids.push(ingredient_id);
+    }
+
+    // Test: read_recipe_with_name should return recipe with name
+    let recipe = db::read_recipe_with_name(&pool, recipe_id).await?;
+    assert!(recipe.is_some());
+    let recipe = recipe.unwrap();
+    assert_eq!(recipe.recipe_name, Some("Test Recipe".to_string()));
+
+    // Test: get_recipe_ingredients should return all ingredients
+    let ingredients = db::get_recipe_ingredients(&pool, recipe_id).await?;
+    assert_eq!(ingredients.len(), measurements.len());
+
+    // Test: recipe deletion should cascade to ingredients
+    let delete_result = db::delete_recipe(&pool, recipe_id).await?;
+    assert!(delete_result);
+
+    // Verify recipe is deleted
+    let recipe_after_delete = db::read_recipe(&pool, recipe_id).await?;
+    assert!(recipe_after_delete.is_none());
+
+    // Verify ingredients are also deleted (cascade delete)
+    for ingredient_id in ingredient_ids {
+        let ingredient = db::read_ingredient(&pool, ingredient_id).await?;
+        assert!(ingredient.is_none());
+    }
+
+    println!("✅ Recipe details viewing and deletion flow test passed");
+    Ok(())
+}
+
+/// Test recipe renaming functionality
+#[tokio::test]
+async fn test_recipe_renaming_flow() -> Result<(), Box<dyn std::error::Error>> {
+    use just_ingredients::db;
+    use std::sync::Arc;
+
+    // Skip if no database
+    let database_url = match std::env::var("DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("⚠️ Skipping recipe renaming test - DATABASE_URL not set");
+            return Ok(());
+        }
+    };
+
+    let pool = Arc::new(sqlx::postgres::PgPool::connect(&database_url).await?);
+    db::init_database_schema(&pool).await?;
+
+    let telegram_id = 444444; // Test user
+
+    // Create a recipe
+    let recipe_id = db::create_recipe(&pool, telegram_id, "Original content").await?;
+    db::update_recipe_name(&pool, recipe_id, "Old Name").await?;
+
+    // Verify initial name
+    let recipe = db::read_recipe_with_name(&pool, recipe_id).await?;
+    assert_eq!(recipe.unwrap().recipe_name, Some("Old Name".to_string()));
+
+    // Rename the recipe
+    let rename_result = db::update_recipe_name(&pool, recipe_id, "New Recipe Name").await?;
+    assert!(rename_result);
+
+    // Verify new name
+    let recipe = db::read_recipe_with_name(&pool, recipe_id).await?;
+    assert_eq!(recipe.unwrap().recipe_name, Some("New Recipe Name".to_string()));
+
+    // Test duplicate detection after rename
+    // Create another recipe with the old name
+    let recipe2_id = db::create_recipe(&pool, telegram_id, "Another content").await?;
+    db::update_recipe_name(&pool, recipe2_id, "Old Name").await?;
+
+    // Now "Old Name" should have duplicates
+    let has_duplicates = db::has_duplicate_recipes(&pool, telegram_id, "Old Name").await?;
+    assert!(has_duplicates);
+
+    // And "New Recipe Name" should not
+    let has_duplicates_new = db::has_duplicate_recipes(&pool, telegram_id, "New Recipe Name").await?;
+    assert!(!has_duplicates_new);
+
+    // Cleanup
+    db::delete_recipe(&pool, recipe_id).await?;
+    db::delete_recipe(&pool, recipe2_id).await?;
+
+    println!("✅ Recipe renaming flow test passed");
+    Ok(())
+}
