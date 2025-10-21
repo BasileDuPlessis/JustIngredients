@@ -23,6 +23,9 @@ use super::ui_builder::{
     create_recipes_pagination_keyboard, format_database_ingredients_list, format_ingredients_list,
 };
 
+// Import HandlerContext
+use super::HandlerContext;
+
 // Import database functions
 use crate::db::{get_recipes_by_name, get_user_recipes_paginated, read_recipe_with_name};
 
@@ -114,7 +117,11 @@ async fn handle_review_ingredients_callbacks(
         if q.message.is_some() {
             if data.starts_with("edit_") {
                 handle_edit_button(EditButtonParams {
-                    bot,
+                    ctx: &HandlerContext {
+                        bot: &bot,
+                        localization: &localization,
+                        language_code: dialogue_lang_code.as_deref(),
+                    },
                     q,
                     data,
                     ingredients: &ingredients,
@@ -123,12 +130,15 @@ async fn handle_review_ingredients_callbacks(
                     message_id,
                     extracted_text: &extracted_text,
                     dialogue,
-                    localization,
                 })
                 .await?;
             } else if data.starts_with("delete_") {
                 handle_delete_button(DeleteButtonParams {
-                    bot,
+                    ctx: &HandlerContext {
+                        bot: &bot,
+                        localization: &localization,
+                        language_code: dialogue_lang_code.as_deref(),
+                    },
                     q,
                     data,
                     ingredients: &mut ingredients,
@@ -138,12 +148,15 @@ async fn handle_review_ingredients_callbacks(
                     extracted_text: &extracted_text,
                     recipe_name_from_caption: &recipe_name_from_caption,
                     dialogue,
-                    localization,
                 })
                 .await?;
             } else if data == "confirm" {
                 handle_confirm_button(ConfirmButtonParams {
-                    bot,
+                    ctx: &HandlerContext {
+                        bot: &bot,
+                        localization: &localization,
+                        language_code: dialogue_lang_code.as_deref(),
+                    },
                     q,
                     ingredients: &ingredients,
                     dialogue_lang_code: &dialogue_lang_code,
@@ -151,7 +164,6 @@ async fn handle_review_ingredients_callbacks(
                     recipe_name_from_caption: &recipe_name_from_caption,
                     dialogue,
                     pool: &pool,
-                    localization,
                 })
                 .await?;
             } else if data == "add_more" {
@@ -189,7 +201,11 @@ async fn handle_editing_saved_ingredients_callbacks(
         if q.message.is_some() {
             if data.starts_with("edit_") {
                 handle_edit_saved_ingredient_button(EditSavedIngredientButtonParams {
-                    bot,
+                    ctx: &HandlerContext {
+                        bot: &bot,
+                        localization: &localization,
+                        language_code: language_code.as_deref(),
+                    },
                     q,
                     data,
                     current_matches: &current_matches,
@@ -198,12 +214,15 @@ async fn handle_editing_saved_ingredients_callbacks(
                     language_code: &language_code,
                     message_id,
                     dialogue,
-                    localization,
                 })
                 .await?;
             } else if data.starts_with("delete_") {
                 handle_delete_saved_ingredient_button(DeleteSavedIngredientButtonParams {
-                    bot,
+                    ctx: &HandlerContext {
+                        bot: &bot,
+                        localization: &localization,
+                        language_code: language_code.as_deref(),
+                    },
                     q,
                     data,
                     current_matches: &mut current_matches,
@@ -212,12 +231,15 @@ async fn handle_editing_saved_ingredients_callbacks(
                     language_code: &language_code,
                     message_id,
                     dialogue,
-                    localization,
                 })
                 .await?;
             } else if data == "confirm" {
                 handle_confirm_saved_ingredients_button(ConfirmSavedIngredientsButtonParams {
-                    bot,
+                    ctx: &HandlerContext {
+                        bot: &bot,
+                        localization: &localization,
+                        language_code: language_code.as_deref(),
+                    },
                     q,
                     current_matches: &current_matches,
                     original_ingredients: &original_ingredients,
@@ -225,7 +247,6 @@ async fn handle_editing_saved_ingredients_callbacks(
                     language_code: &language_code,
                     dialogue,
                     pool: &pool,
-                    localization,
                 })
                 .await?;
             } else if data == "add_ingredient" {
@@ -744,7 +765,7 @@ async fn handle_list_recipes(
 /// Parameters for edit button handling
 #[derive(Debug)]
 struct EditButtonParams<'a> {
-    bot: &'a Bot,
+    ctx: &'a super::HandlerContext<'a>,
     q: &'a teloxide::types::CallbackQuery,
     data: &'a str,
     ingredients: &'a Vec<crate::text_processing::MeasurementMatch>,
@@ -753,13 +774,12 @@ struct EditButtonParams<'a> {
     message_id: Option<i32>,
     extracted_text: &'a str,
     dialogue: &'a RecipeDialogue,
-    localization: &'a Arc<crate::localization::LocalizationManager>,
 }
 
 /// Parameters for delete button handling
 #[derive(Debug)]
 struct DeleteButtonParams<'a> {
-    bot: &'a Bot,
+    ctx: &'a super::HandlerContext<'a>,
     q: &'a teloxide::types::CallbackQuery,
     data: &'a str,
     ingredients: &'a mut Vec<crate::text_processing::MeasurementMatch>,
@@ -769,13 +789,12 @@ struct DeleteButtonParams<'a> {
     extracted_text: &'a str,
     recipe_name_from_caption: &'a Option<String>,
     dialogue: &'a RecipeDialogue,
-    localization: &'a Arc<crate::localization::LocalizationManager>,
 }
 
 /// Parameters for confirm button handling
 #[derive(Debug)]
 struct ConfirmButtonParams<'a> {
-    bot: &'a Bot,
+    ctx: &'a super::HandlerContext<'a>,
     q: &'a teloxide::types::CallbackQuery,
     ingredients: &'a [crate::text_processing::MeasurementMatch],
     dialogue_lang_code: &'a Option<String>,
@@ -783,13 +802,12 @@ struct ConfirmButtonParams<'a> {
     recipe_name_from_caption: &'a Option<String>,
     dialogue: &'a RecipeDialogue,
     pool: &'a Arc<PgPool>,
-    localization: &'a Arc<crate::localization::LocalizationManager>,
 }
 
 /// Parameters for edit saved ingredient button handling
 #[derive(Debug)]
 struct EditSavedIngredientButtonParams<'a> {
-    bot: &'a Bot,
+    ctx: &'a super::HandlerContext<'a>,
     q: &'a teloxide::types::CallbackQuery,
     data: &'a str,
     current_matches: &'a Vec<MeasurementMatch>,
@@ -798,13 +816,12 @@ struct EditSavedIngredientButtonParams<'a> {
     language_code: &'a Option<String>,
     message_id: Option<i32>,
     dialogue: &'a RecipeDialogue,
-    localization: &'a Arc<crate::localization::LocalizationManager>,
 }
 
 /// Parameters for delete saved ingredient button handling
 #[derive(Debug)]
 struct DeleteSavedIngredientButtonParams<'a> {
-    bot: &'a Bot,
+    ctx: &'a super::HandlerContext<'a>,
     q: &'a teloxide::types::CallbackQuery,
     data: &'a str,
     current_matches: &'a mut Vec<MeasurementMatch>,
@@ -813,13 +830,12 @@ struct DeleteSavedIngredientButtonParams<'a> {
     language_code: &'a Option<String>,
     message_id: Option<i32>,
     dialogue: &'a RecipeDialogue,
-    localization: &'a Arc<crate::localization::LocalizationManager>,
 }
 
 /// Parameters for confirm saved ingredients button handling
 #[derive(Debug)]
 struct ConfirmSavedIngredientsButtonParams<'a> {
-    bot: &'a Bot,
+    ctx: &'a super::HandlerContext<'a>,
     q: &'a teloxide::types::CallbackQuery,
     current_matches: &'a [MeasurementMatch],
     original_ingredients: &'a [crate::db::Ingredient],
@@ -827,13 +843,12 @@ struct ConfirmSavedIngredientsButtonParams<'a> {
     language_code: &'a Option<String>,
     dialogue: &'a RecipeDialogue,
     pool: &'a Arc<PgPool>,
-    localization: &'a Arc<crate::localization::LocalizationManager>,
 }
 
 /// Handle edit button in review ingredients state
 async fn handle_edit_button(params: EditButtonParams<'_>) -> Result<()> {
     let EditButtonParams {
-        bot,
+        ctx,
         q,
         data,
         ingredients,
@@ -842,7 +857,6 @@ async fn handle_edit_button(params: EditButtonParams<'_>) -> Result<()> {
         message_id,
         extracted_text,
         dialogue,
-        localization,
     } = params;
 
     let index: usize = data.strip_prefix("edit_").unwrap().parse().unwrap_or(0);
@@ -859,12 +873,12 @@ async fn handle_edit_button(params: EditButtonParams<'_>) -> Result<()> {
         let edit_prompt = format!(
             "✏️ {}\n\n{}: **{} {}**\n\n{}",
             t_lang(
-                localization,
+                ctx.localization,
                 "edit-ingredient-prompt",
                 dialogue_lang_code.as_deref()
             ),
             t_lang(
-                localization,
+                ctx.localization,
                 "current-ingredient",
                 dialogue_lang_code.as_deref()
             ),
@@ -872,7 +886,7 @@ async fn handle_edit_button(params: EditButtonParams<'_>) -> Result<()> {
             ingredient.measurement.as_deref().unwrap_or(""),
             ingredient.ingredient_name
         );
-        bot.send_message(q.message.as_ref().unwrap().chat().id, edit_prompt)
+        ctx.bot.send_message(q.message.as_ref().unwrap().chat().id, edit_prompt)
             .await?;
 
         // Transition to editing state
@@ -893,7 +907,7 @@ async fn handle_edit_button(params: EditButtonParams<'_>) -> Result<()> {
 /// Handle delete button in review ingredients state
 async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
     let DeleteButtonParams {
-        bot,
+        ctx,
         q,
         data,
         ingredients,
@@ -903,7 +917,6 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
         extracted_text,
         recipe_name_from_caption,
         dialogue,
-        localization,
     } = params;
 
     let index: usize = data.strip_prefix("delete_").unwrap().parse().unwrap_or(0);
@@ -924,14 +937,14 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
             // All ingredients deleted - inform user and provide options
             let empty_message = format!(
                 "🗑️ **{}**\n\n{}\n\n{}",
-                t_lang(localization, "review-title", dialogue_lang_code.as_deref()),
+                t_lang(ctx.localization, "review-title", dialogue_lang_code.as_deref()),
                 t_lang(
-                    localization,
+                    ctx.localization,
                     "review-no-ingredients",
                     dialogue_lang_code.as_deref()
                 ),
                 t_lang(
-                    localization,
+                    ctx.localization,
                     "review-no-ingredients-help",
                     dialogue_lang_code.as_deref()
                 )
@@ -940,20 +953,20 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
             let keyboard = vec![vec![
                 teloxide::types::InlineKeyboardButton::callback(
                     t_lang(
-                        localization,
+                        ctx.localization,
                         "review-add-more",
                         dialogue_lang_code.as_deref(),
                     ),
                     "add_more",
                 ),
                 teloxide::types::InlineKeyboardButton::callback(
-                    t_lang(localization, "cancel", dialogue_lang_code.as_deref()),
+                    t_lang(ctx.localization, "cancel", dialogue_lang_code.as_deref()),
                     "cancel_empty",
                 ),
             ]];
 
             // Edit the original message
-            match bot
+            match ctx.bot
                 .edit_message_text(
                     q.message.as_ref().unwrap().chat().id,
                     q.message.as_ref().unwrap().id(),
@@ -971,23 +984,23 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
             // Update the message with remaining ingredients
             let review_message = format!(
                 "📝 **{}**\n\n{}\n\n{}",
-                t_lang(localization, "review-title", dialogue_lang_code.as_deref()),
+                t_lang(ctx.localization, "review-title", dialogue_lang_code.as_deref()),
                 t_lang(
-                    localization,
+                    ctx.localization,
                     "review-description",
                     dialogue_lang_code.as_deref()
                 ),
-                format_ingredients_list(ingredients, dialogue_lang_code.as_deref(), localization)
+                format_ingredients_list(ingredients, dialogue_lang_code.as_deref(), ctx.localization)
             );
 
             let keyboard = create_ingredient_review_keyboard(
                 ingredients,
                 dialogue_lang_code.as_deref(),
-                localization,
+                ctx.localization,
             );
 
             // Edit the original message
-            match bot
+            match ctx.bot
                 .edit_message_text(
                     q.message.as_ref().unwrap().chat().id,
                     q.message.as_ref().unwrap().id(),
@@ -1027,7 +1040,7 @@ async fn handle_delete_button(params: DeleteButtonParams<'_>) -> Result<()> {
 /// Handle confirm button in review ingredients state
 async fn handle_confirm_button(params: ConfirmButtonParams<'_>) -> Result<()> {
     let ConfirmButtonParams {
-        bot,
+        ctx,
         q,
         ingredients,
         dialogue_lang_code,
@@ -1035,7 +1048,6 @@ async fn handle_confirm_button(params: ConfirmButtonParams<'_>) -> Result<()> {
         recipe_name_from_caption,
         dialogue,
         pool,
-        localization,
     } = params;
 
     // Record user engagement metric for recipe confirmation
@@ -1063,10 +1075,10 @@ async fn handle_confirm_button(params: ConfirmButtonParams<'_>) -> Result<()> {
         .await
         {
             error!(error = %e, "Failed to save ingredients to database");
-            bot.send_message(
+            ctx.bot.send_message(
                 q.message.as_ref().unwrap().chat().id,
                 t_lang(
-                    localization,
+                    ctx.localization,
                     "error-processing-failed",
                     dialogue_lang_code.as_deref(),
                 ),
@@ -1079,28 +1091,28 @@ async fn handle_confirm_button(params: ConfirmButtonParams<'_>) -> Result<()> {
         let confirmation_message = format!(
             "✅ **{}**\n\n📝 {}\n\n{}",
             t_lang(
-                localization,
+                ctx.localization,
                 "workflow-recipe-saved",
                 dialogue_lang_code.as_deref()
             ),
             t_args_lang(
-                localization,
+                ctx.localization,
                 "caption-recipe-saved",
                 &[("recipe_name", caption_recipe_name.as_str())],
                 dialogue_lang_code.as_deref()
             ),
             t_lang(
-                localization,
+                ctx.localization,
                 "workflow-what-next",
                 dialogue_lang_code.as_deref()
             )
         );
 
         let confirmation_keyboard =
-            create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), localization);
+            create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), ctx.localization);
 
         // Update the original review message
-        match bot
+        match ctx.bot
             .edit_message_text(
                 q.message.as_ref().unwrap().chat().id,
                 q.message.as_ref().unwrap().id(),
@@ -1124,22 +1136,22 @@ async fn handle_confirm_button(params: ConfirmButtonParams<'_>) -> Result<()> {
         let confirmation_message = format!(
             "✅ **{}**\n\n{}",
             t_lang(
-                localization,
+                ctx.localization,
                 "workflow-recipe-saved",
                 dialogue_lang_code.as_deref()
             ),
             t_lang(
-                localization,
+                ctx.localization,
                 "workflow-what-next",
                 dialogue_lang_code.as_deref()
             )
         );
 
         let confirmation_keyboard =
-            create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), localization);
+            create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), ctx.localization);
 
         // Update the original review message
-        match bot
+        match ctx.bot
             .edit_message_text(
                 q.message.as_ref().unwrap().chat().id,
                 q.message.as_ref().unwrap().id(),
@@ -1158,18 +1170,18 @@ async fn handle_confirm_button(params: ConfirmButtonParams<'_>) -> Result<()> {
         let recipe_name_prompt = format!(
             "🏷️ **{}**\n\n{}",
             t_lang(
-                localization,
+                ctx.localization,
                 "recipe-name-prompt",
                 dialogue_lang_code.as_deref()
             ),
             t_lang(
-                localization,
+                ctx.localization,
                 "recipe-name-prompt-hint",
                 dialogue_lang_code.as_deref()
             )
         );
 
-        bot.send_message(q.message.as_ref().unwrap().chat().id, recipe_name_prompt)
+        ctx.bot.send_message(q.message.as_ref().unwrap().chat().id, recipe_name_prompt)
             .await?;
 
         // Transition to waiting for recipe name after confirmation
@@ -1365,7 +1377,7 @@ async fn handle_workflow_button(
 /// Handle edit button for saved ingredients
 async fn handle_edit_saved_ingredient_button(params: EditSavedIngredientButtonParams<'_>) -> Result<()> {
     let EditSavedIngredientButtonParams {
-        bot,
+        ctx,
         q,
         data,
         current_matches,
@@ -1374,7 +1386,6 @@ async fn handle_edit_saved_ingredient_button(params: EditSavedIngredientButtonPa
         language_code,
         message_id,
         dialogue,
-        localization,
     } = params;
 
     let index: usize = data.strip_prefix("edit_").unwrap().parse().unwrap_or(0);
@@ -1390,13 +1401,13 @@ async fn handle_edit_saved_ingredient_button(params: EditSavedIngredientButtonPa
         let ingredient = &current_matches[index];
         let edit_prompt = format!(
             "✏️ {}\n\n{}: **{} {}**\n\n{}",
-            t_lang(localization, "edit-ingredient-prompt", language_code.as_deref()),
-            t_lang(localization, "current-ingredient", language_code.as_deref()),
+            t_lang(ctx.localization, "edit-ingredient-prompt", language_code.as_deref()),
+            t_lang(ctx.localization, "current-ingredient", language_code.as_deref()),
             ingredient.quantity,
             ingredient.measurement.as_deref().unwrap_or(""),
             ingredient.ingredient_name
         );
-        bot.send_message(q.message.as_ref().unwrap().chat().id, edit_prompt)
+        ctx.bot.send_message(q.message.as_ref().unwrap().chat().id, edit_prompt)
             .await?;
 
         // Transition to editing state
@@ -1417,7 +1428,7 @@ async fn handle_edit_saved_ingredient_button(params: EditSavedIngredientButtonPa
 /// Handle delete button for saved ingredients
 async fn handle_delete_saved_ingredient_button(params: DeleteSavedIngredientButtonParams<'_>) -> Result<()> {
     let DeleteSavedIngredientButtonParams {
-        bot,
+        ctx,
         q,
         data,
         current_matches,
@@ -1426,7 +1437,6 @@ async fn handle_delete_saved_ingredient_button(params: DeleteSavedIngredientButt
         language_code,
         message_id,
         dialogue,
-        localization,
     } = params;
     let index: usize = data.strip_prefix("delete_").unwrap().parse().unwrap_or(0);
 
@@ -1446,24 +1456,24 @@ async fn handle_delete_saved_ingredient_button(params: DeleteSavedIngredientButt
             // All ingredients deleted - inform user and provide options
             let empty_message = format!(
                 "🗑️ **{}**\n\n{}\n\n{}",
-                t_lang(localization, "review-title", language_code.as_deref()),
-                t_lang(localization, "review-no-ingredients", language_code.as_deref()),
-                t_lang(localization, "review-no-ingredients-help", language_code.as_deref())
+                t_lang(ctx.localization, "review-title", language_code.as_deref()),
+                t_lang(ctx.localization, "review-no-ingredients", language_code.as_deref()),
+                t_lang(ctx.localization, "review-no-ingredients-help", language_code.as_deref())
             );
 
             let keyboard = vec![vec![
                 teloxide::types::InlineKeyboardButton::callback(
-                    t_lang(localization, "review-add-more", language_code.as_deref()),
+                    t_lang(ctx.localization, "review-add-more", language_code.as_deref()),
                     "add_more",
                 ),
                 teloxide::types::InlineKeyboardButton::callback(
-                    t_lang(localization, "cancel", language_code.as_deref()),
+                    t_lang(ctx.localization, "cancel", language_code.as_deref()),
                     "cancel_empty",
                 ),
             ]];
 
             // Edit the original message
-            match bot
+            match ctx.bot
                 .edit_message_text(
                     q.message.as_ref().unwrap().chat().id,
                     q.message.as_ref().unwrap().id(),
@@ -1481,15 +1491,15 @@ async fn handle_delete_saved_ingredient_button(params: DeleteSavedIngredientButt
             // Update the message with remaining ingredients
             let review_message = format!(
                 "✏️ **{}**\n\n{}\n\n{}",
-                t_lang(localization, "editing-recipe", language_code.as_deref()),
-                t_lang(localization, "editing-instructions", language_code.as_deref()),
-                format_ingredients_list(current_matches, language_code.as_deref(), localization)
+                t_lang(ctx.localization, "editing-recipe", language_code.as_deref()),
+                t_lang(ctx.localization, "editing-instructions", language_code.as_deref()),
+                format_ingredients_list(current_matches, language_code.as_deref(), ctx.localization)
             );
 
-            let keyboard = create_ingredient_review_keyboard(current_matches, language_code.as_deref(), localization);
+            let keyboard = create_ingredient_review_keyboard(current_matches, language_code.as_deref(), ctx.localization);
 
             // Edit the original message
-            match bot
+            match ctx.bot
                 .edit_message_text(
                     q.message.as_ref().unwrap().chat().id,
                     q.message.as_ref().unwrap().id(),
@@ -1528,7 +1538,7 @@ async fn handle_delete_saved_ingredient_button(params: DeleteSavedIngredientButt
 /// Handle confirm button for saved ingredients
 async fn handle_confirm_saved_ingredients_button(params: ConfirmSavedIngredientsButtonParams<'_>) -> Result<()> {
     let ConfirmSavedIngredientsButtonParams {
-        bot,
+        ctx,
         q,
         current_matches,
         original_ingredients,
@@ -1536,7 +1546,6 @@ async fn handle_confirm_saved_ingredients_button(params: ConfirmSavedIngredients
         language_code,
         dialogue,
         pool,
-        localization,
     } = params;
     // Record user engagement metric for recipe confirmation
     crate::observability::record_user_engagement_metrics(
@@ -1561,9 +1570,9 @@ async fn handle_confirm_saved_ingredients_button(params: ConfirmSavedIngredients
                 new_data.measurement.as_deref(),
             ).await {
                 error!(ingredient_id = %ingredient_id, error = %e, "Failed to update ingredient");
-                bot.send_message(
+                ctx.bot.send_message(
                     q.message.as_ref().unwrap().chat().id,
-                    t_lang(localization, "error-updating-ingredients", language_code.as_deref()),
+                    t_lang(ctx.localization, "error-updating-ingredients", language_code.as_deref()),
                 )
                 .await?;
                 return Ok(());
@@ -1577,9 +1586,9 @@ async fn handle_confirm_saved_ingredients_button(params: ConfirmSavedIngredients
                 Ok(user) => user,
                 Err(e) => {
                     error!(telegram_id = %q.from.id.0, error = %e, "Failed to get or create user");
-                    bot.send_message(
+                    ctx.bot.send_message(
                         q.message.as_ref().unwrap().chat().id,
-                        t_lang(localization, "error-processing-failed", language_code.as_deref()),
+                        t_lang(ctx.localization, "error-processing-failed", language_code.as_deref()),
                     )
                     .await?;
                     return Ok(());
@@ -1607,9 +1616,9 @@ async fn handle_confirm_saved_ingredients_button(params: ConfirmSavedIngredients
                 "", // raw_text not meaningful for edited ingredients
             ).await {
                 error!(error = %e, "Failed to add new ingredient");
-                bot.send_message(
+                ctx.bot.send_message(
                     q.message.as_ref().unwrap().chat().id,
-                    t_lang(localization, "error-adding-ingredients", language_code.as_deref()),
+                    t_lang(ctx.localization, "error-adding-ingredients", language_code.as_deref()),
                 )
                 .await?;
                 return Ok(());
@@ -1620,9 +1629,9 @@ async fn handle_confirm_saved_ingredients_button(params: ConfirmSavedIngredients
         for ingredient_id in &changes.to_delete {
             if let Err(e) = crate::db::delete_ingredient(pool, *ingredient_id).await {
                 error!(ingredient_id = %ingredient_id, error = %e, "Failed to delete ingredient");
-                bot.send_message(
+                ctx.bot.send_message(
                     q.message.as_ref().unwrap().chat().id,
-                    t_lang(localization, "error-deleting-ingredients", language_code.as_deref()),
+                    t_lang(ctx.localization, "error-deleting-ingredients", language_code.as_deref()),
                 )
                 .await?;
                 return Ok(());
@@ -1632,14 +1641,14 @@ async fn handle_confirm_saved_ingredients_button(params: ConfirmSavedIngredients
         // Show success message
         let success_message = format!(
             "✅ **{}**\n\n{}",
-            t_lang(localization, "ingredients-updated", language_code.as_deref()),
-            t_lang(localization, "ingredients-updated-help", language_code.as_deref())
+            t_lang(ctx.localization, "ingredients-updated", language_code.as_deref()),
+            t_lang(ctx.localization, "ingredients-updated-help", language_code.as_deref())
         );
 
-        let keyboard = create_post_confirmation_keyboard(language_code.as_deref(), localization);
+        let keyboard = create_post_confirmation_keyboard(language_code.as_deref(), ctx.localization);
 
         // Update the original message
-        match bot
+        match ctx.bot
             .edit_message_text(
                 q.message.as_ref().unwrap().chat().id,
                 q.message.as_ref().unwrap().id(),
@@ -1655,8 +1664,8 @@ async fn handle_confirm_saved_ingredients_button(params: ConfirmSavedIngredients
         }
     } else {
         // No changes made
-        let no_changes_message = t_lang(localization, "no-changes-made", language_code.as_deref());
-        bot.send_message(q.message.as_ref().unwrap().chat().id, no_changes_message)
+        let no_changes_message = t_lang(ctx.localization, "no-changes-made", language_code.as_deref());
+        ctx.bot.send_message(q.message.as_ref().unwrap().chat().id, no_changes_message)
             .await?;
     }
 

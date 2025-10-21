@@ -70,18 +70,3 @@ pub enum RecipeDialogueState {
 
 /// Type alias for our recipe dialogue
 pub type RecipeDialogue = Dialogue<RecipeDialogueState, InMemStorage<RecipeDialogueState>>;
-
-/// Validates a recipe name input
-pub fn validate_recipe_name(name: &str) -> Result<String, &'static str> {
-    let trimmed = name.trim();
-
-    if trimmed.is_empty() {
-        return Err("empty");
-    }
-
-    if trimmed.len() > 255 {
-        return Err("too_long");
-    }
-
-    Ok(trimmed.to_string())
-}

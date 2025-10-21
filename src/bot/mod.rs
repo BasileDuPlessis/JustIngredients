@@ -10,13 +10,27 @@ pub mod callback_handler;
 pub mod dialogue_manager;
 pub mod message_handler;
 pub mod ui_builder;
+pub mod ui_components;
+
+// Common context structures for handler functions
+use teloxide::Bot;
+use crate::localization::LocalizationManager;
+
+/// Common context for bot handlers containing shared dependencies
+#[derive(Debug)]
+pub struct HandlerContext<'a> {
+    pub bot: &'a Bot,
+    pub localization: &'a std::sync::Arc<LocalizationManager>,
+    pub language_code: Option<&'a str>,
+}
 
 // Re-export main handler functions for use in main.rs
 pub use callback_handler::{callback_handler, callback_handler_with_cache};
 pub use message_handler::{message_handler, message_handler_with_cache};
 
 // Re-export utility functions that might be used elsewhere
-pub use dialogue_manager::{parse_ingredient_from_text, save_ingredients_to_database};
+pub use dialogue_manager::save_ingredients_to_database;
+pub use crate::validation::parse_ingredient_from_text;
 pub use message_handler::{
     download_and_process_image, download_file, process_ingredients_and_extract_matches,
 };

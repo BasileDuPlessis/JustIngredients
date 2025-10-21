@@ -9,50 +9,46 @@ use std::sync::Arc;
 // Import text processing types
 use crate::text_processing::MeasurementMatch;
 
+// Import common UI components
+use super::ui_components::{
+    create_add_button, create_back_button, create_localized_button_with_emoji, create_pagination_buttons, truncate_text, with_ui_metrics_sync,
+};
+
 /// Format ingredients as a simple numbered list for review
 pub fn format_ingredients_list(
     ingredients: &[MeasurementMatch],
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> String {
-    let start_time = std::time::Instant::now();
-    let ingredients_count = ingredients.len();
+    with_ui_metrics_sync("format_ingredients_list", ingredients.len(), || {
+        let mut result = String::new();
 
-    let mut result = String::new();
+        for (i, ingredient) in ingredients.iter().enumerate() {
+            let ingredient_display = if ingredient.ingredient_name.is_empty() {
+                format!(
+                    "❓ {}",
+                    t_lang(localization, "unknown-ingredient", language_code)
+                )
+            } else {
+                ingredient.ingredient_name.clone()
+            };
 
-    for (i, ingredient) in ingredients.iter().enumerate() {
-        let ingredient_display = if ingredient.ingredient_name.is_empty() {
-            format!(
-                "❓ {}",
-                t_lang(localization, "unknown-ingredient", language_code)
-            )
-        } else {
-            ingredient.ingredient_name.clone()
-        };
+            let measurement_display = if let Some(ref unit) = ingredient.measurement {
+                format!("{} {}", ingredient.quantity, unit)
+            } else {
+                ingredient.quantity.clone()
+            };
 
-        let measurement_display = if let Some(ref unit) = ingredient.measurement {
-            format!("{} {}", ingredient.quantity, unit)
-        } else {
-            ingredient.quantity.clone()
-        };
+            result.push_str(&format!(
+                "{}. **{}** → {}\n",
+                i + 1,
+                measurement_display,
+                ingredient_display
+            ));
+        }
 
-        result.push_str(&format!(
-            "{}. **{}** → {}\n",
-            i + 1,
-            measurement_display,
-            ingredient_display
-        ));
-    }
-
-    let duration = start_time.elapsed();
-    crate::observability::record_ui_metrics(
-        "format_ingredients_list",
-        duration,
-        ingredients_count,
-        result.lines().count(),
-    );
-
-    result
+        result
+    })
 }
 
 /// Create inline keyboard for ingredient review
@@ -61,74 +57,50 @@ pub fn create_ingredient_review_keyboard(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
-    let start_time = std::time::Instant::now();
-    let ingredients_count = ingredients.len();
+    with_ui_metrics_sync("create_ingredient_review_keyboard", ingredients.len(), || {
+        let mut buttons = Vec::new();
 
-    let mut buttons = Vec::new();
+        // Create Edit and Delete buttons for each ingredient
+        for (i, ingredient) in ingredients.iter().enumerate() {
+            let ingredient_display = if ingredient.ingredient_name.is_empty() {
+                format!(
+                    "❓ {}",
+                    t_lang(localization, "unknown-ingredient", language_code)
+                )
+            } else {
+                ingredient.ingredient_name.clone()
+            };
 
-    // Create Edit and Delete buttons for each ingredient
-    for (i, ingredient) in ingredients.iter().enumerate() {
-        let ingredient_display = if ingredient.ingredient_name.is_empty() {
-            format!(
-                "❓ {}",
-                t_lang(localization, "unknown-ingredient", language_code)
-            )
-        } else {
-            ingredient.ingredient_name.clone()
-        };
+            let measurement_display = if let Some(ref unit) = ingredient.measurement {
+                format!("{} {}", ingredient.quantity, unit)
+            } else {
+                ingredient.quantity.clone()
+            };
 
-        let measurement_display = if let Some(ref unit) = ingredient.measurement {
-            format!("{} {}", ingredient.quantity, unit)
-        } else {
-            ingredient.quantity.clone()
-        };
+            let display_text = format!("{} → {}", measurement_display, ingredient_display);
+            let button_text = truncate_text(&display_text, 20);
 
-        let display_text = format!("{} → {}", measurement_display, ingredient_display);
-        // Truncate if too long for button
-        let button_text = if display_text.len() > 20 {
-            format!("{}...", &display_text[..17])
-        } else {
-            display_text
-        };
+            buttons.push(vec![
+                InlineKeyboardButton::callback(format!("✏️ {}", button_text), format!("edit_{}", i)),
+                InlineKeyboardButton::callback(format!("🗑️ {}", button_text), format!("delete_{}", i)),
+            ]);
+        }
 
+        // Add Confirm and Cancel buttons at the bottom
         buttons.push(vec![
-            InlineKeyboardButton::callback(format!("✏️ {}", button_text), format!("edit_{}", i)),
-            InlineKeyboardButton::callback(format!("🗑️ {}", button_text), format!("delete_{}", i)),
+            create_localized_button_with_emoji(localization, "✅", "review-confirm", "confirm".to_string(), language_code),
+            create_localized_button_with_emoji(localization, "❌", "cancel", "cancel_review".to_string(), language_code),
         ]);
-    }
 
-    // Add Confirm and Cancel buttons at the bottom
-    buttons.push(vec![
-        InlineKeyboardButton::callback(
-            format!(
-                "✅ {}",
-                t_lang(localization, "review-confirm", language_code)
-            ),
-            "confirm".to_string(),
-        ),
-        InlineKeyboardButton::callback(
-            format!("❌ {}", t_lang(localization, "cancel", language_code)),
-            "cancel_review".to_string(),
-        ),
-    ]);
+        // Add "Add Ingredient" button if we're in editing mode (has more than just confirm/cancel)
+        if !ingredients.is_empty() {
+            buttons.push(vec![
+                create_add_button(localization, "add-ingredient", "add_ingredient".to_string(), language_code)
+            ]);
+        }
 
-    // Add "Add Ingredient" button if we're in editing mode (has more than just confirm/cancel)
-    if ingredients.len() > 0 {
-        buttons.push(vec![InlineKeyboardButton::callback(
-            format!("➕ {}", t_lang(localization, "add-ingredient", language_code)),
-            "add_ingredient".to_string(),
-        )]);
-    }
-
-    let duration = start_time.elapsed();
-    crate::observability::record_ui_metrics(
-        "create_ingredient_review_keyboard",
-        duration,
-        ingredients_count,
-        buttons.len(),
-    );
-
-    InlineKeyboardMarkup::new(buttons)
+        InlineKeyboardMarkup::new(buttons)
+    })
 }
 
 /// Create inline keyboard for post-confirmation workflow
@@ -136,43 +108,35 @@ pub fn create_post_confirmation_keyboard(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
-    let start_time = std::time::Instant::now();
-
-    let buttons = vec![
-        vec![
-            InlineKeyboardButton::callback(
-                format!(
-                    "➕ {}",
-                    t_lang(localization, "workflow-add-another", language_code)
+    with_ui_metrics_sync("create_post_confirmation_keyboard", 0, || {
+        let buttons = vec![
+            vec![
+                create_localized_button_with_emoji(
+                    localization,
+                    "➕",
+                    "workflow-add-another",
+                    "workflow_add_another".to_string(),
+                    language_code,
                 ),
-                "workflow_add_another".to_string(),
-            ),
-            InlineKeyboardButton::callback(
-                format!(
-                    "📚 {}",
-                    t_lang(localization, "workflow-list-recipes", language_code)
+                create_localized_button_with_emoji(
+                    localization,
+                    "📚",
+                    "workflow-list-recipes",
+                    "workflow_list_recipes".to_string(),
+                    language_code,
                 ),
-                "workflow_list_recipes".to_string(),
-            ),
-        ],
-        vec![InlineKeyboardButton::callback(
-            format!(
-                "🔍 {}",
-                t_lang(localization, "workflow-search-recipes", language_code)
-            ),
-            "workflow_search_recipes".to_string(),
-        )],
-    ];
+            ],
+            vec![create_localized_button_with_emoji(
+                localization,
+                "🔍",
+                "workflow-search-recipes",
+                "workflow_search_recipes".to_string(),
+                language_code,
+            )],
+        ];
 
-    let duration = start_time.elapsed();
-    crate::observability::record_ui_metrics(
-        "create_post_confirmation_keyboard",
-        duration,
-        0, // No input count for this function
-        buttons.len(),
-    );
-
-    InlineKeyboardMarkup::new(buttons)
+        InlineKeyboardMarkup::new(buttons)
+    })
 }
 
 /// Create inline keyboard for paginated recipe list
@@ -184,74 +148,29 @@ pub fn create_recipes_pagination_keyboard(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
-    let start_time = std::time::Instant::now();
-    let recipes_count = recipes.len();
+    with_ui_metrics_sync("create_recipes_pagination_keyboard", recipes.len(), || {
+        let mut buttons = Vec::new();
 
-    let mut buttons = Vec::new();
-
-    // Add recipe buttons
-    for recipe_name in recipes {
-        // Truncate long recipe names for button display
-        let button_text = if recipe_name.len() > 30 {
-            format!("{}...", &recipe_name[..27])
-        } else {
-            recipe_name.clone()
-        };
-
-        buttons.push(vec![InlineKeyboardButton::callback(
-            button_text,
-            format!("select_recipe:{}", recipe_name),
-        )]);
-    }
-
-    // Calculate total pages
-    let total_pages = (total_count as usize).div_ceil(limit as usize);
-
-    // Add navigation buttons if there are multiple pages
-    if total_pages > 1 {
-        let mut nav_buttons = Vec::new();
-
-        // Previous button
-        if current_page > 0 {
-            nav_buttons.push(InlineKeyboardButton::callback(
-                format!("⬅️ {}", t_lang(localization, "previous", language_code)),
-                format!("page:{}", current_page - 1),
-            ));
+        // Add recipe buttons
+        for recipe_name in recipes {
+            let button_text = truncate_text(recipe_name, 30);
+            buttons.push(vec![InlineKeyboardButton::callback(
+                button_text,
+                format!("select_recipe:{}", recipe_name),
+            )]);
         }
 
-        // Page info (disabled button for display)
-        let page_info = format!(
-            "{} {} {} {}",
-            t_lang(localization, "page", language_code),
-            current_page + 1,
-            t_lang(localization, "of", language_code),
-            total_pages
-        );
-        nav_buttons.push(InlineKeyboardButton::callback(
-            page_info,
-            "noop".to_string(), // No-op callback
-        ));
+        // Calculate total pages
+        let total_pages = (total_count as usize).div_ceil(limit as usize);
 
-        // Next button
-        if current_page + 1 < total_pages {
-            nav_buttons.push(InlineKeyboardButton::callback(
-                format!("{} ➡️", t_lang(localization, "next", language_code)),
-                format!("page:{}", current_page + 1),
-            ));
+        // Add navigation buttons if there are multiple pages
+        if total_pages > 1 {
+            let nav_buttons = create_pagination_buttons(localization, current_page, total_pages, language_code);
+            buttons.push(nav_buttons);
         }
 
-        buttons.push(nav_buttons);
-    }
-
-    let duration = start_time.elapsed();
-    crate::observability::record_ui_metrics(
-        "create_recipes_pagination_keyboard",
-        duration,
-        recipes_count,
-        buttons.len(),
-    );
-
-    InlineKeyboardMarkup::new(buttons)
+        InlineKeyboardMarkup::new(buttons)
+    })
 }
 
 /// Create inline keyboard for selecting specific recipe instance from duplicates
@@ -260,59 +179,43 @@ pub fn create_recipe_instances_keyboard(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
-    let start_time = std::time::Instant::now();
-    let recipes_count = recipe_data.len();
+    with_ui_metrics_sync("create_recipe_instances_keyboard", recipe_data.len(), || {
+        let mut buttons = Vec::new();
 
-    let mut buttons = Vec::new();
+        // Add buttons for each recipe instance
+        for (recipe, ingredients) in recipe_data {
+            let created_at = recipe.created_at.format("%b %d, %Y %H:%M");
 
-    // Add buttons for each recipe instance
-    for (recipe, ingredients) in recipe_data {
-        let created_at = recipe.created_at.format("%b %d, %Y %H:%M");
+            // Create ingredient preview (first 3 ingredients)
+            let ingredient_preview = if ingredients.is_empty() {
+                t_lang(localization, "no-ingredients-found", language_code)
+            } else {
+                let preview_names: Vec<String> = ingredients
+                    .iter()
+                    .take(3)
+                    .map(|ing| ing.name.clone())
+                    .collect();
+                preview_names.join(", ")
+            };
 
-        // Create ingredient preview (first 3 ingredients)
-        let ingredient_preview = if ingredients.is_empty() {
-            t_lang(localization, "no-ingredients-found", language_code)
-        } else {
-            let preview_names: Vec<String> = ingredients
-                .iter()
-                .take(3)
-                .map(|ing| ing.name.clone())
-                .collect();
-            preview_names.join(", ")
-        };
+            let button_text = format!("📅 {} • {}", created_at, ingredient_preview);
+            let final_button_text = truncate_text(&button_text, 50);
 
-        let button_text = format!("📅 {} • {}", created_at, ingredient_preview);
-        // Truncate if too long for button
-        let final_button_text = if button_text.len() > 50 {
-            format!("{}...", &button_text[..47])
-        } else {
-            button_text
-        };
+            buttons.push(vec![InlineKeyboardButton::callback(
+                final_button_text,
+                format!("recipe_instance:{}", recipe.id),
+            )]);
+        }
 
-        buttons.push(vec![InlineKeyboardButton::callback(
-            final_button_text,
-            format!("recipe_instance:{}", recipe.id),
+        // Add back button
+        buttons.push(vec![create_back_button(
+            localization,
+            "back_to_recipes".to_string(),
+            language_code,
         )]);
-    }
 
-    // Add back button
-    buttons.push(vec![InlineKeyboardButton::callback(
-        format!(
-            "⬅️ {}",
-            t_lang(localization, "back-to-recipes", language_code)
-        ),
-        "back_to_recipes".to_string(),
-    )]);
-
-    let duration = start_time.elapsed();
-    crate::observability::record_ui_metrics(
-        "create_recipe_instances_keyboard",
-        duration,
-        recipes_count,
-        buttons.len(),
-    );
-
-    InlineKeyboardMarkup::new(buttons)
+        InlineKeyboardMarkup::new(buttons)
+    })
 }
 
 /// Create inline keyboard for recipe details actions
@@ -321,59 +224,49 @@ pub fn create_recipe_details_keyboard(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
-    let start_time = std::time::Instant::now();
+    with_ui_metrics_sync("create_recipe_details_keyboard", 0, || {
+        let buttons = vec![
+            vec![
+                create_localized_button_with_emoji(
+                    localization,
+                    "✏️",
+                    "edit-recipe-name",
+                    format!("recipe_action:rename:{}", recipe_id),
+                    language_code,
+                ),
+                create_localized_button_with_emoji(
+                    localization,
+                    "📝",
+                    "edit-ingredients",
+                    format!("recipe_action:edit_ingredients:{}", recipe_id),
+                    language_code,
+                ),
+            ],
+            vec![
+                create_localized_button_with_emoji(
+                    localization,
+                    "🗑️",
+                    "delete-recipe",
+                    format!("recipe_action:delete:{}", recipe_id),
+                    language_code,
+                ),
+                create_localized_button_with_emoji(
+                    localization,
+                    "📊",
+                    "recipe-statistics",
+                    format!("recipe_action:statistics:{}", recipe_id),
+                    language_code,
+                ),
+            ],
+            vec![create_back_button(
+                localization,
+                "back_to_recipes".to_string(),
+                language_code,
+            )],
+        ];
 
-    let buttons = vec![
-        vec![
-            InlineKeyboardButton::callback(
-                format!(
-                    "✏️ {}",
-                    t_lang(localization, "edit-recipe-name", language_code)
-                ),
-                format!("recipe_action:rename:{}", recipe_id),
-            ),
-            InlineKeyboardButton::callback(
-                format!(
-                    "📝 {}",
-                    t_lang(localization, "edit-ingredients", language_code)
-                ),
-                format!("recipe_action:edit_ingredients:{}", recipe_id),
-            ),
-        ],
-        vec![
-            InlineKeyboardButton::callback(
-                format!(
-                    "🗑️ {}",
-                    t_lang(localization, "delete-recipe", language_code)
-                ),
-                format!("recipe_action:delete:{}", recipe_id),
-            ),
-            InlineKeyboardButton::callback(
-                format!(
-                    "📊 {}",
-                    t_lang(localization, "recipe-statistics", language_code)
-                ),
-                format!("recipe_action:statistics:{}", recipe_id),
-            ),
-        ],
-        vec![InlineKeyboardButton::callback(
-            format!(
-                "⬅️ {}",
-                t_lang(localization, "back-to-recipes", language_code)
-            ),
-            "back_to_recipes".to_string(),
-        )],
-    ];
-
-    let duration = start_time.elapsed();
-    crate::observability::record_ui_metrics(
-        "create_recipe_details_keyboard",
-        duration,
-        0, // No dynamic content
-        buttons.len(),
-    );
-
-    InlineKeyboardMarkup::new(buttons)
+        InlineKeyboardMarkup::new(buttons)
+    })
 }
 
 /// Format a list of database ingredients for display

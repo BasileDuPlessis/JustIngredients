@@ -1203,7 +1203,7 @@ mod tests {
     /// Test photo caption extraction and validation
     #[test]
     fn test_caption_extraction_and_validation() {
-        use just_ingredients::dialogue::validate_recipe_name;
+        use just_ingredients::validation::validate_recipe_name;
 
         // Test valid captions
         let valid_captions = vec![
@@ -1247,7 +1247,7 @@ mod tests {
     /// Test caption processing logic for recipe name assignment
     #[test]
     fn test_caption_recipe_name_assignment() {
-        use just_ingredients::dialogue::validate_recipe_name;
+        use just_ingredients::validation::validate_recipe_name;
 
         // Test cases for caption processing
         let test_cases = vec![
@@ -1265,10 +1265,10 @@ mod tests {
                 Some(caption_text) if !caption_text.trim().is_empty() => {
                     match validate_recipe_name(caption_text) {
                         Ok(validated) => validated,
-                        Err(_) => "Recipe".to_string(),
+                        Err(_) => "Recipe",
                     }
                 }
-                _ => "Recipe".to_string(),
+                _ => "Recipe",
             };
 
             assert_eq!(
@@ -1334,7 +1334,7 @@ mod tests {
     /// Test edge cases for caption processing
     #[test]
     fn test_caption_edge_cases() {
-        use just_ingredients::dialogue::validate_recipe_name;
+        use just_ingredients::validation::validate_recipe_name;
 
         // Test various edge cases
         let edge_cases = vec![
@@ -1384,12 +1384,12 @@ mod tests {
 
         let recipe_name_candidate = match &caption {
             Some(caption_text) if !caption_text.trim().is_empty() => {
-                match just_ingredients::dialogue::validate_recipe_name(caption_text) {
+                match just_ingredients::validation::validate_recipe_name(caption_text) {
                     Ok(validated_name) => validated_name,
-                    Err(_) => default_name.to_string(),
+                    Err(_) => default_name,
                 }
             }
-            _ => default_name.to_string(),
+            _ => default_name,
         };
 
         assert_eq!(recipe_name_candidate, default_name);
@@ -1398,12 +1398,12 @@ mod tests {
         let empty_caption = Some("".to_string());
         let recipe_name_candidate_empty = match &empty_caption {
             Some(caption_text) if !caption_text.trim().is_empty() => {
-                match just_ingredients::dialogue::validate_recipe_name(caption_text) {
+                match just_ingredients::validation::validate_recipe_name(caption_text) {
                     Ok(validated_name) => validated_name,
-                    Err(_) => default_name.to_string(),
+                    Err(_) => default_name,
                 }
             }
-            _ => default_name.to_string(),
+            _ => default_name,
         };
 
         assert_eq!(recipe_name_candidate_empty, default_name);

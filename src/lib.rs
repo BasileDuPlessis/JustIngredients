@@ -18,6 +18,7 @@ pub mod ocr;
 pub mod ocr_config;
 pub mod ocr_errors;
 pub mod text_processing;
+pub mod validation;
 
 // Re-export types for easier access
 pub use text_processing::{MeasurementConfig, MeasurementDetector, MeasurementMatch};
