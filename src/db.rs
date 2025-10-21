@@ -841,6 +841,7 @@ pub async fn get_user_recipe_statistics(pool: &PgPool, telegram_id: i64) -> Resu
             COUNT(i.id) as total_ingredients,
             COALESCE(AVG(ingredient_count), 0) as avg_ingredients
         FROM recipes r
+        LEFT JOIN ingredients i ON r.id = i.recipe_id
         LEFT JOIN (
             SELECT recipe_id, COUNT(*) as ingredient_count
             FROM ingredients
@@ -873,11 +874,11 @@ pub async fn get_user_recipe_statistics(pool: &PgPool, telegram_id: i64) -> Resu
     // Get most common units
     let unit_rows = sqlx::query(
         r#"
-        SELECT COALESCE(unit, 'no unit') as unit_name, COUNT(*) as count
+        SELECT COALESCE(i.unit, 'no unit') as unit_name, COUNT(*) as count
         FROM ingredients i
         JOIN recipes r ON i.recipe_id = r.id
         WHERE r.telegram_id = $1 AND i.unit IS NOT NULL AND i.unit != ''
-        GROUP BY unit
+        GROUP BY i.unit
         ORDER BY count DESC
         LIMIT 5
         "#,
