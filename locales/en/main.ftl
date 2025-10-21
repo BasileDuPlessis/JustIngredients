@@ -162,6 +162,9 @@ back-to-recipes = Back to Recipes
 # Recipe management messages
 rename-recipe-title = Rename Recipe
 rename-recipe-instructions = Enter the new name for this recipe:
+current-recipe-name = Current name
+rename-recipe-success = Recipe renamed successfully
+rename-recipe-success-details = Recipe renamed from "{$old_name}" to "{$new_name}"
 delete-recipe-title = Delete Recipe
 delete-recipe-confirmation = Are you sure you want to delete this recipe? This action cannot be undone.
 recipe-deleted = Recipe deleted successfully
@@ -171,3 +174,9 @@ delete-cancelled = Recipe deletion cancelled
 # Recipe viewing messages
 recipe-not-found = Recipe not found
 recipe-not-found-help = This recipe may have been deleted or you may not have access to it.
+
+# Error messages for recipe operations
+error-deleting-recipe = Failed to delete recipe
+error-deleting-recipe-help = An error occurred while deleting the recipe. Please try again later.
+error-renaming-recipe = Failed to rename recipe
+error-renaming-recipe-help = An error occurred while renaming the recipe. Please try again later.

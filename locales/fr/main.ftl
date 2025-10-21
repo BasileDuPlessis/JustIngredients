@@ -151,18 +151,28 @@ edit-recipe-name = Renommer la recette
 delete-recipe = Supprimer la recette
 back-to-recipes = Retour aux recettes
 
-# Messages de gestion des recettes
+# Messages de gestion de recette
 rename-recipe-title = Renommer la recette
 rename-recipe-instructions = Entrez le nouveau nom pour cette recette :
+current-recipe-name = Nom actuel
 delete-recipe-title = Supprimer la recette
 delete-recipe-confirmation = Êtes-vous sûr de vouloir supprimer cette recette ? Cette action ne peut pas être annulée.
 recipe-deleted = Recette supprimée avec succès
 recipe-deleted-help = La recette et tous ses ingrédients ont été supprimés définitivement.
 delete-cancelled = Suppression de recette annulée
+rename-recipe-success = Recette renommée avec succès
+rename-recipe-success-details = Recette renommée de "{$old_name}" à "{$new_name}"
 
 # Messages de consultation des recettes
+# Messages de visualisation de recette
 recipe-not-found = Recette introuvable
 recipe-not-found-help = Cette recette a peut-être été supprimée ou vous n'y avez pas accès.
+
+# Messages d'erreur pour les opérations de recette
+error-deleting-recipe = Échec de la suppression de la recette
+error-deleting-recipe-help = Une erreur s'est produite lors de la suppression de la recette. Veuillez réessayer plus tard.
+error-renaming-recipe = Échec du renommage de la recette
+error-renaming-recipe-help = Une erreur s'est produite lors du renommage de la recette. Veuillez réessayer plus tard.
 
 # Messages de légende photo
 caption-used = 📝 Utilisation de la légende de la photo comme nom de recette : "{$caption}"

@@ -103,6 +103,16 @@ pub struct RecipeNameAfterConfirmInputParams<'a> {
     pub extracted_text: String,
 }
 
+/// Parameters for recipe rename input handling
+#[derive(Debug)]
+pub struct RecipeRenameInputParams<'a> {
+    pub pool: Arc<PgPool>,
+    pub new_name_input: &'a str,
+    pub recipe_id: i64,
+    pub current_name: String,
+    pub language_code: Option<&'a str>,
+}
+
 /// Parameters for ingredient edit input handling
 #[derive(Debug)]
 pub struct IngredientEditInputParams<'a> {
@@ -411,6 +421,102 @@ pub async fn handle_ingredient_edit_input(
         }
         Err(error_msg) => handle_edit_error(bot, msg, localization, error_msg, language_code).await,
     }
+}
+
+/// Handle recipe rename input during dialogue
+pub async fn handle_recipe_rename_input(
+    ctx: DialogueContext<'_>,
+    params: RecipeRenameInputParams<'_>,
+) -> Result<()> {
+    let DialogueContext {
+        bot,
+        msg,
+        dialogue,
+        localization,
+    } = ctx;
+    let RecipeRenameInputParams {
+        pool,
+        new_name_input,
+        recipe_id,
+        current_name,
+        language_code,
+    } = params;
+
+    let input = new_name_input.trim().to_lowercase();
+
+    // Check for cancellation commands
+    if is_cancellation_command(&input) {
+        bot.send_message(
+            msg.chat.id,
+            t_lang(localization, "delete-cancelled", language_code),
+        )
+        .await?;
+        dialogue.exit().await?;
+        return Ok(());
+    }
+
+    // Validate the new recipe name
+    match validate_recipe_name(new_name_input) {
+        Ok(validated_name) => {
+            // Update the recipe name in the database
+            match update_recipe_name(&pool, recipe_id, &validated_name).await {
+                Ok(true) => {
+                    let success_message = format!(
+                        "✅ **{}**\n\n{}",
+                        t_lang(localization, "rename-recipe-success", language_code),
+                        t_args_lang(
+                            localization,
+                            "rename-recipe-success-details",
+                            &[("old_name", &current_name), ("new_name", &validated_name)],
+                            language_code
+                        )
+                    );
+                    bot.send_message(msg.chat.id, success_message).await?;
+                }
+                Ok(false) => {
+                    let message = t_lang(localization, "recipe-not-found", language_code);
+                    bot.send_message(msg.chat.id, message).await?;
+                }
+                Err(e) => {
+                    error!(recipe_id = %recipe_id, error = %e, "Failed to update recipe name");
+                    let message = format!(
+                        "❌ **{}**\n\n{}",
+                        t_lang(localization, "error-renaming-recipe", language_code),
+                        t_lang(localization, "error-renaming-recipe-help", language_code)
+                    );
+                    bot.send_message(msg.chat.id, message).await?;
+                }
+            }
+        }
+        Err("empty") => {
+            bot.send_message(
+                msg.chat.id,
+                t_lang(localization, "recipe-name-invalid", language_code),
+            )
+            .await?;
+            // Keep dialogue active, user can try again
+        }
+        Err("too_long") => {
+            bot.send_message(
+                msg.chat.id,
+                t_lang(localization, "recipe-name-too-long", language_code),
+            )
+            .await?;
+            // Keep dialogue active, user can try again
+        }
+        Err(_) => {
+            bot.send_message(
+                msg.chat.id,
+                t_lang(localization, "recipe-name-invalid", language_code),
+            )
+            .await?;
+            // Keep dialogue active, user can try again
+        }
+    }
+
+    // End the dialogue
+    dialogue.exit().await?;
+    Ok(())
 }
 
 /// Check if input is a cancellation command

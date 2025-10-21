@@ -306,6 +306,7 @@ pub fn create_recipe_instances_keyboard(
 
 /// Create inline keyboard for recipe details actions
 pub fn create_recipe_details_keyboard(
+    recipe_id: i64,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
@@ -315,11 +316,11 @@ pub fn create_recipe_details_keyboard(
         vec![
             InlineKeyboardButton::callback(
                 format!("✏️ {}", t_lang(localization, "edit-recipe-name", language_code)),
-                "recipe_action:rename".to_string(),
+                format!("recipe_action:rename:{}", recipe_id),
             ),
             InlineKeyboardButton::callback(
                 format!("🗑️ {}", t_lang(localization, "delete-recipe", language_code)),
-                "recipe_action:delete".to_string(),
+                format!("recipe_action:delete:{}", recipe_id),
             ),
         ],
         vec![InlineKeyboardButton::callback(

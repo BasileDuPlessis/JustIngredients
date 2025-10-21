@@ -34,9 +34,9 @@ use super::ui_builder::{
 // Import dialogue manager functions
 use super::dialogue_manager::{
     handle_ingredient_edit_input, handle_ingredient_review_input,
-    handle_recipe_name_after_confirm_input, handle_recipe_name_input, DialogueContext,
-    IngredientEditInputParams, IngredientReviewInputParams, RecipeNameAfterConfirmInputParams,
-    RecipeNameInputParams,
+    handle_recipe_name_after_confirm_input, handle_recipe_name_input, handle_recipe_rename_input,
+    DialogueContext, IngredientEditInputParams, IngredientReviewInputParams,
+    RecipeNameAfterConfirmInputParams, RecipeNameInputParams, RecipeRenameInputParams,
 };
 
 // Import observability
@@ -491,6 +491,32 @@ async fn handle_text_message(
                         language_code: effective_language_code,
                         message_id,
                         extracted_text,
+                    },
+                )
+                .await;
+            }
+            Some(RecipeDialogueState::RenamingRecipe {
+                recipe_id,
+                current_name,
+                language_code: dialogue_lang_code,
+            }) => {
+                // Use dialogue language code if available, otherwise fall back to message language
+                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+
+                // Handle recipe rename input
+                return handle_recipe_rename_input(
+                    DialogueContext {
+                        bot,
+                        msg,
+                        dialogue,
+                        localization,
+                    },
+                    RecipeRenameInputParams {
+                        pool,
+                        new_name_input: text,
+                        recipe_id,
+                        current_name,
+                        language_code: effective_language_code,
                     },
                 )
                 .await;

@@ -156,10 +156,10 @@ async fn handle_general_callbacks(
         } else if data.starts_with("recipe_instance:") {
             handle_recipe_instance_selection(bot, msg, data, pool.clone(), &q.from.language_code, localization).await?;
         } else if data.starts_with("recipe_action:") {
-            handle_recipe_action(bot, msg, data, pool.clone(), &q.from.language_code, localization).await?;
+            handle_recipe_action(bot, msg, data, pool.clone(), dialogue, &q.from.language_code, localization).await?;
         } else if data == "back_to_recipes" {
             handle_back_to_recipes(bot, msg, pool.clone(), &q.from.language_code, localization).await?;
-        } else if data == "confirm_delete_recipe" || data == "cancel_delete_recipe" {
+        } else if data.starts_with("confirm_delete_recipe") || data.starts_with("cancel_delete_recipe") {
             handle_delete_recipe_confirmation(bot, msg, data, pool.clone(), &q.from.language_code, localization).await?;
         } else if data.starts_with("page:") {
             handle_recipes_pagination(bot, msg, data, pool, &q.from.language_code, localization)
@@ -223,7 +223,7 @@ async fn handle_recipe_selection(
                 }
             );
 
-            let keyboard = create_recipe_details_keyboard(language_code.as_deref(), localization);
+            let keyboard = create_recipe_details_keyboard(recipe.id, language_code.as_deref(), localization);
 
             bot.send_message(chat_id, message)
                 .reply_markup(keyboard)
@@ -298,7 +298,7 @@ async fn handle_recipe_instance_selection(
         }
     );
 
-    let keyboard = create_recipe_details_keyboard(language_code.as_deref(), localization);
+    let keyboard = create_recipe_details_keyboard(recipe_id, language_code.as_deref(), localization);
 
     bot.send_message(chat_id, message)
         .reply_markup(keyboard)
@@ -313,11 +313,22 @@ async fn handle_recipe_action(
     msg: &teloxide::types::MaybeInaccessibleMessage,
     data: &str,
     pool: Arc<PgPool>,
+    dialogue: &RecipeDialogue,
     language_code: &Option<String>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    let action = data.strip_prefix("recipe_action:").unwrap_or("");
-    debug!(action = %action, "Handling recipe action");
+    // Parse callback data (format: "recipe_action:{action}:{recipe_id}")
+    let parts: Vec<&str> = data.split(':').collect();
+    if parts.len() < 3 || parts[0] != "recipe_action" {
+        debug!(data = %data, "Invalid recipe action callback format");
+        return Ok(());
+    }
+
+    let action = parts[1];
+    let recipe_id_str = parts[2];
+    let recipe_id: i64 = recipe_id_str.parse().unwrap_or(0);
+
+    debug!(action = %action, recipe_id = %recipe_id, "Handling recipe action");
 
     // Extract chat id from the message
     let chat_id = match msg {
@@ -330,12 +341,29 @@ async fn handle_recipe_action(
 
     match action {
         "rename" => {
-            let message = format!(
-                "🏷️ **{}**\n\n{}",
-                t_lang(localization, "rename-recipe-title", language_code.as_deref()),
-                t_lang(localization, "rename-recipe-instructions", language_code.as_deref())
-            );
-            bot.send_message(chat_id, message).await?;
+            // Get current recipe details
+            if let Ok(Some(recipe)) = crate::db::read_recipe_with_name(&pool, recipe_id).await {
+                let current_name = recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe");
+
+                let message = format!(
+                    "🏷️ **{}**\n\n{}: **{}**\n\n{}",
+                    t_lang(localization, "rename-recipe-title", language_code.as_deref()),
+                    t_lang(localization, "current-recipe-name", language_code.as_deref()),
+                    current_name,
+                    t_lang(localization, "rename-recipe-instructions", language_code.as_deref())
+                );
+                bot.send_message(chat_id, message).await?;
+
+                // Transition to renaming state
+                dialogue.update(RecipeDialogueState::RenamingRecipe {
+                    recipe_id,
+                    current_name: current_name.to_string(),
+                    language_code: language_code.clone(),
+                }).await?;
+            } else {
+                let message = t_lang(localization, "recipe-not-found", language_code.as_deref());
+                bot.send_message(chat_id, message).await?;
+            }
         }
         "delete" => {
             let message = format!(
@@ -347,11 +375,11 @@ async fn handle_recipe_action(
             let keyboard = vec![vec![
                 teloxide::types::InlineKeyboardButton::callback(
                     format!("✅ {}", t_lang(localization, "confirm", language_code.as_deref())),
-                    "confirm_delete_recipe",
+                    format!("confirm_delete_recipe:{}", recipe_id),
                 ),
                 teloxide::types::InlineKeyboardButton::callback(
                     format!("❌ {}", t_lang(localization, "cancel", language_code.as_deref())),
-                    "cancel_delete_recipe",
+                    format!("cancel_delete_recipe:{}", recipe_id),
                 ),
             ]];
 
@@ -975,16 +1003,39 @@ async fn handle_delete_recipe_confirmation(
         }
     };
 
-    match data {
+    // Parse callback data (format: "confirm_delete_recipe:{recipe_id}" or "cancel_delete_recipe:{recipe_id}")
+    let parts: Vec<&str> = data.split(':').collect();
+    let action = parts[0];
+    let recipe_id_str = parts.get(1).unwrap_or(&"");
+    let recipe_id: i64 = recipe_id_str.parse().unwrap_or(0);
+
+    match action {
         "confirm_delete_recipe" => {
-            // TODO: Implement actual recipe deletion
-            // For now, just show a placeholder message
-            let message = format!(
-                "🗑️ **{}**\n\n{}",
-                t_lang(localization, "recipe-deleted", language_code.as_deref()),
-                t_lang(localization, "recipe-deleted-help", language_code.as_deref())
-            );
-            bot.send_message(chat_id, message).await?;
+            // Attempt to delete the recipe
+            match crate::db::delete_recipe(&pool, recipe_id).await {
+                Ok(deleted) => {
+                    if deleted {
+                        let message = format!(
+                            "🗑️ **{}**\n\n{}",
+                            t_lang(localization, "recipe-deleted", language_code.as_deref()),
+                            t_lang(localization, "recipe-deleted-help", language_code.as_deref())
+                        );
+                        bot.send_message(chat_id, message).await?;
+                    } else {
+                        let message = t_lang(localization, "recipe-not-found", language_code.as_deref());
+                        bot.send_message(chat_id, message).await?;
+                    }
+                }
+                Err(e) => {
+                    error!(recipe_id = %recipe_id, error = %e, "Failed to delete recipe");
+                    let message = format!(
+                        "❌ **{}**\n\n{}",
+                        t_lang(localization, "error-deleting-recipe", language_code.as_deref()),
+                        t_lang(localization, "error-deleting-recipe-help", language_code.as_deref())
+                    );
+                    bot.send_message(chat_id, message).await?;
+                }
+            }
         }
         "cancel_delete_recipe" => {
             let message = t_lang(localization, "delete-cancelled", language_code.as_deref());

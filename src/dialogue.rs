@@ -36,6 +36,11 @@ pub enum RecipeDialogueState {
         extracted_text: String, // Store the original OCR text
         recipe_name_from_caption: Option<String>, // Track recipe name from photo caption
     },
+    RenamingRecipe {
+        recipe_id: i64,
+        current_name: String,
+        language_code: Option<String>,
+    },
 }
 
 /// Type alias for our recipe dialogue
