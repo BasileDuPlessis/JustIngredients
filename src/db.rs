@@ -464,7 +464,7 @@ pub async fn read_ingredient(pool: &PgPool, ingredient_id: i64) -> Result<Option
     info!("Reading ingredient with ID: {ingredient_id}");
 
     let row = sqlx::query(
-        "SELECT id, user_id, recipe_id, name, quantity, unit, created_at, updated_at FROM ingredients WHERE id = $1"
+        "SELECT id, user_id, recipe_id, name, quantity::float8, unit, created_at, updated_at FROM ingredients WHERE id = $1"
     )
     .bind(ingredient_id)
     .fetch_optional(pool)
@@ -546,7 +546,7 @@ pub async fn delete_ingredient(pool: &PgPool, ingredient_id: i64) -> Result<bool
 pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> {
     info!("Listing ingredients for user_id: {user_id}");
 
-    let rows = sqlx::query("SELECT id, user_id, recipe_id, name, quantity, unit, created_at, updated_at FROM ingredients WHERE user_id = $1 ORDER BY created_at DESC")
+    let rows = sqlx::query("SELECT id, user_id, recipe_id, name, quantity::float8, unit, created_at, updated_at FROM ingredients WHERE user_id = $1 ORDER BY created_at DESC")
         .bind(user_id)
         .fetch_all(pool)
         .await
@@ -577,7 +577,7 @@ pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec
 pub async fn get_recipe_ingredients(pool: &PgPool, recipe_id: i64) -> Result<Vec<Ingredient>> {
     debug!(recipe_id = %recipe_id, "Getting ingredients for recipe");
 
-    let rows = sqlx::query("SELECT id, user_id, recipe_id, name, quantity, unit, created_at, updated_at FROM ingredients WHERE recipe_id = $1 ORDER BY created_at ASC")
+    let rows = sqlx::query("SELECT id, user_id, recipe_id, name, quantity::float8, unit, created_at, updated_at FROM ingredients WHERE recipe_id = $1 ORDER BY created_at ASC")
         .bind(recipe_id)
         .fetch_all(pool)
         .await

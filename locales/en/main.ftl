@@ -167,3 +167,7 @@ delete-recipe-confirmation = Are you sure you want to delete this recipe? This a
 recipe-deleted = Recipe deleted successfully
 recipe-deleted-help = The recipe and all its ingredients have been permanently removed.
 delete-cancelled = Recipe deletion cancelled
+
+# Recipe viewing messages
+recipe-not-found = Recipe not found
+recipe-not-found-help = This recipe may have been deleted or you may not have access to it.

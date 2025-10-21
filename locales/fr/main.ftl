@@ -160,6 +160,10 @@ recipe-deleted = Recette supprimée avec succès
 recipe-deleted-help = La recette et tous ses ingrédients ont été supprimés définitivement.
 delete-cancelled = Suppression de recette annulée
 
+# Messages de consultation des recettes
+recipe-not-found = Recette introuvable
+recipe-not-found-help = Cette recette a peut-être été supprimée ou vous n'y avez pas accès.
+
 # Messages de légende photo
 caption-used = 📝 Utilisation de la légende de la photo comme nom de recette : "{$caption}"
 caption-invalid = [CAPTION] La légende de la photo était invalide, utilisation du nom par défaut : "{$default_name}"
