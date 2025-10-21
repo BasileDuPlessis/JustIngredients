@@ -103,6 +103,7 @@ edit-no-ingredient-name = Veuillez spécifier un nom d'ingrédient (par ex. "2 t
 edit-ingredient-name-too-long = Le nom d'ingrédient est trop long (maximum 100 caractères). Veuillez utiliser un nom plus court.
 edit-invalid-quantity = Quantité invalide. Veuillez utiliser un nombre positif (par ex. "2,5 tasses de farine").
 error-invalid-edit = [INGREDIENT_EDIT] Index d'ingrédient invalide pour l'édition.
+confirm = Confirmer
 cancel = Annuler
 review-help = Veuillez répondre avec "confirm" pour sauvegarder ces ingrédients, ou "cancel" pour les annuler.
 

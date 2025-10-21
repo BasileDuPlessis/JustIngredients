@@ -220,6 +220,17 @@ pub async fn update_recipe(pool: &PgPool, recipe_id: i64, new_content: &str) -> 
 pub async fn delete_recipe(pool: &PgPool, recipe_id: i64) -> Result<bool> {
     debug!(recipe_id = %recipe_id, "Deleting recipe");
 
+    // First, delete all ingredients associated with this recipe
+    // This is necessary due to the foreign key constraint between ingredients and recipes
+    let ingredients_deleted = sqlx::query("DELETE FROM ingredients WHERE recipe_id = $1")
+        .bind(recipe_id)
+        .execute(pool)
+        .await
+        .context("Failed to delete ingredients for recipe")?;
+
+    debug!(recipe_id = %recipe_id, ingredients_deleted = %ingredients_deleted.rows_affected(), "Deleted associated ingredients");
+
+    // Now delete the recipe itself
     let result = sqlx::query("DELETE FROM recipes WHERE id = $1")
         .bind(recipe_id)
         .execute(pool)
