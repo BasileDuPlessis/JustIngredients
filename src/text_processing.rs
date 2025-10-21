@@ -429,7 +429,7 @@ impl MeasurementDetector {
     #[allow(dead_code)]
     pub fn with_config(config: MeasurementConfig) -> Result<Self, regex::Error> {
         // Validate configuration first
-        config.validate().map_err(|e| regex::Error::Syntax(e))?;
+        config.validate().map_err(regex::Error::Syntax)?;
 
         let pattern = if let Some(custom_pattern) = &config.custom_pattern {
             debug!("Using custom regex pattern: {}", custom_pattern);

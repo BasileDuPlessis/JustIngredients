@@ -213,9 +213,9 @@ async fn handle_recipe_selection(
             let ingredients = crate::db::get_recipe_ingredients(&pool, recipe.id).await?;
 
             let message = format!(
-                "📖 **{}**\n\n{}\n\n{}",
+                "📖 **{}**\n\n📅 {}\n\n{}",
                 recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe"),
-                format!("📅 {}", recipe.created_at.format("%B %d, %Y at %H:%M")),
+                recipe.created_at.format("%B %d, %Y at %H:%M"),
                 if ingredients.is_empty() {
                     t_lang(localization, "no-ingredients-found", language_code.as_deref())
                 } else {
@@ -288,9 +288,9 @@ async fn handle_recipe_instance_selection(
     let ingredients = crate::db::get_recipe_ingredients(&pool, recipe_id).await?;
 
     let message = format!(
-        "📖 **{}**\n\n{}\n\n{}",
+        "📖 **{}**\n\n📅 {}\n\n{}",
         recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe"),
-        format!("📅 {}", recipe.created_at.format("%B %d, %Y at %H:%M")),
+        recipe.created_at.format("%B %d, %Y at %H:%M"),
         if ingredients.is_empty() {
             t_lang(localization, "no-ingredients-found", language_code.as_deref())
         } else {
@@ -449,7 +449,7 @@ async fn handle_recipe_statistics(
     let ingredient_count = ingredients.len() as i64;
 
     // Get user statistics
-    let user_stats = crate::db::get_user_recipe_statistics(&pool, chat_id.0 as i64).await?;
+    let user_stats = crate::db::get_user_recipe_statistics(&pool, chat_id.0).await?;
 
     // Format statistics message
     let recipe_name = recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe");

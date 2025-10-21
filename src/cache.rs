@@ -394,11 +394,7 @@ impl DbQueryCache {
 
         // If we still need more space, remove additional entries
         let current_size = *self.current_size_bytes.read().unwrap();
-        let space_needed = if current_size + needed_bytes > self.max_size_bytes {
-            current_size + needed_bytes - self.max_size_bytes
-        } else {
-            0
-        };
+        let space_needed = (current_size + needed_bytes).saturating_sub(self.max_size_bytes);
 
         if space_needed > 0 {
             // Sort by expiration time (oldest first) and remove until we have enough space

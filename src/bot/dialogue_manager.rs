@@ -731,7 +731,7 @@ async fn handle_edit_error(
 /// - **Fast Path**: Standard measurement detection (most common case)
 /// - **Fallback Path**: Regex-based quantity extraction (slower but robust)
 /// - **Memory**: Minimal allocations, reuses detector instances
-/// Parse an ingredient from user input text during dialogue editing
+/// - **Parse an ingredient from user input text during dialogue editing**
 ///
 /// This function implements a sophisticated multi-stage parsing algorithm that converts
 /// user-provided ingredient text into structured `MeasurementMatch` objects. It handles

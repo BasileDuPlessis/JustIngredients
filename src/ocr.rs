@@ -451,7 +451,7 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// - `ImageLoadError` - Could not load the image file
 /// - `ExtractionError` - OCR processing failed
 /// - `TimeoutError` - Operation exceeded timeout (30s default)
-/// Extract text from an image using OCR with comprehensive error handling and performance monitoring
+/// - **Extract text from an image using OCR with comprehensive error handling and performance monitoring**
 ///
 /// This function implements a robust OCR extraction pipeline that handles image processing,
 /// text recognition, and failure recovery. It includes circuit breaker protection, retry logic,
