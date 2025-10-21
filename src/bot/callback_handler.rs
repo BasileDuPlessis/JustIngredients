@@ -237,8 +237,15 @@ async fn handle_recipe_selection(
                 t_lang(localization, "select-recipe-instance", language_code.as_deref())
             );
 
+            // Fetch ingredients for each recipe to show previews
+            let mut recipe_data = Vec::new();
+            for recipe in &recipes {
+                let ingredients = crate::db::get_recipe_ingredients(&pool, recipe.id).await?;
+                recipe_data.push((recipe.clone(), ingredients));
+            }
+
             let keyboard = create_recipe_instances_keyboard(
-                &recipes,
+                &recipe_data,
                 language_code.as_deref(),
                 localization,
             );

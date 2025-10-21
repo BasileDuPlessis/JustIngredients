@@ -141,6 +141,25 @@ workflow-list-recipes = Lister mes recettes
 workflow-search-recipes = Rechercher des recettes
 caption-recipe-saved = Recette sauvegardée sous : "{$recipe_name}"
 
+# Messages de gestion des recettes dupliquées
+multiple-recipes-found = {$count} recettes trouvées avec ce nom :
+select-recipe-instance = Sélectionnez quelle recette consulter :
+recipe-created = Créé : {$date}
+recipe-details-title = 📖 Détails de la recette
+recipe-actions = Que souhaitez-vous faire ?
+edit-recipe-name = Renommer la recette
+delete-recipe = Supprimer la recette
+back-to-recipes = Retour aux recettes
+
+# Messages de gestion des recettes
+rename-recipe-title = Renommer la recette
+rename-recipe-instructions = Entrez le nouveau nom pour cette recette :
+delete-recipe-title = Supprimer la recette
+delete-recipe-confirmation = Êtes-vous sûr de vouloir supprimer cette recette ? Cette action ne peut pas être annulée.
+recipe-deleted = Recette supprimée avec succès
+recipe-deleted-help = La recette et tous ses ingrédients ont été supprimés définitivement.
+delete-cancelled = Suppression de recette annulée
+
 # Messages de légende photo
 caption-used = 📝 Utilisation de la légende de la photo comme nom de recette : "{$caption}"
 caption-invalid = [CAPTION] La légende de la photo était invalide, utilisation du nom par défaut : "{$default_name}"

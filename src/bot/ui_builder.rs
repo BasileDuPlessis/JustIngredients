@@ -248,22 +248,41 @@ pub fn create_recipes_pagination_keyboard(
 
 /// Create inline keyboard for selecting specific recipe instance from duplicates
 pub fn create_recipe_instances_keyboard(
-    recipes: &[crate::db::Recipe],
+    recipe_data: &[(crate::db::Recipe, Vec<crate::db::Ingredient>)],
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
     let start_time = std::time::Instant::now();
-    let recipes_count = recipes.len();
+    let recipes_count = recipe_data.len();
 
     let mut buttons = Vec::new();
 
     // Add buttons for each recipe instance
-    for recipe in recipes {
+    for (recipe, ingredients) in recipe_data {
         let created_at = recipe.created_at.format("%b %d, %Y %H:%M");
-        let button_text = format!("📅 {}", created_at);
+
+        // Create ingredient preview (first 3 ingredients)
+        let ingredient_preview = if ingredients.is_empty() {
+            t_lang(localization, "no-ingredients-found", language_code)
+        } else {
+            let preview_names: Vec<String> = ingredients
+                .iter()
+                .take(3)
+                .map(|ing| ing.name.clone())
+                .collect();
+            preview_names.join(", ")
+        };
+
+        let button_text = format!("📅 {} • {}", created_at, ingredient_preview);
+        // Truncate if too long for button
+        let final_button_text = if button_text.len() > 50 {
+            format!("{}...", &button_text[..47])
+        } else {
+            button_text
+        };
 
         buttons.push(vec![InlineKeyboardButton::callback(
-            button_text,
+            final_button_text,
             format!("recipe_instance:{}", recipe.id),
         )]);
     }

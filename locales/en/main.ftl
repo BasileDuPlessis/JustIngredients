@@ -148,3 +148,22 @@ workflow-add-another = Add Another Recipe
 workflow-list-recipes = List My Recipes
 workflow-search-recipes = Search Recipes
 caption-recipe-saved = Recipe saved as: "{$recipe_name}"
+
+# Duplicate recipe handling messages
+multiple-recipes-found = Found {$count} recipes with this name:
+select-recipe-instance = Select which recipe to view:
+recipe-created = Created: {$date}
+recipe-details-title = 📖 Recipe Details
+recipe-actions = What would you like to do?
+edit-recipe-name = Rename Recipe
+delete-recipe = Delete Recipe
+back-to-recipes = Back to Recipes
+
+# Recipe management messages
+rename-recipe-title = Rename Recipe
+rename-recipe-instructions = Enter the new name for this recipe:
+delete-recipe-title = Delete Recipe
+delete-recipe-confirmation = Are you sure you want to delete this recipe? This action cannot be undone.
+recipe-deleted = Recipe deleted successfully
+recipe-deleted-help = The recipe and all its ingredients have been permanently removed.
+delete-cancelled = Recipe deletion cancelled
