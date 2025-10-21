@@ -112,6 +112,14 @@ pub fn create_ingredient_review_keyboard(
         ),
     ]);
 
+    // Add "Add Ingredient" button if we're in editing mode (has more than just confirm/cancel)
+    if ingredients.len() > 0 {
+        buttons.push(vec![InlineKeyboardButton::callback(
+            format!("➕ {}", t_lang(localization, "add-ingredient", language_code)),
+            "add_ingredient".to_string(),
+        )]);
+    }
+
     let duration = start_time.elapsed();
     crate::observability::record_ui_metrics(
         "create_ingredient_review_keyboard",
@@ -289,7 +297,10 @@ pub fn create_recipe_instances_keyboard(
 
     // Add back button
     buttons.push(vec![InlineKeyboardButton::callback(
-        format!("⬅️ {}", t_lang(localization, "back-to-recipes", language_code)),
+        format!(
+            "⬅️ {}",
+            t_lang(localization, "back-to-recipes", language_code)
+        ),
         "back_to_recipes".to_string(),
     )]);
 
@@ -315,20 +326,41 @@ pub fn create_recipe_details_keyboard(
     let buttons = vec![
         vec![
             InlineKeyboardButton::callback(
-                format!("✏️ {}", t_lang(localization, "edit-recipe-name", language_code)),
+                format!(
+                    "✏️ {}",
+                    t_lang(localization, "edit-recipe-name", language_code)
+                ),
                 format!("recipe_action:rename:{}", recipe_id),
             ),
             InlineKeyboardButton::callback(
-                format!("🗑️ {}", t_lang(localization, "delete-recipe", language_code)),
+                format!(
+                    "📝 {}",
+                    t_lang(localization, "edit-ingredients", language_code)
+                ),
+                format!("recipe_action:edit_ingredients:{}", recipe_id),
+            ),
+        ],
+        vec![
+            InlineKeyboardButton::callback(
+                format!(
+                    "🗑️ {}",
+                    t_lang(localization, "delete-recipe", language_code)
+                ),
                 format!("recipe_action:delete:{}", recipe_id),
+            ),
+            InlineKeyboardButton::callback(
+                format!(
+                    "📊 {}",
+                    t_lang(localization, "recipe-statistics", language_code)
+                ),
+                format!("recipe_action:statistics:{}", recipe_id),
             ),
         ],
         vec![InlineKeyboardButton::callback(
-            format!("📊 {}", t_lang(localization, "recipe-statistics", language_code)),
-            format!("recipe_action:statistics:{}", recipe_id),
-        )],
-        vec![InlineKeyboardButton::callback(
-            format!("⬅️ {}", t_lang(localization, "back-to-recipes", language_code)),
+            format!(
+                "⬅️ {}",
+                t_lang(localization, "back-to-recipes", language_code)
+            ),
             "back_to_recipes".to_string(),
         )],
     ];
@@ -356,10 +388,15 @@ pub fn format_database_ingredients_list(
 
     let mut result = String::new();
     for ingredient in ingredients {
-        let quantity_text = ingredient.quantity.map_or(String::new(), |q| format!("{} ", q));
+        let quantity_text = ingredient
+            .quantity
+            .map_or(String::new(), |q| format!("{} ", q));
         let unit_text = ingredient.unit.as_deref().unwrap_or("");
         let unit_space = if unit_text.is_empty() { "" } else { " " };
-        let line = format!("• {}{}{}{}\n", quantity_text, unit_text, unit_space, ingredient.name);
+        let line = format!(
+            "• {}{}{}{}\n",
+            quantity_text, unit_text, unit_space, ingredient.name
+        );
         result.push_str(&line);
     }
 

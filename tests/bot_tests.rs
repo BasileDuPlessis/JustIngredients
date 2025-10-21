@@ -58,11 +58,17 @@ mod tests {
     fn test_error_message_formatting() {
         let validation_error = OcrError::Validation("Test validation error".to_string());
         let display_msg = format!("{}", validation_error);
-        assert_eq!(display_msg, "[VALIDATION] Image validation failed: Test validation error");
+        assert_eq!(
+            display_msg,
+            "[VALIDATION] Image validation failed: Test validation error"
+        );
 
         let timeout_error = OcrError::Timeout("Test timeout".to_string());
         let display_msg = format!("{}", timeout_error);
-        assert_eq!(display_msg, "[OCR_TIMEOUT] OCR processing timed out: Test timeout");
+        assert_eq!(
+            display_msg,
+            "[OCR_TIMEOUT] OCR processing timed out: Test timeout"
+        );
     }
 
     /// Test temporary file cleanup
@@ -594,8 +600,8 @@ mod tests {
             inline_keyboard: keyboard,
         } = keyboard;
         {
-            // Should have 3 rows: 2 ingredient rows + 1 confirm/cancel row
-            assert_eq!(keyboard.len(), 3);
+            // Should have 4 rows: 2 ingredient rows + 1 confirm/cancel row + 1 add ingredient row
+            assert_eq!(keyboard.len(), 4);
 
             // First row: Edit and Delete buttons for first ingredient
             assert_eq!(keyboard[0].len(), 2);
@@ -615,6 +621,11 @@ mod tests {
             assert_eq!(keyboard[2].len(), 2);
             assert!(keyboard[2][0].text.contains("✅"));
             assert!(keyboard[2][1].text.contains("❌"));
+
+            // Fourth row: Add Ingredient button
+            assert_eq!(keyboard[3].len(), 1);
+            assert!(keyboard[3][0].text.contains("➕"));
+            assert!(keyboard[3][0].text.contains("Add Ingredient"));
         }
     }
 

@@ -116,8 +116,10 @@ mod tests {
         let mut args = HashMap::new();
         args.insert("count", "3");
 
-        let english_message = manager.get_message_in_language("multiple-recipes-found", "en", Some(&args));
-        let french_message = manager.get_message_in_language("multiple-recipes-found", "fr", Some(&args));
+        let english_message =
+            manager.get_message_in_language("multiple-recipes-found", "en", Some(&args));
+        let french_message =
+            manager.get_message_in_language("multiple-recipes-found", "fr", Some(&args));
 
         assert!(!english_message.is_empty());
         assert!(!french_message.is_empty());
@@ -129,8 +131,10 @@ mod tests {
         let mut date_args = HashMap::new();
         date_args.insert("date", "2024-01-15");
 
-        let english_created = manager.get_message_in_language("recipe-created", "en", Some(&date_args));
-        let french_created = manager.get_message_in_language("recipe-created", "fr", Some(&date_args));
+        let english_created =
+            manager.get_message_in_language("recipe-created", "en", Some(&date_args));
+        let french_created =
+            manager.get_message_in_language("recipe-created", "fr", Some(&date_args));
 
         assert!(!english_created.is_empty());
         assert!(!french_created.is_empty());
@@ -157,9 +161,21 @@ mod tests {
             let english = manager.get_message_in_language(message_key, "en", None);
             let french = manager.get_message_in_language(message_key, "fr", None);
 
-            assert!(!english.is_empty(), "English message for '{}' should not be empty", message_key);
-            assert!(!french.is_empty(), "French message for '{}' should not be empty", message_key);
-            assert_ne!(english, french, "English and French messages for '{}' should be different", message_key);
+            assert!(
+                !english.is_empty(),
+                "English message for '{}' should not be empty",
+                message_key
+            );
+            assert!(
+                !french.is_empty(),
+                "French message for '{}' should not be empty",
+                message_key
+            );
+            assert_ne!(
+                english, french,
+                "English and French messages for '{}' should be different",
+                message_key
+            );
         }
     }
 
@@ -183,8 +199,16 @@ mod tests {
             let english = manager.get_message_in_language(message_key, "en", None);
             let french = manager.get_message_in_language(message_key, "fr", None);
 
-            assert!(!english.is_empty(), "English message for '{}' should not be empty", message_key);
-            assert!(!french.is_empty(), "French message for '{}' should not be empty", message_key);
+            assert!(
+                !english.is_empty(),
+                "English message for '{}' should not be empty",
+                message_key
+            );
+            assert!(
+                !french.is_empty(),
+                "French message for '{}' should not be empty",
+                message_key
+            );
         }
     }
 
@@ -196,18 +220,28 @@ mod tests {
         let mut args = HashMap::new();
         args.insert("count", "1");
 
-        let singular_message = manager.get_message_in_language("multiple-recipes-found", "en", Some(&args));
+        let singular_message =
+            manager.get_message_in_language("multiple-recipes-found", "en", Some(&args));
         assert!(singular_message.contains("1"));
         assert!(singular_message.contains("recipes"));
 
         args.insert("count", "5");
-        let plural_message = manager.get_message_in_language("multiple-recipes-found", "en", Some(&args));
+        let plural_message =
+            manager.get_message_in_language("multiple-recipes-found", "en", Some(&args));
         assert!(plural_message.contains("5"));
         assert!(plural_message.contains("recipes"));
 
         // Test French pluralization
-        let french_singular = manager.get_message_in_language("multiple-recipes-found", "fr", Some(&HashMap::from([("count", "1")])));
-        let french_plural = manager.get_message_in_language("multiple-recipes-found", "fr", Some(&HashMap::from([("count", "5")])));
+        let french_singular = manager.get_message_in_language(
+            "multiple-recipes-found",
+            "fr",
+            Some(&HashMap::from([("count", "1")])),
+        );
+        let french_plural = manager.get_message_in_language(
+            "multiple-recipes-found",
+            "fr",
+            Some(&HashMap::from([("count", "5")])),
+        );
 
         assert!(french_singular.contains("1"));
         assert!(french_plural.contains("5"));

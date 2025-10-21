@@ -4,6 +4,9 @@ use crate::text_processing::MeasurementMatch;
 use serde::{Deserialize, Serialize};
 use teloxide::dispatching::dialogue::{Dialogue, InMemStorage};
 
+// Import database types for editing saved ingredients
+use crate::db::Ingredient;
+
 /// Represents the conversation state for recipe name dialogue
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub enum RecipeDialogueState {
@@ -40,6 +43,28 @@ pub enum RecipeDialogueState {
         recipe_id: i64,
         current_name: String,
         language_code: Option<String>,
+    },
+    EditingSavedIngredients {
+        recipe_id: i64,
+        original_ingredients: Vec<Ingredient>,  // Keep original for comparison
+        current_matches: Vec<MeasurementMatch>, // Working copy for editing
+        language_code: Option<String>,
+        message_id: Option<i32>,
+    },
+    EditingSavedIngredient {
+        recipe_id: i64,
+        original_ingredients: Vec<Ingredient>,  // Keep original for comparison
+        current_matches: Vec<MeasurementMatch>, // Working copy for editing
+        editing_index: usize,                   // Which ingredient is being edited
+        language_code: Option<String>,
+        message_id: Option<i32>,
+    },
+    AddingIngredientToSavedRecipe {
+        recipe_id: i64,
+        original_ingredients: Vec<Ingredient>,  // Keep original for comparison
+        current_matches: Vec<MeasurementMatch>, // Working copy for editing
+        language_code: Option<String>,
+        message_id: Option<i32>,
     },
 }
 

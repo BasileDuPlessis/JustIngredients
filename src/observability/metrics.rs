@@ -608,7 +608,12 @@ pub fn record_text_processing_metrics(
 }
 
 /// Record UI interaction metrics
-pub fn record_ui_metrics(operation: &str, duration: std::time::Duration, element_count: usize, ui_elements_created: usize) {
+pub fn record_ui_metrics(
+    operation: &str,
+    duration: std::time::Duration,
+    element_count: usize,
+    ui_elements_created: usize,
+) {
     let operation = operation.to_string();
     metrics::counter!("ui_operations_total", "operation" => operation.clone()).increment(1);
     metrics::histogram!("ui_operation_duration_seconds", "operation" => operation.clone())
@@ -632,7 +637,8 @@ pub fn record_recipe_metrics(
     // Basic recipe metrics
     metrics::counter!("recipes_created_total").increment(1);
     metrics::histogram!("recipe_ingredients_count").record(ingredient_count as f64);
-    metrics::histogram!("recipe_processing_duration_seconds").record(processing_duration.as_secs_f64());
+    metrics::histogram!("recipe_processing_duration_seconds")
+        .record(processing_duration.as_secs_f64());
 
     // Recipe naming method metrics
     let naming_method_str = match naming_method {
@@ -640,7 +646,8 @@ pub fn record_recipe_metrics(
         RecipeNamingMethod::Manual => "manual",
         RecipeNamingMethod::Default => "default",
     };
-    metrics::counter!("recipe_naming_method_total", "method" => naming_method_str.to_string()).increment(1);
+    metrics::counter!("recipe_naming_method_total", "method" => naming_method_str.to_string())
+        .increment(1);
 
     // User engagement metrics
     metrics::counter!("user_recipe_creations_total").increment(1);
@@ -753,20 +760,26 @@ pub fn record_dialogue_metrics(
     };
 
     // Completion rate metrics
-    metrics::counter!("dialogue_started_total", "type" => dialogue_type_str.to_string()).increment(1);
+    metrics::counter!("dialogue_started_total", "type" => dialogue_type_str.to_string())
+        .increment(1);
     if completed {
-        metrics::counter!("dialogue_completed_total", "type" => dialogue_type_str.to_string()).increment(1);
+        metrics::counter!("dialogue_completed_total", "type" => dialogue_type_str.to_string())
+            .increment(1);
     } else {
-        metrics::counter!("dialogue_abandoned_total", "type" => dialogue_type_str.to_string()).increment(1);
+        metrics::counter!("dialogue_abandoned_total", "type" => dialogue_type_str.to_string())
+            .increment(1);
     }
 
     // Dialogue performance metrics
-    metrics::histogram!("dialogue_step_count", "type" => dialogue_type_str.to_string()).record(step_count as f64);
-    metrics::histogram!("dialogue_duration_seconds", "type" => dialogue_type_str.to_string()).record(duration.as_secs_f64());
+    metrics::histogram!("dialogue_step_count", "type" => dialogue_type_str.to_string())
+        .record(step_count as f64);
+    metrics::histogram!("dialogue_duration_seconds", "type" => dialogue_type_str.to_string())
+        .record(duration.as_secs_f64());
 
     // Calculate completion rate (rolling average would be better in production)
     let completion_rate = if completed { 1.0 } else { 0.0 };
-    metrics::histogram!("dialogue_completion_rate", "type" => dialogue_type_str.to_string()).record(completion_rate);
+    metrics::histogram!("dialogue_completion_rate", "type" => dialogue_type_str.to_string())
+        .record(completion_rate);
 
     tracing::info!(
         user_id = %user_id,
@@ -825,7 +838,8 @@ pub fn record_recipe_discovery_metrics(
 
         // Check if it's a simple or complex search
         let is_complex = query.contains(' ') || query.len() > 20;
-        metrics::counter!("recipe_search_complexity_total", "complex" => is_complex.to_string()).increment(1);
+        metrics::counter!("recipe_search_complexity_total", "complex" => is_complex.to_string())
+            .increment(1);
     }
 
     tracing::info!(
@@ -853,7 +867,8 @@ pub fn record_user_retention_metrics(
         _ => "long_term",
     };
 
-    metrics::counter!("user_retention_total", "bucket" => retention_bucket.to_string()).increment(1);
+    metrics::counter!("user_retention_total", "bucket" => retention_bucket.to_string())
+        .increment(1);
 
     if is_returning {
         metrics::counter!("returning_users_total").increment(1);
@@ -868,7 +883,8 @@ pub fn record_user_retention_metrics(
         _ => "expert",
     };
 
-    metrics::counter!("user_engagement_level_total", "level" => engagement_level.to_string()).increment(1);
+    metrics::counter!("user_engagement_level_total", "level" => engagement_level.to_string())
+        .increment(1);
 
     tracing::debug!(
         user_id = %user_id,
@@ -882,11 +898,7 @@ pub fn record_user_retention_metrics(
 }
 
 /// Record feature usage analytics
-pub fn record_feature_usage_metrics(
-    user_id: i64,
-    feature: FeatureType,
-    usage_count: u32,
-) {
+pub fn record_feature_usage_metrics(user_id: i64, feature: FeatureType, usage_count: u32) {
     let feature_str = match feature {
         FeatureType::PhotoCaptionNaming => "photo_caption_naming",
         FeatureType::IngredientEditing => "ingredient_editing",
@@ -896,7 +908,8 @@ pub fn record_feature_usage_metrics(
     };
 
     metrics::counter!("feature_usage_total", "feature" => feature_str.to_string()).increment(1);
-    metrics::histogram!("feature_usage_count_per_user", "feature" => feature_str.to_string()).record(usage_count as f64);
+    metrics::histogram!("feature_usage_count_per_user", "feature" => feature_str.to_string())
+        .record(usage_count as f64);
 
     tracing::debug!(
         user_id = %user_id,

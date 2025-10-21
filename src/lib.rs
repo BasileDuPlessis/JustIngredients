@@ -8,6 +8,7 @@ pub mod cache;
 pub mod circuit_breaker;
 pub mod db;
 pub mod dialogue;
+pub mod ingredient_editing;
 pub mod instance_manager;
 pub mod localization;
 pub mod measurement_patterns;

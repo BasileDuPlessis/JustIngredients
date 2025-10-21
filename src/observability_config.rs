@@ -110,7 +110,10 @@ impl ObservabilityConfig {
         // Validate OTLP endpoint format if provided
         if let Some(endpoint) = &self.otlp_endpoint {
             if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
-                return Err(format!("[CONFIG_OBSERVABILITY] Invalid OTLP endpoint format: {}", endpoint));
+                return Err(format!(
+                    "[CONFIG_OBSERVABILITY] Invalid OTLP endpoint format: {}",
+                    endpoint
+                ));
             }
         }
 
@@ -124,7 +127,10 @@ impl ObservabilityConfig {
 
         // Validate port range
         if self.metrics_port == 0 {
-            return Err(format!("[CONFIG_OBSERVABILITY] Invalid metrics port: {}", self.metrics_port));
+            return Err(format!(
+                "[CONFIG_OBSERVABILITY] Invalid metrics port: {}",
+                self.metrics_port
+            ));
         }
 
         Ok(())

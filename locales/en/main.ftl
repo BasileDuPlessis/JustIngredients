@@ -195,3 +195,19 @@ error-deleting-recipe = Failed to delete recipe
 error-deleting-recipe-help = An error occurred while deleting the recipe. Please try again later.
 error-renaming-recipe = Failed to rename recipe
 error-renaming-recipe-help = An error occurred while renaming the recipe. Please try again later.
+
+# Ingredient editing messages
+editing-recipe = Editing recipe
+editing-instructions = Use the buttons below to edit or delete ingredients, then confirm your changes.
+ingredients-updated = Ingredients updated successfully
+ingredients-updated-help = Your recipe ingredients have been updated.
+no-changes-made = No changes were made to the ingredients.
+editing-cancelled = Ingredient editing cancelled
+no-ingredients-to-edit = No ingredients to edit
+no-ingredients-to-edit-help = This recipe has no ingredients to edit. Try adding some ingredients first.
+error-updating-ingredients = Failed to update ingredients
+error-adding-ingredients = Failed to add new ingredients
+error-deleting-ingredients = Failed to delete ingredients
+add-ingredient = Add Ingredient
+add-ingredient-prompt = Send me the new ingredient (e.g., "2 cups flour" or "3 eggs")
+ingredient-added = Ingredient added successfully!

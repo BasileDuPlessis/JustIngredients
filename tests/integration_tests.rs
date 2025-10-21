@@ -1017,14 +1017,20 @@ async fn test_database_integration_full_workflow() -> Result<(), Box<dyn std::er
     let pool = match sqlx::postgres::PgPool::connect(&database_url).await {
         Ok(pool) => Arc::new(pool),
         Err(e) => {
-            println!("⚠️ Skipping database integration test - failed to connect: {}", e);
+            println!(
+                "⚠️ Skipping database integration test - failed to connect: {}",
+                e
+            );
             return Ok(());
         }
     };
 
     // Initialize database schema
     if let Err(e) = db::init_database_schema(&pool).await {
-        println!("⚠️ Skipping database integration test - failed to init schema: {}", e);
+        println!(
+            "⚠️ Skipping database integration test - failed to init schema: {}",
+            e
+        );
         return Ok(());
     }
 
@@ -1071,10 +1077,15 @@ async fn test_database_integration_full_workflow() -> Result<(), Box<dyn std::er
             measurement.quantity.parse().ok(),
             measurement.measurement.as_deref(),
             &format!("{} {}", measurement.quantity, measurement.ingredient_name),
-        ).await {
+        )
+        .await
+        {
             Ok(id) => id,
             Err(e) => {
-                panic!("Failed to create ingredient {}: {}", measurement.ingredient_name, e);
+                panic!(
+                    "Failed to create ingredient {}: {}",
+                    measurement.ingredient_name, e
+                );
             }
         };
 
@@ -1099,10 +1110,11 @@ async fn test_database_integration_full_workflow() -> Result<(), Box<dyn std::er
     assert!(search_results.iter().any(|r| r.id == recipe_id));
 
     // Step 4: Test recipe listing with pagination
-    let (recipe_names, total) = match db::get_user_recipes_paginated(&pool, telegram_id, 10, 0).await {
-        Ok(result) => result,
-        Err(e) => panic!("Failed to get paginated recipes: {}", e),
-    };
+    let (recipe_names, total) =
+        match db::get_user_recipes_paginated(&pool, telegram_id, 10, 0).await {
+            Ok(result) => result,
+            Err(e) => panic!("Failed to get paginated recipes: {}", e),
+        };
 
     assert!(total >= 1);
     assert!(!recipe_names.is_empty());
@@ -1129,7 +1141,10 @@ async fn test_database_integration_full_workflow() -> Result<(), Box<dyn std::er
     for ingredient in &ingredients {
         if ingredient.user_id == telegram_id {
             if let Err(e) = db::delete_ingredient(&pool, ingredient.id).await {
-                println!("Warning: Failed to cleanup ingredient {}: {}", ingredient.id, e);
+                println!(
+                    "Warning: Failed to cleanup ingredient {}: {}",
+                    ingredient.id, e
+                );
             }
         }
     }
@@ -1142,16 +1157,185 @@ async fn test_database_integration_full_workflow() -> Result<(), Box<dyn std::er
     Ok(())
 }
 
-/// Test OCR processing integration with circuit breaker behavior
+/// Test saved ingredient editing workflow - create recipe, edit ingredient, verify saved
+#[tokio::test]
+async fn test_saved_ingredient_editing_workflow() -> Result<(), Box<dyn std::error::Error>> {
+    use just_ingredients::db;
+    use just_ingredients::text_processing::MeasurementDetector;
+    use std::sync::Arc;
+
+    // This test requires a test database - skip if DATABASE_URL not set for integration tests
+    let database_url = match std::env::var("DATABASE_URL") {
+        Ok(url) => url,
+        Err(_) => {
+            println!("⚠️ Skipping saved ingredient editing test - DATABASE_URL not set");
+            return Ok(());
+        }
+    };
+
+    // Create a test database connection pool
+    let pool = match sqlx::postgres::PgPool::connect(&database_url).await {
+        Ok(pool) => Arc::new(pool),
+        Err(e) => {
+            println!(
+                "⚠️ Skipping saved ingredient editing test - failed to connect: {}",
+                e
+            );
+            return Ok(());
+        }
+    };
+
+    // Initialize database schema
+    if let Err(e) = db::init_database_schema(&pool).await {
+        println!(
+            "⚠️ Skipping saved ingredient editing test - failed to init schema: {}",
+            e
+        );
+        return Ok(());
+    }
+
+    // Test data
+    let telegram_id = 888888; // Use a different test user ID
+    let detector = MeasurementDetector::new().unwrap();
+
+    // Step 1: Create user and recipe with ingredients
+    let user = db::get_or_create_user(&pool, telegram_id, Some("en")).await?;
+    let recipe_id = db::create_recipe(&pool, telegram_id, "Test Recipe for Editing").await?;
+    db::update_recipe_name(&pool, recipe_id, "Editable Recipe").await?;
+
+    // Create initial ingredients
+    let ocr_text = r#"
+    2 cups flour
+    3 eggs
+    1 cup sugar
+    "#;
+
+    let measurements = detector.extract_ingredient_measurements(ocr_text);
+    assert_eq!(measurements.len(), 3); // flour, eggs, sugar
+
+    let mut ingredient_ids = vec![];
+    for measurement in &measurements {
+        let ingredient_id = db::create_ingredient(
+            &pool,
+            user.id,
+            Some(recipe_id),
+            &measurement.ingredient_name,
+            measurement.quantity.parse().ok(),
+            measurement.measurement.as_deref(),
+            &format!("{} {}", measurement.quantity, measurement.ingredient_name),
+        )
+        .await?;
+        ingredient_ids.push(ingredient_id);
+    }
+
+    // Step 2: Get original ingredients from database
+    let original_ingredients = db::get_recipe_ingredients(&pool, recipe_id).await?;
+    assert_eq!(original_ingredients.len(), 3);
+
+    // Step 3: Simulate editing workflow - update eggs from 3 to 4
+    let eggs_ingredient = original_ingredients.iter()
+        .find(|ing| ing.name == "eggs")
+        .expect("Should find eggs ingredient");
+
+    // Update the ingredient directly (simulating what the edit workflow does)
+    let update_result = db::update_ingredient(
+        &pool,
+        eggs_ingredient.id,
+        Some("eggs"), // Same name
+        Some(4.0),    // Changed from 3.0 to 4.0
+        None,         // No unit
+    ).await?;
+
+    assert!(update_result, "Ingredient update should succeed");
+
+    // Step 4: Verify the ingredient was updated in the database
+    let updated_ingredients = db::get_recipe_ingredients(&pool, recipe_id).await?;
+    assert_eq!(updated_ingredients.len(), 3);
+
+    // Find the eggs ingredient and verify it was updated
+    let updated_eggs = updated_ingredients.iter()
+        .find(|ing| ing.name == "eggs")
+        .expect("Should find eggs ingredient");
+
+    assert_eq!(updated_eggs.quantity, Some(4.0)); // Should be updated to 4
+    assert_eq!(updated_eggs.name, "eggs");
+
+    // Verify other ingredients remain unchanged
+    let flour_ingredient = updated_ingredients.iter()
+        .find(|ing| ing.name == "flour")
+        .expect("Should find flour ingredient");
+    assert_eq!(flour_ingredient.quantity, Some(2.0));
+
+    let sugar_ingredient = updated_ingredients.iter()
+        .find(|ing| ing.name == "sugar")
+        .expect("Should find sugar ingredient");
+    assert_eq!(sugar_ingredient.quantity, Some(1.0));
+
+    // Step 5: Test ingredient deletion (part of editing workflow)
+    let sugar_id = sugar_ingredient.id;
+    let delete_result = db::delete_ingredient(&pool, sugar_id).await?;
+    assert!(delete_result, "Ingredient deletion should succeed");
+
+    // Verify ingredient was deleted
+    let ingredients_after_delete = db::get_recipe_ingredients(&pool, recipe_id).await?;
+    assert_eq!(ingredients_after_delete.len(), 2); // Should be 2 now
+
+    // Verify sugar is gone
+    let sugar_after_delete = ingredients_after_delete.iter()
+        .find(|ing| ing.name == "sugar");
+    assert!(sugar_after_delete.is_none(), "Sugar ingredient should be deleted");
+
+    // Step 6: Test adding new ingredient (part of editing workflow)
+    let new_measurement = detector.extract_ingredient_measurements("1 tsp vanilla");
+    assert_eq!(new_measurement.len(), 1);
+
+    let new_ingredient = &new_measurement[0];
+    let new_ingredient_id = db::create_ingredient(
+        &pool,
+        user.id,
+        Some(recipe_id),
+        &new_ingredient.ingredient_name,
+        new_ingredient.quantity.parse().ok(),
+        new_ingredient.measurement.as_deref(),
+        &format!("{} {}", new_ingredient.quantity, new_ingredient.ingredient_name),
+    )
+    .await?;
+
+    // Verify new ingredient was added
+    let ingredients_after_add = db::get_recipe_ingredients(&pool, recipe_id).await?;
+    assert_eq!(ingredients_after_add.len(), 3); // Back to 3 ingredients
+
+    // Verify vanilla was added
+    let vanilla_ingredient = ingredients_after_add.iter()
+        .find(|ing| ing.name == "vanilla")
+        .expect("Should find vanilla ingredient");
+    assert_eq!(vanilla_ingredient.quantity, Some(1.0));
+    assert_eq!(vanilla_ingredient.unit, Some("tsp".to_string()));
+
+    // Cleanup: Delete test data
+    let all_ingredients = db::get_recipe_ingredients(&pool, recipe_id).await?;
+    for ingredient in &all_ingredients {
+        if let Err(e) = db::delete_ingredient(&pool, ingredient.id).await {
+            println!("Warning: Failed to cleanup ingredient {}: {}", ingredient.id, e);
+        }
+    }
+
+    if let Err(e) = db::delete_recipe(&pool, recipe_id).await {
+        println!("Warning: Failed to cleanup recipe {}: {}", recipe_id, e);
+    }
+
+    println!("✅ Saved ingredient editing workflow test passed - ingredient successfully updated, deleted, and added in database");
+    Ok(())
+}/// Test OCR processing integration with circuit breaker behavior
 #[tokio::test]
 async fn test_ocr_processing_with_circuit_breaker_integration() {
     use just_ingredients::circuit_breaker::CircuitBreaker;
-    use just_ingredients::ocr_config::{OcrConfig, RecoveryConfig};
-    use just_ingredients::ocr;
     use just_ingredients::instance_manager::OcrInstanceManager;
+    use just_ingredients::ocr;
+    use just_ingredients::ocr_config::{OcrConfig, RecoveryConfig};
+    use std::io::Write;
     use std::time::Duration;
     use tempfile::NamedTempFile;
-    use std::io::Write;
 
     // Create a test image file (minimal valid PNG)
     let mut temp_file = NamedTempFile::new().unwrap();
@@ -1179,7 +1363,13 @@ async fn test_ocr_processing_with_circuit_breaker_integration() {
     let circuit_breaker = CircuitBreaker::new(ocr_config.recovery.clone());
 
     // Test 1: Normal operation (should work initially, but will fail due to invalid image)
-    let _result1 = ocr::extract_text_from_image(&image_path, &ocr_config, &instance_manager, &circuit_breaker).await;
+    let _result1 = ocr::extract_text_from_image(
+        &image_path,
+        &ocr_config,
+        &instance_manager,
+        &circuit_breaker,
+    )
+    .await;
     // The OCR operation will fail and record 1 failure, but circuit breaker should still be closed (1 < 2)
 
     // Test 2: Simulate additional failures to trigger circuit breaker
@@ -1188,7 +1378,13 @@ async fn test_ocr_processing_with_circuit_breaker_integration() {
     assert!(circuit_breaker.is_open()); // Now it should be open (2 >= 2)
 
     // Test 3: When circuit breaker is open, operations should fail fast
-    let result2 = ocr::extract_text_from_image(&image_path, &ocr_config, &instance_manager, &circuit_breaker).await;
+    let result2 = ocr::extract_text_from_image(
+        &image_path,
+        &ocr_config,
+        &instance_manager,
+        &circuit_breaker,
+    )
+    .await;
     assert!(result2.is_err()); // Should fail due to circuit breaker
 
     // Test 4: Wait for circuit breaker to reset
@@ -1196,7 +1392,13 @@ async fn test_ocr_processing_with_circuit_breaker_integration() {
     assert!(!circuit_breaker.is_open());
 
     // Test 5: After reset, operations should work again (may still fail due to invalid image)
-    let _result3 = ocr::extract_text_from_image(&image_path, &ocr_config, &instance_manager, &circuit_breaker).await;
+    let _result3 = ocr::extract_text_from_image(
+        &image_path,
+        &ocr_config,
+        &instance_manager,
+        &circuit_breaker,
+    )
+    .await;
     // Don't assert success, just that circuit breaker didn't prevent the attempt
 
     // Test 6: Test configuration validation
@@ -1239,7 +1441,10 @@ async fn test_observability_integration_full_stack() {
     observability::record_ocr_performance_metrics(ocr_params);
 
     // Test 4: Test health check functions
-    if sqlx::postgres::PgPool::connect("postgresql://invalid").await.is_ok() {
+    if sqlx::postgres::PgPool::connect("postgresql://invalid")
+        .await
+        .is_ok()
+    {
         panic!("Should not connect to invalid database URL");
     }
     // This will fail because we don't have a real DB, but the function should work
@@ -1335,7 +1540,8 @@ fn test_security_boundary_testing() {
         let temp_file = tempfile::NamedTempFile::with_suffix(format!(".{}", ext)).unwrap();
         std::fs::write(temp_file.path(), data).unwrap();
 
-        let is_supported = ocr::is_supported_image_format(temp_file.path().to_str().unwrap(), &config);
+        let is_supported =
+            ocr::is_supported_image_format(temp_file.path().to_str().unwrap(), &config);
         assert!(is_supported, "Format {} should be supported", ext);
     }
 
@@ -1397,12 +1603,18 @@ async fn test_performance_load_testing_integration() {
 
     // Test 2: Performance assertions
     assert!(total_measurements > 0, "Should have extracted measurements");
-    assert!(duration.as_millis() < 1000, "Concurrent processing should be fast (< 1s)");
+    assert!(
+        duration.as_millis() < 1000,
+        "Concurrent processing should be fast (< 1s)"
+    );
     assert!(total_chars > 0, "Should have processed text");
 
     // Test 3: Memory usage estimation
     let avg_processing_time = duration.as_millis() as f64 / 5.0;
-    assert!(avg_processing_time < 200.0, "Average processing time should be reasonable");
+    assert!(
+        avg_processing_time < 200.0,
+        "Average processing time should be reasonable"
+    );
 
     // Test 4: Load scaling test (simulate increasing load)
     let load_levels = vec![1, 2, 5, 10];
@@ -1431,7 +1643,11 @@ async fn test_performance_load_testing_integration() {
         let avg_time_per_task = duration.as_millis() as f64 / num_tasks as f64;
 
         // Performance should scale reasonably (not exponentially worse)
-        assert!(avg_time_per_task < 100.0, "Performance should scale for {} tasks", num_tasks);
+        assert!(
+            avg_time_per_task < 100.0,
+            "Performance should scale for {} tasks",
+            num_tasks
+        );
     }
 
     println!("✅ Performance/load testing integration passed - concurrent processing and scaling working correctly");
@@ -1467,7 +1683,8 @@ async fn test_duplicate_recipes_single_selection_flow() -> Result<(), Box<dyn st
     assert_eq!(recipes[0].id, recipe_id);
 
     // Test: has_duplicate_recipes should return false
-    let has_duplicates = db::has_duplicate_recipes(&pool, telegram_id, "Unique Recipe Name").await?;
+    let has_duplicates =
+        db::has_duplicate_recipes(&pool, telegram_id, "Unique Recipe Name").await?;
     assert!(!has_duplicates);
 
     // Cleanup
@@ -1479,7 +1696,8 @@ async fn test_duplicate_recipes_single_selection_flow() -> Result<(), Box<dyn st
 
 /// Test duplicate recipe selection flows - multiple recipe disambiguation
 #[tokio::test]
-async fn test_duplicate_recipes_multiple_selection_flow() -> Result<(), Box<dyn std::error::Error>> {
+async fn test_duplicate_recipes_multiple_selection_flow() -> Result<(), Box<dyn std::error::Error>>
+{
     use just_ingredients::db;
     use std::sync::Arc;
 
@@ -1523,7 +1741,8 @@ async fn test_duplicate_recipes_multiple_selection_flow() -> Result<(), Box<dyn 
     let unique_recipe_id = db::create_recipe(&pool, telegram_id, "Unique content").await?;
     db::update_recipe_name(&pool, unique_recipe_id, "Unique Recipe").await?;
 
-    let has_duplicates_unique = db::has_duplicate_recipes(&pool, telegram_id, "Unique Recipe").await?;
+    let has_duplicates_unique =
+        db::has_duplicate_recipes(&pool, telegram_id, "Unique Recipe").await?;
     assert!(!has_duplicates_unique);
 
     // Cleanup
@@ -1583,7 +1802,8 @@ async fn test_recipe_details_viewing_flow() -> Result<(), Box<dyn std::error::Er
             measurement.quantity.parse().ok(),
             measurement.measurement.as_deref(),
             &format!("{} {}", measurement.quantity, measurement.ingredient_name),
-        ).await?;
+        )
+        .await?;
         ingredient_ids.push(ingredient_id);
     }
 
@@ -1649,7 +1869,10 @@ async fn test_recipe_renaming_flow() -> Result<(), Box<dyn std::error::Error>> {
 
     // Verify new name
     let recipe = db::read_recipe_with_name(&pool, recipe_id).await?;
-    assert_eq!(recipe.unwrap().recipe_name, Some("New Recipe Name".to_string()));
+    assert_eq!(
+        recipe.unwrap().recipe_name,
+        Some("New Recipe Name".to_string())
+    );
 
     // Test duplicate detection after rename
     // Create another recipe with the old name
@@ -1661,7 +1884,8 @@ async fn test_recipe_renaming_flow() -> Result<(), Box<dyn std::error::Error>> {
     assert!(has_duplicates);
 
     // And "New Recipe Name" should not
-    let has_duplicates_new = db::has_duplicate_recipes(&pool, telegram_id, "New Recipe Name").await?;
+    let has_duplicates_new =
+        db::has_duplicate_recipes(&pool, telegram_id, "New Recipe Name").await?;
     assert!(!has_duplicates_new);
 
     // Cleanup

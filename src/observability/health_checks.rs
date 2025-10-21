@@ -89,21 +89,33 @@ pub async fn start_health_metrics_recorder(
                 let check_start = std::time::Instant::now();
                 let db_healthy = check_database_health(pool.as_ref()).await.is_ok();
                 let check_duration = check_start.elapsed();
-                crate::observability::metrics::record_health_check_metrics("database", db_healthy, check_duration);
+                crate::observability::metrics::record_health_check_metrics(
+                    "database",
+                    db_healthy,
+                    check_duration,
+                );
             }
 
             // Perform OCR health check
             let check_start = std::time::Instant::now();
             let ocr_healthy = check_ocr_health().await.is_ok();
             let check_duration = check_start.elapsed();
-            crate::observability::metrics::record_health_check_metrics("ocr", ocr_healthy, check_duration);
+            crate::observability::metrics::record_health_check_metrics(
+                "ocr",
+                ocr_healthy,
+                check_duration,
+            );
 
             // Perform bot token health check
             if let Some(token) = &bot_token {
                 let check_start = std::time::Instant::now();
                 let bot_healthy = check_bot_token_health(token).await.is_ok();
                 let check_duration = check_start.elapsed();
-                crate::observability::metrics::record_health_check_metrics("telegram_bot", bot_healthy, check_duration);
+                crate::observability::metrics::record_health_check_metrics(
+                    "telegram_bot",
+                    bot_healthy,
+                    check_duration,
+                );
             }
         }
     })

@@ -152,7 +152,11 @@ where
     }
 
     fn remove(&mut self, key: &K) -> Option<V> {
-        self.data.write().unwrap().remove(key).map(|entry| entry.value)
+        self.data
+            .write()
+            .unwrap()
+            .remove(key)
+            .map(|entry| entry.value)
     }
 
     fn cleanup(&mut self) {
@@ -417,7 +421,11 @@ impl DbQueryCache {
             data.remove(&key);
         }
 
-        tracing::debug!("Evicted {} entries to make room for {} bytes", evicted_count, needed_bytes);
+        tracing::debug!(
+            "Evicted {} entries to make room for {} bytes",
+            evicted_count,
+            needed_bytes
+        );
     }
 }
 

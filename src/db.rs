@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use sqlx::postgres::PgPool;
 use sqlx::Row;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 // Import cache types
 use crate::cache::Cache;
@@ -31,7 +31,7 @@ pub struct Recipe {
 }
 
 /// Represents an ingredient in the database
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct Ingredient {
     pub id: i64,
     pub user_id: i64,
@@ -316,11 +316,13 @@ pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<
 pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>> {
     debug!(user_id = %user_id, "Getting user by internal ID");
 
-    let row = sqlx::query("SELECT id, telegram_id, language_code, created_at, updated_at FROM users WHERE id = $1")
-        .bind(user_id)
-        .fetch_optional(pool)
-        .await
-        .context("Failed to get user by internal ID")?;
+    let row = sqlx::query(
+        "SELECT id, telegram_id, language_code, created_at, updated_at FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(pool)
+    .await
+    .context("Failed to get user by internal ID")?;
 
     match row {
         Some(row) => {
@@ -363,7 +365,11 @@ pub async fn get_or_create_user_cached(
     // Cache the result
     {
         let mut cache_manager = cache.lock().unwrap();
-        cache_manager.user_cache.insert(telegram_id, user.clone(), std::time::Duration::from_secs(300)); // 5 minutes
+        cache_manager.user_cache.insert(
+            telegram_id,
+            user.clone(),
+            std::time::Duration::from_secs(300),
+        ); // 5 minutes
     }
 
     Ok(user)
@@ -390,7 +396,11 @@ pub async fn get_user_by_telegram_id_cached(
     // Cache the result if found
     if let Some(ref user) = user {
         let mut cache_manager = cache.lock().unwrap();
-        cache_manager.user_cache.insert(telegram_id, user.clone(), std::time::Duration::from_secs(300)); // 5 minutes
+        cache_manager.user_cache.insert(
+            telegram_id,
+            user.clone(),
+            std::time::Duration::from_secs(300),
+        ); // 5 minutes
     }
 
     Ok(user)
@@ -417,7 +427,11 @@ pub async fn get_user_by_id_cached(
     // Cache the result if found (by telegram_id for future lookups)
     if let Some(ref user) = user {
         let mut cache_manager = cache.lock().unwrap();
-        cache_manager.user_cache.insert(user.telegram_id, user.clone(), std::time::Duration::from_secs(300));
+        cache_manager.user_cache.insert(
+            user.telegram_id,
+            user.clone(),
+            std::time::Duration::from_secs(300),
+        );
     }
 
     Ok(user)
@@ -466,7 +480,10 @@ pub async fn create_ingredient(
             info!(ingredient_id = %ingredient_id, duration_ms = %duration.as_millis(), user_id = %user_id, recipe_id = ?recipe_id, name = %name, "Ingredient created successfully");
             Ok(ingredient_id)
         }
-        Err(e) => Err(e),
+        Err(e) => {
+            error!(user_id = %user_id, recipe_id = ?recipe_id, name = %name, quantity = ?quantity, unit = ?unit, raw_text = %raw_text, error = %e, "Failed to create ingredient - database error");
+            Err(e)
+        }
     }
 }
 
@@ -584,15 +601,15 @@ pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec
     Ok(ingredients)
 }
 
-/// List all ingredients for a specific recipe
+/// Get all ingredients for a specific recipe
 pub async fn get_recipe_ingredients(pool: &PgPool, recipe_id: i64) -> Result<Vec<Ingredient>> {
-    debug!(recipe_id = %recipe_id, "Getting ingredients for recipe");
+    info!("Getting ingredients for recipe_id: {recipe_id}");
 
     let rows = sqlx::query("SELECT id, user_id, recipe_id, name, quantity::float8, unit, created_at, updated_at FROM ingredients WHERE recipe_id = $1 ORDER BY created_at ASC")
         .bind(recipe_id)
         .fetch_all(pool)
         .await
-        .context("Failed to get ingredients for recipe")?;
+        .context("Failed to get recipe ingredients")?;
 
     let ingredients: Vec<Ingredient> = rows
         .into_iter()
@@ -608,16 +625,107 @@ pub async fn get_recipe_ingredients(pool: &PgPool, recipe_id: i64) -> Result<Vec
         })
         .collect();
 
-    debug!(recipe_id = %recipe_id, count = ingredients.len(), "Ingredients retrieved for recipe");
+    info!(
+        "Found {} ingredients for recipe_id: {recipe_id}",
+        ingredients.len()
+    );
     Ok(ingredients)
 }
 
-/// Update the recipe name for a recipe
-pub async fn update_recipe_name(
+/// Bulk update ingredients for a recipe (add/update/delete)
+///
+/// This function handles the complex task of synchronizing edited ingredients
+/// with the database, performing the minimal set of operations needed.
+pub async fn update_recipe_ingredients(
     pool: &PgPool,
     recipe_id: i64,
-    recipe_name: &str,
-) -> Result<bool> {
+    ingredients: &[crate::text_processing::MeasurementMatch],
+) -> Result<()> {
+    let span = crate::observability::db_span("update_recipe_ingredients", "ingredients");
+    let _enter = span.enter();
+
+    let start_time = std::time::Instant::now();
+    info!("Bulk updating {} ingredients for recipe {}", ingredients.len(), recipe_id);
+
+    // Get existing ingredients for this recipe
+    let existing_ingredients = get_recipe_ingredients(pool, recipe_id).await?;
+
+    // Use the change detection logic from ingredient_editing module
+    let changes = crate::ingredient_editing::detect_ingredient_changes(&existing_ingredients, ingredients);
+
+    // Execute changes in transaction
+    let mut tx = pool.begin().await.context("Failed to start transaction")?;
+
+    // Delete ingredients that are no longer present
+    for &ingredient_id in &changes.to_delete {
+        sqlx::query("DELETE FROM ingredients WHERE id = $1")
+            .bind(ingredient_id)
+            .execute(&mut *tx)
+            .await
+            .context(format!("Failed to delete ingredient {}", ingredient_id))?;
+        info!("Deleted ingredient ID {}", ingredient_id);
+    }
+
+    // Update existing ingredients
+    for (ingredient_id, new_match) in &changes.to_update {
+        let quantity = new_match.quantity.parse::<f64>().ok();
+        let unit = new_match.measurement.as_deref();
+
+        sqlx::query("UPDATE ingredients SET name = $1, quantity = $2, unit = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4")
+            .bind(&new_match.ingredient_name)
+            .bind(quantity)
+            .bind(unit)
+            .bind(ingredient_id)
+            .execute(&mut *tx)
+            .await
+            .context(format!("Failed to update ingredient {}", ingredient_id))?;
+        info!("Updated ingredient ID {}", ingredient_id);
+    }
+
+    // Add new ingredients
+    let recipe = read_recipe_with_name(pool, recipe_id).await?
+        .ok_or_else(|| anyhow::anyhow!("Recipe not found during update"))?;
+
+    for new_match in &changes.to_add {
+        let quantity = new_match.quantity.parse::<f64>().ok();
+        let unit = new_match.measurement.as_deref();
+
+        sqlx::query("INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit) VALUES ($1, $2, $3, $4, $5)")
+            .bind(recipe.telegram_id)
+            .bind(recipe_id)
+            .bind(&new_match.ingredient_name)
+            .bind(quantity)
+            .bind(unit)
+            .execute(&mut *tx)
+            .await
+            .context(format!("Failed to add new ingredient '{}'", new_match.ingredient_name))?;
+        info!("Added new ingredient '{}'", new_match.ingredient_name);
+    }
+
+    // Commit transaction
+    tx.commit().await.context("Failed to commit ingredient updates")?;
+
+    let duration = start_time.elapsed();
+    observability::record_db_performance_metrics(
+        "update_recipe_ingredients",
+        duration,
+        ingredients.len() as u64,
+        crate::observability::QueryComplexity::Complex,
+    );
+
+    info!(
+        "Successfully updated ingredients for recipe {}: {} deleted, {} updated, {} added",
+        recipe_id,
+        changes.to_delete.len(),
+        changes.to_update.len(),
+        changes.to_add.len()
+    );
+
+    Ok(())
+}
+
+/// Update the recipe name for a recipe
+pub async fn update_recipe_name(pool: &PgPool, recipe_id: i64, recipe_name: &str) -> Result<bool> {
     debug!(recipe_id = %recipe_id, "Updating recipe recipe name");
 
     let result = sqlx::query("UPDATE recipes SET recipe_name = $1 WHERE id = $2")
@@ -749,14 +857,13 @@ pub async fn has_duplicate_recipes(
 
     debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, "Checking for duplicate recipes");
 
-    let row = sqlx::query(
-        "SELECT COUNT(*) FROM recipes WHERE telegram_id = $1 AND recipe_name = $2"
-    )
-    .bind(telegram_id)
-    .bind(recipe_name)
-    .fetch_one(pool)
-    .await
-    .context("Failed to check for duplicate recipes")?;
+    let row =
+        sqlx::query("SELECT COUNT(*) FROM recipes WHERE telegram_id = $1 AND recipe_name = $2")
+            .bind(telegram_id)
+            .bind(recipe_name)
+            .fetch_one(pool)
+            .await
+            .context("Failed to check for duplicate recipes")?;
 
     let count: i64 = row.get(0);
     let has_duplicates = count > 1;
@@ -830,7 +937,10 @@ pub struct RecipeStatistics {
 }
 
 /// Get comprehensive recipe statistics for a user
-pub async fn get_user_recipe_statistics(pool: &PgPool, telegram_id: i64) -> Result<RecipeStatistics> {
+pub async fn get_user_recipe_statistics(
+    pool: &PgPool,
+    telegram_id: i64,
+) -> Result<RecipeStatistics> {
     debug!(telegram_id = %telegram_id, "Getting recipe statistics for user");
 
     // Get basic counts
@@ -839,7 +949,7 @@ pub async fn get_user_recipe_statistics(pool: &PgPool, telegram_id: i64) -> Resu
         SELECT
             COUNT(DISTINCT r.id) as total_recipes,
             COUNT(i.id) as total_ingredients,
-            COALESCE(AVG(ingredient_count), 0) as avg_ingredients
+            COALESCE(AVG(ingredient_count), 0)::FLOAT8 as avg_ingredients
         FROM recipes r
         LEFT JOIN ingredients i ON r.id = i.recipe_id
         LEFT JOIN (
@@ -860,13 +970,12 @@ pub async fn get_user_recipe_statistics(pool: &PgPool, telegram_id: i64) -> Resu
     let average_ingredients_per_recipe: f64 = basic_stats.get(2);
 
     // Get date ranges
-    let date_stats = sqlx::query(
-        "SELECT MIN(created_at), MAX(created_at) FROM recipes WHERE telegram_id = $1",
-    )
-    .bind(telegram_id)
-    .fetch_one(pool)
-    .await
-    .context("Failed to get recipe date statistics")?;
+    let date_stats =
+        sqlx::query("SELECT MIN(created_at), MAX(created_at) FROM recipes WHERE telegram_id = $1")
+            .bind(telegram_id)
+            .fetch_one(pool)
+            .await
+            .context("Failed to get recipe date statistics")?;
 
     let oldest_recipe_date: Option<chrono::DateTime<chrono::Utc>> = date_stats.get(0);
     let newest_recipe_date: Option<chrono::DateTime<chrono::Utc>> = date_stats.get(1);

@@ -189,6 +189,22 @@ error-deleting-recipe-help = Une erreur s'est produite lors de la suppression de
 error-renaming-recipe = Échec du renommage de la recette
 error-renaming-recipe-help = Une erreur s'est produite lors du renommage de la recette. Veuillez réessayer plus tard.
 
+# Messages d'édition d'ingrédients
+editing-recipe = Modification de la recette
+editing-instructions = Utilisez les boutons ci-dessous pour modifier ou supprimer des ingrédients, puis confirmez vos modifications.
+ingredients-updated = Ingrédients mis à jour avec succès
+ingredients-updated-help = Les ingrédients de votre recette ont été mis à jour.
+no-changes-made = Aucune modification n'a été apportée aux ingrédients.
+editing-cancelled = Édition des ingrédients annulée
+no-ingredients-to-edit = Aucun ingrédient à modifier
+no-ingredients-to-edit-help = Cette recette n'a pas d'ingrédients à modifier. Essayez d'ajouter des ingrédients d'abord.
+error-updating-ingredients = Échec de la mise à jour des ingrédients
+error-adding-ingredients = Échec de l'ajout de nouveaux ingrédients
+error-deleting-ingredients = Échec de la suppression des ingrédients
+add-ingredient = Ajouter un ingrédient
+add-ingredient-prompt = Envoyez-moi le nouvel ingrédient (ex: "2 tasses de farine" ou "3 œufs")
+ingredient-added = Ingrédient ajouté avec succès !
+
 # Messages de légende photo
 caption-used = 📝 Utilisation de la légende de la photo comme nom de recette : "{$caption}"
 caption-invalid = [CAPTION] La légende de la photo était invalide, utilisation du nom par défaut : "{$default_name}"

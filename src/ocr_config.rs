@@ -99,13 +99,19 @@ impl RecoveryConfig {
             ));
         }
         if self.operation_timeout_secs == 0 {
-            return Err("[CONFIG_RECOVERY] operation_timeout_secs must be greater than 0".to_string());
+            return Err(
+                "[CONFIG_RECOVERY] operation_timeout_secs must be greater than 0".to_string(),
+            );
         }
         if self.circuit_breaker_threshold == 0 {
-            return Err("[CONFIG_RECOVERY] circuit_breaker_threshold must be greater than 0".to_string());
+            return Err(
+                "[CONFIG_RECOVERY] circuit_breaker_threshold must be greater than 0".to_string(),
+            );
         }
         if self.circuit_breaker_reset_secs == 0 {
-            return Err("[CONFIG_RECOVERY] circuit_breaker_reset_secs must be greater than 0".to_string());
+            return Err(
+                "[CONFIG_RECOVERY] circuit_breaker_reset_secs must be greater than 0".to_string(),
+            );
         }
         Ok(())
     }

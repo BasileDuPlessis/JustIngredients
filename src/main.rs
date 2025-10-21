@@ -30,7 +30,9 @@ fn validate_environment_variables() -> Result<()> {
 
     let parts: Vec<&str> = bot_token.split(':').collect();
     if parts.len() != 2 {
-        return Err(anyhow::anyhow!("TELEGRAM_BOT_TOKEN format is invalid. Expected format: 'bot_id:bot_token'"));
+        return Err(anyhow::anyhow!(
+            "TELEGRAM_BOT_TOKEN format is invalid. Expected format: 'bot_id:bot_token'"
+        ));
     }
 
     // Validate bot ID is numeric
@@ -40,7 +42,9 @@ fn validate_environment_variables() -> Result<()> {
 
     // Validate bot token length (should be reasonably long)
     if parts[1].len() < 20 {
-        return Err(anyhow::anyhow!("TELEGRAM_BOT_TOKEN appears to be too short. Please verify it's a valid bot token."));
+        return Err(anyhow::anyhow!(
+            "TELEGRAM_BOT_TOKEN appears to be too short. Please verify it's a valid bot token."
+        ));
     }
 
     // Validate DATABASE_URL
@@ -53,7 +57,9 @@ fn validate_environment_variables() -> Result<()> {
 
     // Basic PostgreSQL URL validation
     if !database_url.starts_with("postgresql://") && !database_url.starts_with("postgres://") {
-        return Err(anyhow::anyhow!("DATABASE_URL must start with 'postgresql://' or 'postgres://'"));
+        return Err(anyhow::anyhow!(
+            "DATABASE_URL must start with 'postgresql://' or 'postgres://'"
+        ));
     }
 
     // Check for required components (at minimum: postgresql://user:pass@host:port/db)
@@ -78,7 +84,10 @@ fn validate_ocr_configuration() -> Result<()> {
 
     // Validate the configuration
     config.validate().map_err(|e| {
-        anyhow::anyhow!("OCR configuration validation failed: {}. Please check your configuration values.", e)
+        anyhow::anyhow!(
+            "OCR configuration validation failed: {}. Please check your configuration values.",
+            e
+        )
     })?;
 
     info!("OCR configuration validated successfully");
@@ -91,14 +100,18 @@ fn validate_http_client_config() -> Result<()> {
     let timeout_secs = env::var("HTTP_CLIENT_TIMEOUT_SECS")
         .unwrap_or_else(|_| "30".to_string())
         .parse::<u64>()
-        .map_err(|_| anyhow::anyhow!("HTTP_CLIENT_TIMEOUT_SECS must be a valid number of seconds"))?;
+        .map_err(|_| {
+            anyhow::anyhow!("HTTP_CLIENT_TIMEOUT_SECS must be a valid number of seconds")
+        })?;
 
     if timeout_secs == 0 {
         return Err(anyhow::anyhow!("HTTP_CLIENT_TIMEOUT_SECS cannot be 0"));
     }
 
     if timeout_secs > 300 {
-        return Err(anyhow::anyhow!("HTTP_CLIENT_TIMEOUT_SECS cannot be greater than 300 seconds (5 minutes)"));
+        return Err(anyhow::anyhow!(
+            "HTTP_CLIENT_TIMEOUT_SECS cannot be greater than 300 seconds (5 minutes)"
+        ));
     }
 
     // Validate metrics server configuration
@@ -107,7 +120,9 @@ fn validate_http_client_config() -> Result<()> {
         .parse::<u16>()
         .map_err(|_| anyhow::anyhow!("METRICS_PORT must be a valid port number (1-65535)"))?;
 
-    if metrics_port < 1024 && env::var("ALLOW_PRIVILEGED_PORTS").unwrap_or_else(|_| "false".to_string()) != "true" {
+    if metrics_port < 1024
+        && env::var("ALLOW_PRIVILEGED_PORTS").unwrap_or_else(|_| "false".to_string()) != "true"
+    {
         return Err(anyhow::anyhow!("METRICS_PORT {} is a privileged port (< 1024). Set ALLOW_PRIVILEGED_PORTS=true to allow or use a port >= 1024", metrics_port));
     }
 
@@ -122,21 +137,27 @@ fn validate_http_client_config() -> Result<()> {
     }
 
     if max_connections > 100 {
-        return Err(anyhow::anyhow!("DATABASE_MAX_CONNECTIONS cannot be greater than 100"));
+        return Err(anyhow::anyhow!(
+            "DATABASE_MAX_CONNECTIONS cannot be greater than 100"
+        ));
     }
 
     // Validate connection timeout
     let connect_timeout_secs = env::var("DATABASE_CONNECT_TIMEOUT_SECS")
         .unwrap_or_else(|_| "30".to_string())
         .parse::<u64>()
-        .map_err(|_| anyhow::anyhow!("DATABASE_CONNECT_TIMEOUT_SECS must be a valid number of seconds"))?;
+        .map_err(|_| {
+            anyhow::anyhow!("DATABASE_CONNECT_TIMEOUT_SECS must be a valid number of seconds")
+        })?;
 
     if connect_timeout_secs == 0 {
         return Err(anyhow::anyhow!("DATABASE_CONNECT_TIMEOUT_SECS cannot be 0"));
     }
 
     if connect_timeout_secs > 300 {
-        return Err(anyhow::anyhow!("DATABASE_CONNECT_TIMEOUT_SECS cannot be greater than 300 seconds"));
+        return Err(anyhow::anyhow!(
+            "DATABASE_CONNECT_TIMEOUT_SECS cannot be greater than 300 seconds"
+        ));
     }
 
     info!("HTTP client and server configuration validated successfully");
@@ -239,7 +260,10 @@ async fn main() -> Result<()> {
                 let localization = Arc::clone(&localization);
                 let cache = Arc::clone(&cache);
                 let dialogue = RecipeDialogue::new(storage, msg.chat.id);
-                async move { bot::message_handler_with_cache(bot, msg, pool, dialogue, localization, cache).await }
+                async move {
+                    bot::message_handler_with_cache(bot, msg, pool, dialogue, localization, cache)
+                        .await
+                }
             }
         }))
         .branch(Update::filter_callback_query().endpoint({
@@ -263,7 +287,10 @@ async fn main() -> Result<()> {
                     None => ChatId::from(q.from.id),
                 };
                 let dialogue = RecipeDialogue::new(storage, chat_id);
-                async move { bot::callback_handler_with_cache(bot, q, pool, dialogue, localization, cache).await }
+                async move {
+                    bot::callback_handler_with_cache(bot, q, pool, dialogue, localization, cache)
+                        .await
+                }
             }
         }));
 

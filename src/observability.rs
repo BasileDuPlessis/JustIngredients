@@ -26,7 +26,9 @@ pub async fn init_observability() -> anyhow::Result<()> {
 }
 
 /// Initialize the complete observability stack with custom configuration
-pub async fn init_observability_with_config(config: crate::observability_config::ObservabilityConfig) -> anyhow::Result<()> {
+pub async fn init_observability_with_config(
+    config: crate::observability_config::ObservabilityConfig,
+) -> anyhow::Result<()> {
     // Validate configuration
     config
         .validate()

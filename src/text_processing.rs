@@ -68,17 +68,25 @@ impl MeasurementConfig {
     pub fn validate(&self) -> Result<(), String> {
         // Validate max_ingredient_length
         if self.max_ingredient_length == 0 {
-            return Err("[CONFIG_TEXT_PROCESSING] max_ingredient_length must be greater than 0".to_string());
+            return Err(
+                "[CONFIG_TEXT_PROCESSING] max_ingredient_length must be greater than 0".to_string(),
+            );
         }
 
         // Validate custom regex pattern if provided
         if let Some(pattern) = &self.custom_pattern {
             if pattern.trim().is_empty() {
-                return Err("[CONFIG_TEXT_PROCESSING] custom_pattern cannot be empty if provided".to_string());
+                return Err(
+                    "[CONFIG_TEXT_PROCESSING] custom_pattern cannot be empty if provided"
+                        .to_string(),
+                );
             }
             // Test that the pattern compiles
             if regex::Regex::new(pattern).is_err() {
-                return Err(format!("[CONFIG_TEXT_PROCESSING] custom_pattern '{}' is not a valid regex", pattern));
+                return Err(format!(
+                    "[CONFIG_TEXT_PROCESSING] custom_pattern '{}' is not a valid regex",
+                    pattern
+                ));
             }
         }
 
@@ -125,11 +133,17 @@ impl MeasurementUnitsConfig {
         let validate_units = |units: &[String], category: &str| -> Result<(), String> {
             for (i, unit) in units.iter().enumerate() {
                 if unit.trim().is_empty() {
-                    return Err(format!("[CONFIG_TEXT_PROCESSING] {}[{}] cannot be empty", category, i));
+                    return Err(format!(
+                        "[CONFIG_TEXT_PROCESSING] {}[{}] cannot be empty",
+                        category, i
+                    ));
                 }
                 // Check for obviously invalid characters (control characters)
                 if unit.chars().any(|c| c.is_control()) {
-                    return Err(format!("[CONFIG_TEXT_PROCESSING] {}[{}] '{}' contains control characters", category, i, unit));
+                    return Err(format!(
+                        "[CONFIG_TEXT_PROCESSING] {}[{}] '{}' contains control characters",
+                        category, i, unit
+                    ));
                 }
             }
             Ok(())
@@ -137,7 +151,10 @@ impl MeasurementUnitsConfig {
 
         validate_units(&self.measurement_units.volume_units, "volume_units")?;
         validate_units(&self.measurement_units.weight_units, "weight_units")?;
-        validate_units(&self.measurement_units.volume_units_metric, "volume_units_metric")?;
+        validate_units(
+            &self.measurement_units.volume_units_metric,
+            "volume_units_metric",
+        )?;
         validate_units(&self.measurement_units.us_units, "us_units")?;
         validate_units(&self.measurement_units.french_units, "french_units")?;
 
@@ -581,10 +598,7 @@ impl MeasurementDetector {
         let mut matches = Vec::new();
         let mut current_pos = 0;
 
-        debug!(
-            "Finding measurements in text with {} lines",
-            line_count
-        );
+        debug!("Finding measurements in text with {} lines", line_count);
 
         for (line_number, line) in text.lines().enumerate() {
             trace!("Processing line {}: '{}'", line_number, line);

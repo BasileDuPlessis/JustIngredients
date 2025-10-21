@@ -14,7 +14,7 @@ use crate::text_processing::{MeasurementDetector, MeasurementMatch};
 use crate::dialogue::{validate_recipe_name, RecipeDialogue, RecipeDialogueState};
 
 // Import database types
-use crate::db::{create_ingredient, create_recipe, get_or_create_user, update_recipe_name};
+use crate::db::{create_ingredient, create_recipe, get_or_create_user, update_recipe_name, Ingredient};
 
 // Import UI builder functions
 use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
@@ -123,6 +123,31 @@ pub struct IngredientEditInputParams<'a> {
     pub language_code: Option<&'a str>,
     pub message_id: Option<i32>,
     pub extracted_text: String,
+}
+
+/// Parameters for adding ingredient input handling (saved recipes)
+#[derive(Debug)]
+pub struct AddIngredientInputParams<'a> {
+    pub pool: &'a PgPool,
+    pub add_input: &'a str,
+    pub recipe_id: i64,
+    pub original_ingredients: &'a [Ingredient],
+    pub current_matches: &'a [MeasurementMatch],
+    pub language_code: Option<&'a str>,
+    pub message_id: Option<i32>,
+}
+
+/// Parameters for saved ingredient edit input handling
+#[derive(Debug)]
+pub struct SavedIngredientEditInputParams<'a> {
+    pub pool: &'a PgPool,
+    pub edit_input: &'a str,
+    pub recipe_id: i64,
+    pub original_ingredients: &'a [Ingredient],
+    pub current_matches: &'a [MeasurementMatch],
+    pub language_code: Option<&'a str>,
+    pub message_id: Option<i32>,
+    pub editing_index: usize,
 }
 
 /// Handle recipe name input during dialogue
@@ -745,7 +770,7 @@ async fn handle_edit_error(
 /// 3. **Match Validation**: Verify extracted measurements meet requirements
 /// 4. **Quantity Adjustment**: Handle negative quantities and special cases
 /// 5. **Range Validation**: Ensure quantities are within reasonable bounds
-/// 6. **Fallback Parsing**: Alternative parsing strategies when detector fails
+/// 6. **Fallback Parsing Strategies**: Alternative parsing when primary detector fails
 ///
 /// ## Processing Stages
 ///
@@ -903,7 +928,9 @@ pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, &'sta
     let matches = detector.extract_ingredient_measurements(&temp_text);
 
     if let Some(mut measurement_match) = matches.into_iter().next() {
-        // Found a measurement, validate the ingredient name
+        // DEBUG: Print what we found
+        println!("DEBUG parse_ingredient_from_text: Found measurement match for '{}': quantity='{}', measurement='{:?}', ingredient_name='{}', end_pos={}",
+                 trimmed, measurement_match.quantity, measurement_match.measurement, measurement_match.ingredient_name, measurement_match.end_pos);
         validate_measurement_match(&measurement_match, &temp_text)?;
         adjust_quantity_for_negative(&mut measurement_match, &temp_text);
         validate_quantity_range(&measurement_match)?;
@@ -934,7 +961,20 @@ fn validate_measurement_match(
 ) -> Result<(), &'static str> {
     let ingredient_name = measurement_match.ingredient_name.trim();
 
-    // Re-extract the raw ingredient name to check its length
+    // For quantity-only ingredients (measurement is None), the ingredient name
+    // is already captured by the regex, so we don't need to extract it from temp_text
+    if measurement_match.measurement.is_none() {
+        // This is a quantity-only ingredient like "2 oeufs"
+        if ingredient_name.is_empty() {
+            return Err("edit-no-ingredient-name");
+        }
+        if ingredient_name.len() > 100 {
+            return Err("edit-ingredient-name-too-long");
+        }
+        return Ok(());
+    }
+
+    // For traditional measurements (measurement is Some), extract ingredient name from text after measurement
     let measurement_end = measurement_match.end_pos;
     let raw_ingredient_name = temp_text[measurement_end..].trim();
 
@@ -964,7 +1004,7 @@ fn adjust_quantity_for_negative(measurement_match: &mut MeasurementMatch, temp_t
 
     // Check if there's a minus sign before the quantity
     if quantity_start > 0 && temp_text.as_bytes()[quantity_start - 1] == b'-' {
-        // Check if the minus sign is not part of another word (should be preceded by space or start)
+        // Check if the minus sign is not part of another word (should be preceded by space or at start)
         let before_minus = if quantity_start > 1 {
             temp_text.as_bytes()[quantity_start - 2]
         } else {
@@ -1218,6 +1258,233 @@ pub async fn save_ingredients_to_database(
         processing_duration,
         user.id,
     );
+
+    Ok(())
+}
+
+/// Handle adding new ingredient input for saved recipes
+pub async fn handle_add_ingredient_input(
+    ctx: DialogueContext<'_>,
+    params: AddIngredientInputParams<'_>,
+) -> Result<()> {
+    let DialogueContext {
+        bot,
+        msg,
+        dialogue,
+        localization,
+    } = ctx;
+    let AddIngredientInputParams {
+        pool,
+        add_input,
+        recipe_id,
+        original_ingredients,
+        current_matches,
+        language_code,
+        message_id,
+    } = params;
+
+    let input = add_input.trim().to_lowercase();
+
+    // Check for cancellation commands
+    if is_cancellation_command(&input) {
+        // Return to editing saved ingredients state without changes
+        return_to_saved_ingredients_review(
+            bot,
+            msg,
+            dialogue,
+            localization,
+            recipe_id,
+            original_ingredients,
+            current_matches,
+            language_code,
+            message_id,
+        )
+        .await?;
+        return Ok(());
+    }
+
+    // Parse and validate the user input
+    match parse_ingredient_from_text(add_input) {
+        Ok(new_ingredient) => {
+            // Add the new ingredient to current matches
+            let mut updated_matches = current_matches.to_vec();
+            updated_matches.push(new_ingredient);
+
+            // Return to editing state with updated ingredients
+            return_to_saved_ingredients_review(
+                bot,
+                msg,
+                dialogue,
+                localization,
+                recipe_id,
+                original_ingredients,
+                &updated_matches,
+                language_code,
+                message_id,
+            )
+            .await?;
+        }
+        Err(error_msg) => {
+            // Invalid input, ask user to try again
+            let error_message = format!(
+                "{}\n\n{}",
+                t_lang(localization, error_msg, language_code),
+                t_lang(localization, "edit-try-again", language_code)
+            );
+            bot.send_message(msg.chat.id, error_message).await?;
+            // Stay in adding state for user to try again
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle editing individual ingredient input for saved recipes
+pub async fn handle_saved_ingredient_edit_input(
+    ctx: DialogueContext<'_>,
+    params: SavedIngredientEditInputParams<'_>,
+) -> Result<()> {
+    let DialogueContext {
+        bot,
+        msg,
+        dialogue,
+        localization,
+    } = ctx;
+    let SavedIngredientEditInputParams {
+        pool,
+        edit_input,
+        recipe_id,
+        original_ingredients,
+        current_matches,
+        language_code,
+        message_id,
+        editing_index,
+    } = params;
+
+    let input = edit_input.trim().to_lowercase();
+
+    // Check for cancellation commands
+    if is_cancellation_command(&input) {
+        // Return to editing saved ingredients state without changes
+        return_to_saved_ingredients_review(
+            bot,
+            msg,
+            dialogue,
+            localization,
+            recipe_id,
+            original_ingredients,
+            current_matches,
+            language_code,
+            message_id,
+        )
+        .await?;
+        return Ok(());
+    }
+
+    // Parse and validate the user input
+    match parse_ingredient_from_text(edit_input) {
+        Ok(new_ingredient) => {
+            // Update the ingredient at the editing index
+            if editing_index < current_matches.len() {
+                let mut updated_matches = current_matches.to_vec();
+                updated_matches[editing_index] = new_ingredient;
+
+                // Return to editing state with updated ingredients
+                return_to_saved_ingredients_review(
+                    bot,
+                    msg,
+                    dialogue,
+                    localization,
+                    recipe_id,
+                    original_ingredients,
+                    &updated_matches,
+                    language_code,
+                    message_id,
+                )
+                .await?;
+            } else {
+                // Invalid index
+                bot.send_message(
+                    msg.chat.id,
+                    t_lang(localization, "error-invalid-edit", language_code),
+                )
+                .await?;
+                return_to_saved_ingredients_review(
+                    bot,
+                    msg,
+                    dialogue,
+                    localization,
+                    recipe_id,
+                    original_ingredients,
+                    current_matches,
+                    language_code,
+                    message_id,
+                )
+                .await?;
+            }
+        }
+        Err(error_msg) => {
+            // Invalid input, ask user to try again
+            let error_message = format!(
+                "{}\n\n{}",
+                t_lang(localization, error_msg, language_code),
+                t_lang(localization, "edit-try-again", language_code)
+            );
+            bot.send_message(msg.chat.id, error_message).await?;
+            // Stay in editing state for user to try again
+        }
+    }
+
+    Ok(())
+}
+
+/// Helper function to return to saved ingredients review state
+async fn return_to_saved_ingredients_review(
+    bot: &Bot,
+    msg: &Message,
+    dialogue: RecipeDialogue,
+    localization: &Arc<crate::localization::LocalizationManager>,
+    recipe_id: i64,
+    original_ingredients: &[Ingredient],
+    current_matches: &[MeasurementMatch],
+    language_code: Option<&str>,
+    message_id: Option<i32>,
+) -> Result<()> {
+    // Send updated ingredient list message
+    let review_message = format!(
+        "✏️ **{}**\n\n{}\n\n{}",
+        t_lang(localization, "editing-recipe", language_code),
+        t_lang(localization, "editing-instructions", language_code),
+        format_ingredients_list(current_matches, language_code, localization)
+    );
+
+    let keyboard = create_ingredient_review_keyboard(current_matches, language_code, localization);
+
+    // If we have a message_id, edit the existing message; otherwise send a new one
+    if let Some(msg_id) = message_id {
+        bot.edit_message_text(
+            msg.chat.id,
+            teloxide::types::MessageId(msg_id),
+            review_message,
+        )
+        .reply_markup(keyboard)
+        .await?;
+    } else {
+        bot.send_message(msg.chat.id, review_message)
+            .reply_markup(keyboard)
+            .await?;
+    }
+
+    // Update dialogue state
+    dialogue
+        .update(RecipeDialogueState::EditingSavedIngredients {
+            recipe_id,
+            original_ingredients: original_ingredients.to_vec(),
+            current_matches: current_matches.to_vec(),
+            language_code: language_code.map(|s| s.to_string()),
+            message_id,
+        })
+        .await?;
 
     Ok(())
 }

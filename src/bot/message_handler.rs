@@ -33,10 +33,11 @@ use super::ui_builder::{
 
 // Import dialogue manager functions
 use super::dialogue_manager::{
-    handle_ingredient_edit_input, handle_ingredient_review_input,
+    handle_add_ingredient_input, handle_ingredient_edit_input, handle_ingredient_review_input,
     handle_recipe_name_after_confirm_input, handle_recipe_name_input, handle_recipe_rename_input,
-    DialogueContext, IngredientEditInputParams, IngredientReviewInputParams,
-    RecipeNameAfterConfirmInputParams, RecipeNameInputParams, RecipeRenameInputParams,
+    handle_saved_ingredient_edit_input, AddIngredientInputParams, DialogueContext,
+    IngredientEditInputParams, IngredientReviewInputParams, RecipeNameAfterConfirmInputParams,
+    RecipeNameInputParams, RecipeRenameInputParams, SavedIngredientEditInputParams,
 };
 
 // Import observability
@@ -520,6 +521,78 @@ async fn handle_text_message(
                     },
                 )
                 .await;
+            }
+            Some(RecipeDialogueState::AddingIngredientToSavedRecipe {
+                recipe_id,
+                original_ingredients,
+                current_matches,
+                language_code: dialogue_lang_code,
+                message_id,
+            }) => {
+                // Use dialogue language code if available, otherwise fall back to message language
+                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+
+                // Handle adding new ingredient input for saved recipes
+                return handle_add_ingredient_input(
+                    DialogueContext {
+                        bot,
+                        msg,
+                        dialogue,
+                        localization,
+                    },
+                    AddIngredientInputParams {
+                        pool: &pool,
+                        add_input: text,
+                        recipe_id,
+                        original_ingredients: &original_ingredients,
+                        current_matches: &current_matches,
+                        language_code: effective_language_code,
+                        message_id,
+                    },
+                )
+                .await;
+            }
+            Some(RecipeDialogueState::EditingSavedIngredient {
+                recipe_id,
+                original_ingredients,
+                current_matches,
+                editing_index,
+                language_code: dialogue_lang_code,
+                message_id,
+            }) => {
+                // Use dialogue language code if available, otherwise fall back to message language
+                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+
+                // Handle editing individual ingredient input for saved recipes
+                return handle_saved_ingredient_edit_input(
+                    DialogueContext {
+                        bot,
+                        msg,
+                        dialogue,
+                        localization,
+                    },
+                    SavedIngredientEditInputParams {
+                        pool: &pool,
+                        edit_input: text,
+                        recipe_id,
+                        original_ingredients: &original_ingredients,
+                        current_matches: &current_matches,
+                        language_code: effective_language_code,
+                        message_id,
+                        editing_index,
+                    },
+                )
+                .await;
+            }
+            Some(RecipeDialogueState::EditingSavedIngredients { .. }) => {
+                // Users should use buttons in this state, not type text
+                let effective_language_code = language_code; // No dialogue language code available
+                bot.send_message(
+                    msg.chat.id,
+                    t_lang(localization, "use-buttons-instruction", effective_language_code),
+                )
+                .await?;
+                return Ok(());
             }
             Some(RecipeDialogueState::Start) | None => {
                 // Continue with normal command handling

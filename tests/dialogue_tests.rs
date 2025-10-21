@@ -186,12 +186,20 @@ fn test_ingredient_edit_validation() {
     assert_eq!(ingredient.ingredient_name, "flour");
 
     // Test quantity-only ingredient
-    let result = parse_ingredient_from_text("2 cups flour");
+    let result = parse_ingredient_from_text("2 oeufs");
     assert!(result.is_ok());
     let ingredient = result.unwrap();
     assert_eq!(ingredient.quantity, "2");
-    assert_eq!(ingredient.measurement, Some("cups".to_string()));
-    assert_eq!(ingredient.ingredient_name, "flour");
+    assert_eq!(ingredient.measurement, None);
+    assert_eq!(ingredient.ingredient_name, "oeufs");
+
+    // Test another quantity-only ingredient
+    let result = parse_ingredient_from_text("6 eggs");
+    assert!(result.is_ok());
+    let ingredient = result.unwrap();
+    assert_eq!(ingredient.quantity, "6");
+    assert_eq!(ingredient.measurement, None);
+    assert_eq!(ingredient.ingredient_name, "eggs");
 
     // Test validation errors
     assert!(parse_ingredient_from_text("").is_err()); // Empty
