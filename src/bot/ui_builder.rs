@@ -354,7 +354,8 @@ pub fn format_database_ingredients_list(
     for ingredient in ingredients {
         let quantity_text = ingredient.quantity.map_or(String::new(), |q| format!("{} ", q));
         let unit_text = ingredient.unit.as_deref().unwrap_or("");
-        let line = format!("• {}{}{}\n", quantity_text, unit_text, ingredient.name);
+        let unit_space = if unit_text.is_empty() { "" } else { " " };
+        let line = format!("• {}{}{}{}\n", quantity_text, unit_text, unit_space, ingredient.name);
         result.push_str(&line);
     }
 
