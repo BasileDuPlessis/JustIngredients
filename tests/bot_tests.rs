@@ -1263,10 +1263,7 @@ mod tests {
         for (caption, expected) in test_cases {
             let result = match &caption {
                 Some(caption_text) if !caption_text.trim().is_empty() => {
-                    match validate_recipe_name(caption_text) {
-                        Ok(validated) => validated,
-                        Err(_) => "Recipe",
-                    }
+                    validate_recipe_name(caption_text).unwrap_or("Recipe")
                 }
                 _ => "Recipe",
             };

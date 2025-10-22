@@ -11,7 +11,6 @@
 
 use crate::text_processing::MeasurementMatch;
 use regex::Regex;
-use regex; // Add regex import
 
 /// Validates a recipe name input
 ///
@@ -272,118 +271,6 @@ pub fn parse_quantity(quantity_str: &str) -> Option<f64> {
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_validate_recipe_name() {
-        // Valid names
-        assert!(validate_recipe_name("My Recipe").is_ok());
-        assert!(validate_recipe_name("  Recipe  ").is_ok());
-        assert_eq!(validate_recipe_name("  Recipe  ").unwrap(), "Recipe");
-
-        // Empty names
-        assert_eq!(validate_recipe_name(""), Err("empty"));
-        assert_eq!(validate_recipe_name("   "), Err("empty"));
-
-        // Too long names
-        let long_name = "a".repeat(256);
-        assert_eq!(validate_recipe_name(&long_name), Err("too_long"));
-    }
-
-    #[test]
-    fn test_validate_basic_input() {
-        // Valid input
-        assert!(validate_basic_input("valid input").is_ok());
-        assert!(validate_basic_input("a").is_ok());
-
-        // Empty input
-        assert_eq!(validate_basic_input(""), Err("edit-empty"));
-
-        // Too long input
-        let long_input = "a".repeat(201);
-        assert_eq!(validate_basic_input(&long_input), Err("edit-too-long"));
-    }
-
-    #[test]
-    fn test_parse_quantity() {
-        // Whole numbers
-        assert_eq!(parse_quantity("2"), Some(2.0));
-        assert_eq!(parse_quantity("0"), Some(0.0));
-        assert_eq!(parse_quantity("-5"), Some(-5.0));
-
-        // Decimals
-        assert_eq!(parse_quantity("2.5"), Some(2.5));
-        assert_eq!(parse_quantity("1.0"), Some(1.0));
-
-        // Fractions
-        assert_eq!(parse_quantity("1/2"), Some(0.5));
-        assert_eq!(parse_quantity("3/4"), Some(0.75));
-        assert_eq!(parse_quantity("2/1"), Some(2.0));
-
-        // European format
-        assert_eq!(parse_quantity("2,5"), Some(2.5));
-
-        // Invalid cases
-        assert_eq!(parse_quantity(""), None);
-        assert_eq!(parse_quantity("abc"), None);
-        assert_eq!(parse_quantity("1/0"), None);
-        assert_eq!(parse_quantity("1/"), None);
-        assert_eq!(parse_quantity("/2"), None);
-    }
-
-    #[test]
-    fn test_validate_quantity_range() {
-        let create_match = |quantity: &str| MeasurementMatch {
-            quantity: quantity.to_string(),
-            measurement: Some("cups".to_string()),
-            ingredient_name: "flour".to_string(),
-            line_number: 0,
-            start_pos: 0,
-            end_pos: 10,
-        };
-
-        // Valid ranges
-        assert!(validate_quantity_range(&create_match("1")).is_ok());
-        assert!(validate_quantity_range(&create_match("10000")).is_ok());
-        assert!(validate_quantity_range(&create_match("0.1")).is_ok());
-        assert!(validate_quantity_range(&create_match("1/2")).is_ok());
-
-        // Invalid ranges
-        assert_eq!(validate_quantity_range(&create_match("0")), Err("edit-invalid-quantity"));
-        assert_eq!(validate_quantity_range(&create_match("-1")), Err("edit-invalid-quantity"));
-        assert_eq!(validate_quantity_range(&create_match("10001")), Err("edit-invalid-quantity"));
-    }
-
-    #[test]
-    fn test_adjust_quantity_for_negative() {
-        let mut create_match = |quantity: &str, start_pos: usize| MeasurementMatch {
-            quantity: quantity.to_string(),
-            measurement: Some("cups".to_string()),
-            ingredient_name: "flour".to_string(),
-            line_number: 0,
-            start_pos,
-            end_pos: 10,
-        };
-
-        // Should add negative sign
-        let mut match1 = create_match("2", 7); // Position of "2" in "-2 "
-        adjust_quantity_for_negative(&mut match1, "temp: -2 cups flour");
-        assert_eq!(match1.quantity, "-2");
-
-        // Should not add negative sign (minus not at valid position)
-        let mut match2 = create_match("2", 8); // Position after "some -2 "
-        adjust_quantity_for_negative(&mut match2, "temp: some -2 cups flour");
-        assert_eq!(match2.quantity, "2");
-
-        // Should not add negative sign (no minus)
-        let mut match3 = create_match("2", 6);
-        adjust_quantity_for_negative(&mut match3, "temp: 2 cups flour");
-        assert_eq!(match3.quantity, "2");
-    }
-}
-
 /// Parse ingredient text input and create a MeasurementMatch
 ///
 /// This function implements a multi-stage parsing algorithm for ingredient editing:
@@ -535,4 +422,116 @@ fn parse_with_quantity(
         start_pos: 0,
         end_pos: trimmed.len(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_validate_recipe_name() {
+        // Valid names
+        assert!(validate_recipe_name("My Recipe").is_ok());
+        assert!(validate_recipe_name("  Recipe  ").is_ok());
+        assert_eq!(validate_recipe_name("  Recipe  ").unwrap(), "Recipe");
+
+        // Empty names
+        assert_eq!(validate_recipe_name(""), Err("empty"));
+        assert_eq!(validate_recipe_name("   "), Err("empty"));
+
+        // Too long names
+        let long_name = "a".repeat(256);
+        assert_eq!(validate_recipe_name(&long_name), Err("too_long"));
+    }
+
+    #[test]
+    fn test_validate_basic_input() {
+        // Valid input
+        assert!(validate_basic_input("valid input").is_ok());
+        assert!(validate_basic_input("a").is_ok());
+
+        // Empty input
+        assert_eq!(validate_basic_input(""), Err("edit-empty"));
+
+        // Too long input
+        let long_input = "a".repeat(201);
+        assert_eq!(validate_basic_input(&long_input), Err("edit-too-long"));
+    }
+
+    #[test]
+    fn test_parse_quantity() {
+        // Whole numbers
+        assert_eq!(parse_quantity("2"), Some(2.0));
+        assert_eq!(parse_quantity("0"), Some(0.0));
+        assert_eq!(parse_quantity("-5"), Some(-5.0));
+
+        // Decimals
+        assert_eq!(parse_quantity("2.5"), Some(2.5));
+        assert_eq!(parse_quantity("1.0"), Some(1.0));
+
+        // Fractions
+        assert_eq!(parse_quantity("1/2"), Some(0.5));
+        assert_eq!(parse_quantity("3/4"), Some(0.75));
+        assert_eq!(parse_quantity("2/1"), Some(2.0));
+
+        // European format
+        assert_eq!(parse_quantity("2,5"), Some(2.5));
+
+        // Invalid cases
+        assert_eq!(parse_quantity(""), None);
+        assert_eq!(parse_quantity("abc"), None);
+        assert_eq!(parse_quantity("1/0"), None);
+        assert_eq!(parse_quantity("1/"), None);
+        assert_eq!(parse_quantity("/2"), None);
+    }
+
+    #[test]
+    fn test_validate_quantity_range() {
+        let create_match = |quantity: &str| MeasurementMatch {
+            quantity: quantity.to_string(),
+            measurement: Some("cups".to_string()),
+            ingredient_name: "flour".to_string(),
+            line_number: 0,
+            start_pos: 0,
+            end_pos: 10,
+        };
+
+        // Valid ranges
+        assert!(validate_quantity_range(&create_match("1")).is_ok());
+        assert!(validate_quantity_range(&create_match("10000")).is_ok());
+        assert!(validate_quantity_range(&create_match("0.1")).is_ok());
+        assert!(validate_quantity_range(&create_match("1/2")).is_ok());
+
+        // Invalid ranges
+        assert_eq!(validate_quantity_range(&create_match("0")), Err("edit-invalid-quantity"));
+        assert_eq!(validate_quantity_range(&create_match("-1")), Err("edit-invalid-quantity"));
+        assert_eq!(validate_quantity_range(&create_match("10001")), Err("edit-invalid-quantity"));
+    }
+
+    #[test]
+    fn test_adjust_quantity_for_negative() {
+        let create_match = |quantity: &str, start_pos: usize| MeasurementMatch {
+            quantity: quantity.to_string(),
+            measurement: Some("cups".to_string()),
+            ingredient_name: "flour".to_string(),
+            line_number: 0,
+            start_pos,
+            end_pos: 10,
+        };
+
+        // Should add negative sign
+        let mut match1 = create_match("2", 7); // Position of "2" in "-2 "
+        adjust_quantity_for_negative(&mut match1, "temp: -2 cups flour");
+        assert_eq!(match1.quantity, "-2");
+
+        // Should not add negative sign (minus not at valid position)
+        let mut match2 = create_match("2", 8); // Position after "some -2 "
+        adjust_quantity_for_negative(&mut match2, "temp: some -2 cups flour");
+        assert_eq!(match2.quantity, "2");
+
+        // Should not add negative sign (no minus)
+        let mut match3 = create_match("2", 6);
+        adjust_quantity_for_negative(&mut match3, "temp: 2 cups flour");
+        assert_eq!(match3.quantity, "2");
+    }
 }

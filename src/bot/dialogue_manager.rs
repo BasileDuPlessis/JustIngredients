@@ -272,13 +272,13 @@ pub async fn handle_recipe_name_after_confirm_input(
     match validate_recipe_name(recipe_name_input) {
         Ok(validated_name) => {
             handle_recipe_name_success(RecipeNameSuccessParams {
-                ctx: &handler_ctx,
+                ctx: handler_ctx,
                 msg,
                 dialogue,
                 pool: &pool,
                 ingredients: &ingredients,
                 extracted_text: &extracted_text,
-                validated_name: &validated_name,
+                validated_name,
             })
             .await
         }
@@ -409,7 +409,7 @@ pub async fn handle_ingredient_edit_input(
     // Check for cancellation commands
     if is_cancellation_command(&input) {
         return handle_edit_cancellation(EditCancellationParams {
-            ctx: &handler_ctx,
+            ctx: handler_ctx,
             msg,
             dialogue,
             ingredients: &ingredients,
@@ -424,7 +424,7 @@ pub async fn handle_ingredient_edit_input(
     match parse_ingredient_from_text(edit_input) {
         Ok(new_ingredient) => {
             handle_edit_success(EditSuccessParams {
-                ctx: &handler_ctx,
+                ctx: handler_ctx,
                 msg,
                 dialogue,
                 ingredients,
@@ -476,7 +476,7 @@ pub async fn handle_recipe_rename_input(
     match validate_recipe_name(new_name_input) {
         Ok(validated_name) => {
             // Update the recipe name in the database
-            match update_recipe_name(&_pool, recipe_id, &validated_name).await {
+            match update_recipe_name(_pool, recipe_id, validated_name).await {
                 Ok(true) => {
                     let success_message = format!(
                         "✅ **{}**\n\n{}",
@@ -484,7 +484,7 @@ pub async fn handle_recipe_rename_input(
                         t_args_lang(
                             handler_ctx.localization,
                             "rename-recipe-success-details",
-                            &[("old_name", &current_name), ("new_name", &validated_name)],
+                            &[("old_name", &current_name), ("new_name", validated_name)],
                             handler_ctx.language_code
                         )
                     );
@@ -863,17 +863,17 @@ pub async fn handle_add_ingredient_input(
     // Check for cancellation commands
     if is_cancellation_command(&input) {
         // Return to editing saved ingredients state without changes
-        return_to_saved_ingredients_review(
+        return_to_saved_ingredients_review(ReturnToSavedIngredientsReviewParams {
             bot,
             msg,
             dialogue,
-            handler_ctx.localization,
+            localization: handler_ctx.localization,
             recipe_id,
             original_ingredients,
             current_matches,
-            handler_ctx.language_code,
+            language_code: handler_ctx.language_code,
             message_id,
-        )
+        })
         .await?;
         return Ok(());
     }
@@ -886,17 +886,17 @@ pub async fn handle_add_ingredient_input(
             updated_matches.push(new_ingredient);
 
             // Return to editing state with updated ingredients
-            return_to_saved_ingredients_review(
+            return_to_saved_ingredients_review(ReturnToSavedIngredientsReviewParams {
                 bot,
                 msg,
                 dialogue,
-                handler_ctx.localization,
+                localization: handler_ctx.localization,
                 recipe_id,
                 original_ingredients,
-                &updated_matches,
-                handler_ctx.language_code,
+                current_matches: &updated_matches,
+                language_code: handler_ctx.language_code,
                 message_id,
-            )
+            })
             .await?;
         }
         Err(error_msg) => {
@@ -941,17 +941,17 @@ pub async fn handle_saved_ingredient_edit_input(
     // Check for cancellation commands
     if is_cancellation_command(&input) {
         // Return to editing saved ingredients state without changes
-        return_to_saved_ingredients_review(
+        return_to_saved_ingredients_review(ReturnToSavedIngredientsReviewParams {
             bot,
             msg,
             dialogue,
-            handler_ctx.localization,
+            localization: handler_ctx.localization,
             recipe_id,
             original_ingredients,
             current_matches,
-            handler_ctx.language_code,
+            language_code: handler_ctx.language_code,
             message_id,
-        )
+        })
         .await?;
         return Ok(());
     }
@@ -965,17 +965,17 @@ pub async fn handle_saved_ingredient_edit_input(
                 updated_matches[editing_index] = new_ingredient;
 
                 // Return to editing state with updated ingredients
-                return_to_saved_ingredients_review(
+                return_to_saved_ingredients_review(ReturnToSavedIngredientsReviewParams {
                     bot,
                     msg,
                     dialogue,
-                    handler_ctx.localization,
+                    localization: handler_ctx.localization,
                     recipe_id,
                     original_ingredients,
-                    &updated_matches,
-                    handler_ctx.language_code,
+                    current_matches: &updated_matches,
+                    language_code: handler_ctx.language_code,
                     message_id,
-                )
+                })
                 .await?;
             } else {
                 // Invalid index
@@ -984,17 +984,17 @@ pub async fn handle_saved_ingredient_edit_input(
                     t_lang(handler_ctx.localization, "error-invalid-edit", handler_ctx.language_code),
                 )
                 .await?;
-                return_to_saved_ingredients_review(
+                return_to_saved_ingredients_review(ReturnToSavedIngredientsReviewParams {
                     bot,
                     msg,
                     dialogue,
-                    handler_ctx.localization,
+                    localization: handler_ctx.localization,
                     recipe_id,
                     original_ingredients,
                     current_matches,
-                    handler_ctx.language_code,
+                    language_code: handler_ctx.language_code,
                     message_id,
-                )
+                })
                 .await?;
             }
         }
@@ -1013,18 +1013,33 @@ pub async fn handle_saved_ingredient_edit_input(
     Ok(())
 }
 
-/// Helper function to return to saved ingredients review state
-async fn return_to_saved_ingredients_review(
-    bot: &Bot,
-    msg: &Message,
+/// Parameters for returning to saved ingredients review
+#[derive(Debug)]
+struct ReturnToSavedIngredientsReviewParams<'a> {
+    bot: &'a Bot,
+    msg: &'a Message,
     dialogue: RecipeDialogue,
-    localization: &Arc<crate::localization::LocalizationManager>,
+    localization: &'a Arc<crate::localization::LocalizationManager>,
     recipe_id: i64,
-    original_ingredients: &[Ingredient],
-    current_matches: &[MeasurementMatch],
-    language_code: Option<&str>,
+    original_ingredients: &'a [Ingredient],
+    current_matches: &'a [MeasurementMatch],
+    language_code: Option<&'a str>,
     message_id: Option<i32>,
-) -> Result<()> {
+}
+
+/// Helper function to return to saved ingredients review state
+async fn return_to_saved_ingredients_review(params: ReturnToSavedIngredientsReviewParams<'_>) -> Result<()> {
+    let ReturnToSavedIngredientsReviewParams {
+        bot,
+        msg,
+        dialogue,
+        localization,
+        recipe_id,
+        original_ingredients,
+        current_matches,
+        language_code,
+        message_id,
+    } = params;
     // Send updated ingredient list message
     let review_message = format!(
         "✏️ **{}**\n\n{}\n\n{}",

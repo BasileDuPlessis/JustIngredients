@@ -85,33 +85,27 @@ pub struct OcrConfig {
 
 impl RecoveryConfig {
     /// Validate recovery configuration parameters
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> crate::errors::AppResult<()> {
         if self.max_retries == 0 {
-            return Err("[CONFIG_RECOVERY] max_retries must be greater than 0".to_string());
+            return Err(crate::errors::AppError::Config("max_retries must be greater than 0".to_string()));
         }
         if self.base_retry_delay_ms == 0 {
-            return Err("[CONFIG_RECOVERY] base_retry_delay_ms must be greater than 0".to_string());
+            return Err(crate::errors::AppError::Config("base_retry_delay_ms must be greater than 0".to_string()));
         }
         if self.max_retry_delay_ms < self.base_retry_delay_ms {
-            return Err(format!(
-                "[CONFIG_RECOVERY] max_retry_delay_ms ({}) must be >= base_retry_delay_ms ({})",
+            return Err(crate::errors::AppError::Config(format!(
+                "max_retry_delay_ms ({}) must be >= base_retry_delay_ms ({})",
                 self.max_retry_delay_ms, self.base_retry_delay_ms
-            ));
+            )));
         }
         if self.operation_timeout_secs == 0 {
-            return Err(
-                "[CONFIG_RECOVERY] operation_timeout_secs must be greater than 0".to_string(),
-            );
+            return Err(crate::errors::AppError::Config("operation_timeout_secs must be greater than 0".to_string()));
         }
         if self.circuit_breaker_threshold == 0 {
-            return Err(
-                "[CONFIG_RECOVERY] circuit_breaker_threshold must be greater than 0".to_string(),
-            );
+            return Err(crate::errors::AppError::Config("circuit_breaker_threshold must be greater than 0".to_string()));
         }
         if self.circuit_breaker_reset_secs == 0 {
-            return Err(
-                "[CONFIG_RECOVERY] circuit_breaker_reset_secs must be greater than 0".to_string(),
-            );
+            return Err(crate::errors::AppError::Config("circuit_breaker_reset_secs must be greater than 0".to_string()));
         }
         Ok(())
     }
@@ -119,35 +113,35 @@ impl RecoveryConfig {
 
 impl FormatSizeLimits {
     /// Validate format size limits
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> crate::errors::AppResult<()> {
         if self.png_max == 0 {
-            return Err("[CONFIG_FORMAT] png_max must be greater than 0".to_string());
+            return Err(crate::errors::AppError::Config("png_max must be greater than 0".to_string()));
         }
         if self.jpeg_max == 0 {
-            return Err("[CONFIG_FORMAT] jpeg_max must be greater than 0".to_string());
+            return Err(crate::errors::AppError::Config("jpeg_max must be greater than 0".to_string()));
         }
         if self.bmp_max == 0 {
-            return Err("[CONFIG_FORMAT] bmp_max must be greater than 0".to_string());
+            return Err(crate::errors::AppError::Config("bmp_max must be greater than 0".to_string()));
         }
         if self.tiff_max == 0 {
-            return Err("[CONFIG_FORMAT] tiff_max must be greater than 0".to_string());
+            return Err(crate::errors::AppError::Config("tiff_max must be greater than 0".to_string()));
         }
         if self.min_quick_reject == 0 {
-            return Err("[CONFIG_FORMAT] min_quick_reject must be greater than 0".to_string());
+            return Err(crate::errors::AppError::Config("min_quick_reject must be greater than 0".to_string()));
         }
 
         // Ensure format limits are reasonable compared to each other
         if self.bmp_max > self.png_max {
-            return Err(format!(
-                "[CONFIG_FORMAT] bmp_max ({}) should not exceed png_max ({})",
+            return Err(crate::errors::AppError::Config(format!(
+                "bmp_max ({}) should not exceed png_max ({})",
                 self.bmp_max, self.png_max
-            ));
+            )));
         }
         if self.jpeg_max > self.png_max {
-            return Err(format!(
-                "[CONFIG_FORMAT] jpeg_max ({}) should not exceed png_max ({})",
+            return Err(crate::errors::AppError::Config(format!(
+                "jpeg_max ({}) should not exceed png_max ({})",
                 self.jpeg_max, self.png_max
-            ));
+            )));
         }
 
         Ok(())
@@ -169,29 +163,29 @@ impl Default for OcrConfig {
 
 impl OcrConfig {
     /// Validate OCR configuration parameters
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> crate::errors::AppResult<()> {
         // Validate languages string
         if self.languages.trim().is_empty() {
-            return Err("[CONFIG_OCR] languages cannot be empty".to_string());
+            return Err(crate::errors::AppError::Config("languages cannot be empty".to_string()));
         }
 
         // Validate buffer sizes
         if self.buffer_size == 0 {
-            return Err("[CONFIG_OCR] buffer_size must be greater than 0".to_string());
+            return Err(crate::errors::AppError::Config("buffer_size must be greater than 0".to_string()));
         }
         if self.min_format_bytes == 0 {
-            return Err("[CONFIG_OCR] min_format_bytes must be greater than 0".to_string());
+            return Err(crate::errors::AppError::Config("min_format_bytes must be greater than 0".to_string()));
         }
         if self.min_format_bytes > self.buffer_size {
-            return Err(format!(
-                "[CONFIG_OCR] min_format_bytes ({}) cannot exceed buffer_size ({})",
+            return Err(crate::errors::AppError::Config(format!(
+                "min_format_bytes ({}) cannot exceed buffer_size ({})",
                 self.min_format_bytes, self.buffer_size
-            ));
+            )));
         }
 
         // Validate file size limits
         if self.max_file_size == 0 {
-            return Err("[CONFIG_OCR] max_file_size must be greater than 0".to_string());
+            return Err(crate::errors::AppError::Config("max_file_size must be greater than 0".to_string()));
         }
 
         // Validate nested configurations

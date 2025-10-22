@@ -2,6 +2,7 @@
 name = "just-ingredients"
 version = "0.1.0"
 edition = "2021"
+license = "MIT"
 
 [dependencies]
 teloxide = "0.17.0"

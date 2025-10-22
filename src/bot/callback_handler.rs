@@ -118,8 +118,8 @@ async fn handle_review_ingredients_callbacks(
             if data.starts_with("edit_") {
                 handle_edit_button(EditButtonParams {
                     ctx: &HandlerContext {
-                        bot: &bot,
-                        localization: &localization,
+                        bot,
+                        localization,
                         language_code: dialogue_lang_code.as_deref(),
                     },
                     q,
@@ -135,8 +135,8 @@ async fn handle_review_ingredients_callbacks(
             } else if data.starts_with("delete_") {
                 handle_delete_button(DeleteButtonParams {
                     ctx: &HandlerContext {
-                        bot: &bot,
-                        localization: &localization,
+                        bot,
+                        localization,
                         language_code: dialogue_lang_code.as_deref(),
                     },
                     q,
@@ -153,8 +153,8 @@ async fn handle_review_ingredients_callbacks(
             } else if data == "confirm" {
                 handle_confirm_button(ConfirmButtonParams {
                     ctx: &HandlerContext {
-                        bot: &bot,
-                        localization: &localization,
+                        bot,
+                        localization,
                         language_code: dialogue_lang_code.as_deref(),
                     },
                     q,
@@ -202,8 +202,8 @@ async fn handle_editing_saved_ingredients_callbacks(
             if data.starts_with("edit_") {
                 handle_edit_saved_ingredient_button(EditSavedIngredientButtonParams {
                     ctx: &HandlerContext {
-                        bot: &bot,
-                        localization: &localization,
+                        bot,
+                        localization,
                         language_code: language_code.as_deref(),
                     },
                     q,
@@ -219,8 +219,8 @@ async fn handle_editing_saved_ingredients_callbacks(
             } else if data.starts_with("delete_") {
                 handle_delete_saved_ingredient_button(DeleteSavedIngredientButtonParams {
                     ctx: &HandlerContext {
-                        bot: &bot,
-                        localization: &localization,
+                        bot,
+                        localization,
                         language_code: language_code.as_deref(),
                     },
                     q,
@@ -236,8 +236,8 @@ async fn handle_editing_saved_ingredients_callbacks(
             } else if data == "confirm" {
                 handle_confirm_saved_ingredients_button(ConfirmSavedIngredientsButtonParams {
                     ctx: &HandlerContext {
-                        bot: &bot,
-                        localization: &localization,
+                        bot,
+                        localization,
                         language_code: language_code.as_deref(),
                     },
                     q,

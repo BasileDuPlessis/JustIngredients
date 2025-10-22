@@ -70,13 +70,13 @@ pub fn detect_ingredient_changes(
     }
 
     // Check for additions (ingredients in edited but not in original)
-    for i in min_len..edited.len() {
-        changes.to_add.push(edited[i].clone());
+    for ingredient in edited.iter().skip(min_len) {
+        changes.to_add.push(ingredient.clone());
     }
 
     // Check for deletions (ingredients in original but not in edited)
-    for i in min_len..original.len() {
-        changes.to_delete.push(original[i].id);
+    for ingredient in original.iter().skip(min_len) {
+        changes.to_delete.push(ingredient.id);
     }
 
     changes

@@ -65,28 +65,27 @@ impl Default for MeasurementConfig {
 
 impl MeasurementConfig {
     /// Validate measurement configuration parameters
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> crate::errors::AppResult<()> {
         // Validate max_ingredient_length
         if self.max_ingredient_length == 0 {
-            return Err(
-                "[CONFIG_TEXT_PROCESSING] max_ingredient_length must be greater than 0".to_string(),
-            );
+            return Err(crate::errors::AppError::Config(
+                "max_ingredient_length must be greater than 0".to_string(),
+            ));
         }
 
         // Validate custom regex pattern if provided
         if let Some(pattern) = &self.custom_pattern {
             if pattern.trim().is_empty() {
-                return Err(
-                    "[CONFIG_TEXT_PROCESSING] custom_pattern cannot be empty if provided"
-                        .to_string(),
-                );
+                return Err(crate::errors::AppError::Config(
+                    "custom_pattern cannot be empty if provided".to_string(),
+                ));
             }
             // Test that the pattern compiles
             if regex::Regex::new(pattern).is_err() {
-                return Err(format!(
-                    "[CONFIG_TEXT_PROCESSING] custom_pattern '{}' is not a valid regex",
+                return Err(crate::errors::AppError::Config(format!(
+                    "custom_pattern '{}' is not a valid regex",
                     pattern
-                ));
+                )));
             }
         }
 
@@ -111,39 +110,39 @@ pub struct MeasurementUnits {
 
 impl MeasurementUnitsConfig {
     /// Validate measurement units configuration
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> crate::errors::AppResult<()> {
         // Validate that all unit arrays are non-empty
         if self.measurement_units.volume_units.is_empty() {
-            return Err("[CONFIG_TEXT_PROCESSING] volume_units cannot be empty".to_string());
+            return Err(crate::errors::AppError::Config("volume_units cannot be empty".to_string()));
         }
         if self.measurement_units.weight_units.is_empty() {
-            return Err("[CONFIG_TEXT_PROCESSING] weight_units cannot be empty".to_string());
+            return Err(crate::errors::AppError::Config("weight_units cannot be empty".to_string()));
         }
         if self.measurement_units.volume_units_metric.is_empty() {
-            return Err("[CONFIG_TEXT_PROCESSING] volume_units_metric cannot be empty".to_string());
+            return Err(crate::errors::AppError::Config("volume_units_metric cannot be empty".to_string()));
         }
         if self.measurement_units.us_units.is_empty() {
-            return Err("[CONFIG_TEXT_PROCESSING] us_units cannot be empty".to_string());
+            return Err(crate::errors::AppError::Config("us_units cannot be empty".to_string()));
         }
         if self.measurement_units.french_units.is_empty() {
-            return Err("[CONFIG_TEXT_PROCESSING] french_units cannot be empty".to_string());
+            return Err(crate::errors::AppError::Config("french_units cannot be empty".to_string()));
         }
 
         // Validate that all unit strings are non-empty and contain valid characters
-        let validate_units = |units: &[String], category: &str| -> Result<(), String> {
+        let validate_units = |units: &[String], category: &str| -> crate::errors::AppResult<()> {
             for (i, unit) in units.iter().enumerate() {
                 if unit.trim().is_empty() {
-                    return Err(format!(
-                        "[CONFIG_TEXT_PROCESSING] {}[{}] cannot be empty",
+                    return Err(crate::errors::AppError::Config(format!(
+                        "{}[{}] cannot be empty",
                         category, i
-                    ));
+                    )));
                 }
                 // Check for obviously invalid characters (control characters)
                 if unit.chars().any(|c| c.is_control()) {
-                    return Err(format!(
-                        "[CONFIG_TEXT_PROCESSING] {}[{}] '{}' contains control characters",
+                    return Err(crate::errors::AppError::Config(format!(
+                        "{}[{}] '{}' contains control characters",
                         category, i, unit
-                    ));
+                    )));
                 }
             }
             Ok(())
@@ -446,7 +445,9 @@ impl MeasurementDetector {
     #[allow(dead_code)]
     pub fn with_config(config: MeasurementConfig) -> Result<Self, regex::Error> {
         // Validate configuration first
-        config.validate().map_err(regex::Error::Syntax)?;
+        if let Err(e) = config.validate() {
+            return Err(regex::Error::Syntax(format!("Invalid configuration: {}", e)));
+        }
 
         let pattern = if let Some(custom_pattern) = &config.custom_pattern {
             debug!("Using custom regex pattern: {}", custom_pattern);

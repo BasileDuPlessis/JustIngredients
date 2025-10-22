@@ -106,31 +106,31 @@ impl ObservabilityConfig {
     }
 
     /// Validate configuration
-    pub fn validate(&self) -> Result<(), String> {
+    pub fn validate(&self) -> crate::errors::AppResult<()> {
         // Validate OTLP endpoint format if provided
         if let Some(endpoint) = &self.otlp_endpoint {
             if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
-                return Err(format!(
-                    "[CONFIG_OBSERVABILITY] Invalid OTLP endpoint format: {}",
+                return Err(crate::errors::AppError::Config(format!(
+                    "Invalid OTLP endpoint format: {}",
                     endpoint
-                ));
+                )));
             }
         }
 
         // Validate sampling ratio
         if !(0.0..=1.0).contains(&self.trace_sampling_ratio) {
-            return Err(format!(
-                "[CONFIG_OBSERVABILITY] Invalid trace sampling ratio: {}",
+            return Err(crate::errors::AppError::Config(format!(
+                "Invalid trace sampling ratio: {}",
                 self.trace_sampling_ratio
-            ));
+            )));
         }
 
         // Validate port range
         if self.metrics_port == 0 {
-            return Err(format!(
-                "[CONFIG_OBSERVABILITY] Invalid metrics port: {}",
+            return Err(crate::errors::AppError::Config(format!(
+                "Invalid metrics port: {}",
                 self.metrics_port
-            ));
+            )));
         }
 
         Ok(())
