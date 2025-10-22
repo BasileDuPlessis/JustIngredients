@@ -18,11 +18,14 @@ This directory contains automated scripts for deploying the JustIngredients Tele
 ```
 
 ### `setup.sh` - Infrastructure Setup
-**Purpose**: Set up Fly.io infrastructure (app, database, secrets)
+**Purpose**: Set up Fly.io infrastructure (database, app, secrets)
+- Creates PostgreSQL database with auto-generated secure password
 - Creates Fly.io application
-- Sets up PostgreSQL database
-- Configures secrets (Telegram bot token)
+- Attaches database to application
+- Configures secrets (Telegram bot token, auto-generated database URL)
 - Enables automated backups
+
+**Database Security**: Fly.io automatically generates a cryptographically secure password for your database, providing enterprise-grade security without manual password management.
 
 ### `deploy.sh` - Application Deployment
 **Purpose**: Build and deploy the application
@@ -66,6 +69,17 @@ Before running any scripts, ensure you have:
 4. **Telegram Bot Token**: Get from @BotFather on Telegram
 5. **Rust Toolchain**: Install with rustup
 
+## Database Security
+
+The deployment uses Fly.io's automatically generated database passwords:
+
+- **Auto-Generated**: Fly.io creates cryptographically secure passwords
+- **Enterprise Security**: Passwords are long, random, and follow security best practices
+- **No User Interaction**: Setup is streamlined without password prompts
+- **Managed Lifecycle**: Fly.io handles password security and rotation
+
+**Benefits**: Simpler deployment, stronger security, and automatic management while maintaining all functionality.
+
 ## Quick Start
 
 1. **Clone and navigate to the project**:
@@ -78,12 +92,16 @@ Before running any scripts, ensure you have:
    chmod +x scripts/*.sh
    ```
 
-3. **Run complete deployment**:
+3. **Prepare your credentials**:
+   - Get Telegram Bot Token from @BotFather
+
+4. **Run complete deployment**:
    ```bash
    ./scripts/deploy-all.sh
    ```
+   The script will prompt you for your Telegram Bot Token. Fly.io will automatically generate a secure database password.
 
-4. **Test your bot**:
+5. **Test your bot**:
    - Send `/start` to your bot on Telegram
    - Send an image to test OCR functionality
 
