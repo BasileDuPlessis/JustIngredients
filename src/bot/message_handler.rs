@@ -1020,12 +1020,23 @@ pub async fn message_handler(
     pool: Arc<PgPool>,
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
+    deduplicator: Option<&crate::deduplication::SharedDeduplicator>,
 ) -> Result<()> {
     let span = crate::observability::telegram_span(
         "message_handler",
         msg.from.as_ref().map(|u| u.id.0 as i64),
     );
     let _enter = span.enter();
+
+    // Check for duplicate requests if deduplicator is provided
+    if let Some(dedup) = deduplicator {
+        let request_id = crate::deduplication::RequestId::new(msg.chat.id, msg.id);
+        if dedup.is_duplicate(&request_id)? {
+            debug!("Ignoring duplicate request: chat_id={}, message_id={}", msg.chat.id, msg.id);
+            observability::record_telegram_duplicate_message();
+            return Ok(());
+        }
+    }
 
     let start_time = std::time::Instant::now();
     let message_type = if msg.text().is_some() {
@@ -1079,8 +1090,9 @@ pub async fn message_handler_with_cache(
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
     _cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
+    deduplicator: Option<&crate::deduplication::SharedDeduplicator>,
 ) -> Result<()> {
     // For now, delegate to the original handler
     // TODO: Integrate caching into specific operations
-    message_handler(bot, msg, pool, dialogue, localization).await
+    message_handler(bot, msg, pool, dialogue, localization, deduplicator).await
 }

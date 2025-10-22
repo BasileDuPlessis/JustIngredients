@@ -551,6 +551,11 @@ pub fn record_telegram_message(message_type: &str) {
     metrics::counter!("telegram_messages_total", "type" => message_type).increment(1);
 }
 
+/// Record duplicate Telegram message detection
+pub fn record_telegram_duplicate_message() {
+    metrics::counter!("telegram_duplicate_messages_total").increment(1);
+}
+
 /// Record detailed Telegram bot performance metrics
 pub fn record_telegram_performance_metrics(
     message_type: &str,
