@@ -184,11 +184,7 @@ pub mod error_logging {
     }
 
     /// Log configuration errors during startup/initialization
-    pub fn log_config_error(
-        error: &impl std::fmt::Display,
-        config_key: &str,
-        operation: &str,
-    ) {
+    pub fn log_config_error(error: &impl std::fmt::Display, config_key: &str, operation: &str) {
         error!(
             error = %error,
             config_key = %config_key,

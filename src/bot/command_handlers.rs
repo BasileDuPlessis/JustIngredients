@@ -13,9 +13,7 @@ use crate::localization::t_lang;
 use crate::db::get_user_recipes_paginated;
 
 // Import UI builder functions
-use super::ui_builder::{
-    create_recipes_pagination_keyboard,
-};
+use super::ui_builder::create_recipes_pagination_keyboard;
 
 // Import HandlerContext
 // use super::HandlerContext;

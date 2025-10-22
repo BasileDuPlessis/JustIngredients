@@ -8,8 +8,8 @@ use tracing::{debug, info};
 use crate::cache::Cache;
 
 // Re-export types for easier access
-pub use crate::observability;
 use crate::errors::error_logging;
+pub use crate::observability;
 
 /// Represents a user in the database
 #[derive(Debug, Clone, PartialEq)]
@@ -488,7 +488,10 @@ pub async fn create_ingredient(
                 Some(user_id),
                 Some(&[
                     ("table", &"ingredients"),
-                    ("recipe_id", &recipe_id.map_or("None".to_string(), |id| id.to_string())),
+                    (
+                        "recipe_id",
+                        &recipe_id.map_or("None".to_string(), |id| id.to_string()),
+                    ),
                     ("name", &name.to_string()),
                 ]),
             );

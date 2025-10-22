@@ -277,7 +277,10 @@ mod tests {
 
         // Test validation - empty files pass validation but will fail during OCR processing
         let result = validate_image_with_format_limits(&temp_path, &config);
-        assert!(result.is_ok(), "Empty files should pass validation (they fail during OCR processing)");
+        assert!(
+            result.is_ok(),
+            "Empty files should pass validation (they fail during OCR processing)"
+        );
     }
 
     /// Test circuit breaker integration with extract_text_from_image

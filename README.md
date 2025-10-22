@@ -59,6 +59,51 @@ A Telegram bot that extracts text from images using OCR (Optical Character Recog
    cargo run
    ```
 
+## Deployment
+
+### Automated Deployment with GitHub Actions
+
+JustIngredients includes automated deployment workflows using GitHub Actions:
+
+#### Setup
+1. **Add Fly.io Token to GitHub Secrets:**
+   - Go to your repository Settings → Secrets and variables → Actions
+   - Add a new secret named `FLY_API_TOKEN`
+   - Get the token value: `fly auth token`
+
+2. **Automatic Deployment:**
+   - Push to `main` branch → automatic deployment to production
+   - All tests run automatically before deployment
+   - Deployment fails if tests don't pass
+
+3. **Manual Deployment:**
+   - Go to Actions tab → "Manual Deploy" workflow
+   - Click "Run workflow" for on-demand deployment
+
+#### Workflow Features
+- ✅ **Automated Testing**: Runs full test suite before deployment
+- ✅ **Code Quality Checks**: Clippy linting and formatting verification
+- ✅ **Docker Build**: Handles complex OCR dependencies automatically
+- ✅ **Fly.io Integration**: Deploys to your configured Fly.io app
+- ✅ **Error Handling**: Clear failure notifications and rollback capability
+
+### Manual Deployment
+
+For manual deployment without GitHub Actions:
+
+```bash
+# Install Fly CLI
+curl -L https://fly.io/install.sh | sh
+
+# Authenticate
+fly auth login
+
+# Deploy
+fly deploy
+```
+
+See `docs/deployment-strategy.md` for detailed deployment instructions.
+
 ## Configuration
 
 JustIngredients supports extensive configuration through environment variables:

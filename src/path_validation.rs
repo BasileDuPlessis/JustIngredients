@@ -84,15 +84,13 @@ pub const MAX_PATH_LENGTH: usize = 4096;
 
 /// Reserved filenames that should not be used (Windows compatibility)
 pub const RESERVED_NAMES: &[&str] = &[
-    "CON", "PRN", "AUX", "NUL",
-    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
-    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+    "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 ];
 
 /// Characters that are not allowed in filenames
 pub const FORBIDDEN_FILENAME_CHARS: &[char] = &[
-    '<', '>', ':', '"', '|', '?', '*',
-    '\0', // null byte
+    '<', '>', ':', '"', '|', '?', '*', '\0', // null byte
     '\x01', '\x02', '\x03', '\x04', '\x05', '\x06', '\x07', // control chars
     '\x08', '\x09', '\x0a', '\x0b', '\x0c', '\x0d', '\x0e', '\x0f', // control chars
     '\x10', '\x11', '\x12', '\x13', '\x14', '\x15', '\x16', '\x17', // control chars
@@ -105,7 +103,7 @@ pub const ALLOWED_ABSOLUTE_PATH_PREFIXES: &[&str] = &[
     "/var/tmp",
     "/private/tmp",
     "/private/var/tmp",
-    "/var/folders",  // macOS temp directories
+    "/var/folders", // macOS temp directories
     // Windows temp directories
     "C:\\Windows\\Temp",
     "C:\\Temp",
@@ -247,9 +245,21 @@ fn validate_absolute_path(path: &str) -> PathValidationResult<()> {
         if !is_allowed {
             // Additional check: prevent access to common system directories
             let dangerous_prefixes = [
-                "/etc", "/usr", "/bin", "/sbin", "/System", "/Library",
-                "/root", "/home", "/var", "/proc", "/sys", "/dev",
-                "C:\\Windows\\System32", "C:\\Windows", "C:\\Program Files",
+                "/etc",
+                "/usr",
+                "/bin",
+                "/sbin",
+                "/System",
+                "/Library",
+                "/root",
+                "/home",
+                "/var",
+                "/proc",
+                "/sys",
+                "/dev",
+                "C:\\Windows\\System32",
+                "C:\\Windows",
+                "C:\\Program Files",
             ];
 
             let is_dangerous = dangerous_prefixes
@@ -289,17 +299,23 @@ pub fn validate_filename(filename: &str) -> PathValidationResult<()> {
     let filename_upper = filename.to_uppercase();
     let name_without_ext = filename_upper.split('.').next().unwrap_or("");
 
-    if RESERVED_NAMES.iter().any(|&reserved| name_without_ext == reserved) {
+    if RESERVED_NAMES.contains(&name_without_ext) {
         return Err(PathValidationError::ReservedName);
     }
 
     // Check for forbidden characters
-    if filename.chars().any(|c| FORBIDDEN_FILENAME_CHARS.contains(&c)) {
+    if filename
+        .chars()
+        .any(|c| FORBIDDEN_FILENAME_CHARS.contains(&c))
+    {
         return Err(PathValidationError::InvalidCharacters);
     }
 
     // Check for control characters (additional validation)
-    if filename.chars().any(|c| c.is_control() && c != '\t' && c != '\n' && c != '\r') {
+    if filename
+        .chars()
+        .any(|c| c.is_control() && c != '\t' && c != '\n' && c != '\r')
+    {
         return Err(PathValidationError::InvalidCharacters);
     }
 
@@ -522,9 +538,13 @@ pub fn generate_safe_temp_filename(prefix: Option<&str>, extension: Option<&str>
 impl std::fmt::Display for PathValidationError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            PathValidationError::PathTraversal => write!(f, "Path contains directory traversal sequences"),
+            PathValidationError::PathTraversal => {
+                write!(f, "Path contains directory traversal sequences")
+            }
             PathValidationError::NullByte => write!(f, "Path contains null bytes"),
-            PathValidationError::AbsolutePathNotAllowed => write!(f, "Absolute path not in allowed directories"),
+            PathValidationError::AbsolutePathNotAllowed => {
+                write!(f, "Absolute path not in allowed directories")
+            }
             PathValidationError::InvalidCharacters => write!(f, "Path contains invalid characters"),
             PathValidationError::FilenameTooLong => write!(f, "Filename is too long"),
             PathValidationError::PathTooLong => write!(f, "Path is too long"),
@@ -593,8 +613,14 @@ mod tests {
     fn test_sanitize_filename() {
         assert_eq!(sanitize_filename("safe_file.jpg"), "safe_file.jpg");
         assert_eq!(sanitize_filename("unsafe<name>.jpg"), "unsafe_name_.jpg");
-        assert_eq!(sanitize_filename("file:with:colons.jpg"), "file_with_colons.jpg");
-        assert_eq!(sanitize_filename("  spaced file  .jpg"), "spaced file  .jpg");
+        assert_eq!(
+            sanitize_filename("file:with:colons.jpg"),
+            "file_with_colons.jpg"
+        );
+        assert_eq!(
+            sanitize_filename("  spaced file  .jpg"),
+            "spaced file  .jpg"
+        );
         assert_eq!(sanitize_filename(""), "unnamed_file");
         assert_eq!(sanitize_filename("."), "unnamed_file");
     }
@@ -609,10 +635,22 @@ mod tests {
 
     #[test]
     fn test_path_validation_errors() {
-        assert_eq!(validate_file_path("../test").unwrap_err(), PathValidationError::PathTraversal);
-        assert_eq!(validate_file_path("file\0name").unwrap_err(), PathValidationError::NullByte);
-        assert_eq!(validate_file_path("/etc/passwd").unwrap_err(), PathValidationError::AbsolutePathNotAllowed);
-        assert_eq!(validate_file_path("").unwrap_err(), PathValidationError::EmptyPath);
+        assert_eq!(
+            validate_file_path("../test").unwrap_err(),
+            PathValidationError::PathTraversal
+        );
+        assert_eq!(
+            validate_file_path("file\0name").unwrap_err(),
+            PathValidationError::NullByte
+        );
+        assert_eq!(
+            validate_file_path("/etc/passwd").unwrap_err(),
+            PathValidationError::AbsolutePathNotAllowed
+        );
+        assert_eq!(
+            validate_file_path("").unwrap_err(),
+            PathValidationError::EmptyPath
+        );
     }
 
     #[test]

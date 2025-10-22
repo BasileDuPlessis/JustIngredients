@@ -1,10 +1,6 @@
 app = "just-ingredients-bot"
 primary_region = "cdg"
 
-[build]
-  builder = "rust"
-  buildpacks = []
-
 [env]
   RUST_LOG = "info,sqlx=warn"
   LOG_FORMAT = "json"

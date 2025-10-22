@@ -268,8 +268,16 @@ async fn main() -> Result<()> {
                 let dedup = Arc::clone(&dedup);
                 let dialogue = RecipeDialogue::new(storage, msg.chat.id);
                 async move {
-                    bot::message_handler_with_cache(bot, msg, pool, dialogue, localization, cache, Some(&dedup))
-                        .await
+                    bot::message_handler_with_cache(
+                        bot,
+                        msg,
+                        pool,
+                        dialogue,
+                        localization,
+                        cache,
+                        Some(&dedup),
+                    )
+                    .await
                 }
             }
         }))

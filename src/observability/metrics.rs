@@ -229,7 +229,12 @@ pub async fn start_metrics_server_basic_with_config(
                     });
                 }
                 Err(e) => {
-                    crate::errors::error_logging::log_network_error(&e, "accept_tcp_connection", Some(&addr.to_string()), None);
+                    crate::errors::error_logging::log_network_error(
+                        &e,
+                        "accept_tcp_connection",
+                        Some(&addr.to_string()),
+                        None,
+                    );
                 }
             }
         }
@@ -379,7 +384,12 @@ pub async fn start_metrics_server_with_health_checks(
                     });
                 }
                 Err(e) => {
-                    crate::errors::error_logging::log_network_error(&e, "accept_tcp_connection", Some(&addr.to_string()), None);
+                    crate::errors::error_logging::log_network_error(
+                        &e,
+                        "accept_tcp_connection",
+                        Some(&addr.to_string()),
+                        None,
+                    );
                 }
             }
         }

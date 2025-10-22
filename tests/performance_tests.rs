@@ -420,8 +420,13 @@ mod tests {
 
         let test_texts = vec![
             ("Simple", "2 cups flour\n3 eggs"),
-            ("Medium", "2 cups all-purpose flour\n1 cup sugar\n3 eggs\n1/2 cup butter\n1 tsp vanilla"),
-            ("Complex", r#"
+            (
+                "Medium",
+                "2 cups all-purpose flour\n1 cup sugar\n3 eggs\n1/2 cup butter\n1 tsp vanilla",
+            ),
+            (
+                "Complex",
+                r#"
                 2 1/4 cups all-purpose flour
                 1 teaspoon baking soda
                 1 teaspoon salt
@@ -432,7 +437,8 @@ mod tests {
                 2 teaspoons vanilla extract
                 2 cups semisweet chocolate chips
                 1 cup chopped walnuts (optional)
-            "#),
+            "#,
+            ),
         ];
 
         for (complexity, text) in test_texts {
@@ -454,7 +460,8 @@ mod tests {
                 let _measurements = detector.extract_ingredient_measurements(&cleaned_text);
 
                 // Simulate memory estimation
-                let _memory_mb = estimate_memory_usage(cleaned_text.len() as u64, &image::ImageFormat::Png);
+                let _memory_mb =
+                    estimate_memory_usage(cleaned_text.len() as u64, &image::ImageFormat::Png);
             }
             let duration = start.elapsed();
 
@@ -470,7 +477,8 @@ mod tests {
             assert!(
                 operations_per_second > 10.0,
                 "OCR processing too slow for {}: {:.0} ops/sec",
-                complexity, operations_per_second
+                complexity,
+                operations_per_second
             );
         }
     }
@@ -534,7 +542,8 @@ mod tests {
         }
 
         let duration = start.elapsed();
-        let operations_per_second = iterations as f64 * test_paths.len() as f64 / duration.as_secs_f64();
+        let operations_per_second =
+            iterations as f64 * test_paths.len() as f64 / duration.as_secs_f64();
 
         println!(
             "📊 Path Validation: {:.0} ops/sec ({} iterations, {} valid)",
@@ -563,13 +572,18 @@ mod tests {
         }
 
         let database_url = env::var("DATABASE_URL").unwrap();
-        let db_pool = sqlx::postgres::PgPool::connect(&database_url).await.expect("Failed to create DB pool");
+        let db_pool = sqlx::postgres::PgPool::connect(&database_url)
+            .await
+            .expect("Failed to create DB pool");
         let iterations = 100;
 
         // Test connection acquisition
         let start = Instant::now();
         for _ in 0..iterations {
-            let conn = db_pool.acquire().await.expect("Failed to acquire connection");
+            let conn = db_pool
+                .acquire()
+                .await
+                .expect("Failed to acquire connection");
             drop(conn);
         }
         let duration = start.elapsed();
@@ -601,7 +615,9 @@ mod tests {
         }
 
         let database_url = env::var("DATABASE_URL").unwrap();
-        let db_pool = sqlx::postgres::PgPool::connect(&database_url).await.expect("Failed to create DB pool");
+        let db_pool = sqlx::postgres::PgPool::connect(&database_url)
+            .await
+            .expect("Failed to create DB pool");
 
         // Create test user
         let test_user_id = 999999999;
@@ -613,7 +629,9 @@ mod tests {
 
         for i in 0..iterations {
             let user_id = test_user_id + i as i64;
-            db::get_or_create_user(&db_pool, user_id, Some(test_language)).await.expect("Failed to create user");
+            db::get_or_create_user(&db_pool, user_id, Some(test_language))
+                .await
+                .expect("Failed to create user");
         }
 
         let create_duration = start.elapsed();
@@ -623,7 +641,9 @@ mod tests {
         let start = Instant::now();
         for i in 0..iterations {
             let user_id = test_user_id + i as i64;
-            let _user = db::get_user_by_telegram_id(&db_pool, user_id).await.expect("Failed to get user");
+            let _user = db::get_user_by_telegram_id(&db_pool, user_id)
+                .await
+                .expect("Failed to get user");
         }
 
         let lookup_duration = start.elapsed();
@@ -643,8 +663,16 @@ mod tests {
         }
 
         // User operations should be reasonably fast
-        assert!(create_ops_per_sec > 5.0, "User creation too slow: {:.0} ops/sec", create_ops_per_sec);
-        assert!(lookup_ops_per_sec > 10.0, "User lookup too slow: {:.0} ops/sec", lookup_ops_per_sec);
+        assert!(
+            create_ops_per_sec > 5.0,
+            "User creation too slow: {:.0} ops/sec",
+            create_ops_per_sec
+        );
+        assert!(
+            lookup_ops_per_sec > 10.0,
+            "User lookup too slow: {:.0} ops/sec",
+            lookup_ops_per_sec
+        );
     }
 
     /// Benchmark recipe and ingredient operations
@@ -659,13 +687,17 @@ mod tests {
         }
 
         let database_url = env::var("DATABASE_URL").unwrap();
-        let db_pool = sqlx::postgres::PgPool::connect(&database_url).await.expect("Failed to create DB pool");
+        let db_pool = sqlx::postgres::PgPool::connect(&database_url)
+            .await
+            .expect("Failed to create DB pool");
 
         let test_user_id = 999999998;
         let test_recipe_name = "Performance Test Recipe";
 
         // Create test user
-        db::get_or_create_user(&db_pool, test_user_id, Some("en")).await.expect("Failed to create user");
+        db::get_or_create_user(&db_pool, test_user_id, Some("en"))
+            .await
+            .expect("Failed to create user");
 
         let iterations = 50;
 
@@ -677,15 +709,48 @@ mod tests {
             let ocr_text = format!("2 cups flour\n1 cup sugar\n3 eggs\nRecipe: {}", recipe_name);
 
             let recipe_id = db::create_recipe(&db_pool, test_user_id, &ocr_text)
-                .await.expect("Failed to create recipe");
+                .await
+                .expect("Failed to create recipe");
 
             // Set recipe name
-            db::update_recipe_name(&db_pool, recipe_id, &recipe_name).await.ok();
+            db::update_recipe_name(&db_pool, recipe_id, &recipe_name)
+                .await
+                .ok();
 
             // Add some ingredients
-            db::create_ingredient(&db_pool, test_user_id, Some(recipe_id), "flour", Some(2.0), Some("cups"), "2 cups flour").await.ok();
-            db::create_ingredient(&db_pool, test_user_id, Some(recipe_id), "sugar", Some(1.0), Some("cup"), "1 cup sugar").await.ok();
-            db::create_ingredient(&db_pool, test_user_id, Some(recipe_id), "eggs", Some(3.0), None, "3 eggs").await.ok();
+            db::create_ingredient(
+                &db_pool,
+                test_user_id,
+                Some(recipe_id),
+                "flour",
+                Some(2.0),
+                Some("cups"),
+                "2 cups flour",
+            )
+            .await
+            .ok();
+            db::create_ingredient(
+                &db_pool,
+                test_user_id,
+                Some(recipe_id),
+                "sugar",
+                Some(1.0),
+                Some("cup"),
+                "1 cup sugar",
+            )
+            .await
+            .ok();
+            db::create_ingredient(
+                &db_pool,
+                test_user_id,
+                Some(recipe_id),
+                "eggs",
+                Some(3.0),
+                None,
+                "3 eggs",
+            )
+            .await
+            .ok();
         }
 
         let create_duration = start.elapsed();
@@ -693,12 +758,16 @@ mod tests {
 
         // Benchmark recipe lookup
         let start = Instant::now();
-        let _recipes = db::get_user_recipes_paginated(&db_pool, test_user_id, 1, 10).await.expect("Failed to get recipes");
+        let _recipes = db::get_user_recipes_paginated(&db_pool, test_user_id, 1, 10)
+            .await
+            .expect("Failed to get recipes");
         let lookup_duration = start.elapsed();
 
         // Benchmark search
         let start = Instant::now();
-        let _search_results = db::search_recipes(&db_pool, test_user_id, "flour").await.expect("Failed to search");
+        let _search_results = db::search_recipes(&db_pool, test_user_id, "flour")
+            .await
+            .expect("Failed to search");
         let search_duration = start.elapsed();
 
         println!(
@@ -718,7 +787,11 @@ mod tests {
             .await;
 
         // Recipe operations should be reasonably fast
-        assert!(create_ops_per_sec > 2.0, "Recipe creation too slow: {:.1} ops/sec", create_ops_per_sec);
+        assert!(
+            create_ops_per_sec > 2.0,
+            "Recipe creation too slow: {:.1} ops/sec",
+            create_ops_per_sec
+        );
     }
 
     // ===== END-TO-END WORKFLOW BENCHMARKS =====
@@ -736,19 +809,24 @@ mod tests {
         }
 
         let database_url = env::var("DATABASE_URL").unwrap();
-        let db_pool = sqlx::postgres::PgPool::connect(&database_url).await.expect("Failed to create DB pool");
+        let db_pool = sqlx::postgres::PgPool::connect(&database_url)
+            .await
+            .expect("Failed to create DB pool");
         let detector = MeasurementDetector::new().unwrap();
 
         let test_user_id = 999999997;
         let iterations = 20;
 
         // Create test user
-        db::get_or_create_user(&db_pool, test_user_id, Some("en")).await.expect("Failed to create user");
+        db::get_or_create_user(&db_pool, test_user_id, Some("en"))
+            .await
+            .expect("Failed to create user");
 
         let start = Instant::now();
 
         for i in 0..iterations {
-            let ocr_text = format!(r#"
+            let ocr_text = format!(
+                r#"
                 Recipe ingredients for test {}:
                 2 cups all-purpose flour
                 1 cup granulated sugar
@@ -758,7 +836,9 @@ mod tests {
                 2 tablespoons milk
                 1/2 teaspoon baking soda
                 1/4 teaspoon salt
-            "#, i);
+            "#,
+                i
+            );
 
             let recipe_name = format!("End-to-End Test Recipe {}", i);
 
@@ -774,10 +854,13 @@ mod tests {
 
             // 3. Database operations
             let recipe_id = db::create_recipe(&db_pool, test_user_id, cleaned_text)
-                .await.expect("Failed to create recipe");
+                .await
+                .expect("Failed to create recipe");
 
             // Set recipe name
-            db::update_recipe_name(&db_pool, recipe_id, &recipe_name).await.ok();
+            db::update_recipe_name(&db_pool, recipe_id, &recipe_name)
+                .await
+                .ok();
 
             // 4. Store ingredients
             for measurement in measurements {
@@ -788,11 +871,21 @@ mod tests {
                     &measurement.ingredient_name,
                     measurement.quantity.parse::<f64>().ok(),
                     measurement.measurement.as_deref(),
-                    &format!("{} {}", measurement.quantity, measurement.measurement.as_deref().unwrap_or(""))
-                ).await.ok();
+                    &format!(
+                        "{} {}",
+                        measurement.quantity,
+                        measurement.measurement.as_deref().unwrap_or("")
+                    ),
+                )
+                .await
+                .ok();
             }
 
-            observability::record_ocr_metrics(true, Duration::from_millis(100), cleaned_text.len() as u64);
+            observability::record_ocr_metrics(
+                true,
+                Duration::from_millis(100),
+                cleaned_text.len() as u64,
+            );
         }
 
         let duration = start.elapsed();
@@ -816,7 +909,11 @@ mod tests {
             .await;
 
         // End-to-end workflow should be reasonably fast
-        assert!(workflows_per_second > 1.0, "End-to-end workflow too slow: {:.1} workflows/sec", workflows_per_second);
+        assert!(
+            workflows_per_second > 1.0,
+            "End-to-end workflow too slow: {:.1} workflows/sec",
+            workflows_per_second
+        );
     }
 
     /// Benchmark concurrent user load simulation
@@ -831,7 +928,9 @@ mod tests {
         }
 
         let database_url = env::var("DATABASE_URL").unwrap();
-        let db_pool = sqlx::postgres::PgPool::connect(&database_url).await.expect("Failed to create DB pool");
+        let db_pool = sqlx::postgres::PgPool::connect(&database_url)
+            .await
+            .expect("Failed to create DB pool");
         let concurrent_users = 5;
         let operations_per_user = 10;
 
@@ -845,7 +944,9 @@ mod tests {
                 let user_id = 999999000 + user_id_offset as i64;
 
                 // Create user
-                db::get_or_create_user(&pool, user_id, Some("en")).await.expect("Failed to create user");
+                db::get_or_create_user(&pool, user_id, Some("en"))
+                    .await
+                    .expect("Failed to create user");
 
                 for i in 0..operations_per_user {
                     let recipe_name = format!("Concurrent Recipe {} {}", user_id_offset, i);
@@ -853,16 +954,41 @@ mod tests {
 
                     // Perform operations
                     let recipe_id = db::create_recipe(&pool, user_id, ocr_text)
-                        .await.expect("Failed to create recipe");
+                        .await
+                        .expect("Failed to create recipe");
 
                     // Set recipe name
-                    db::update_recipe_name(&pool, recipe_id, &recipe_name).await.ok();
+                    db::update_recipe_name(&pool, recipe_id, &recipe_name)
+                        .await
+                        .ok();
 
-                    db::create_ingredient(&pool, user_id, Some(recipe_id), "flour", Some(2.0), Some("cups"), "2 cups flour").await.ok();
-                    db::create_ingredient(&pool, user_id, Some(recipe_id), "eggs", Some(3.0), None, "3 eggs").await.ok();
+                    db::create_ingredient(
+                        &pool,
+                        user_id,
+                        Some(recipe_id),
+                        "flour",
+                        Some(2.0),
+                        Some("cups"),
+                        "2 cups flour",
+                    )
+                    .await
+                    .ok();
+                    db::create_ingredient(
+                        &pool,
+                        user_id,
+                        Some(recipe_id),
+                        "eggs",
+                        Some(3.0),
+                        None,
+                        "3 eggs",
+                    )
+                    .await
+                    .ok();
 
                     // Simulate some read operations
-                    let _recipes = db::get_user_recipes_paginated(&pool, user_id, 1, 5).await.ok();
+                    let _recipes = db::get_user_recipes_paginated(&pool, user_id, 1, 5)
+                        .await
+                        .ok();
                 }
 
                 // Cleanup
@@ -890,11 +1016,19 @@ mod tests {
 
         println!(
             "📊 Concurrent Load: {:.1} ops/sec ({} users × {} ops each = {} total, {:?})",
-            operations_per_second, concurrent_users, operations_per_user, total_operations, duration
+            operations_per_second,
+            concurrent_users,
+            operations_per_user,
+            total_operations,
+            duration
         );
 
         // Concurrent operations should perform reasonably
-        assert!(operations_per_second > 5.0, "Concurrent load too slow: {:.1} ops/sec", operations_per_second);
+        assert!(
+            operations_per_second > 5.0,
+            "Concurrent load too slow: {:.1} ops/sec",
+            operations_per_second
+        );
     }
 
     // ===== MEMORY AND RESOURCE BENCHMARKS =====
@@ -911,7 +1045,10 @@ mod tests {
         let large_text = include_str!("../examples/recipe_parser.rs").repeat(10);
         let test_cases = vec![
             ("Small", "2 cups flour"),
-            ("Medium", "2 cups flour\n1 cup sugar\n3 eggs\n1/2 cup butter"),
+            (
+                "Medium",
+                "2 cups flour\n1 cup sugar\n3 eggs\n1/2 cup butter",
+            ),
             ("Large", &large_text),
         ];
 
@@ -930,14 +1067,23 @@ mod tests {
             );
 
             // Processing should complete in reasonable time
-            assert!(duration.as_millis() < 1000, "Processing too slow for {} text: {:?}", size, duration);
+            assert!(
+                duration.as_millis() < 1000,
+                "Processing too slow for {} text: {:?}",
+                size,
+                duration
+            );
         }
 
         // Check memory overhead of key structures
         let detector_size = mem::size_of_val(&detector);
         println!("📊 MeasurementDetector size: {} bytes", detector_size);
 
-        assert!(detector_size < 10000, "Detector too large: {} bytes", detector_size);
+        assert!(
+            detector_size < 10000,
+            "Detector too large: {} bytes",
+            detector_size
+        );
     }
 
     /// Benchmark automated test execution performance
@@ -986,7 +1132,10 @@ mod tests {
 
         // This test serves as a summary and runs all performance validations
         let components = vec![
-            ("OCR Processing", "Text extraction and measurement detection"),
+            (
+                "OCR Processing",
+                "Text extraction and measurement detection",
+            ),
             ("Database Operations", "CRUD operations and queries"),
             ("Path Validation", "Security checks and sanitization"),
             ("End-to-End Workflows", "Complete request processing"),
@@ -1005,6 +1154,5 @@ mod tests {
         println!("📊 Ready for production deployment.");
 
         // This test always passes - it's just a report
-        assert!(true);
     }
 }

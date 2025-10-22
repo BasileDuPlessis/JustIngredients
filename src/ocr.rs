@@ -31,11 +31,11 @@ use tracing::{info, warn};
 
 // Re-export types for easier access from documentation and external usage
 pub use crate::circuit_breaker::CircuitBreaker;
+use crate::errors::error_logging;
 pub use crate::instance_manager::OcrInstanceManager;
 pub use crate::observability;
 pub use crate::ocr_config::{OcrConfig, RecoveryConfig};
 pub use crate::ocr_errors::OcrError;
-use crate::errors::error_logging;
 
 /// Validate image file path and basic properties using enhanced security validation
 pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConfig) -> Result<()> {

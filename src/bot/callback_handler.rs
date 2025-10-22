@@ -1460,7 +1460,7 @@ async fn handle_delete_recipe_confirmation(
                     error_logging::log_database_error(
                         &e,
                         "delete_recipe",
-                        Some(chat_id.0 as i64),
+                        Some(chat_id.0),
                         Some(&[("recipe_id", &recipe_id.to_string())]),
                     );
                     let message = format!(
@@ -1557,9 +1557,7 @@ async fn handle_workflow_button(
 }
 
 /// Handle edit button for saved ingredients
-async fn handle_edit_saved_ingredient_button(
-    params: SavedIngredientsParams<'_>,
-) -> Result<()> {
+async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>) -> Result<()> {
     let SavedIngredientsParams {
         ctx,
         q,
@@ -1623,9 +1621,7 @@ async fn handle_edit_saved_ingredient_button(
 }
 
 /// Handle delete button for saved ingredients
-async fn handle_delete_saved_ingredient_button(
-    params: SavedIngredientsParams<'_>,
-) -> Result<()> {
+async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_>) -> Result<()> {
     let SavedIngredientsParams {
         ctx,
         q,
@@ -1781,9 +1777,7 @@ async fn handle_delete_saved_ingredient_button(
 }
 
 /// Handle confirm button for saved ingredients
-async fn handle_confirm_saved_ingredients_button(
-    params: SavedIngredientsParams<'_>,
-) -> Result<()> {
+async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<'_>) -> Result<()> {
     let SavedIngredientsParams {
         ctx,
         q,

@@ -24,9 +24,7 @@ use crate::ocr_errors::OcrError;
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
-use super::ui_builder::{
-    create_ingredient_review_keyboard, format_ingredients_list,
-};
+use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
 
 // Import HandlerContext
 // use super::HandlerContext;
@@ -67,12 +65,7 @@ impl AsRef<std::path::Path> for TempFileGuard {
 impl Drop for TempFileGuard {
     fn drop(&mut self) {
         if let Err(e) = std::fs::remove_file(&self.path) {
-            error_logging::log_filesystem_error(
-                &e,
-                "cleanup_temp_file",
-                Some(&self.path),
-                None,
-            );
+            error_logging::log_filesystem_error(&e, "cleanup_temp_file", Some(&self.path), None);
         } else {
             debug!(path = %self.path, "Temporary file cleaned up successfully in drop");
         }
@@ -153,12 +146,7 @@ pub async fn download_and_process_image(
             guard
         }
         Err(e) => {
-            error_logging::log_network_error(
-                &e,
-                "download_image_file",
-                None,
-                None,
-            );
+            error_logging::log_network_error(&e, "download_image_file", None, None);
             bot.send_message(
                 chat_id,
                 t_lang(localization, "error-download-failed", language_code),

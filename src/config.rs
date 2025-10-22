@@ -59,7 +59,9 @@ impl BotConfig {
 
         // Validate bot ID is numeric
         if parts[0].parse::<u64>().is_err() {
-            return Err(AppError::Config("Bot token bot ID must be numeric".to_string()));
+            return Err(AppError::Config(
+                "Bot token bot ID must be numeric".to_string(),
+            ));
         }
 
         // Validate bot token length
@@ -80,7 +82,9 @@ impl BotConfig {
         }
 
         if self.deduplication_ttl_secs == 0 {
-            return Err(AppError::Config("Deduplication TTL cannot be 0".to_string()));
+            return Err(AppError::Config(
+                "Deduplication TTL cannot be 0".to_string(),
+            ));
         }
 
         if self.max_concurrent_requests_per_user == 0 {
@@ -140,7 +144,9 @@ impl DatabaseConfig {
         // Check for required components
         let url_parts: Vec<&str> = self.url.split("://").collect();
         if url_parts.len() != 2 {
-            return Err(AppError::Config("Database URL format is invalid".to_string()));
+            return Err(AppError::Config(
+                "Database URL format is invalid".to_string(),
+            ));
         }
 
         let connection_part = url_parts[1];
@@ -254,36 +260,54 @@ impl AppConfig {
         let mut config = Self::default();
 
         // Load bot configuration
-        config.bot.token = env::var("TELEGRAM_BOT_TOKEN")
-            .map_err(|_| AppError::Config("TELEGRAM_BOT_TOKEN environment variable is required".to_string()))?;
+        config.bot.token = env::var("TELEGRAM_BOT_TOKEN").map_err(|_| {
+            AppError::Config("TELEGRAM_BOT_TOKEN environment variable is required".to_string())
+        })?;
         config.bot.http_timeout_secs = env::var("HTTP_CLIENT_TIMEOUT_SECS")
             .unwrap_or_else(|_| "30".to_string())
             .parse()
-            .map_err(|_| AppError::Config("HTTP_CLIENT_TIMEOUT_SECS must be a valid number".to_string()))?;
+            .map_err(|_| {
+                AppError::Config("HTTP_CLIENT_TIMEOUT_SECS must be a valid number".to_string())
+            })?;
         config.bot.deduplication_ttl_secs = env::var("REQUEST_DEDUPLICATION_TTL_SECS")
             .unwrap_or_else(|_| "300".to_string())
             .parse()
-            .map_err(|_| AppError::Config("REQUEST_DEDUPLICATION_TTL_SECS must be a valid number".to_string()))?;
+            .map_err(|_| {
+                AppError::Config(
+                    "REQUEST_DEDUPLICATION_TTL_SECS must be a valid number".to_string(),
+                )
+            })?;
         config.bot.max_concurrent_requests_per_user = env::var("MAX_CONCURRENT_REQUESTS_PER_USER")
             .unwrap_or_else(|_| "3".to_string())
             .parse()
-            .map_err(|_| AppError::Config("MAX_CONCURRENT_REQUESTS_PER_USER must be a valid number".to_string()))?;
+            .map_err(|_| {
+                AppError::Config(
+                    "MAX_CONCURRENT_REQUESTS_PER_USER must be a valid number".to_string(),
+                )
+            })?;
 
         // Load database configuration
-        config.database.url = env::var("DATABASE_URL")
-            .map_err(|_| AppError::Config("DATABASE_URL environment variable is required".to_string()))?;
+        config.database.url = env::var("DATABASE_URL").map_err(|_| {
+            AppError::Config("DATABASE_URL environment variable is required".to_string())
+        })?;
         config.database.max_connections = env::var("DATABASE_MAX_CONNECTIONS")
             .unwrap_or_else(|_| "10".to_string())
             .parse()
-            .map_err(|_| AppError::Config("DATABASE_MAX_CONNECTIONS must be a valid number".to_string()))?;
+            .map_err(|_| {
+                AppError::Config("DATABASE_MAX_CONNECTIONS must be a valid number".to_string())
+            })?;
         config.database.connect_timeout_secs = env::var("DATABASE_CONNECT_TIMEOUT_SECS")
             .unwrap_or_else(|_| "30".to_string())
             .parse()
-            .map_err(|_| AppError::Config("DATABASE_CONNECT_TIMEOUT_SECS must be a valid number".to_string()))?;
+            .map_err(|_| {
+                AppError::Config("DATABASE_CONNECT_TIMEOUT_SECS must be a valid number".to_string())
+            })?;
         config.database.min_connections = env::var("DATABASE_MIN_CONNECTIONS")
             .unwrap_or_else(|_| "1".to_string())
             .parse()
-            .map_err(|_| AppError::Config("DATABASE_MIN_CONNECTIONS must be a valid number".to_string()))?;
+            .map_err(|_| {
+                AppError::Config("DATABASE_MIN_CONNECTIONS must be a valid number".to_string())
+            })?;
 
         // Load server configuration
         config.server.health_port = env::var("HEALTH_PORT")
@@ -293,10 +317,13 @@ impl AppConfig {
         config.server.metrics_port = env::var("METRICS_PORT")
             .unwrap_or_else(|_| "9090".to_string())
             .parse()
-            .map_err(|_| AppError::Config("METRICS_PORT must be a valid port number".to_string()))?;
+            .map_err(|_| {
+                AppError::Config("METRICS_PORT must be a valid port number".to_string())
+            })?;
         config.server.allow_privileged_ports = env::var("ALLOW_PRIVILEGED_PORTS")
             .unwrap_or_else(|_| "false".to_string())
-            .to_lowercase() == "true";
+            .to_lowercase()
+            == "true";
 
         // Load OCR configuration (uses existing defaults and validation)
         config.ocr = OcrConfig::default();

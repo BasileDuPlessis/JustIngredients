@@ -22,7 +22,10 @@ pub struct RequestId {
 impl RequestId {
     /// Create a new request ID from chat and message IDs
     pub fn new(chat_id: ChatId, message_id: MessageId) -> Self {
-        Self { chat_id, message_id }
+        Self {
+            chat_id,
+            message_id,
+        }
     }
 }
 
@@ -112,7 +115,10 @@ impl RequestDeduplicator {
             .filter(|entry| now.duration_since(entry.first_seen) >= self.ttl)
             .count();
         let active_entries = total_entries.saturating_sub(expired_entries);
-        let total_duplicates = requests.values().map(|entry| entry.count.saturating_sub(1)).sum();
+        let total_duplicates = requests
+            .values()
+            .map(|entry| entry.count.saturating_sub(1))
+            .sum();
 
         Ok(DeduplicationStats {
             total_entries,

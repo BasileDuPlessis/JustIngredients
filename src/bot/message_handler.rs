@@ -336,11 +336,8 @@ async fn handle_text_message(
 }
 
 /// Main message handler for Telegram bot interactions
-
 /// Main message handler for Telegram bot interactions
-
 /// Main message handler for Telegram bot interactions
-
 /// Main message handler for Telegram bot interactions
 ///
 /// Implements comprehensive message routing and dialogue state management.
@@ -465,7 +462,10 @@ pub async fn message_handler(
     if let Some(dedup) = deduplicator {
         let request_id = crate::deduplication::RequestId::new(msg.chat.id, msg.id);
         if dedup.is_duplicate(&request_id)? {
-            debug!("Ignoring duplicate request: chat_id={}, message_id={}", msg.chat.id, msg.id);
+            debug!(
+                "Ignoring duplicate request: chat_id={}, message_id={}",
+                msg.chat.id, msg.id
+            );
             observability::record_telegram_duplicate_message();
             return Ok(());
         }
