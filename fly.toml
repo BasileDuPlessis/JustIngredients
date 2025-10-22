@@ -1,6 +1,9 @@
 app = "just-ingredients-bot"
 primary_region = "cdg"
 
+[build]
+  dockerfile = "Dockerfile"
+
 [env]
   RUST_LOG = "info,sqlx=warn"
   LOG_FORMAT = "json"
@@ -8,6 +11,7 @@ primary_region = "cdg"
   CIRCUIT_BREAKER_THRESHOLD = "5"
   CIRCUIT_BREAKER_TIMEOUT_SECS = "60"
   HEALTH_PORT = "8080"
+  METRICS_BIND_ALL_INTERFACES = "true"
 
 [http_service]
   internal_port = 8080
