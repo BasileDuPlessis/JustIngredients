@@ -37,48 +37,14 @@ pub use crate::ocr_config::{OcrConfig, RecoveryConfig};
 pub use crate::ocr_errors::OcrError;
 use crate::errors::error_logging;
 
-/// Validate image file path and basic properties
+/// Validate image file path and basic properties using enhanced security validation
 pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConfig) -> Result<()> {
-    // Check if path is provided
-    if image_path.is_empty() {
-        return Err(anyhow::anyhow!(
-            "Image path validation failed: path cannot be empty"
-        ));
-    }
+    // Use the comprehensive path validation module
+    crate::path_validation::validate_file_path(image_path)
+        .map_err(|e| anyhow::anyhow!("Image path validation failed: {}", e))?;
 
-    // Check for path traversal attacks
-    if image_path.contains("..") || image_path.contains('\0') {
-        return Err(anyhow::anyhow!(
-            "Image path validation failed: path contains dangerous characters (.. or null byte)"
-        ));
-    }
-
-    // Additional path traversal protection: check for absolute paths and normalize
+    // Additional OCR-specific validation
     let path = std::path::Path::new(image_path);
-    if path.is_absolute() {
-        // For absolute paths, ensure they don't escape intended directories
-        // Allow common temp directories and system paths that are safe
-        if let Some(parent) = path.parent() {
-            let parent_str = parent.to_string_lossy();
-            // Allow common temp directories but prevent access to system directories
-            let allowed_prefixes = ["/tmp", "/var/tmp", "/private/tmp", "/private/var/tmp"];
-            let dangerous_prefixes = ["/etc", "/usr", "/bin", "/sbin", "/System", "/Library"];
-
-            let is_allowed = allowed_prefixes
-                .iter()
-                .any(|prefix| parent_str.starts_with(prefix));
-            let is_dangerous = dangerous_prefixes
-                .iter()
-                .any(|prefix| parent_str.starts_with(prefix));
-
-            if is_dangerous && !is_allowed {
-                return Err(anyhow::anyhow!(
-                    "Image path validation failed: path not in allowed directory ({})",
-                    parent_str
-                ));
-            }
-        }
-    }
 
     // Check if file exists
     if !path.exists() {
@@ -123,15 +89,6 @@ pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConf
         }
     }
 
-    // Basic file extension check (optional but helpful)
-    if let Some(extension) = path.extension() {
-        let ext_str = extension.to_string_lossy().to_lowercase();
-        let valid_extensions = ["png", "jpg", "jpeg", "bmp", "tiff", "tif"];
-        if !valid_extensions.contains(&ext_str.as_str()) {
-            info!("File extension '{ext_str}' may not be supported for OCR");
-        }
-    }
-
     Ok(())
 }
 
@@ -140,10 +97,29 @@ pub fn validate_image_with_format_limits(
     image_path: &str,
     config: &crate::ocr_config::OcrConfig,
 ) -> Result<()> {
-    // First, perform basic validation
-    validate_image_path(image_path, config)?;
+    // First, perform comprehensive path validation
+    crate::path_validation::validate_file_path(image_path)
+        .map_err(|e| anyhow::anyhow!("Image path validation failed: {}", e))?;
 
+    // Additional OCR-specific validation
     let path = std::path::Path::new(image_path);
+
+    // Check if file exists
+    if !path.exists() {
+        return Err(anyhow::anyhow!(
+            "Image validation failed: file does not exist ({})",
+            image_path
+        ));
+    }
+
+    // Check if it's actually a file (not a directory)
+    if !path.is_file() {
+        return Err(anyhow::anyhow!(
+            "Image validation failed: path is not a file ({})",
+            image_path
+        ));
+    }
+
     let file_size = path.metadata()?.len();
 
     // Quick rejection for extremely large files

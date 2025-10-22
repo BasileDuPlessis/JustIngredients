@@ -2,6 +2,7 @@ use anyhow::Result;
 use just_ingredients::bot;
 use just_ingredients::cache::CacheManager;
 use just_ingredients::db;
+use just_ingredients::deduplication;
 use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
 use just_ingredients::localization;
 use just_ingredients::observability;
@@ -207,6 +208,10 @@ async fn main() -> Result<()> {
     let cache_manager = Arc::new(std::sync::Mutex::new(CacheManager::new()));
     info!("Cache manager initialized for performance optimization");
 
+    // Initialize request deduplicator to prevent duplicate message processing
+    let deduplicator = crate::deduplication::create_shared_deduplicator(300, 10000); // 5 min TTL, 10k entries
+    info!("Request deduplicator initialized for duplicate message prevention");
+
     // Validate OCR configuration before initializing observability
     validate_ocr_configuration()?;
 
@@ -254,14 +259,16 @@ async fn main() -> Result<()> {
             let storage = dialogue_storage.clone();
             let localization = Arc::clone(&localization_manager);
             let cache = Arc::clone(&cache_manager);
+            let dedup = Arc::clone(&deduplicator);
             move |bot: Bot, msg: Message| {
                 let pool = Arc::clone(&pool);
                 let storage = storage.clone();
                 let localization = Arc::clone(&localization);
                 let cache = Arc::clone(&cache);
+                let dedup = Arc::clone(&dedup);
                 let dialogue = RecipeDialogue::new(storage, msg.chat.id);
                 async move {
-                    bot::message_handler_with_cache(bot, msg, pool, dialogue, localization, cache)
+                    bot::message_handler_with_cache(bot, msg, pool, dialogue, localization, cache, Some(&dedup))
                         .await
                 }
             }
