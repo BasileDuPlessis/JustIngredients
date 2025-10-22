@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # Configuration
 APP_NAME="just-ingredients-bot"
 DB_NAME="just-ingredients-db"
-REGION="fra"
+REGION="cdg"  # Paris, France
 ORG="personal"
 
 echo -e "${BLUE}🚀 JustIngredients Bot - Fly.io Setup${NC}"
@@ -56,7 +56,8 @@ create_fly_app() {
         return
     fi
 
-    fly launch --name "$APP_NAME" --region "$REGION" --no-deploy --org "$ORG"
+    # Create app non-interactively
+    fly apps create "$APP_NAME" --org "$ORG"
     echo -e "${GREEN}✅ Fly.io application created${NC}"
 }
 
@@ -107,11 +108,6 @@ configure_secrets() {
 # Function to configure fly.toml
 configure_fly_toml() {
     echo -e "${YELLOW}Configuring fly.toml...${NC}"
-
-    if [ ! -f "fly.toml" ]; then
-        echo -e "${RED}❌ fly.toml not found. Please ensure you're in the project root.${NC}"
-        exit 1
-    fi
 
     # Update fly.toml with proper configuration
     cat > fly.toml << EOF

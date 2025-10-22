@@ -15,7 +15,7 @@ NC='\033[0m' # No Color
 # Configuration
 APP_NAME="just-ingredients-bot"
 MONITORING_APP_NAME="just-ingredients-monitoring"
-REGION="fra"
+REGION="cdg"  # Paris, France
 ORG="personal"
 
 echo -e "${BLUE}📊 JustIngredients Bot - Monitoring Setup${NC}"

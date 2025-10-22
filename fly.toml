@@ -1,5 +1,5 @@
 app = "just-ingredients-bot"
-primary_region = "fra"
+primary_region = "cdg"
 
 [build]
   builder = "rust"

@@ -101,7 +101,7 @@ The Fly.io configuration file is pre-configured with optimal settings:
 
 ```toml
 app = "just-ingredients-bot"
-primary_region = "fra"
+primary_region = "cdg"
 
 [build]
   builder = "rust"
@@ -144,17 +144,17 @@ The following environment variables are automatically configured:
 | `CIRCUIT_BREAKER_TIMEOUT_SECS` | Circuit breaker reset time | `60` |
 | `HEALTH_PORT` | Health check port | `8080` |
 
-## Infrastructure Details
+### Infrastructure Details
 
 ### Application
 - **Runtime**: Rust application on Fly.io
-- **Region**: Frankfurt (fra) for European users
+- **Region**: Paris, France (cdg) for optimal performance
 - **Resources**: 1 CPU, 2GB RAM (configurable)
 - **Auto-scaling**: Enabled with min 1, max configurable
 
 ### Database
 - **Type**: PostgreSQL via Fly Postgres
-- **Region**: Frankfurt (fra)
+- **Region**: Paris, France (cdg)
 - **Backups**: Automated daily backups
 - **Connection**: Automatic via `DATABASE_URL`
 
