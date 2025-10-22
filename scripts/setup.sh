@@ -1,0 +1,214 @@
+#!/bin/bash
+
+# JustIngredients Bot - Fly.io Setup Script
+# This script automates the initial setup of Fly.io infrastructure
+
+set -e  # Exit on any error
+
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m' # No Color
+
+# Configuration
+APP_NAME="just-ingredients-bot"
+DB_NAME="just-ingredients-db"
+REGION="fra"
+ORG="personal"
+
+echo -e "${BLUE}🚀 JustIngredients Bot - Fly.io Setup${NC}"
+echo "========================================"
+
+# Function to check if command exists
+command_exists() {
+    command -v "$1" >/dev/null 2>&1
+}
+
+# Function to prompt for input
+prompt_input() {
+    local prompt="$1"
+    local default="$2"
+    local input
+
+    read -p "$prompt [$default]: " input
+    echo "${input:-$default}"
+}
+
+# Function to check Fly CLI authentication
+check_fly_auth() {
+    echo -e "${YELLOW}Checking Fly.io authentication...${NC}"
+    if ! fly auth whoami >/dev/null 2>&1; then
+        echo -e "${RED}❌ Not authenticated with Fly.io${NC}"
+        echo "Please run: fly auth login"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ Fly.io authentication confirmed${NC}"
+}
+
+# Function to create Fly app
+create_fly_app() {
+    echo -e "${YELLOW}Creating Fly.io application...${NC}"
+
+    if fly apps list | grep -q "^$APP_NAME"; then
+        echo -e "${YELLOW}⚠️  App '$APP_NAME' already exists${NC}"
+        return
+    fi
+
+    fly launch --name "$APP_NAME" --region "$REGION" --no-deploy --org "$ORG"
+    echo -e "${GREEN}✅ Fly.io application created${NC}"
+}
+
+# Function to setup PostgreSQL database
+setup_database() {
+    echo -e "${YELLOW}Setting up PostgreSQL database...${NC}"
+
+    # Check if database already exists
+    if fly postgres list | grep -q "$DB_NAME"; then
+        echo -e "${YELLOW}⚠️  Database '$DB_NAME' already exists${NC}"
+    else
+        echo "Creating PostgreSQL database..."
+        fly postgres create --name "$DB_NAME" --region "$REGION" --org "$ORG"
+        echo -e "${GREEN}✅ PostgreSQL database created${NC}"
+    fi
+
+    # Attach database to app
+    echo "Attaching database to application..."
+    fly postgres attach "$DB_NAME" --app "$APP_NAME" || true
+    echo -e "${GREEN}✅ Database attached to application${NC}"
+}
+
+# Function to configure secrets
+configure_secrets() {
+    echo -e "${YELLOW}Configuring application secrets...${NC}"
+
+    # Telegram Bot Token
+    if fly secrets list --app "$APP_NAME" | grep -q "TELEGRAM_BOT_TOKEN"; then
+        echo -e "${YELLOW}⚠️  TELEGRAM_BOT_TOKEN already configured${NC}"
+    else
+        BOT_TOKEN=$(prompt_input "Enter your Telegram Bot Token" "")
+        if [ -z "$BOT_TOKEN" ]; then
+            echo -e "${RED}❌ Telegram Bot Token is required${NC}"
+            exit 1
+        fi
+        fly secrets set TELEGRAM_BOT_TOKEN="$BOT_TOKEN" --app "$APP_NAME"
+        echo -e "${GREEN}✅ Telegram Bot Token configured${NC}"
+    fi
+
+    # Verify DATABASE_URL is set (should be automatic from postgres attach)
+    if ! fly secrets list --app "$APP_NAME" | grep -q "DATABASE_URL"; then
+        echo -e "${RED}❌ DATABASE_URL not found. Please check database attachment.${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}✅ Database URL configured${NC}"
+}
+
+# Function to configure fly.toml
+configure_fly_toml() {
+    echo -e "${YELLOW}Configuring fly.toml...${NC}"
+
+    if [ ! -f "fly.toml" ]; then
+        echo -e "${RED}❌ fly.toml not found. Please ensure you're in the project root.${NC}"
+        exit 1
+    fi
+
+    # Update fly.toml with proper configuration
+    cat > fly.toml << EOF
+app = "$APP_NAME"
+primary_region = "$REGION"
+
+[build]
+  builder = "rust"
+  buildpacks = []
+
+[env]
+  RUST_LOG = "info,sqlx=warn"
+  LOG_FORMAT = "json"
+  OCR_LANGUAGES = "eng+fra"
+  CIRCUIT_BREAKER_THRESHOLD = "5"
+  CIRCUIT_BREAKER_TIMEOUT_SECS = "60"
+  HEALTH_PORT = "8080"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 1
+  processes = ["app"]
+
+[[vm]]
+  cpu_kind = "shared"
+  cpus = 1
+  memory_mb = 2048
+EOF
+
+    echo -e "${GREEN}✅ fly.toml configured${NC}"
+}
+
+# Function to enable backups
+enable_backups() {
+    echo -e "${YELLOW}Enabling database backups...${NC}"
+    fly postgres backups enable --app "$DB_NAME" || true
+    echo -e "${GREEN}✅ Database backups enabled${NC}"
+}
+
+# Function to verify setup
+verify_setup() {
+    echo -e "${YELLOW}Verifying setup...${NC}"
+
+    # Check app status
+    if ! fly status --app "$APP_NAME" >/dev/null 2>&1; then
+        echo -e "${RED}❌ Application status check failed${NC}"
+        return 1
+    fi
+
+    # Check database connection
+    if ! fly postgres connect --app "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
+        echo -e "${RED}❌ Database connection check failed${NC}"
+        return 1
+    fi
+
+    # Check secrets
+    if ! fly secrets list --app "$APP_NAME" | grep -q "TELEGRAM_BOT_TOKEN"; then
+        echo -e "${RED}❌ Secrets check failed${NC}"
+        return 1
+    fi
+
+    echo -e "${GREEN}✅ Setup verification completed${NC}"
+}
+
+# Main execution
+main() {
+    echo "This script will set up your JustIngredients bot on Fly.io"
+    echo "Make sure you have:"
+    echo "  - Fly CLI installed and authenticated"
+    echo "  - Telegram Bot Token from @BotFather"
+    echo ""
+
+    read -p "Continue? (y/N): " -n 1 -r
+    echo
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        exit 0
+    fi
+
+    check_fly_auth
+    create_fly_app
+    setup_database
+    configure_secrets
+    configure_fly_toml
+    enable_backups
+    verify_setup
+
+    echo ""
+    echo -e "${GREEN}🎉 Setup completed successfully!${NC}"
+    echo ""
+    echo "Next steps:"
+    echo "1. Run './scripts/deploy.sh' to deploy your application"
+    echo "2. Run './scripts/monitoring.sh' to set up monitoring"
+    echo "3. Test your bot with Telegram"
+}
+
+# Run main function
+main "$@"
