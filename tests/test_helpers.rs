@@ -125,13 +125,8 @@ pub async fn create_complete_test_recipe(
     let recipe_id = create_test_recipe(pool, telegram_id, recipe_content, recipe_name).await?;
 
     // Create ingredients
-    let ingredient_ids = create_test_ingredients_from_text(
-        pool,
-        user.id,
-        Some(recipe_id),
-        ingredients_text,
-    )
-    .await?;
+    let ingredient_ids =
+        create_test_ingredients_from_text(pool, user.id, Some(recipe_id), ingredients_text).await?;
 
     Ok((user, recipe_id, ingredient_ids))
 }

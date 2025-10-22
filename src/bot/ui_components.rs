@@ -3,8 +3,8 @@
 //! This module provides reusable UI components and patterns to reduce code duplication
 //! across the bot's UI building functions.
 
-use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 use std::sync::Arc;
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
 /// Create a localized inline keyboard button
 pub fn create_localized_button(
@@ -122,7 +122,10 @@ pub fn create_pagination_buttons(
         crate::localization::t_lang(localization, "of", language_code),
         total_pages
     );
-    buttons.push(InlineKeyboardButton::callback(page_info, "noop".to_string()));
+    buttons.push(InlineKeyboardButton::callback(
+        page_info,
+        "noop".to_string(),
+    ));
 
     // Next button
     if current_page + 1 < total_pages {
@@ -167,11 +170,7 @@ pub fn create_add_button(
 }
 
 /// Wrapper function that records UI metrics around an operation
-pub async fn with_ui_metrics<F, Fut, T>(
-    operation_name: &str,
-    input_count: usize,
-    operation: F,
-) -> T
+pub async fn with_ui_metrics<F, Fut, T>(operation_name: &str, input_count: usize, operation: F) -> T
 where
     F: FnOnce() -> Fut,
     Fut: std::future::Future<Output = T>,
@@ -184,22 +183,13 @@ where
     // In the future, this could be made more sophisticated
     let output_count = 1;
 
-    crate::observability::record_ui_metrics(
-        operation_name,
-        duration,
-        input_count,
-        output_count,
-    );
+    crate::observability::record_ui_metrics(operation_name, duration, input_count, output_count);
 
     result
 }
 
 /// Synchronous version of with_ui_metrics for non-async operations
-pub fn with_ui_metrics_sync<F, T>(
-    operation_name: &str,
-    input_count: usize,
-    operation: F,
-) -> T
+pub fn with_ui_metrics_sync<F, T>(operation_name: &str, input_count: usize, operation: F) -> T
 where
     F: FnOnce() -> T,
 {
@@ -210,12 +200,7 @@ where
     // For now, we'll assume the output count is 1 (the result)
     let output_count = 1;
 
-    crate::observability::record_ui_metrics(
-        operation_name,
-        duration,
-        input_count,
-        output_count,
-    );
+    crate::observability::record_ui_metrics(operation_name, duration, input_count, output_count);
 
     result
 }

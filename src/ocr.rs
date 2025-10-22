@@ -27,7 +27,7 @@
 use anyhow::Result;
 use std::fs::File;
 use std::io::{BufReader, Read};
-use tracing::{error, info, warn};
+use tracing::{info, warn};
 
 // Re-export types for easier access from documentation and external usage
 pub use crate::circuit_breaker::CircuitBreaker;
@@ -35,6 +35,7 @@ pub use crate::instance_manager::OcrInstanceManager;
 pub use crate::observability;
 pub use crate::ocr_config::{OcrConfig, RecoveryConfig};
 pub use crate::ocr_errors::OcrError;
+use crate::errors::error_logging;
 
 /// Validate image file path and basic properties
 pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConfig) -> Result<()> {
@@ -747,7 +748,6 @@ pub async fn extract_text_from_image(
             Err(err) => {
                 if attempt >= max_attempts {
                     let total_duration = start_time.elapsed();
-                    let total_ms = total_duration.as_millis();
 
                     // Record failure in circuit breaker
                     circuit_breaker.record_failure();
@@ -768,7 +768,13 @@ pub async fn extract_text_from_image(
                         },
                     );
 
-                    error!("OCR extraction failed after {max_attempts} attempts ({total_ms}ms total): {err:?}");
+                    error_logging::log_ocr_error(
+                        &err,
+                        "ocr_extraction_retry",
+                        None, // user_id not available in this context
+                        Some(image_size),
+                        Some(total_duration),
+                    );
                     return Err(err);
                 }
 

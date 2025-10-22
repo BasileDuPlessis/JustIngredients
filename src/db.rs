@@ -2,13 +2,14 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use sqlx::postgres::PgPool;
 use sqlx::Row;
-use tracing::{debug, error, info};
+use tracing::{debug, info};
 
 // Import cache types
 use crate::cache::Cache;
 
 // Re-export types for easier access
 pub use crate::observability;
+use crate::errors::error_logging;
 
 /// Represents a user in the database
 #[derive(Debug, Clone, PartialEq)]
@@ -481,7 +482,16 @@ pub async fn create_ingredient(
             Ok(ingredient_id)
         }
         Err(e) => {
-            error!(user_id = %user_id, recipe_id = ?recipe_id, name = %name, quantity = ?quantity, unit = ?unit, raw_text = %raw_text, error = %e, "Failed to create ingredient - database error");
+            error_logging::log_database_error(
+                &e,
+                "create_ingredient",
+                Some(user_id),
+                Some(&[
+                    ("table", &"ingredients"),
+                    ("recipe_id", &recipe_id.map_or("None".to_string(), |id| id.to_string())),
+                    ("name", &name.to_string()),
+                ]),
+            );
             Err(e)
         }
     }
@@ -645,13 +655,18 @@ pub async fn update_recipe_ingredients(
     let _enter = span.enter();
 
     let start_time = std::time::Instant::now();
-    info!("Bulk updating {} ingredients for recipe {}", ingredients.len(), recipe_id);
+    info!(
+        "Bulk updating {} ingredients for recipe {}",
+        ingredients.len(),
+        recipe_id
+    );
 
     // Get existing ingredients for this recipe
     let existing_ingredients = get_recipe_ingredients(pool, recipe_id).await?;
 
     // Use the change detection logic from ingredient_editing module
-    let changes = crate::ingredient_editing::detect_ingredient_changes(&existing_ingredients, ingredients);
+    let changes =
+        crate::ingredient_editing::detect_ingredient_changes(&existing_ingredients, ingredients);
 
     // Execute changes in transaction
     let mut tx = pool.begin().await.context("Failed to start transaction")?;
@@ -683,7 +698,8 @@ pub async fn update_recipe_ingredients(
     }
 
     // Add new ingredients
-    let recipe = read_recipe_with_name(pool, recipe_id).await?
+    let recipe = read_recipe_with_name(pool, recipe_id)
+        .await?
         .ok_or_else(|| anyhow::anyhow!("Recipe not found during update"))?;
 
     for new_match in &changes.to_add {
@@ -703,7 +719,9 @@ pub async fn update_recipe_ingredients(
     }
 
     // Commit transaction
-    tx.commit().await.context("Failed to commit ingredient updates")?;
+    tx.commit()
+        .await
+        .context("Failed to commit ingredient updates")?;
 
     let duration = start_time.elapsed();
     observability::record_db_performance_metrics(

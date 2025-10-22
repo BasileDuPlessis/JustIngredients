@@ -105,9 +105,7 @@ fn test_mixed_recipe_processing() {
     println!("Found {} measurements across both recipes", matches.len());
 
     // Check English measurements - the detector finds flour with quantity "4"
-    let flour_match = matches
-        .iter()
-        .find(|m| m.ingredient_name.contains("flour"));
+    let flour_match = matches.iter().find(|m| m.ingredient_name.contains("flour"));
     assert!(flour_match.is_some());
     assert_eq!(flour_match.unwrap().quantity, "4");
     assert_eq!(flour_match.unwrap().measurement, Some("cups".to_string()));
@@ -138,24 +136,14 @@ fn test_quantity_only_edge_cases() {
 
     let test_cases = vec![
         // (input_text, expected_quantity, expected_ingredient, description)
-        (
-            "3 eggs for breakfast",
-            "3",
-            "eggs",
-            "Simple quantity-only",
-        ),
+        ("3 eggs for breakfast", "3", "eggs", "Simple quantity-only"),
         (
             "Bake at 350°F for 25 minutes",
             "350",
             "°F", // This might be parsed as ingredient, but tests edge case
             "Temperature with degree symbol",
         ),
-        (
-            "Serves 4 people",
-            "4",
-            "people",
-            "Serves quantity",
-        ),
+        ("Serves 4 people", "4", "people", "Serves quantity"),
         (
             "2-3 apples depending on size",
             "2", // Should capture first number
@@ -185,9 +173,17 @@ fn test_quantity_only_edge_cases() {
             // Check if we found the expected quantity
             let found_match = matches.iter().find(|m| m.quantity == expected_quantity);
             if found_match.is_some() {
-                println!("✅ {}: Found quantity '{}' for '{}'", description, expected_quantity, expected_ingredient);
+                println!(
+                    "✅ {}: Found quantity '{}' for '{}'",
+                    description, expected_quantity, expected_ingredient
+                );
             } else {
-                println!("⚠️ {}: Expected quantity '{}' not found, but found {} measurements", description, expected_quantity, matches.len());
+                println!(
+                    "⚠️ {}: Expected quantity '{}' not found, but found {} measurements",
+                    description,
+                    expected_quantity,
+                    matches.len()
+                );
             }
         }
     }
@@ -240,7 +236,13 @@ fn test_mixed_measurement_types() {
         .filter(|m| {
             m.measurement
                 .as_ref()
-                .map(|u| u.contains("cups") || u.contains("tablespoon") || u.contains("teaspoon") || u.contains("ml") || u.contains("cuillères"))
+                .map(|u| {
+                    u.contains("cups")
+                        || u.contains("tablespoon")
+                        || u.contains("teaspoon")
+                        || u.contains("ml")
+                        || u.contains("cuillères")
+                })
                 .unwrap_or(false)
         })
         .count();
@@ -255,10 +257,7 @@ fn test_mixed_measurement_types() {
         })
         .count();
 
-    let quantity_only = matches
-        .iter()
-        .filter(|m| m.measurement.is_none())
-        .count();
+    let quantity_only = matches.iter().filter(|m| m.measurement.is_none()).count();
 
     println!(
         "Volume: {}, Weight: {}, Quantity-only: {}",

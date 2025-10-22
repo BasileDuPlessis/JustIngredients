@@ -219,12 +219,17 @@ pub async fn start_metrics_server_basic_with_config(
 
                         if let Err(err) = http1::Builder::new().serve_connection(io, service).await
                         {
-                            tracing::error!("Error serving connection: {:?}", err);
+                            crate::errors::error_logging::log_network_error(
+                                &err,
+                                "serve_http_connection",
+                                Some(&format!("{}:{}", peer_addr.ip(), peer_addr.port())),
+                                None,
+                            );
                         }
                     });
                 }
                 Err(e) => {
-                    tracing::error!("Error accepting connection: {}", e);
+                    crate::errors::error_logging::log_network_error(&e, "accept_tcp_connection", Some(&addr.to_string()), None);
                 }
             }
         }
@@ -364,12 +369,17 @@ pub async fn start_metrics_server_with_health_checks(
 
                         if let Err(err) = http1::Builder::new().serve_connection(io, service).await
                         {
-                            tracing::error!("Error serving connection: {:?}", err);
+                            crate::errors::error_logging::log_network_error(
+                                &err,
+                                "serve_http_connection",
+                                Some(&format!("{}:{}", peer_addr.ip(), peer_addr.port())),
+                                None,
+                            );
                         }
                     });
                 }
                 Err(e) => {
-                    tracing::error!("Error accepting connection: {}", e);
+                    crate::errors::error_logging::log_network_error(&e, "accept_tcp_connection", Some(&addr.to_string()), None);
                 }
             }
         }

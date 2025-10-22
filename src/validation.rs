@@ -503,9 +503,18 @@ mod tests {
         assert!(validate_quantity_range(&create_match("1/2")).is_ok());
 
         // Invalid ranges
-        assert_eq!(validate_quantity_range(&create_match("0")), Err("edit-invalid-quantity"));
-        assert_eq!(validate_quantity_range(&create_match("-1")), Err("edit-invalid-quantity"));
-        assert_eq!(validate_quantity_range(&create_match("10001")), Err("edit-invalid-quantity"));
+        assert_eq!(
+            validate_quantity_range(&create_match("0")),
+            Err("edit-invalid-quantity")
+        );
+        assert_eq!(
+            validate_quantity_range(&create_match("-1")),
+            Err("edit-invalid-quantity")
+        );
+        assert_eq!(
+            validate_quantity_range(&create_match("10001")),
+            Err("edit-invalid-quantity")
+        );
     }
 
     #[test]

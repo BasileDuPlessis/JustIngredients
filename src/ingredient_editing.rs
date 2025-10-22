@@ -8,14 +8,18 @@ use crate::text_processing::MeasurementMatch;
 /// This function transforms database-stored ingredients into the format expected
 /// by the ingredient editing interface, which reuses the recipe creation workflow.
 pub fn ingredients_to_measurement_matches(ingredients: &[Ingredient]) -> Vec<MeasurementMatch> {
-    ingredients.iter().enumerate().map(|(i, ing)| MeasurementMatch {
-        quantity: ing.quantity.map_or("1".to_string(), |q| q.to_string()),
-        measurement: ing.unit.clone(),
-        ingredient_name: ing.name.clone(),
-        line_number: i, // Use array index as line number
-        start_pos: 0,  // Not meaningful for database data
-        end_pos: ing.name.len(), // Use name length as approximation
-    }).collect()
+    ingredients
+        .iter()
+        .enumerate()
+        .map(|(i, ing)| MeasurementMatch {
+            quantity: ing.quantity.map_or("1".to_string(), |q| q.to_string()),
+            measurement: ing.unit.clone(),
+            ingredient_name: ing.name.clone(),
+            line_number: i,          // Use array index as line number
+            start_pos: 0,            // Not meaningful for database data
+            end_pos: ing.name.len(), // Use name length as approximation
+        })
+        .collect()
 }
 
 /// Represents the changes needed to update ingredients
@@ -64,7 +68,8 @@ pub fn detect_ingredient_changes(
         // If any data changed, mark as update
         if (orig_quantity - edit_quantity).abs() > f64::EPSILON
             || orig_unit != edit_unit
-            || orig_name != edit_name {
+            || orig_name != edit_name
+        {
             changes.to_update.push((orig.id, edit.clone()));
         }
     }
@@ -88,7 +93,12 @@ mod tests {
     use crate::db::Ingredient;
     use chrono::Utc;
 
-    fn create_test_ingredient(id: i64, name: &str, quantity: Option<f64>, unit: Option<&str>) -> Ingredient {
+    fn create_test_ingredient(
+        id: i64,
+        name: &str,
+        quantity: Option<f64>,
+        unit: Option<&str>,
+    ) -> Ingredient {
         Ingredient {
             id,
             user_id: 1,

@@ -1,8 +1,8 @@
 use anyhow::Result;
 
 use just_ingredients::dialogue::RecipeDialogueState;
-use just_ingredients::validation::validate_recipe_name;
 use just_ingredients::text_processing::MeasurementMatch;
+use just_ingredients::validation::validate_recipe_name;
 
 /// Integration test for recipe name dialogue validation
 #[tokio::test]

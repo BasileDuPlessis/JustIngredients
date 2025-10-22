@@ -46,22 +46,22 @@ pub enum RecipeDialogueState {
     },
     EditingSavedIngredients {
         recipe_id: i64,
-        original_ingredients: Vec<Ingredient>,  // Keep original for comparison
+        original_ingredients: Vec<Ingredient>, // Keep original for comparison
         current_matches: Vec<MeasurementMatch>, // Working copy for editing
         language_code: Option<String>,
         message_id: Option<i32>,
     },
     EditingSavedIngredient {
         recipe_id: i64,
-        original_ingredients: Vec<Ingredient>,  // Keep original for comparison
+        original_ingredients: Vec<Ingredient>, // Keep original for comparison
         current_matches: Vec<MeasurementMatch>, // Working copy for editing
-        editing_index: usize,                   // Which ingredient is being edited
+        editing_index: usize,                  // Which ingredient is being edited
         language_code: Option<String>,
         message_id: Option<i32>,
     },
     AddingIngredientToSavedRecipe {
         recipe_id: i64,
-        original_ingredients: Vec<Ingredient>,  // Keep original for comparison
+        original_ingredients: Vec<Ingredient>, // Keep original for comparison
         current_matches: Vec<MeasurementMatch>, // Working copy for editing
         language_code: Option<String>,
         message_id: Option<i32>,

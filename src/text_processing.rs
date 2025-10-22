@@ -113,19 +113,29 @@ impl MeasurementUnitsConfig {
     pub fn validate(&self) -> crate::errors::AppResult<()> {
         // Validate that all unit arrays are non-empty
         if self.measurement_units.volume_units.is_empty() {
-            return Err(crate::errors::AppError::Config("volume_units cannot be empty".to_string()));
+            return Err(crate::errors::AppError::Config(
+                "volume_units cannot be empty".to_string(),
+            ));
         }
         if self.measurement_units.weight_units.is_empty() {
-            return Err(crate::errors::AppError::Config("weight_units cannot be empty".to_string()));
+            return Err(crate::errors::AppError::Config(
+                "weight_units cannot be empty".to_string(),
+            ));
         }
         if self.measurement_units.volume_units_metric.is_empty() {
-            return Err(crate::errors::AppError::Config("volume_units_metric cannot be empty".to_string()));
+            return Err(crate::errors::AppError::Config(
+                "volume_units_metric cannot be empty".to_string(),
+            ));
         }
         if self.measurement_units.us_units.is_empty() {
-            return Err(crate::errors::AppError::Config("us_units cannot be empty".to_string()));
+            return Err(crate::errors::AppError::Config(
+                "us_units cannot be empty".to_string(),
+            ));
         }
         if self.measurement_units.french_units.is_empty() {
-            return Err(crate::errors::AppError::Config("french_units cannot be empty".to_string()));
+            return Err(crate::errors::AppError::Config(
+                "french_units cannot be empty".to_string(),
+            ));
         }
 
         // Validate that all unit strings are non-empty and contain valid characters
@@ -446,7 +456,10 @@ impl MeasurementDetector {
     pub fn with_config(config: MeasurementConfig) -> Result<Self, regex::Error> {
         // Validate configuration first
         if let Err(e) = config.validate() {
-            return Err(regex::Error::Syntax(format!("Invalid configuration: {}", e)));
+            return Err(regex::Error::Syntax(format!(
+                "Invalid configuration: {}",
+                e
+            )));
         }
 
         let pattern = if let Some(custom_pattern) = &config.custom_pattern {
