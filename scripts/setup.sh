@@ -168,13 +168,9 @@ verify_setup() {
     fi
     echo -e "${GREEN}✅ Application status OK${NC}"
 
-    # Check database connection (with timeout)
-    echo "Checking database connection..."
-    if ! timeout 30 fly postgres connect --app "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
-        echo -e "${YELLOW}⚠️  Database connection check timed out or failed (this may be normal for new databases)${NC}"
-    else
-        echo -e "${GREEN}✅ Database connection OK${NC}"
-    fi
+    # Skip database connection check during setup - will be tested during deployment
+    echo -e "${BLUE}ℹ️  Skipping database connectivity check during setup${NC}"
+    echo -e "${BLUE}💡 Database will be tested when the application connects${NC}"
 
     # Check secrets
     echo "Checking secrets..."

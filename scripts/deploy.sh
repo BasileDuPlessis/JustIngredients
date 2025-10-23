@@ -80,7 +80,7 @@ deploy_app() {
     echo -e "${YELLOW}Building and deploying application...${NC}"
 
     # Deploy to Fly.io
-    if ! fly deploy --remote-only; then
+    if ! fly deploy --remote-only --ha=false; then
         echo -e "${RED}❌ Deployment failed${NC}"
         exit 1
     fi
