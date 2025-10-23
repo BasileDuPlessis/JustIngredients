@@ -191,10 +191,10 @@ run_health_checks() {
     fi
 
     echo -e "${YELLOW}Checking database connectivity...${NC}"
-    if fly postgres connect --app "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
+    if timeout 10 fly postgres connect --app "$DB_NAME" -c "SELECT 1;" >/dev/null 2>&1; then
         echo -e "${GREEN}✅ Database connectivity check passed${NC}"
     else
-        echo -e "${RED}❌ Database connectivity check failed${NC}"
+        echo -e "${RED}❌ Database connectivity check failed or timed out${NC}"
     fi
 
     echo -e "${YELLOW}Checking Fly.io app status...${NC}"
