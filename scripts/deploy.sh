@@ -124,17 +124,6 @@ verify_deployment() {
     echo -e "${GREEN}🌐 Application URL: https://$APP_URL${NC}"
 }
 
-# Function to check database
-verify_database() {
-    echo -e "${YELLOW}Verifying database connectivity...${NC}"
-
-    # For incremental deployments, skip database verification
-    # The database should already exist and be configured
-    echo -e "${BLUE}ℹ️  Skipping database connectivity check for incremental deployment${NC}"
-    echo -e "${BLUE}💡 Database should already be configured from initial setup${NC}"
-    echo -e "${GREEN}✅ Database verification skipped (incremental deployment)${NC}"
-}
-
 # Function to show deployment info
 show_deployment_info() {
     echo ""
@@ -173,7 +162,6 @@ main() {
     run_tests
     deploy_app
     verify_deployment
-    verify_database
     show_deployment_info
     cleanup
 

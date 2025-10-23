@@ -168,12 +168,14 @@ show_usage() {
     echo "  --deploy-only    Run only the application deployment"
     echo "  --monitoring-only Run only the monitoring setup"
     echo "  --verify-only    Run only the final verification"
+    echo "  --with-monitoring Include monitoring setup in complete deployment"
     echo "  --help, -h       Show this help message"
     echo ""
-    echo "Without options, runs the complete deployment process"
+    echo "Without options, runs setup, deployment, and verification (monitoring is optional)"
     echo ""
     echo "Examples:"
-    echo "  $0                    # Complete deployment"
+    echo "  $0                    # Setup, deploy, and verify (no monitoring)"
+    echo "  $0 --with-monitoring # Complete deployment including monitoring"
     echo "  $0 --setup-only      # Only setup infrastructure"
     echo "  $0 --deploy-only     # Only deploy application"
 }
@@ -181,7 +183,8 @@ show_usage() {
 # Main execution
 main() {
     echo "This script will deploy your JustIngredients bot to Fly.io"
-    echo "It will run through all phases: setup, deployment, monitoring, and verification"
+    echo "It will run through setup, deployment, and verification phases"
+    echo "Monitoring setup is optional and can be included with --with-monitoring"
     echo ""
 
     # Parse command line arguments
@@ -206,12 +209,20 @@ main() {
             check_global_prerequisites
             run_verification
             ;;
-        "")
-            # Complete deployment
+        --with-monitoring)
+            # Complete deployment including monitoring
             check_global_prerequisites
             run_setup
             run_deployment
             run_monitoring
+            run_verification
+            show_completion_summary
+            ;;
+        "")
+            # Default deployment (without monitoring)
+            check_global_prerequisites
+            run_setup
+            run_deployment
             run_verification
             show_completion_summary
             ;;

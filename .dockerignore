@@ -1,0 +1,30 @@
+# flyctl launch added from .gitignore
+# Rust build
+target
+
+# Cargo package files
+**/**/*.rs.bk
+
+# IDEs and editors
+.idea
+**/*.swp
+**/*.swo
+**/*.bak
+**/*.tmp
+**/*.vscode
+
+# macOS
+**/.DS_Store
+
+# Logs
+**/*.log
+
+# Byproducts
+# **/Cargo.lock  # Commented out - needed for Docker build
+
+# Environment variables
+**/.env
+
+# Database files
+**/*.db
+fly.toml
