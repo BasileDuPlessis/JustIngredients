@@ -8,13 +8,40 @@ primary_region = "cdg"
   GF_SECURITY_ADMIN_PASSWORD = "admin"
   GF_USERS_ALLOW_SIGN_UP = "false"
 
-[http_service]
+# Grafana service
+[[services]]
   internal_port = 3000
-  force_https = true
-  auto_stop_machines = true
-  auto_start_machines = true
-  min_machines_running = 1
+  protocol = "tcp"
   processes = ["app"]
+
+  [[services.ports]]
+    port = 80
+    handlers = ["http"]
+    force_https = true
+
+  [[services.ports]]
+    port = 443
+    handlers = ["tls", "http"]
+
+  [services.concurrency]
+    type = "requests"
+    soft_limit = 1000
+    hard_limit = 1500
+
+# Prometheus service
+[[services]]
+  internal_port = 9090
+  protocol = "tcp"
+  processes = ["app"]
+
+  [[services.ports]]
+    port = 9090
+    handlers = ["http"]
+
+  [services.concurrency]
+    type = "requests"
+    soft_limit = 1000
+    hard_limit = 1500
 
 [[vm]]
   cpu_kind = "shared"
