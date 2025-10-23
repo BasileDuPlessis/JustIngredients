@@ -125,6 +125,8 @@ primary_region = "$REGION"
   CIRCUIT_BREAKER_THRESHOLD = "5"
   CIRCUIT_BREAKER_TIMEOUT_SECS = "60"
   HEALTH_PORT = "8080"
+  METRICS_PORT = "8080"
+  METRICS_BIND_ALL_INTERFACES = "true"
 
 [http_service]
   internal_port = 8080
@@ -132,12 +134,13 @@ primary_region = "$REGION"
   auto_stop_machines = true
   auto_start_machines = true
   min_machines_running = 1
+  max_machines_running = 1
   processes = ["app"]
 
 [[vm]]
   cpu_kind = "shared"
   cpus = 1
-  memory_mb = 2048
+  memory_mb = 512
 EOF
 
     echo -e "${GREEN}✅ fly.toml configured${NC}"
