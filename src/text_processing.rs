@@ -177,7 +177,32 @@ impl MeasurementUnitsConfig {
 
 /// Load measurement units configuration from JSON file
 pub fn load_measurement_units_config() -> MeasurementUnitsConfig {
-    // Try multiple possible paths for the config file
+    // First, try to get path from environment variable
+    if let Ok(config_path) = std::env::var("MEASUREMENT_UNITS_CONFIG_PATH") {
+        info!("Loading measurement units config from environment variable: {}", config_path);
+        match fs::read_to_string(&config_path) {
+            Ok(content) => match serde_json::from_str(&content) {
+                Ok(config) => {
+                    info!("Successfully loaded measurement units config from: {}", config_path);
+                    return config;
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to parse measurement units config from '{}': {}. Falling back to default paths.",
+                        config_path, e
+                    );
+                }
+            },
+            Err(e) => {
+                warn!(
+                    "Failed to read measurement units config from '{}': {}. Falling back to default paths.",
+                    config_path, e
+                );
+            }
+        }
+    }
+
+    // Fallback to hardcoded paths for backward compatibility
     let possible_paths = [
         "/app/config/measurement_units.json", // Docker path
         "config/measurement_units.json",      // Local development path
@@ -187,7 +212,10 @@ pub fn load_measurement_units_config() -> MeasurementUnitsConfig {
     for config_path in &possible_paths {
         match fs::read_to_string(config_path) {
             Ok(content) => match serde_json::from_str(&content) {
-                Ok(config) => return config,
+                Ok(config) => {
+                    info!("Successfully loaded measurement units config from fallback path: {}", config_path);
+                    return config;
+                }
                 Err(e) => {
                     warn!(
                         "Failed to parse measurement units config at '{}': {}. Trying next path.",

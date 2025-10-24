@@ -186,6 +186,50 @@ success_rate = ocr_operations_total{result="success"} / ocr_operations_total
 - Set up comprehensive alerting
 - Enable full metrics export
 
+## Monitoring Stack Verification
+
+### Verify Grafana Accessibility
+```bash
+# Check if Grafana responds (should return 302 redirect)
+curl -s -o /dev/null -w "%{http_code}" https://just-ingredients-monitoring.fly.dev
+
+# Check if login page loads
+curl -s https://just-ingredients-monitoring.fly.dev/login | head -10
+```
+
+### Verify Prometheus Data Collection
+```bash
+# Check if main app metrics are accessible
+curl -s https://just-ingredients-bot.fly.dev/metrics | head -5
+
+# Test Grafana datasource connectivity (should return JSON with status: success)
+curl -s -u admin:admin "https://just-ingredients-monitoring.fly.dev/api/datasources/proxy/1/api/v1/query?query=up"
+```
+
+### Verify Datasource Configuration
+```bash
+# Check configured datasources in Grafana
+curl -s -u admin:admin https://just-ingredients-monitoring.fly.dev/api/datasources | jq '.[] | {name, url, isDefault}'
+```
+
+### Check Fly.io Deployment Status
+```bash
+# Check monitoring app status
+fly status --app just-ingredients-monitoring
+
+# Check main app status
+fly status --app just-ingredients-bot
+```
+
+### Monitor Key Metrics
+```bash
+# Check if bot is processing requests
+curl -s -u admin:admin "https://just-ingredients-monitoring.fly.dev/api/datasources/proxy/1/api/v1/query?query=requests_total"
+
+# Check active users
+curl -s -u admin:admin "https://just-ingredients-monitoring.fly.dev/api/datasources/proxy/1/api/v1/query?query=telegram_active_users_total"
+```
+
 ## Troubleshooting Commands
 
 ### Check Application Status

@@ -13,6 +13,7 @@ primary_region = "cdg"
   HEALTH_PORT = "8080"
   METRICS_PORT = "8080"
   METRICS_BIND_ALL_INTERFACES = "true"
+  MEASUREMENT_UNITS_CONFIG_PATH = "/app/config/measurement_units.json"
 
 [http_service]
   internal_port = 8080

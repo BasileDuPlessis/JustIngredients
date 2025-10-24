@@ -188,6 +188,23 @@ The following environment variables are automatically configured:
 
 ## Troubleshooting
 
+### Quick Status Commands
+
+**Health Check**:
+```bash
+curl -v https://just-ingredients-bot.fly.dev/health/live
+```
+
+**Application Status**:
+```bash
+fly status --app just-ingredients-bot
+```
+
+**Recent Application Logs**:
+```bash
+fly logs --app just-ingredients-bot
+```
+
 ### Common Issues
 
 **Deployment Fails**

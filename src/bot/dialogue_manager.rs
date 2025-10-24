@@ -5,6 +5,7 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
+use tracing::{error, info};
 
 // Import error logging utilities
 use crate::errors::error_logging;
@@ -903,22 +904,78 @@ pub async fn save_ingredients_to_database(
 ) -> Result<()> {
     let start_time = std::time::Instant::now();
 
+    info!(telegram_id = %telegram_id, ingredient_count = %ingredients.len(), "Starting ingredient save process");
+
     // Get or create user
-    let user = get_or_create_user(pool, telegram_id, language_code).await?;
+    info!(telegram_id = %telegram_id, "Calling get_or_create_user");
+    let user = match get_or_create_user(pool, telegram_id, language_code).await {
+        Ok(user) => {
+            info!(telegram_id = %telegram_id, user_id = %user.id, user_telegram_id = %user.telegram_id, "User resolved successfully");
+            user
+        }
+        Err(e) => {
+            error!(telegram_id = %telegram_id, error = %e, "CRITICAL: get_or_create_user failed!");
+            return Err(e);
+        }
+    };
+
+    // Verify user has correct telegram_id
+    if user.telegram_id != telegram_id {
+        error!(
+            telegram_id = %telegram_id,
+            user_id = %user.id,
+            user_telegram_id = %user.telegram_id,
+            "CRITICAL: Resolved user has wrong telegram_id!"
+        );
+        return Err(anyhow::anyhow!(
+            "User resolution returned wrong telegram_id: expected {}, got {}",
+            telegram_id,
+            user.telegram_id
+        ));
+    }
 
     // Create recipe
-    let recipe_id = create_recipe(pool, telegram_id, extracted_text).await?;
+    info!(telegram_id = %telegram_id, user_id = %user.id, "Creating recipe");
+    let recipe_id = match create_recipe(pool, telegram_id, extracted_text).await {
+        Ok(id) => {
+            info!(telegram_id = %telegram_id, recipe_id = %id, "Recipe created successfully");
+            id
+        }
+        Err(e) => {
+            error!(telegram_id = %telegram_id, user_id = %user.id, error = %e, "Recipe creation failed");
+            return Err(e);
+        }
+    };
 
     // Update recipe with recipe name
-    update_recipe_name(pool, recipe_id, recipe_name).await?;
+    info!(recipe_id = %recipe_id, recipe_name = %recipe_name, "Updating recipe name");
+    match update_recipe_name(pool, recipe_id, recipe_name).await {
+        Ok(_) => {
+            info!(recipe_id = %recipe_id, "Recipe name updated successfully");
+        }
+        Err(e) => {
+            error!(recipe_id = %recipe_id, recipe_name = %recipe_name, error = %e, "Recipe name update failed");
+            return Err(e);
+        }
+    };
 
     // Save each ingredient
-    for ingredient in ingredients {
+    for (i, ingredient) in ingredients.iter().enumerate() {
         // Parse quantity from string (handle fractions)
         let quantity = parse_quantity(&ingredient.quantity);
         let unit = ingredient.measurement.as_deref();
 
-        create_ingredient(
+        info!(
+            ingredient_index = %i,
+            user_id = %user.id,
+            recipe_id = %recipe_id,
+            name = %ingredient.ingredient_name,
+            quantity = ?quantity,
+            unit = ?unit,
+            "Creating ingredient"
+        );
+
+        match create_ingredient(
             pool,
             user.id,
             Some(recipe_id),
@@ -927,7 +984,23 @@ pub async fn save_ingredients_to_database(
             unit,
             extracted_text,
         )
-        .await?;
+        .await
+        {
+            Ok(_) => {
+                info!(ingredient_index = %i, name = %ingredient.ingredient_name, "Ingredient created successfully");
+            }
+            Err(e) => {
+                error!(
+                    ingredient_index = %i,
+                    user_id = %user.id,
+                    recipe_id = %recipe_id,
+                    name = %ingredient.ingredient_name,
+                    error = %e,
+                    "Ingredient creation failed"
+                );
+                return Err(e);
+            }
+        }
     }
 
     let processing_duration = start_time.elapsed();
@@ -946,6 +1019,15 @@ pub async fn save_ingredients_to_database(
         naming_method,
         processing_duration,
         user.id,
+    );
+
+    info!(
+        telegram_id = %telegram_id,
+        user_id = %user.id,
+        recipe_id = %recipe_id,
+        ingredient_count = %ingredients.len(),
+        duration_ms = %processing_duration.as_millis(),
+        "Ingredient save process completed successfully"
     );
 
     Ok(())

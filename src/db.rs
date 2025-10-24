@@ -2,7 +2,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use sqlx::postgres::PgPool;
 use sqlx::Row;
-use tracing::{debug, info};
+use tracing::{debug, error, info};
 
 // Import cache types
 use crate::cache::Cache;
@@ -254,34 +254,71 @@ pub async fn get_or_create_user(
     telegram_id: i64,
     language_code: Option<&str>,
 ) -> Result<User> {
-    debug!(telegram_id = %telegram_id, "Getting or creating user");
+    debug!(telegram_id = %telegram_id, "Starting get_or_create_user");
 
     // Try to get existing user
-    if let Some(user) = get_user_by_telegram_id(pool, telegram_id).await? {
-        return Ok(user);
+    info!(telegram_id = %telegram_id, "Attempting to find existing user");
+    match get_user_by_telegram_id(pool, telegram_id).await {
+        Ok(Some(user)) => {
+            info!(telegram_id = %telegram_id, user_id = %user.id, "Found existing user, returning");
+            return Ok(user);
+        }
+        Ok(None) => {
+            info!(telegram_id = %telegram_id, "No existing user found, will create new user");
+        }
+        Err(e) => {
+            error!(telegram_id = %telegram_id, error = %e, "Error looking up existing user");
+            return Err(e);
+        }
     }
 
     // Create new user
     let language_code = language_code.unwrap_or("en");
-    let row = sqlx::query(
+    info!(telegram_id = %telegram_id, language_code = %language_code, "Attempting to create new user");
+
+    let insert_result = sqlx::query(
         "INSERT INTO users (telegram_id, language_code) VALUES ($1, $2) RETURNING id, telegram_id, language_code, created_at, updated_at"
     )
     .bind(telegram_id)
     .bind(language_code)
     .fetch_one(pool)
-    .await
-    .context("Failed to create new user")?;
+    .await;
 
-    let user = User {
-        id: row.get(0),
-        telegram_id: row.get(1),
-        language_code: row.get(2),
-        created_at: row.get(3),
-        updated_at: row.get(4),
-    };
+    match insert_result {
+        Ok(row) => {
+            let user = User {
+                id: row.get(0),
+                telegram_id: row.get(1),
+                language_code: row.get(2),
+                created_at: row.get(3),
+                updated_at: row.get(4),
+            };
 
-    debug!(user_id = %user.id, "User created successfully");
-    Ok(user)
+            info!(telegram_id = %telegram_id, user_id = %user.id, returned_telegram_id = %user.telegram_id, "User insert succeeded, verifying data");
+
+            // Verify that the created user has the correct telegram_id
+            if user.telegram_id != telegram_id {
+                error!(
+                    expected_telegram_id = %telegram_id,
+                    actual_telegram_id = %user.telegram_id,
+                    user_id = %user.id,
+                    "CRITICAL: User creation returned wrong telegram_id!"
+                );
+                return Err(anyhow::anyhow!(
+                    "User creation returned wrong telegram_id: expected {}, got {}",
+                    telegram_id,
+                    user.telegram_id
+                ));
+            }
+
+            info!(user_id = %user.id, telegram_id = %user.telegram_id, "User created and verified successfully");
+            Ok(user)
+        }
+        Err(e) => {
+            error!(telegram_id = %telegram_id, language_code = %language_code, error = %e, "User insert failed");
+            Err(e.into())
+        }
+    }
 }
 
 /// Get a user by Telegram ID
