@@ -39,6 +39,10 @@ This document contains critical learnings and best practices for deploying the J
 - **MEASUREMENT_UNITS_CONFIG_PATH** specifies the path to measurement units configuration
   - Set to `/app/config/measurement_units.json` for Docker deployments
   - Falls back to hardcoded paths if not set
+- **DATABASE_MAX_CONNECTIONS** reduced to 5 for Fly.io resource constraints
+- **OCR_MEMORY_LIMIT_MB** set to 80MB (conservative for 512MB VMs)
+- **DATABASE_CONNECT_TIMEOUT_SECS** reduced to 15s for faster failure detection
+- **HTTP_CLIENT_TIMEOUT_SECS** reduced to 20s for better responsiveness
 - Validate all required environment variables at startup
 
 ### File Paths and URLs
@@ -157,5 +161,20 @@ If deployment fails:
 4. Redeploy if needed: `fly deploy --app <app-name> --ha=false`
 5. Check database state in correct database: `fly postgres connect -a <db-name> -d <app_db>`
 
-This guide should prevent the issues encountered during the initial deployment and provide a reliable path for future deployments.</content>
+## Production Optimizations Implemented
+
+### Resource Constraints
+- **Database connections**: Reduced from 10 to 5 to prevent connection pool exhaustion
+- **OCR memory limit**: Reduced from 100MB to 80MB for conservative memory usage on 512MB VMs
+- **Timeouts**: Reduced database connect timeout to 15s, HTTP client timeout to 20s
+
+### Monitoring & Observability
+- **Metrics binding**: Configured to bind to all interfaces for external monitoring access
+- **Logging levels**: Adjusted to `warn,just_ingredients=info,sqlx=warn` for production-appropriate verbosity
+- **Health checks**: Separate liveness and readiness endpoints for proper container orchestration
+
+### Configuration Management
+- **Environment variables**: All critical settings configurable via environment variables
+- **Fallback mechanisms**: Graceful degradation when configuration files are missing
+- **Validation**: Comprehensive startup validation of all configuration parameters</content>
 <filePath>/Users/basile.du.plessis/Documents/JustIngredients/docs/flyio-deployment-guide.md

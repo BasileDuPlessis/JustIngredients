@@ -199,7 +199,10 @@ pub fn validate_image_with_format_limits(
                             );
 
                             // Check if estimated memory usage exceeds safe limits
-                            let max_memory_mb = 100.0; // 100MB memory limit for OCR processing
+                            let max_memory_mb = std::env::var("OCR_MEMORY_LIMIT_MB")
+                                .unwrap_or_else(|_| "80".to_string())
+                                .parse::<f64>()
+                                .unwrap_or(80.0); // 80MB memory limit for OCR processing (conservative for Fly.io 512MB VMs)
                             if estimated_memory_mb > max_memory_mb {
                                 return Err(anyhow::anyhow!(
                                     "Estimated memory usage too high: {}MB (maximum allowed: {}MB). File would cause out-of-memory errors.",
