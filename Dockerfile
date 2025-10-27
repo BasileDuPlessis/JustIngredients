@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.6
 
-FROM rust:1.79-bookworm AS builder
+# syntax=docker/dockerfile:1.6
+
+FROM rust:latest AS builder
 
 WORKDIR /app
 
@@ -24,17 +26,18 @@ COPY locales ./locales
 RUN cargo build --release \
     && strip --strip-unneeded target/release/just-ingredients
 
-FROM debian:bookworm-slim AS runtime
+FROM ubuntu:latest AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ca-certificates \
        libssl3 \
-         tesseract-ocr \
-         tesseract-ocr-eng \
-         tesseract-ocr-fra \
-         libleptonica-dev \
-         libtesseract-dev \
+       tesseract-ocr \
+       tesseract-ocr-eng \
+       tesseract-ocr-fra \
+       liblept5 \
+       libtesseract5 \
+    && ln -s /usr/lib/aarch64-linux-gnu/liblept.so.5 /usr/lib/aarch64-linux-gnu/libleptonica.so.6 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
