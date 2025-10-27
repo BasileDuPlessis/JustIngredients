@@ -1302,11 +1302,7 @@ pub mod migrations {
                     current_statement = String::new();
                 }
                 _ => {
-                    if !in_comment {
-                        current_statement.push(ch);
-                    } else {
-                        current_statement.push(ch);
-                    }
+                    current_statement.push(ch);
                 }
             }
         }
