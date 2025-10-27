@@ -12,7 +12,7 @@ use hyper_util::rt::TokioIo;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use sqlx::PgPool;
 use std::collections::HashMap;
-use std::net::SocketAddr;
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
@@ -130,9 +130,9 @@ pub async fn start_metrics_server_basic_with_config(
         .unwrap_or(false);
 
     let addr = if bind_all {
-        SocketAddr::from(([0, 0, 0, 0], port))
+        SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port)
     } else {
-        SocketAddr::from(([127, 0, 0, 1], port)) // localhost only
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) // localhost only
     };
 
     tracing::info!(
@@ -257,9 +257,9 @@ pub async fn start_metrics_server_with_health_checks(
         .unwrap_or(false);
 
     let addr = if bind_all {
-        SocketAddr::from(([0, 0, 0, 0], port))
+        SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port)
     } else {
-        SocketAddr::from(([127, 0, 0, 1], port)) // localhost only
+        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) // localhost only
     };
 
     tracing::info!(

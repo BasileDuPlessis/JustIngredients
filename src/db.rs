@@ -44,90 +44,12 @@ pub struct Ingredient {
     pub updated_at: DateTime<Utc>,
 }
 
-/// Initialize the database schema
+/// Initialize the database schema using the migration system
 pub async fn init_database_schema(pool: &PgPool) -> Result<()> {
-    info!("Initializing database schema");
+    info!("Initializing database schema using migrations");
 
-    // Create users table
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS users (
-            id BIGSERIAL PRIMARY KEY,
-            telegram_id BIGINT UNIQUE NOT NULL,
-            language_code VARCHAR(10) DEFAULT 'en',
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-        )",
-    )
-    .execute(pool)
-    .await
-    .context("Failed to create users table")?;
-
-    // Create recipes table
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS recipes (
-            id BIGSERIAL PRIMARY KEY,
-            telegram_id BIGINT NOT NULL,
-            content TEXT NOT NULL,
-            recipe_name VARCHAR(255),
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-            content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
-        )",
-    )
-    .execute(pool)
-    .await
-    .context("Failed to create recipes table")?;
-
-    // Create ingredients table
-    sqlx::query(
-        "CREATE TABLE IF NOT EXISTS ingredients (
-            id BIGSERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL REFERENCES users(id),
-            recipe_id BIGINT REFERENCES recipes(id),
-            name VARCHAR(255) NOT NULL,
-            quantity DECIMAL(10,3),
-            unit VARCHAR(50),
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-            FOREIGN KEY (user_id) REFERENCES users(id),
-            FOREIGN KEY (recipe_id) REFERENCES recipes(id)
-        )",
-    )
-    .execute(pool)
-    .await
-    .context("Failed to create ingredients table")?;
-
-    // Add recipe_id column if it doesn't exist (for schema migration)
-    sqlx::query(
-        "ALTER TABLE ingredients ADD COLUMN IF NOT EXISTS recipe_id BIGINT REFERENCES recipes(id)",
-    )
-    .execute(pool)
-    .await
-    .context("Failed to add recipe_id column to ingredients table")?;
-
-    // Try to add foreign key constraint (ignore if it already exists)
-    let _ = sqlx::query(
-        "ALTER TABLE ingredients ADD CONSTRAINT ingredients_recipe_id_fkey FOREIGN KEY (recipe_id) REFERENCES recipes(id)",
-    )
-    .execute(pool)
-    .await;
-
-    // Create indexes for performance
-    sqlx::query(
-        "CREATE INDEX IF NOT EXISTS recipes_content_tsv_idx ON recipes USING GIN (content_tsv)",
-    )
-    .execute(pool)
-    .await
-    .context("Failed to create FTS index")?;
-
-    sqlx::query("CREATE INDEX IF NOT EXISTS ingredients_user_id_idx ON ingredients(user_id)")
-        .execute(pool)
-        .await
-        .context("Failed to create ingredients user_id index")?;
-
-    sqlx::query("CREATE INDEX IF NOT EXISTS ingredients_recipe_id_idx ON ingredients(recipe_id)")
-        .execute(pool)
-        .await
-        .context("Failed to create ingredients recipe_id index")?;
+    // Apply any pending migrations
+    migrations::apply_pending_migrations(pool).await?;
 
     info!("Database schema initialized successfully");
     Ok(())
@@ -1102,4 +1024,463 @@ pub async fn get_user_recipe_statistics(
 
     debug!(telegram_id = %telegram_id, stats = ?stats, "Retrieved recipe statistics");
     Ok(stats)
+}
+
+/// Validate that the database schema matches what the application expects
+pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
+    info!("Validating database schema");
+
+    // Check that all required tables exist
+    let required_tables = vec!["users", "recipes", "ingredients"];
+    for table_name in required_tables {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = 'public')"
+        )
+        .bind(table_name)
+        .fetch_one(pool)
+        .await
+        .context(format!("Failed to check if table '{}' exists", table_name))?;
+
+        if !exists {
+            return Err(anyhow::anyhow!(
+                "Required table '{}' does not exist",
+                table_name
+            ));
+        }
+        debug!("✓ Table '{}' exists", table_name);
+    }
+
+    // Validate users table schema
+    validate_table_columns(
+        pool,
+        "users",
+        &[
+            ("id", "bigint"),
+            ("telegram_id", "bigint"),
+            ("language_code", "character varying"),
+            ("created_at", "timestamp with time zone"),
+            ("updated_at", "timestamp with time zone"),
+        ],
+    )
+    .await?;
+
+    // Validate recipes table schema
+    validate_table_columns(
+        pool,
+        "recipes",
+        &[
+            ("id", "bigint"),
+            ("telegram_id", "bigint"),
+            ("content", "text"),
+            ("recipe_name", "character varying"),
+            ("created_at", "timestamp with time zone"),
+            ("content_tsv", "tsvector"),
+        ],
+    )
+    .await?;
+
+    // Validate ingredients table schema
+    validate_table_columns(
+        pool,
+        "ingredients",
+        &[
+            ("id", "bigint"),
+            ("user_id", "bigint"),
+            ("recipe_id", "bigint"),
+            ("name", "character varying"),
+            ("quantity", "numeric"),
+            ("unit", "character varying"),
+            ("raw_text", "text"),
+            ("created_at", "timestamp with time zone"),
+            ("updated_at", "timestamp with time zone"),
+        ],
+    )
+    .await?;
+
+    // Validate indexes exist
+    validate_indexes(pool, "recipes", &["recipes_content_tsv_idx"]).await?;
+    validate_indexes(
+        pool,
+        "ingredients",
+        &["ingredients_user_id_idx", "ingredients_recipe_id_idx"],
+    )
+    .await?;
+
+    info!("✓ Database schema validation completed successfully");
+    Ok(())
+}
+
+/// Helper function to validate that a table has the required columns with correct types
+async fn validate_table_columns(
+    pool: &PgPool,
+    table_name: &str,
+    expected_columns: &[(&str, &str)],
+) -> Result<()> {
+    for (column_name, expected_type) in expected_columns {
+        let column_info: Option<(String, String)> = sqlx::query_as(
+            "SELECT data_type, is_nullable FROM information_schema.columns
+             WHERE table_name = $1 AND column_name = $2 AND table_schema = 'public'",
+        )
+        .bind(table_name)
+        .bind(column_name)
+        .fetch_optional(pool)
+        .await
+        .context(format!(
+            "Failed to check column '{}' in table '{}'",
+            column_name, table_name
+        ))?;
+
+        match column_info {
+            Some((data_type, _is_nullable)) => {
+                // Check if the data type matches (allowing for some flexibility)
+                if !data_type
+                    .to_lowercase()
+                    .contains(&expected_type.to_lowercase())
+                {
+                    return Err(anyhow::anyhow!(
+                        "Column '{}' in table '{}' has type '{}', expected '{}'",
+                        column_name,
+                        table_name,
+                        data_type,
+                        expected_type
+                    ));
+                }
+                debug!(
+                    "✓ Column '{}' in '{}' has correct type '{}'",
+                    column_name, table_name, data_type
+                );
+            }
+            None => {
+                return Err(anyhow::anyhow!(
+                    "Required column '{}' does not exist in table '{}'",
+                    column_name,
+                    table_name
+                ));
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Helper function to validate that required indexes exist
+async fn validate_indexes(
+    pool: &PgPool,
+    table_name: &str,
+    expected_indexes: &[&str],
+) -> Result<()> {
+    for index_name in expected_indexes {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = $1 AND indexname = $2)",
+        )
+        .bind(table_name)
+        .bind(index_name)
+        .fetch_one(pool)
+        .await
+        .context(format!(
+            "Failed to check if index '{}' exists on table '{}'",
+            index_name, table_name
+        ))?;
+
+        if !exists {
+            return Err(anyhow::anyhow!(
+                "Required index '{}' does not exist on table '{}'",
+                index_name,
+                table_name
+            ));
+        }
+        debug!("✓ Index '{}' exists on table '{}'", index_name, table_name);
+    }
+    Ok(())
+}
+
+/// Database migration system
+pub mod migrations {
+    use super::*;
+
+    /// Represents a database migration
+    pub struct Migration {
+        pub version: i32,
+        pub name: &'static str,
+        pub up: &'static str,
+        pub down: Option<&'static str>,
+    }
+
+    /// Get all available migrations in order
+    pub fn get_migrations() -> Vec<Migration> {
+        vec![Migration {
+            version: 1,
+            name: "create_initial_tables",
+            up: r#"
+                    -- Create users table
+                    CREATE TABLE IF NOT EXISTS users (
+                        id BIGSERIAL PRIMARY KEY,
+                        telegram_id BIGINT UNIQUE NOT NULL,
+                        language_code VARCHAR(10) DEFAULT 'en',
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    -- Create recipes table
+                    CREATE TABLE IF NOT EXISTS recipes (
+                        id BIGSERIAL PRIMARY KEY,
+                        telegram_id BIGINT NOT NULL,
+                        content TEXT NOT NULL,
+                        recipe_name VARCHAR(255),
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+                    );
+
+                    -- Create ingredients table
+                    CREATE TABLE IF NOT EXISTS ingredients (
+                        id BIGSERIAL PRIMARY KEY,
+                        user_id BIGINT NOT NULL REFERENCES users(id),
+                        recipe_id BIGINT REFERENCES recipes(id),
+                        name VARCHAR(255) NOT NULL,
+                        quantity DECIMAL(10,3),
+                        unit VARCHAR(50),
+                        raw_text TEXT,
+                        created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+                    );
+
+                    -- Create indexes
+                    CREATE INDEX IF NOT EXISTS recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
+                    CREATE INDEX IF NOT EXISTS ingredients_user_id_idx ON ingredients(user_id);
+                    CREATE INDEX IF NOT EXISTS ingredients_recipe_id_idx ON ingredients(recipe_id);
+                "#,
+            down: Some(
+                r#"
+                    DROP TABLE IF EXISTS ingredients;
+                    DROP TABLE IF EXISTS recipes;
+                    DROP TABLE IF EXISTS users;
+                "#,
+            ),
+        }]
+    }
+
+    /// Split SQL string into individual statements by semicolons
+    pub fn split_sql_statements(sql: &str) -> Vec<String> {
+        let mut statements = Vec::new();
+        let mut current_statement = String::new();
+        let mut in_string = false;
+        let mut string_char = '\0';
+        let mut in_comment = false;
+        let mut chars = sql.chars().peekable();
+
+        while let Some(ch) = chars.next() {
+            match ch {
+                // Handle string literals
+                '"' | '\'' if !in_comment => {
+                    if !in_string {
+                        in_string = true;
+                        string_char = ch;
+                    } else if ch == string_char {
+                        in_string = false;
+                        string_char = '\0';
+                    }
+                    current_statement.push(ch);
+                }
+                // Handle comments
+                '-' if !in_string && !in_comment => {
+                    // Check if this is the start of a comment
+                    if chars.peek() == Some(&'-') {
+                        in_comment = true;
+                        current_statement.push(ch); // Push first -
+                        current_statement.push(chars.next().unwrap()); // Push second -
+                    } else {
+                        current_statement.push(ch);
+                    }
+                }
+                '\n' if in_comment => {
+                    in_comment = false;
+                    current_statement.push(ch);
+                }
+                // Handle semicolons outside of strings and comments
+                ';' if !in_string && !in_comment => {
+                    current_statement.push(ch);
+                    statements.push(current_statement.trim().to_string());
+                    current_statement = String::new();
+                }
+                _ => {
+                    if !in_comment {
+                        current_statement.push(ch);
+                    } else {
+                        current_statement.push(ch);
+                    }
+                }
+            }
+        }
+
+        // Add any remaining statement
+        if !current_statement.trim().is_empty() {
+            statements.push(current_statement.trim().to_string());
+        }
+
+        statements
+    }
+
+    /// Initialize the migrations table
+    pub async fn init_migrations_table(pool: &PgPool) -> Result<()> {
+        sqlx::query(
+            r#"
+            CREATE TABLE IF NOT EXISTS schema_migrations (
+                version INTEGER PRIMARY KEY,
+                name TEXT NOT NULL,
+                applied_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+            )
+            "#,
+        )
+        .execute(pool)
+        .await
+        .context("Failed to create migrations table")?;
+
+        Ok(())
+    }
+
+    /// Get the current schema version
+    pub async fn get_current_version(pool: &PgPool) -> Result<i32> {
+        let version: Option<i32> =
+            sqlx::query_scalar("SELECT COALESCE(MAX(version), 0) FROM schema_migrations")
+                .fetch_one(pool)
+                .await
+                .context("Failed to get current schema version")?;
+
+        Ok(version.unwrap_or(0))
+    }
+
+    /// Apply pending migrations
+    pub async fn apply_pending_migrations(pool: &PgPool) -> Result<()> {
+        init_migrations_table(pool).await?;
+
+        let current_version = get_current_version(pool).await?;
+        let migrations = get_migrations();
+
+        for migration in migrations {
+            if migration.version > current_version {
+                info!(
+                    "Applying migration {}: {}",
+                    migration.version, migration.name
+                );
+
+                // Execute the migration in a transaction
+                let mut tx = pool.begin().await.context(format!(
+                    "Failed to start transaction for migration {}",
+                    migration.version
+                ))?;
+
+                // Split the migration SQL into individual statements and execute each one
+                let statements = split_sql_statements(migration.up);
+                for statement in statements {
+                    if !statement.trim().is_empty() {
+                        sqlx::query(&statement)
+                            .execute(&mut *tx)
+                            .await
+                            .context(format!(
+                                "Failed to execute statement in migration {}: {}",
+                                migration.version, migration.name
+                            ))?;
+                    }
+                }
+
+                // Record the migration
+                sqlx::query("INSERT INTO schema_migrations (version, name) VALUES ($1, $2)")
+                    .bind(migration.version)
+                    .bind(migration.name)
+                    .execute(&mut *tx)
+                    .await
+                    .context(format!("Failed to record migration {}", migration.version))?;
+
+                tx.commit()
+                    .await
+                    .context(format!("Failed to commit migration {}", migration.version))?;
+
+                info!(
+                    "✓ Successfully applied migration {}: {}",
+                    migration.version, migration.name
+                );
+            }
+        }
+
+        let final_version = get_current_version(pool).await?;
+        info!("Database schema is at version {}", final_version);
+
+        Ok(())
+    }
+
+    /// Rollback to a specific version (for development/testing)
+    pub async fn rollback_to_version(pool: &PgPool, target_version: i32) -> Result<()> {
+        let current_version = get_current_version(pool).await?;
+        let migrations = get_migrations();
+
+        if target_version >= current_version {
+            info!(
+                "Already at version {} (target: {})",
+                current_version, target_version
+            );
+            return Ok(());
+        }
+
+        // Get migrations to rollback in reverse order
+        let migrations_to_rollback: Vec<&Migration> = migrations
+            .iter()
+            .filter(|m| m.version > target_version)
+            .collect();
+
+        for migration in migrations_to_rollback.into_iter().rev() {
+            if let Some(down_sql) = migration.down {
+                info!(
+                    "Rolling back migration {}: {}",
+                    migration.version, migration.name
+                );
+
+                let mut tx = pool.begin().await.context(format!(
+                    "Failed to start transaction for rollback of migration {}",
+                    migration.version
+                ))?;
+
+                // Split the rollback SQL into individual statements and execute each one
+                let statements = split_sql_statements(down_sql);
+                for statement in statements {
+                    if !statement.trim().is_empty() {
+                        sqlx::query(&statement)
+                            .execute(&mut *tx)
+                            .await
+                            .context(format!(
+                                "Failed to execute rollback statement in migration {}: {}",
+                                migration.version, migration.name
+                            ))?;
+                    }
+                }
+
+                sqlx::query("DELETE FROM schema_migrations WHERE version = $1")
+                    .bind(migration.version)
+                    .execute(&mut *tx)
+                    .await
+                    .context(format!(
+                        "Failed to remove migration record {}",
+                        migration.version
+                    ))?;
+
+                tx.commit().await.context(format!(
+                    "Failed to commit rollback of migration {}",
+                    migration.version
+                ))?;
+
+                info!(
+                    "✓ Successfully rolled back migration {}: {}",
+                    migration.version, migration.name
+                );
+            } else {
+                return Err(anyhow::anyhow!(
+                    "Cannot rollback migration {}: no down migration defined",
+                    migration.version
+                ));
+            }
+        }
+
+        let final_version = get_current_version(pool).await?;
+        info!("Database schema rolled back to version {}", final_version);
+
+        Ok(())
+    }
 }

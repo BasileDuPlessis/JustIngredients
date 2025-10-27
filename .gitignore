@@ -28,4 +28,4 @@ Cargo.lock
 *.db
 
 # Scripts directory
-__scripts/
+ignore_this_directory

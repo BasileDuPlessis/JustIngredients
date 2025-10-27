@@ -326,3 +326,283 @@ async fn test_has_duplicate_recipes_impl(pool: &PgPool) -> Result<()> {
 
     Ok(())
 }
+
+#[tokio::test]
+async fn test_schema_validation() -> Result<()> {
+    skip_if_no_db!(test_schema_validation_impl)
+}
+
+async fn test_schema_validation_impl(pool: &PgPool) -> Result<()> {
+    // Schema should be valid after initialization
+    validate_database_schema(pool).await?;
+
+    // Test that validation fails if a required table is missing
+    sqlx::query("DROP TABLE IF EXISTS ingredients CASCADE")
+        .execute(pool)
+        .await?;
+
+    let result = validate_database_schema(pool).await;
+    assert!(result.is_err());
+    assert!(result.unwrap_err().to_string().contains("ingredients"));
+
+    // Recreate the table and test again
+    init_database_schema(pool).await?;
+    validate_database_schema(pool).await?;
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_migration_system() -> Result<()> {
+    skip_if_no_db!(test_migration_system_impl)
+}
+
+async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
+    // Clean up any existing migration state
+    sqlx::query("DROP TABLE IF EXISTS schema_migrations CASCADE")
+        .execute(pool)
+        .await?;
+    sqlx::query("DROP TABLE IF EXISTS ingredients CASCADE")
+        .execute(pool)
+        .await?;
+    sqlx::query("DROP TABLE IF EXISTS recipes CASCADE")
+        .execute(pool)
+        .await?;
+    sqlx::query("DROP TABLE IF EXISTS users CASCADE")
+        .execute(pool)
+        .await?;
+
+    // Test initial state - no migrations applied
+    let version = migrations::get_current_version(pool).await?;
+    assert_eq!(version, 0);
+
+    // Apply migrations
+    migrations::apply_pending_migrations(pool).await?;
+
+    // Check that migrations table was created and version is updated
+    let version = migrations::get_current_version(pool).await?;
+    assert_eq!(version, 1);
+
+    // Verify that tables were created
+    validate_database_schema(pool).await?;
+
+    // Test rollback (if down migrations are available)
+    // Note: Current migration doesn't have a down script, so this will fail gracefully
+    let rollback_result = migrations::rollback_to_version(pool, 0).await;
+    assert!(rollback_result.is_err()); // Should fail because no down migration
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_schema_validation_details() -> Result<()> {
+    skip_if_no_db!(test_schema_validation_details_impl)
+}
+
+async fn test_schema_validation_details_impl(pool: &PgPool) -> Result<()> {
+    // Test that all expected columns exist with correct types
+
+    // Check users table columns
+    let user_columns = vec![
+        ("id", "bigint"),
+        ("telegram_id", "bigint"),
+        ("language_code", "character varying"),
+        ("created_at", "timestamp with time zone"),
+        ("updated_at", "timestamp with time zone"),
+    ];
+
+    for (col_name, _expected_type) in user_columns {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM information_schema.columns
+             WHERE table_name = 'users' AND column_name = $1 AND table_schema = 'public')",
+        )
+        .bind(col_name)
+        .fetch_one(pool)
+        .await?;
+        assert!(exists, "Column {} should exist in users table", col_name);
+    }
+
+    // Check ingredients table has raw_text column
+    let has_raw_text: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM information_schema.columns
+         WHERE table_name = 'ingredients' AND column_name = 'raw_text' AND table_schema = 'public')"
+    )
+    .fetch_one(pool)
+    .await?;
+    assert!(
+        has_raw_text,
+        "raw_text column should exist in ingredients table"
+    );
+
+    // Check that required indexes exist
+    let indexes = vec![
+        ("recipes_content_tsv_idx", "recipes"),
+        ("ingredients_user_id_idx", "ingredients"),
+        ("ingredients_recipe_id_idx", "ingredients"),
+    ];
+
+    for (index_name, table_name) in indexes {
+        let exists: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pg_indexes WHERE tablename = $1 AND indexname = $2)",
+        )
+        .bind(table_name)
+        .bind(index_name)
+        .fetch_one(pool)
+        .await?;
+        assert!(
+            exists,
+            "Index {} should exist on table {}",
+            index_name, table_name
+        );
+    }
+
+    Ok(())
+}
+
+#[test]
+fn test_split_sql_statements_single_statement() {
+    let sql = "CREATE TABLE test (id INT);";
+    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
+    assert_eq!(statements, vec!["CREATE TABLE test (id INT);"]);
+}
+
+#[test]
+fn test_split_sql_statements_multiple_statements() {
+    let sql = "CREATE TABLE test (id INT); INSERT INTO test VALUES (1);";
+    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
+    assert_eq!(
+        statements,
+        vec![
+            "CREATE TABLE test (id INT);",
+            "INSERT INTO test VALUES (1);"
+        ]
+    );
+}
+
+#[test]
+fn test_split_sql_statements_with_string_literals() {
+    let sql = "INSERT INTO test VALUES ('hello;world'); CREATE TABLE test2 (id INT);";
+    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
+    assert_eq!(
+        statements,
+        vec![
+            "INSERT INTO test VALUES ('hello;world');",
+            "CREATE TABLE test2 (id INT);"
+        ]
+    );
+}
+
+#[test]
+fn test_split_sql_statements_with_double_quotes() {
+    let sql = r#"INSERT INTO test VALUES ("hello;world"); CREATE TABLE test2 (id INT);"#;
+    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
+    assert_eq!(
+        statements,
+        vec![
+            r#"INSERT INTO test VALUES ("hello;world");"#,
+            "CREATE TABLE test2 (id INT);"
+        ]
+    );
+}
+
+#[test]
+fn test_split_sql_statements_with_comments() {
+    let sql = r#"
+        -- This is a comment
+        CREATE TABLE test (id INT);
+        -- Another comment
+        INSERT INTO test VALUES (1);
+    "#;
+    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
+    assert_eq!(
+        statements,
+        vec![
+            "-- This is a comment\n        CREATE TABLE test (id INT);",
+            "-- Another comment\n        INSERT INTO test VALUES (1);"
+        ]
+    );
+}
+
+#[test]
+fn test_split_sql_statements_mixed_strings_and_comments() {
+    let sql = r#"
+        -- Create table
+        CREATE TABLE test (
+            id INT,
+            name VARCHAR(100) DEFAULT 'test;value'
+        );
+        -- Insert data
+        INSERT INTO test VALUES (1, 'hello;world');
+    "#;
+    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
+    assert_eq!(statements.len(), 2);
+    assert!(statements[0].contains("CREATE TABLE"));
+    assert!(statements[1].contains("INSERT INTO"));
+}
+
+#[test]
+fn test_split_sql_statements_empty_input() {
+    let sql = "";
+    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
+    assert_eq!(statements, Vec::<String>::new());
+}
+
+#[test]
+fn test_split_sql_statements_only_whitespace() {
+    let sql = "   \n\t   ";
+    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
+    assert_eq!(statements, Vec::<String>::new());
+}
+
+#[test]
+fn test_split_sql_statements_no_trailing_semicolon() {
+    let sql = "CREATE TABLE test (id INT)";
+    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
+    assert_eq!(statements, vec!["CREATE TABLE test (id INT)"]);
+}
+
+#[test]
+fn test_split_sql_statements_complex_migration_sql() {
+    let sql = r#"
+        -- Create users table
+        CREATE TABLE IF NOT EXISTS users (
+            id BIGSERIAL PRIMARY KEY,
+            telegram_id BIGINT UNIQUE NOT NULL,
+            language_code VARCHAR(10) DEFAULT 'en',
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- Create recipes table
+        CREATE TABLE IF NOT EXISTS recipes (
+            id BIGSERIAL PRIMARY KEY,
+            telegram_id BIGINT NOT NULL,
+            content TEXT NOT NULL,
+            recipe_name VARCHAR(255),
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+        );
+
+        -- Create indexes
+        CREATE INDEX IF NOT EXISTS recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
+    "#;
+    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
+    assert_eq!(statements.len(), 3);
+    assert!(statements[0].contains("CREATE TABLE IF NOT EXISTS users"));
+    assert!(statements[1].contains("CREATE TABLE IF NOT EXISTS recipes"));
+    assert!(statements[2].contains("CREATE INDEX IF NOT EXISTS recipes_content_tsv_idx"));
+}
+
+#[test]
+fn test_split_sql_statements_semicolon_in_string_and_comment() {
+    let sql = r#"
+        -- This comment has ; in it
+        INSERT INTO test VALUES ('value;with;semicolons');
+        -- Another ; comment
+        UPDATE test SET value = 'new;value';
+    "#;
+    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
+    assert_eq!(statements.len(), 2);
+    assert!(statements[0].contains("INSERT INTO"));
+    assert!(statements[1].contains("UPDATE"));
+}

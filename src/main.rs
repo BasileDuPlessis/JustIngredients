@@ -201,6 +201,9 @@ async fn main() -> Result<()> {
     // Initialize database schema
     db::init_database_schema(&pool).await?;
 
+    // Validate that the database schema is correct
+    db::validate_database_schema(&pool).await?;
+
     // Wrap pool in Arc for sharing across async tasks
     let shared_pool = Arc::new(pool);
 
