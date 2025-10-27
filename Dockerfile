@@ -1,7 +1,5 @@
 # syntax=docker/dockerfile:1.6
 
-# syntax=docker/dockerfile:1.6
-
 FROM rust:latest AS builder
 
 WORKDIR /app
@@ -35,9 +33,8 @@ RUN apt-get update \
        tesseract-ocr \
        tesseract-ocr-eng \
        tesseract-ocr-fra \
-       liblept5 \
+       libleptonica-dev \
        libtesseract5 \
-    && ln -s /usr/lib/aarch64-linux-gnu/liblept.so.5 /usr/lib/aarch64-linux-gnu/libleptonica.so.6 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
