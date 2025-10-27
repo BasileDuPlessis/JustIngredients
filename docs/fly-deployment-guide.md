@@ -107,21 +107,38 @@ This generates a `fly.toml` file. Update it with minimal resource allocation:
 
 **Cost Optimization**: 256MB is the minimum for reliable OCR processing while staying in free tier limits.
 
-## Step 4: Configure Secrets
+## Step 4: Attach Database to Application
 
-Set required secrets:
+Attach the PostgreSQL database to the application (this creates a dedicated database user and sets DATABASE_URL automatically):
 
 ```bash
-# Telegram bot token
-fly secrets set TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
+# Attach the database to the app
+fly postgres attach just-ingredients-db --app just-ingredients
 
-# Database connection (get from fly postgres attach or status)
-fly secrets set DATABASE_URL=postgres://username:password@just-ingredients-db.internal:5432/ingredients
+# This will:
+# - Create a new database user for the app
+# - Set the DATABASE_URL secret automatically
+# - Grant appropriate permissions to the user
+```
+
+**Benefits of using attach**:
+- Automatic user creation with proper permissions
+- Secure, randomly generated credentials
+- No manual secret management for database URL
+- Proper database isolation per app
+
+## Step 5: Configure Telegram Bot Token
+
+Set the Telegram bot token secret:
+
+```bash
+# Replace 'your_telegram_bot_token_here' with your actual bot token from @BotFather
+fly secrets set TELEGRAM_BOT_TOKEN=your_telegram_bot_token_here
 ```
 
 **Security Note**: Never commit secrets to version control.
 
-## Step 5: Deploy the Application
+## Step 6: Deploy the Application
 
 Deploy the container:
 
@@ -136,7 +153,7 @@ fly logs
 fly status
 ```
 
-## Step 6: Verify Deployment
+## Step 7: Verify Deployment
 
 Check application health:
 
