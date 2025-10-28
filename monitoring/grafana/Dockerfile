@@ -8,6 +8,7 @@ ENV GF_INSTALL_PLUGINS=
 # Copy provisioning configuration
 COPY monitoring/grafana/provisioning /etc/grafana/provisioning
 COPY monitoring/grafana/dashboards /etc/grafana/dashboards
+COPY monitoring/grafana/grafana.ini /etc/grafana/grafana.ini
 
 EXPOSE 3000
 
