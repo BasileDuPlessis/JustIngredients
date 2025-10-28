@@ -98,11 +98,16 @@ curl -L https://fly.io/install.sh | sh
 # Authenticate
 fly auth login
 
-# Deploy
-fly deploy
+# Run the automated deployment script
+./deploy.sh
 ```
 
-See `docs/deployment-strategy.md` for detailed deployment instructions.
+The `deploy.sh` script automates:
+- App and database creation on Fly.io
+- Database attachment and secret configuration
+- Application deployment with health checks
+
+See `docs/deployment.md` for detailed deployment instructions.
 
 ## Configuration
 
