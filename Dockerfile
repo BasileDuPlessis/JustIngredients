@@ -33,8 +33,11 @@ RUN apt-get update \
        tesseract-ocr \
        tesseract-ocr-eng \
        tesseract-ocr-fra \
-       libleptonica-dev \
+       liblept5 \
        libtesseract5 \
+    && mkdir -p /usr/lib/aarch64-linux-gnu /usr/lib/x86_64-linux-gnu \
+    && ln -sf /usr/lib/aarch64-linux-gnu/liblept.so.5 /usr/lib/aarch64-linux-gnu/libleptonica.so.6 2>/dev/null || true \
+    && ln -sf /usr/lib/x86_64-linux-gnu/liblept.so.5 /usr/lib/x86_64-linux-gnu/libleptonica.so.6 2>/dev/null || true \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

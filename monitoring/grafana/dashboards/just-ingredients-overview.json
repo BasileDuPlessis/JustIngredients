@@ -1,0 +1,146 @@
+{
+  "id": null,
+  "title": "JustIngredients Bot Overview",
+  "tags": ["just-ingredients", "telegram", "bot"],
+  "timezone": "browser",
+  "panels": [
+    {
+      "id": 1,
+      "title": "Service Health Status",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "up{job=\"just-ingredients\"}",
+          "refId": "A",
+          "datasource": "prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            {
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              },
+              "type": "value"
+            }
+          ]
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      }
+    },
+    {
+      "id": 2,
+      "title": "Health Checks Over Time",
+      "type": "graph",
+      "targets": [
+        {
+          "expr": "health_checks_total{job=\"just-ingredients\"}",
+          "refId": "A",
+          "legendFormat": "{{type}} - {{result}}",
+          "datasource": "prometheus"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      }
+    },
+    {
+      "id": 3,
+      "title": "Uptime",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "uptime_seconds{job=\"just-ingredients\"}",
+          "refId": "A",
+          "datasource": "prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "mappings": []
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      }
+    },
+    {
+      "id": 4,
+      "title": "CPU Usage",
+      "type": "gauge",
+      "targets": [
+        {
+          "expr": "process_cpu_usage_percent{job=\"just-ingredients\"}",
+          "refId": "A",
+          "datasource": "prometheus"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "max": 100,
+          "min": 0
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      }
+    },
+    {
+      "id": 5,
+      "title": "Available Threads",
+      "type": "stat",
+      "targets": [
+        {
+          "expr": "available_threads{job=\"just-ingredients\"}",
+          "refId": "A",
+          "datasource": "prometheus"
+        }
+      ],
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      }
+    }
+  ],
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
+  "timepicker": {},
+  "templating": {
+    "list": []
+  },
+  "annotations": {
+    "list": []
+  },
+  "refresh": "30s",
+  "schemaVersion": 27,
+  "version": 0,
+  "links": []
+}
