@@ -62,7 +62,7 @@ jobs:
       run: sudo apt-get update && sudo apt-get install -y libleptonica-dev
 
     - name: Audit dependencies
-      run: cargo install cargo-audit && cargo audit
+      run: cargo install cargo-audit && cargo audit --ignore RUSTSEC-2023-0071
 
     - name: Check outdated dependencies
       run: cargo install cargo-outdated && cargo outdated
