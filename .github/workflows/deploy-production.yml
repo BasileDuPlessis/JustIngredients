@@ -19,18 +19,17 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
-    - name: Setup Fly CLI
-      uses: superfly/flyctl-actions/setup-flyctl@master
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
     - name: Deploy to production
-      run: fly deploy --config fly.toml --app just-ingredients
+      uses: superfly/flyctl-actions@master
+      with:
+        args: deploy --config fly.toml --app just-ingredients
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
     - name: Run database migrations
-      run: fly ssh console --app just-ingredients --command "cargo run --bin migrate"
+      uses: superfly/flyctl-actions@master
+      with:
+        args: ssh console --app just-ingredients --command "cargo run --bin migrate"
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
