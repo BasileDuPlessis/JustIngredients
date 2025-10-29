@@ -22,23 +22,22 @@ jobs:
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-    - name: Create staging database (if not exists)
+    - name: Check Fly CLI authentication
       uses: superfly/flyctl-actions@master
       with:
-        args: postgres list
+        args: auth whoami
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      id: check-db
 
     - name: Create staging database
       uses: superfly/flyctl-actions@master
-      if: ${{ !contains(steps.check-db.outputs.stdout, 'just-ingredients-staging-db') }}
       with:
         args: postgres create --name just-ingredients-staging-db --region cdg --org personal --vm-size shared-cpu-1x --volume-size 1
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      continue-on-error: true
 
-    - name: Create staging app (if not exists)
+    - name: Create staging app
       uses: superfly/flyctl-actions@master
       with:
         args: apps create just-ingredients-staging --org personal
@@ -113,36 +112,16 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-    - name: Check if staging app exists
-      uses: superfly/flyctl-actions@master
-      with:
-        args: apps list
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      id: check-app
-      continue-on-error: true
-
     - name: Destroy staging app
       uses: superfly/flyctl-actions@master
-      if: ${{ contains(steps.check-app.outputs.stdout, 'just-ingredients-staging') }}
       with:
         args: apps destroy just-ingredients-staging --yes
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       continue-on-error: true
 
-    - name: Check if staging database exists
-      uses: superfly/flyctl-actions@master
-      with:
-        args: postgres list
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      id: check-db-cleanup
-      continue-on-error: true
-
     - name: Destroy staging database
       uses: superfly/flyctl-actions@master
-      if: ${{ contains(steps.check-db-cleanup.outputs.stdout, 'just-ingredients-staging-db') }}
       with:
         args: postgres destroy just-ingredients-staging-db --yes
       env:
