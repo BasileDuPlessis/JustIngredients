@@ -1,0 +1,41 @@
+# fly-staging.toml - Staging environment configuration
+#
+# See https://fly.io/docs/reference/configuration/ for information about how to use this file.
+#
+
+app = 'just-ingredients-staging'
+primary_region = 'cdg'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  HEALTH_PORT = '8080'
+  LOG_FORMAT = 'pretty'
+  RUST_LOG = 'info,sqlx=warn'
+  METRICS_BIND_ALL_INTERFACES = 'true'
+
+[checks]
+  [checks.health]
+    port = 8080
+    type = 'http'
+    interval = '15s'
+    timeout = '2s'
+    grace_period = '30s'
+    path = '/health/live'
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  auto_stop_machines = true
+  auto_start_machines = true
+  min_machines_running = 0
+  enable_ha = false
+  processes = ['app']
+
+  [[http_service.checks]]
+    interval = '15s'
+    timeout = '2s'
+    grace_period = '30s'
+    method = 'GET'
+    path = '/health/live'

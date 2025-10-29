@@ -231,6 +231,9 @@ cargo test                    # Run complete test suite (93 tests)
 - **Resource Limits**: Memory estimation, timeout protection, connection pooling
 - **Audit Configuration**: `deny.toml` for dependency security scanning
 - **Temporary File Security**: Secure file creation and automatic cleanup
+- **Secret Hygiene**: Never hard-code API keys, passwords, or tokens; keep `.env` files out of git via `.gitignore`; add placeholders to `.env.example` instead
+- **GitHub Secrets**: Store deployment keys, database passwords, and OAuth tokens in GitHub repository or environment secrets; avoid printing them in CI logs; rotate credentials that are exposed or outdated
+- **Fly Secrets**: Use `flyctl secrets set KEY=VALUE` (or GitHub Actions `flyctl secrets import`) to manage runtime credentials; do not place secrets in `fly.toml`, commit history, or Fly release notes
 
 ### Performance Optimizations
 - **Connection Reuse**: Single database connection shared across requests
@@ -246,7 +249,7 @@ cargo test                    # Run complete test suite (93 tests)
 
 - **Clippy Enforcement**: All code must pass `cargo clippy --all-targets --all-features -- -D warnings`
   - Treats all warnings as errors for maximum code quality
-  - Use `#[allow(clippy::lint_name)]` only for justified exceptions with comments
+  - Only add Clippy allow attributes when strictly justified and document the rationale inline
   - Common allowed lints: `too_many_arguments` for database functions
 - **Rustfmt Enforcement**: All code must be formatted with `rustfmt`
   - Run `cargo fmt --all -- --check` to verify formatting
@@ -284,3 +287,11 @@ cargo test                    # Run complete test suite (93 tests)
 - **Resource Limits**: Monitor memory usage, file system space for temp files
 - **Monitoring**: Circuit breaker metrics, OCR success/failure rates, test coverage
 - **Health Checks**: Database connectivity, OCR instance availability, localization loading
+- **Credential Audits**: Before deploying, re-check that no secrets are staged in git, console logs, or shared links
+
+### Fly.io Deployment Workflow
+- **Preflight Checks**: Run `cargo test`, `cargo clippy --all-targets --all-features -- -D warnings`, and `cargo fmt --all -- --check` before triggering `fly deploy`
+- **Secrets Management**: Prefer `flyctl secrets import < .env.production` for batch updates; confirm the resulting release shows `Secrets are staged for release` and avoid copying secrets into the terminal history
+- **Deployment Automation**: When using GitHub Actions, authenticate via a short-lived Fly access token stored in `F fly-api-token`; revoke and rotate tokens after audits or role changes
+- **Post-Deploy Verification**: Use `fly status`, `fly logs -a just-ingredients`, and the Prometheus/Grafana dashboards to confirm the app is healthy; roll back immediately if OCR errors spike
+- **Incident Response**: If a password or token leaks, revoke it in Fly/GitHub, rotate database credentials, and update `TELEGRAM_BOT_TOKEN` via `flyctl secrets set` before redeploying
