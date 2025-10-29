@@ -20,14 +20,8 @@ async function runSmokeTests() {
       url: `${BASE_URL}/health/ready`,
       method: 'GET',
       expectStatus: 200
-    },
-    {
-      name: 'Bot Webhook Endpoint',
-      url: `${BASE_URL}/webhook`,
-      method: 'POST',
-      data: { message: 'smoke test', chat_id: '12345' },
-      expectStatus: 200
     }
+    // Note: This bot uses long-polling, not webhooks, so no webhook endpoint test
   ];
 
   let passed = 0;
