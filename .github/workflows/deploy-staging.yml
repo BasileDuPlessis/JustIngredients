@@ -53,12 +53,14 @@ jobs:
         args: postgres attach just-ingredients-staging-db --app just-ingredients-staging
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      continue-on-error: true
+
+    - name: Wait for app to be ready
+      run: sleep 15
 
     - name: Deploy to staging
       uses: superfly/flyctl-actions@master
       with:
-        args: deploy --config fly-staging.toml --app just-ingredients-staging
+        args: deploy --config fly-staging.toml --remote-only
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -114,7 +116,7 @@ jobs:
     if: always()
     runs-on: ubuntu-latest
     steps:
-    - name: Destroy staging app
+    - name: Check if staging app exists and destroy
       uses: superfly/flyctl-actions@master
       with:
         args: apps destroy just-ingredients-staging --yes
@@ -122,7 +124,7 @@ jobs:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       continue-on-error: true
 
-    - name: Destroy staging database
+    - name: Check if staging database exists and destroy
       uses: superfly/flyctl-actions@master
       with:
         args: postgres destroy just-ingredients-staging-db --yes
