@@ -32,7 +32,7 @@ jobs:
     - name: Create staging database
       uses: superfly/flyctl-actions@master
       with:
-        args: postgres create --name just-ingredients-staging-db --region cdg --org personal --vm-size shared-cpu-1x --volume-size 1
+        args: postgres create --name just-ingredients-staging-db --region cdg --org personal --vm-size shared-cpu-1x --volume-size 1 --yes
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       continue-on-error: true
@@ -40,7 +40,7 @@ jobs:
     - name: Create staging app
       uses: superfly/flyctl-actions@master
       with:
-        args: apps create just-ingredients-staging --org personal
+        args: apps create just-ingredients-staging --org personal --yes
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
