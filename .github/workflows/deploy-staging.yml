@@ -75,13 +75,6 @@ jobs:
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-    - name: Run database migrations
-      uses: superfly/flyctl-actions@master
-      with:
-        args: ssh console --app just-ingredients-staging --command "cargo run --bin migrate"
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
     - name: Wait for staging to be ready
       run: |
         echo "Waiting for staging app to be ready..."
