@@ -128,7 +128,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - name: Wait for deployment to complete
-      run: sleep 30
+      run: sleep 45
     - name: Check if staging app exists and destroy
       uses: superfly/flyctl-actions@master
       with:
