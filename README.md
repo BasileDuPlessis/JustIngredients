@@ -486,4 +486,6 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 - English and French localization
 - Circuit breaker pattern for OCR reliability
 - Telegram bot integration</content>
-<parameter name="filePath">/Users/basile.du.plessis/Documents/ingredients/README.md
+<parameter name="filePath">/Users/basile.du.plessis/Documents/ingredients/README.md# Test commit for CI/CD pipeline
+
+Testing deployment pipeline - Wed Oct 29 10:47:26 CET 2025
