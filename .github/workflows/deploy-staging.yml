@@ -64,7 +64,7 @@ jobs:
     - name: Set staging secrets
       uses: superfly/flyctl-actions@master
       with:
-        args: secrets set TELEGRAM_BOT_TOKEN=dummy_staging_token_123 --app just-ingredients-staging
+        args: secrets set TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }} --app just-ingredients-staging
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
