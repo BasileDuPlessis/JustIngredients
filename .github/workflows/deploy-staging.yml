@@ -32,7 +32,7 @@ jobs:
     - name: Create staging database
       uses: superfly/flyctl-actions@master
       with:
-        args: postgres create --name just-ingredients-staging-db --region cdg --org personal --vm-size shared-cpu-1x --volume-size 1 --password staging_password_123
+        args: postgres create --name just-ingredients-staging-db --region cdg --org personal --vm-size shared-cpu-1x --volume-size 1 --password staging_password_123 --initial-cluster-size 3 --detach
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
