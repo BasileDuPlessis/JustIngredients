@@ -20,6 +20,38 @@ jobs:
     - name: Setup Fly CLI
       uses: superfly/flyctl-actions/setup-flyctl@master
 
+    - name: Create staging database (if not exists)
+      run: |
+        if ! fly postgres list | grep -q just-ingredients-staging-db; then
+          echo "Creating staging database..."
+          fly postgres create --name just-ingredients-staging-db --region cdg --org personal --vm-size shared-cpu-1x --volume-size 1
+          echo "Staging database created"
+        else
+          echo "Staging database already exists"
+        fi
+      env:
+        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+    - name: Create staging app (if not exists)
+      run: |
+        if ! fly apps list | grep -q just-ingredients-staging; then
+          echo "Creating staging app..."
+          fly apps create just-ingredients-staging --org personal
+          echo "Staging app created"
+        else
+          echo "Staging app already exists"
+        fi
+      env:
+        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+    - name: Attach database to staging app
+      run: |
+        if ! fly postgres attach just-ingredients-staging-db --app just-ingredients-staging 2>/dev/null; then
+          echo "Database already attached or attachment failed (continuing...)"
+        fi
+      env:
+        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
     - name: Deploy to staging
       run: fly deploy --config fly-staging.toml --app just-ingredients-staging
       env:
@@ -27,5 +59,77 @@ jobs:
 
     - name: Run database migrations
       run: fly ssh console --app just-ingredients-staging --command "cargo run --bin migrate"
+      env:
+        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+    - name: Wait for staging to be ready
+      run: |
+        echo "Waiting for staging app to be ready..."
+        for i in {1..30}; do
+          if curl -s -f https://just-ingredients-staging.fly.dev/health/live > /dev/null; then
+            echo "Staging app is ready!"
+            break
+          fi
+          echo "Waiting... ($i/30)"
+          sleep 10
+        done
+
+  smoke-tests:
+    needs: deploy-staging
+    runs-on: ubuntu-latest
+    environment: staging
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '18'
+
+    - name: Install dependencies
+      run: npm install
+
+    - name: Run smoke tests
+      run: npm run smoke-test
+      env:
+        STAGING_URL: https://just-ingredients-staging.fly.dev
+
+    - name: Upload test results
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: smoke-test-results
+        path: test-results/
+
+  cleanup-staging:
+    needs: smoke-tests
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+    - name: Setup Fly CLI
+      uses: superfly/flyctl-actions/setup-flyctl@master
+
+    - name: Destroy staging app
+      run: |
+        if fly apps list | grep -q just-ingredients-staging; then
+          echo "Destroying staging app..."
+          fly apps destroy just-ingredients-staging --yes
+          echo "Staging app destroyed"
+        else
+          echo "Staging app not found"
+        fi
+      env:
+        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+    - name: Destroy staging database
+      run: |
+        if fly postgres list | grep -q just-ingredients-staging-db; then
+          echo "Destroying staging database..."
+          fly postgres destroy just-ingredients-staging-db --yes
+          echo "Staging database destroyed"
+        else
+          echo "Staging database not found"
+        fi
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}

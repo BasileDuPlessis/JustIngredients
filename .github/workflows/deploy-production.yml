@@ -39,19 +39,15 @@ jobs:
         curl -f https://just-ingredients.fly.dev/health/ready
 
     - name: Notify deployment success
-      uses: 8398a7/action-slack@v3
       if: success()
-      with:
-        status: success
-        text: "JustIngredients deployed to production successfully"
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+          -d text="✅ JustIngredients deployed to production successfully! 🌟"
 
-    - name: Notify deployment failure
-      uses: 8398a7/action-slack@v3
+    - name: Notify deployment failure  
       if: failure()
-      with:
-        status: failure
-        text: "JustIngredients production deployment failed"
-      env:
-        SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      run: |
+        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
+          -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
+          -d text="❌ JustIngredients production deployment failed! 🚨"
