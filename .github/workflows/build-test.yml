@@ -15,6 +15,9 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
 
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libleptonica-dev
+
     - name: Cache dependencies
       uses: Swatinem/rust-cache@v2
 
@@ -38,6 +41,9 @@ jobs:
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
 
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libleptonica-dev
+
     - name: Run clippy
       run: cargo clippy --all-targets --all-features -- -D warnings
 
@@ -51,6 +57,9 @@ jobs:
 
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@stable
+
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libleptonica-dev
 
     - name: Audit dependencies
       run: cargo install cargo-audit && cargo audit
