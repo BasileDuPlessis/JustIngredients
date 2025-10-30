@@ -117,8 +117,8 @@ jobs:
       env:
         STAGING_URL: https://just-ingredients-staging.fly.dev
 
-  cleanup-staging-failed:
-    if: failure()
+  cleanup-staging:
+    if: always()
     runs-on: ubuntu-latest
     steps:
     - name: Setup Fly CLI
@@ -129,9 +129,9 @@ jobs:
         echo "$FLYCTL_INSTALL/bin" >> $GITHUB_PATH
         echo "FLY_API_TOKEN=${{ secrets.FLY_API_TOKEN }}" >> $GITHUB_ENV
 
-    - name: Clean up failed staging deployment
+    - name: Clean up staging resources
       run: |
-        echo "Cleaning up failed staging deployment..."
+        echo "Cleaning up staging resources..."
         fly apps destroy just-ingredients-staging --yes || true
         fly apps destroy just-ingredients-staging-db --yes || true
         echo "Cleanup completed"
