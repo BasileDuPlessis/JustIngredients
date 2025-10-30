@@ -20,6 +20,7 @@ COPY Cargo.toml Cargo.lock ./
 COPY src ./src
 COPY config ./config
 COPY locales ./locales
+COPY .sqlx ./.sqlx
 
 RUN cargo build --release \
     && strip --strip-unneeded target/release/just-ingredients
