@@ -28,7 +28,6 @@ jobs:
 
     - name: Post-deployment validation
       run: |
-        sleep 30
         curl -f https://just-ingredients.fly.dev/health/live
         curl -f https://just-ingredients.fly.dev/health/ready
 
