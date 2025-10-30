@@ -64,9 +64,7 @@ pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Re
     debug!(telegram_id = %telegram_id, "Creating new recipe");
 
     let result =
-        sqlx::query("INSERT INTO recipes (telegram_id, content) VALUES ($1, $2) RETURNING id")
-            .bind(telegram_id)
-            .bind(content)
+        sqlx::query!("INSERT INTO recipes (telegram_id, content) VALUES ($1, $2) RETURNING id", telegram_id, content)
             .fetch_one(pool)
             .await
             .context("Failed to insert new recipe");
@@ -81,7 +79,7 @@ pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Re
 
     match result {
         Ok(row) => {
-            let recipe_id: i64 = row.get(0);
+            let recipe_id: i64 = row.id;
             debug!(recipe_id = %recipe_id, duration_ms = %duration.as_millis(), telegram_id = %telegram_id, "Recipe created successfully");
             Ok(recipe_id)
         }
