@@ -31,7 +31,7 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: just-ingredients-binary
-        path: target/release/just-ingredients
+        path: target/debug/just-ingredients
 
   lint:
     runs-on: ubuntu-latest

@@ -27,13 +27,12 @@ jobs:
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-    - name: Check if staging database exists and destroy
-      uses: superfly/flyctl-actions@master
-      with:
-        args: apps destroy just-ingredients-staging-db --yes
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      continue-on-error: true
+    - name: Clean up any existing staging resources
+      run: |
+        echo "Cleaning up any existing staging resources..."
+        fly apps destroy just-ingredients-staging --yes || true
+        fly apps destroy just-ingredients-staging-db --yes || true
+        echo "Cleanup completed"
 
     - name: Create staging app
       uses: superfly/flyctl-actions@master
@@ -41,7 +40,15 @@ jobs:
         args: apps create just-ingredients-staging --org personal --yes
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      continue-on-error: true
+
+    - name: Verify staging app creation
+      run: |
+        echo "Verifying staging app was created successfully..."
+        if ! fly apps list | grep -q "just-ingredients-staging"; then
+          echo "Staging app creation failed - just-ingredients-staging not found in apps list"
+          exit 1
+        fi
+        echo "Staging app creation verified successfully"
 
     - name: Create staging database
       uses: superfly/flyctl-actions@master
@@ -51,18 +58,14 @@ jobs:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       continue-on-error: true
 
-    - name: Wait for database to be ready
+    - name: Verify database creation
       run: |
-        echo "Waiting for database to be ready..."
-        for i in {1..30}; do
-          if fly postgres status just-ingredients-staging-db > /dev/null 2>&1; then
-            echo "Database is ready!"
-            exit 0
-          fi
-          echo "Waiting... ($i/30)"
-          sleep 5
-        done
-        echo "Database ready check completed"
+        echo "Verifying database was created successfully..."
+        if ! fly apps list | grep -q "just-ingredients-staging-db"; then
+          echo "Database creation failed - just-ingredients-staging-db not found in apps list"
+          exit 1
+        fi
+        echo "Database creation verified successfully"
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
@@ -77,11 +80,20 @@ jobs:
 
     - name: Retry database attachment if needed
       if: steps.attach_db.outcome == 'failure'
-      uses: superfly/flyctl-actions@master
-      with:
-        args: bash -c 'echo "Database attachment failed, retrying..."; for i in {1..12}; do echo "Retry attempt $i/12..."; if fly postgres attach just-ingredients-staging-db --app just-ingredients-staging --yes; then echo "Database attachment succeeded!"; exit 0; fi; if [ $i -lt 12 ]; then sleep 15; fi; done; echo "Database attachment failed after 12 attempts"; exit 1'
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      run: |
+        echo "Database attachment failed, retrying..."
+        for i in {1..12}; do
+          echo "Retry attempt $i/12..."
+          if fly postgres attach just-ingredients-staging-db --app just-ingredients-staging --yes; then
+            echo "Database attachment succeeded!"
+            exit 0
+          fi
+          if [ $i -lt 12 ]; then
+            sleep 15
+          fi
+        done
+        echo "Database attachment failed after 12 attempts"
+        exit 1
 
     - name: Set staging secrets
       uses: superfly/flyctl-actions@master
@@ -97,17 +109,27 @@ jobs:
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
-    - name: Wait for staging to be ready
+    - name: Wait for database to be ready
       run: |
-        echo "Waiting for staging app to be ready..."
+        echo "Waiting for database to be ready..."
         for i in {1..30}; do
-          if curl -s -f https://just-ingredients-staging.fly.dev/health/live > /dev/null; then
-            echo "Staging app is ready!"
-            break
+          if fly status --app just-ingredients-staging-db | grep -q "started"; then
+            echo "Database is ready!"
+            exit 0
           fi
           echo "Waiting... ($i/30)"
-          sleep 10
+          sleep 5
         done
+        echo "Database ready check completed"
+
+    - name: Verify database creation
+      run: |
+        echo "Verifying database was created successfully..."
+        if ! fly apps list | grep -q "just-ingredients-staging-db"; then
+          echo "Database creation failed - just-ingredients-staging-db not found in apps list"
+          exit 1
+        fi
+        echo "Database creation verified successfully"
 
   smoke-tests:
     needs: deploy-staging
@@ -137,25 +159,18 @@ jobs:
         name: smoke-test-results
         path: test-results/
 
-  cleanup-staging:
-    needs: smoke-tests
-    if: always()
+  cleanup-staging-failed:
+    if: failure()
     runs-on: ubuntu-latest
     steps:
-    - name: Wait for deployment to complete
-      run: sleep 15
-    - name: Check if staging app exists and destroy
-      uses: superfly/flyctl-actions@master
-      with:
-        args: apps destroy just-ingredients-staging --yes
+    - name: Setup Fly CLI
+      uses: superfly/flyctl-actions/setup-flyctl@master
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      continue-on-error: true
 
-    - name: Check if staging database exists and destroy
-      uses: superfly/flyctl-actions@master
-      with:
-        args: apps destroy just-ingredients-staging-db --yes
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      continue-on-error: true
+    - name: Clean up failed staging deployment
+      run: |
+        echo "Cleaning up failed staging deployment..."
+        fly apps destroy just-ingredients-staging --yes || true
+        fly apps destroy just-ingredients-staging-db --yes || true
+        echo "Cleanup completed"
