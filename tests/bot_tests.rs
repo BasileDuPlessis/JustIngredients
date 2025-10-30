@@ -739,7 +739,7 @@ mod tests {
     fn test_ingredient_display_formatting() {
         use just_ingredients::text_processing::MeasurementMatch;
 
-        let ingredients = vec![
+        let ingredients = [
             MeasurementMatch {
                 quantity: "2".to_string(),
                 measurement: Some("cups".to_string()),
