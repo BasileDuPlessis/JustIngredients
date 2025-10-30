@@ -118,6 +118,7 @@ jobs:
         STAGING_URL: https://just-ingredients-staging.fly.dev
 
   cleanup-staging:
+    needs: smoke-tests
     if: always()
     runs-on: ubuntu-latest
     steps:
