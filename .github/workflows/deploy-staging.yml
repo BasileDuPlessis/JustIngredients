@@ -76,24 +76,6 @@ jobs:
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       continue-on-error: true
-      id: attach_db
-
-    - name: Retry database attachment if needed
-      if: steps.attach_db.outcome == 'failure'
-      run: |
-        echo "Database attachment failed, retrying..."
-        for i in {1..12}; do
-          echo "Retry attempt $i/12..."
-          if fly postgres attach just-ingredients-staging-db --app just-ingredients-staging --yes; then
-            echo "Database attachment succeeded!"
-            exit 0
-          fi
-          if [ $i -lt 12 ]; then
-            sleep 15
-          fi
-        done
-        echo "Database attachment failed after 12 attempts"
-        exit 1
 
     - name: Set staging secrets
       uses: superfly/flyctl-actions@master
@@ -108,19 +90,6 @@ jobs:
         args: deploy --config fly-staging.toml --remote-only --app just-ingredients-staging
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
-    - name: Wait for database to be ready
-      run: |
-        echo "Waiting for database to be ready..."
-        for i in {1..30}; do
-          if fly status --app just-ingredients-staging-db | grep -q "started"; then
-            echo "Database is ready!"
-            exit 0
-          fi
-          echo "Waiting... ($i/30)"
-          sleep 5
-        done
-        echo "Database ready check completed"
 
     - name: Verify database creation
       run: |
