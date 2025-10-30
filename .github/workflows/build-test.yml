@@ -46,27 +46,25 @@ jobs:
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libleptonica-dev libtesseract-dev tesseract-ocr
 
-    # Temporarily skip clippy for faster testing
-    # - name: Run clippy
-    #   run: cargo clippy --all-targets --all-features -- -D warnings
+    - name: Run clippy
+      run: cargo clippy --all-targets --all-features -- -D warnings
 
     - name: Check formatting
       run: cargo fmt --all -- --check
 
-  # Temporarily disabled for faster testing
-  # security:
-  #   runs-on: ubuntu-latest
-  #   steps:
-  #   - uses: actions/checkout@v4
+  security:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
 
-  #   - name: Setup Rust
-  #     uses: dtolnay/rust-toolchain@stable
+    - name: Setup Rust
+      uses: dtolnay/rust-toolchain@stable
 
-  #   - name: Install system dependencies
-  #     run: sudo apt-get update && sudo apt-get install -y libleptonica-dev libtesseract-dev tesseract-ocr
+    - name: Install system dependencies
+      run: sudo apt-get update && sudo apt-get install -y libleptonica-dev libtesseract-dev tesseract-ocr
 
-  #   - name: Audit dependencies
-  #     run: cargo install cargo-audit && cargo audit --ignore RUSTSEC-2023-0071
+    - name: Audit dependencies
+      run: cargo install cargo-audit && cargo audit --ignore RUSTSEC-2023-0071
 
-  #   - name: Check outdated dependencies
-  #     run: cargo install cargo-outdated && cargo outdated
+    - name: Check outdated dependencies
+      run: cargo install cargo-outdated && cargo outdated
