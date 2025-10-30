@@ -23,6 +23,8 @@ jobs:
 
     - name: Build
       run: cargo build
+      env:
+        SQLX_OFFLINE: true  # Prevent database connections during build
 
     - name: Run tests
       run: cargo test --lib -- --test-threads=8
