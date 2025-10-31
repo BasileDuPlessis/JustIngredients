@@ -53,7 +53,7 @@ jobs:
 
     - name: AI Code Review with Google Gemini
       id: ai-review
-      if: steps.diff-analysis.outputs.files_changed != '0' && env.GOOGLE_AI_API_KEY != ''
+      if: env.GOOGLE_AI_API_KEY != ''
       env:
         GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
       run: |
@@ -66,13 +66,18 @@ jobs:
         fi
 
         # Create the analysis prompt for Gemini
+        DIFF_CONTENT="${{ steps.diff-analysis.outputs.diff }}"
+        if [ -z "$DIFF_CONTENT" ]; then
+          DIFF_CONTENT="No Rust code changes in this commit."
+        fi
+
         cat > analysis_request.json << EOF
         {
           "contents": [
             {
               "parts": [
                 {
-                  "text": "You are an expert Rust code reviewer. Analyze this code diff and identify ONLY critical issues that could cause security vulnerabilities, data loss, performance problems, or safety issues. Focus on Rust-specific concerns like unsafe code, lifetime issues, and concurrency problems.\n\nCRITICAL ISSUES TO FLAG:\n1. Security: SQL injection, unsafe Rust usage, authentication bypasses\n2. Safety: Race conditions, memory unsafety, improper error handling\n3. Performance: Memory leaks, quadratic algorithms, unbounded resource usage\n4. Data integrity: Missing transactions, improper validation\n\nIGNORE: Style issues, documentation, minor optimizations, test coverage.\n\nIf no critical issues found, respond with: NO_CRITICAL_ISSUES\n\nOtherwise respond in JSON format:\n{\"priority\": \"HIGH|MEDIUM|LOW|NONE\", \"issues\": [\"issue1\", \"issue2\"], \"recommendations\": [\"rec1\", \"rec2\"]}\n\nCode diff:\n${{ steps.diff-analysis.outputs.diff }}"
+                  "text": "You are an expert Rust code reviewer. Analyze this code diff and identify ONLY critical issues that could cause security vulnerabilities, data loss, performance problems, or safety issues. Focus on Rust-specific concerns like unsafe code, lifetime issues, and concurrency problems.\n\nCRITICAL ISSUES TO FLAG:\n1. Security: SQL injection, unsafe Rust usage, authentication bypasses\n2. Safety: Race conditions, memory unsafety, improper error handling\n3. Performance: Memory leaks, quadratic algorithms, unbounded resource usage\n4. Data integrity: Missing transactions, improper validation\n\nIGNORE: Style issues, documentation, minor optimizations, test coverage.\n\nIf no critical issues found, respond with: NO_CRITICAL_ISSUES\n\nOtherwise respond in JSON format:\n{\"priority\": \"HIGH|MEDIUM|LOW|NONE\", \"issues\": [\"issue1\", \"issue2\"], \"recommendations\": [\"rec1\", \"rec2\"]}\n\nCode diff:\n$DIFF_CONTENT"
                 }
               ]
             }
@@ -114,7 +119,7 @@ jobs:
         fi
 
     - name: Send Telegram Notification
-      if: steps.ai-review.outputs.priority != 'NONE' && steps.ai-review.outputs.issues != 'NO_CRITICAL_ISSUES' && steps.ai-review.outputs.issues != 'API_ERROR' && steps.ai-review.outputs.issues != ''
+      if: steps.ai-review.outputs.priority != 'NONE' && steps.ai-review.outputs.issues != 'NO_CRITICAL_ISSUES' && steps.ai-review.outputs.issues != 'API_ERROR' && steps.ai-review.outputs.issues != '' && steps.ai-review.outputs.issues != 'NO_API_KEY'
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}

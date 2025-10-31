@@ -325,7 +325,12 @@ async fn handle_text_message(
                 msg.chat.id,
                 format!(
                     "{} {}",
-                    t_args_lang(localization, "text-response", &[("text", text)], language_code),
+                    t_args_lang(
+                        localization,
+                        "text-response",
+                        &[("text", text)],
+                        language_code
+                    ),
                     t_lang(localization, "text-tip", language_code)
                 ),
             )

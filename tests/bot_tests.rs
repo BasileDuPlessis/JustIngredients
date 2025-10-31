@@ -1499,7 +1499,9 @@ mod tests {
         assert_eq!(extracted_recipe_id, recipe_id);
         assert_eq!(extracted_message_id, Some(12345));
 
-        println!("✅ Cancel saved ingredients editing test passed - dialogue state structure verified");
+        println!(
+            "✅ Cancel saved ingredients editing test passed - dialogue state structure verified"
+        );
     }
 
     #[tokio::test]

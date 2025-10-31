@@ -2056,7 +2056,8 @@ async fn handle_cancel_saved_ingredients_button(
         );
 
         // Create normal recipe details keyboard
-        let keyboard = create_recipe_details_keyboard(recipe_id, language_code.as_deref(), localization);
+        let keyboard =
+            create_recipe_details_keyboard(recipe_id, language_code.as_deref(), localization);
 
         // Edit the original message to show normal recipe details
         if let Some(message_id) = message_id {
