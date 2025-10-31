@@ -202,7 +202,9 @@ pub async fn handle_workflow_button(
                 ),
             )
             .await?;
-            dialogue.update(crate::dialogue::RecipeDialogueState::Start).await?;
+            dialogue
+                .update(crate::dialogue::RecipeDialogueState::Start)
+                .await?;
         }
         "workflow_list_recipes" => {
             // Record user engagement metric for recipe listing

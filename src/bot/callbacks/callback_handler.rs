@@ -124,10 +124,25 @@ pub async fn callback_handler(
             )
             .await?;
         } else if data.starts_with("page:") {
-            workflow_callbacks::handle_recipes_pagination(&bot, msg, data, pool, &q.from.language_code, &localization)
-                .await?;
+            workflow_callbacks::handle_recipes_pagination(
+                &bot,
+                msg,
+                data,
+                pool,
+                &q.from.language_code,
+                &localization,
+            )
+            .await?;
         } else if data.starts_with("workflow_") {
-            workflow_callbacks::handle_workflow_button(&bot, &q, data, &pool, &dialogue, &localization).await?;
+            workflow_callbacks::handle_workflow_button(
+                &bot,
+                &q,
+                data,
+                &pool,
+                &dialogue,
+                &localization,
+            )
+            .await?;
         }
     }
 

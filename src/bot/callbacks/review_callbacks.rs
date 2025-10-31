@@ -20,7 +20,9 @@ use crate::localization::{t_args_lang, t_lang};
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
-use crate::bot::ui_builder::{create_ingredient_review_keyboard, create_post_confirmation_keyboard, format_ingredients_list};
+use crate::bot::ui_builder::{
+    create_ingredient_review_keyboard, create_post_confirmation_keyboard, format_ingredients_list,
+};
 
 // Import HandlerContext
 use crate::bot::HandlerContext;
@@ -117,7 +119,15 @@ pub async fn handle_review_ingredients_callbacks(
                 handle_cancel_review_button(bot, q, &dialogue_lang_code, dialogue, localization)
                     .await?;
             } else if data.starts_with("workflow_") {
-                super::workflow_callbacks::handle_workflow_button(bot, q, data, &pool, dialogue, localization).await?;
+                super::workflow_callbacks::handle_workflow_button(
+                    bot,
+                    q,
+                    data,
+                    &pool,
+                    dialogue,
+                    localization,
+                )
+                .await?;
             }
         }
     }

@@ -22,8 +22,7 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 // Import UI builder functions
 use crate::bot::ui_builder::{
     create_ingredient_review_keyboard, create_recipe_details_keyboard,
-    create_recipe_instances_keyboard, format_database_ingredients_list,
-    format_ingredients_list,
+    create_recipe_instances_keyboard, format_database_ingredients_list, format_ingredients_list,
 };
 
 // Import database functions
