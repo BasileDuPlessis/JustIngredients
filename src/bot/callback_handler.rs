@@ -638,14 +638,26 @@ async fn handle_recipe_action(
 async fn handle_back_to_recipes(
     bot: &Bot,
     msg: &teloxide::types::MaybeInaccessibleMessage,
-    pool: Arc<PgPool>,
-    language_code: &Option<String>,
-    localization: &Arc<crate::localization::LocalizationManager>,
+    _pool: Arc<PgPool>,
+    _language_code: &Option<String>,
+    _localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    debug!("Handling back to recipes");
+    debug!("Handling back to recipes - removing message");
 
-    // Delegate to the existing list recipes handler
-    handle_list_recipes(bot, msg, pool, language_code, localization).await?;
+    // Extract chat id and message id from the message
+    let (chat_id, message_id) = match msg {
+        teloxide::types::MaybeInaccessibleMessage::Regular(msg) => (msg.chat.id, msg.id),
+        teloxide::types::MaybeInaccessibleMessage::Inaccessible(_) => {
+            // Can't delete inaccessible messages
+            return Ok(());
+        }
+    };
+
+    // Simply delete the message - no database queries, no content regeneration
+    if let Err(e) = bot.delete_message(chat_id, message_id).await {
+        debug!("Failed to delete message: {:?}", e);
+        // If deletion fails, just ignore - the message might already be deleted or inaccessible
+    }
 
     Ok(())
 }
@@ -2051,7 +2063,7 @@ async fn handle_cancel_saved_ingredients_button(
             match bot
                 .edit_message_text(
                     q.message.as_ref().unwrap().chat().id,
-                    teloxide::types::MessageId(message_id as i32),
+                    teloxide::types::MessageId(message_id),
                     recipe_details_message,
                 )
                 .reply_markup(keyboard)

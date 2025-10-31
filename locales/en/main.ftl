@@ -157,6 +157,7 @@ recipe-created = Created: {$date}
 recipe-details-title = 📖 Recipe Details
 recipe-actions = What would you like to do?
 edit-recipe-name = Rename Recipe
+edit-ingredients = Edit Ingredients
 delete-recipe = Delete Recipe
 back-to-recipes = Back to Recipes
 recipe-statistics = Recipe Statistics

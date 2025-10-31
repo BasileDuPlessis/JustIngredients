@@ -149,6 +149,7 @@ recipe-created = Créé : {$date}
 recipe-details-title = 📖 Détails de la recette
 recipe-actions = Que souhaitez-vous faire ?
 edit-recipe-name = Renommer la recette
+edit-ingredients = Modifier les ingrédients
 delete-recipe = Supprimer la recette
 back-to-recipes = Retour aux recettes
 recipe-statistics = Statistiques de recette

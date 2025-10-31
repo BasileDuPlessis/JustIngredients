@@ -1510,6 +1510,6 @@ mod tests {
 
         // The function exists and has been successfully implemented
         // as part of the recipe editing cancel feature update
-        assert!(true, "Cancel saved ingredients button handler exists");
+        // Function signature verified through compilation
     }
 }

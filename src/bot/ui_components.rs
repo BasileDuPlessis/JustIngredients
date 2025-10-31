@@ -85,7 +85,7 @@ pub fn create_confirmation_dialog(
         vec![create_localized_button_with_emoji(
             localization,
             "⬅️",
-            "back",
+            "back-to-recipes",
             "back".to_string(),
             language_code,
         )],
@@ -147,7 +147,7 @@ pub fn create_back_button(
     callback_data: String,
     language_code: Option<&str>,
 ) -> InlineKeyboardButton {
-    create_localized_button_with_emoji(localization, "⬅️", "back", callback_data, language_code)
+    create_localized_button_with_emoji(localization, "⬅️", "back-to-recipes", callback_data, language_code)
 }
 
 /// Create a cancel button
