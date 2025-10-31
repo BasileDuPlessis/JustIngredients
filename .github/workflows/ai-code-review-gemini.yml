@@ -1,14 +1,12 @@
 name: AI Code Review (Google Gemini)
 
 on:
-  pull_request:
-    types: [opened, synchronize, reopened]
+  push:
     branches: [ main ]
 
 jobs:
   gemini-code-review:
     runs-on: ubuntu-latest
-    if: github.event.pull_request.draft == false
 
     steps:
     - name: Checkout code
@@ -19,7 +17,11 @@ jobs:
     - name: Get changed files
       id: changed-files
       run: |
-        CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | head -20)
+        # Compare with previous commit on push
+        BASE_SHA="${{ github.event.before }}"
+        HEAD_SHA="${{ github.event.after }}"
+
+        CHANGED_FILES=$(git diff --name-only $BASE_SHA $HEAD_SHA | head -20)
         echo "changed_files<<EOF" >> $GITHUB_OUTPUT
         echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
         echo "EOF" >> $GITHUB_OUTPUT
@@ -31,7 +33,11 @@ jobs:
       id: diff-analysis
       if: steps.changed-files.outputs.has_rust_changes == 'true'
       run: |
-        DIFF=$(git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} --no-color --no-ext-diff | head -500)
+        # Compare with previous commit on push
+        BASE_SHA="${{ github.event.before }}"
+        HEAD_SHA="${{ github.event.after }}"
+
+        DIFF=$(git diff $BASE_SHA $HEAD_SHA --no-color --no-ext-diff | head -500)
 
         LINES_ADDED=$(echo "$DIFF" | grep '^+' | grep -v '^+++' | wc -l)
         LINES_DELETED=$(echo "$DIFF" | grep '^-' | grep -v '^---' | wc -l)
@@ -123,9 +129,10 @@ jobs:
 
         MESSAGE="🤖 *Google Gemini AI Code Review Alert*
 
-        📋 *PR:* #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}
-        👤 *Author:* ${{ github.event.pull_request.user.login }}
-        🔗 *Link:* ${{ github.event.pull_request.html_url }}
+        📋 *Push to main branch*
+        👤 *Author:* ${{ github.event.head_commit.author.name }}
+        � *Commit:* ${{ github.event.after }}
+        � *Message:* ${{ github.event.head_commit.message }}
 
         📊 *Changes:* ${{ steps.diff-analysis.outputs.files_changed }} files, +${{ steps.diff-analysis.outputs.lines_added }} -${{ steps.diff-analysis.outputs.lines_deleted }} lines
 
@@ -149,39 +156,3 @@ jobs:
           echo "📝 Message preview:"
           echo "$MESSAGE"
         fi
-
-    - name: Comment on PR
-      if: steps.ai-review.outputs.priority != 'NONE' && steps.ai-review.outputs.issues != 'NO_CRITICAL_ISSUES' && steps.ai-review.outputs.issues != 'API_ERROR' && steps.ai-review.outputs.issues != ''
-      uses: actions/github-script@v7
-      with:
-        script: |
-          const priority = '${{ steps.ai-review.outputs.priority }}';
-          const issues = `${{ steps.ai-review.outputs.issues }}`.split('\n').filter(line => line.trim());
-          const recommendations = `${{ steps.ai-review.outputs.recommendations }}`.split('\n').filter(line => line.trim());
-
-          let comment = `## 🤖 Google Gemini AI Code Review Results\n\n`;
-          comment += `**Priority:** ${priority}\n\n`;
-
-          if (issues.length > 0) {
-            comment += `### ⚠️ Critical Issues Found:\n`;
-            issues.forEach(issue => {
-              comment += `- ${issue}\n`;
-            });
-            comment += `\n`;
-          }
-
-          if (recommendations.length > 0) {
-            comment += `### 💡 Recommendations:\n`;
-            recommendations.forEach(rec => {
-              comment += `- ${rec}\n`;
-            });
-          }
-
-          comment += `\n---\n*This AI review focuses only on critical security, safety, and performance issues.*`;
-
-          github.rest.issues.createComment({
-            issue_number: context.issue.number,
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            body: comment
-          });
