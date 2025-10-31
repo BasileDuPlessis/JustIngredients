@@ -7,7 +7,7 @@ use teloxide::prelude::*;
 use tracing::debug;
 
 // Import localization
-use crate::localization::t_lang;
+use crate::localization::{t_args_lang, t_lang};
 
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
@@ -325,7 +325,7 @@ async fn handle_text_message(
                 msg.chat.id,
                 format!(
                     "{} {}",
-                    t_lang(localization, "text-response", language_code),
+                    t_args_lang(localization, "text-response", &[("text", text)], language_code),
                     t_lang(localization, "text-tip", language_code)
                 ),
             )
