@@ -12,6 +12,7 @@ pub mod dialogue_manager;
 pub mod image_processing;
 pub mod media_handlers;
 pub mod message_handler;
+pub mod recipe_callbacks;
 pub mod ui_builder;
 pub mod ui_components;
 
