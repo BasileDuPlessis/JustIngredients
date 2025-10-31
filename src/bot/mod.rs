@@ -1,18 +1,17 @@
 //! Bot module for handling Telegram interactions
 //!
 //! This module is split into several submodules for better organization:
+//! - `callbacks`: All callback query handling (organized into submodules)
 //! - `message_handler`: Handles incoming text, photo, and document messages
-//! - `callback_handler`: Handles inline keyboard callback queries
 //! - `ui_builder`: Creates keyboards and formats messages
 //! - `dialogue_manager`: Manages dialogue state transitions and validation
 
-pub mod callback_handler;
+pub mod callbacks;
 pub mod command_handlers;
 pub mod dialogue_manager;
 pub mod image_processing;
 pub mod media_handlers;
 pub mod message_handler;
-pub mod recipe_callbacks;
 pub mod ui_builder;
 pub mod ui_components;
 
@@ -29,7 +28,7 @@ pub struct HandlerContext<'a> {
 }
 
 // Re-export main handler functions for use in main.rs
-pub use callback_handler::{callback_handler, callback_handler_with_cache};
+pub use callbacks::callback_handler::{callback_handler, callback_handler_with_cache};
 pub use message_handler::{message_handler, message_handler_with_cache};
 
 // Re-export utility functions that might be used elsewhere

@@ -1,0 +1,39 @@
+# Disable license checking to focus on security advisories and bans
+# licenses = { allow = [] }
+
+[advisories]
+# The lint level for security vulnerabilities
+yanked = "warn"
+# A list of advisory IDs to ignore
+ignore = [
+    # RSA Marvin Attack vulnerability in sqlx - only affects MySQL, not PostgreSQL
+    "RUSTSEC-2023-0071",
+    # Unmaintained paste crate - transitive dependency from image processing
+    "RUSTSEC-2024-0436",
+]
+
+[bans]
+# Lint level for when multiple versions of the same license are detected
+multiple-versions = "warn"
+# Lint level for when a crate version requirement is `*`
+wildcards = "allow"
+# The graph highlighting used when creating dotgraphs for crates
+highlight = "all"
+# The default lint level if no other predicates are matched
+allow = [
+    #{ name = "ansi_term", version = "*" },
+]
+deny = [
+    # Each entry the name of a crate and a version range. If version is
+    # not specified, all versions will be matched.
+    #{ name = "ansi_term", version = "*" },
+]
+# Certain crates/versions that will be skipped when doing duplicate detection.
+skip = [
+    #{ name = "ansi_term", version = "*" },
+]
+# Similarly to `skip` allows you to skip certain crates from being checked. Unlike `skip`,
+# `skip-tree` skips the crate and all of its dependencies entirely
+skip-tree = [
+    #{ name = "ansi_term", version = "*" },
+]
