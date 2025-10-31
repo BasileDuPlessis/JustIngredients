@@ -334,6 +334,7 @@ async fn handle_editing_saved_ingredients_callbacks(
                     &language_code,
                     dialogue,
                     localization,
+                    pool.clone(),
                 )
                 .await?;
             }
@@ -2000,12 +2001,74 @@ async fn handle_cancel_saved_ingredients_button(
     language_code: &Option<String>,
     dialogue: &RecipeDialogue,
     localization: &Arc<crate::localization::LocalizationManager>,
+    pool: Arc<PgPool>,
 ) -> Result<()> {
-    bot.send_message(
-        q.message.as_ref().unwrap().chat().id,
-        t_lang(localization, "editing-cancelled", language_code.as_deref()),
-    )
-    .await?;
+    // Get current dialogue state to access recipe information
+    let dialogue_state = dialogue.get().await?;
+    if let Some(RecipeDialogueState::EditingSavedIngredients {
+        recipe_id,
+        message_id,
+        ..
+    }) = dialogue_state
+    {
+        // Fetch recipe details and ingredients from database
+        let recipe = match crate::db::read_recipe_with_name(&pool, recipe_id).await? {
+            Some(recipe) => recipe,
+            None => {
+                // Recipe not found, just exit dialogue
+                dialogue.exit().await?;
+                return Ok(());
+            }
+        };
+
+        let ingredients = crate::db::get_recipe_ingredients(&pool, recipe_id).await?;
+
+        // Create normal recipe details message
+        let recipe_details_message = format!(
+            "📖 **{}**\n\n📅 {}\n\n{}",
+            recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe"),
+            recipe.created_at.format("%B %d, %Y at %H:%M"),
+            if ingredients.is_empty() {
+                t_lang(
+                    localization,
+                    "no-ingredients-found",
+                    language_code.as_deref(),
+                )
+            } else {
+                format_database_ingredients_list(
+                    &ingredients,
+                    language_code.as_deref(),
+                    localization,
+                )
+            }
+        );
+
+        // Create normal recipe details keyboard
+        let keyboard = create_recipe_details_keyboard(recipe_id, language_code.as_deref(), localization);
+
+        // Edit the original message to show normal recipe details
+        if let Some(message_id) = message_id {
+            match bot
+                .edit_message_text(
+                    q.message.as_ref().unwrap().chat().id,
+                    teloxide::types::MessageId(message_id as i32),
+                    recipe_details_message,
+                )
+                .reply_markup(keyboard)
+                .await
+            {
+                Ok(_) => (),
+                Err(e) => {
+                    error_logging::log_internal_error(
+                        &e,
+                        "callback_handler",
+                        "Failed to edit message when canceling ingredient editing",
+                        Some(q.from.id.0 as i64),
+                    );
+                }
+            }
+        }
+    }
 
     // End the dialogue
     dialogue.exit().await?;
