@@ -66,7 +66,9 @@ jobs:
         fi
 
         # Create the analysis prompt for Gemini
-        DIFF_CONTENT="${{ steps.diff-analysis.outputs.diff }}"
+        # Store diff content in a temporary file to avoid shell interpretation issues
+        echo "${{ steps.diff-analysis.outputs.diff }}" > diff_content.txt
+        DIFF_CONTENT=$(cat diff_content.txt)
         if [ -z "$DIFF_CONTENT" ]; then
           DIFF_CONTENT="No Rust code changes in this commit."
         fi
@@ -117,6 +119,9 @@ jobs:
           echo "issues=API_ERROR" >> $GITHUB_OUTPUT
           echo "recommendations=" >> $GITHUB_OUTPUT
         fi
+
+        # Clean up temporary file
+        rm -f diff_content.txt
 
     - name: Send Telegram Notification
       if: steps.ai-review.outputs.priority != 'NONE' && steps.ai-review.outputs.issues != 'NO_CRITICAL_ISSUES' && steps.ai-review.outputs.issues != 'API_ERROR' && steps.ai-review.outputs.issues != '' && steps.ai-review.outputs.issues != 'NO_API_KEY'
