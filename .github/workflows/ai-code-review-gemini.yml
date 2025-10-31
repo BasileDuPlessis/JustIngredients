@@ -1,0 +1,187 @@
+name: AI Code Review (Google Gemini)
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches: [ main ]
+
+jobs:
+  gemini-code-review:
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.draft == false
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Get changed files
+      id: changed-files
+      run: |
+        CHANGED_FILES=$(git diff --name-only ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} | head -20)
+        echo "changed_files<<EOF" >> $GITHUB_OUTPUT
+        echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+        RUST_FILES=$(echo "$CHANGED_FILES" | grep -E '\.(rs|toml)$' || true)
+        echo "has_rust_changes=$([ -n "$RUST_FILES" ] && echo "true" || echo "false")" >> $GITHUB_OUTPUT
+
+    - name: Generate diff analysis
+      id: diff-analysis
+      if: steps.changed-files.outputs.has_rust_changes == 'true'
+      run: |
+        DIFF=$(git diff ${{ github.event.pull_request.base.sha }} ${{ github.event.pull_request.head.sha }} --no-color --no-ext-diff | head -500)
+
+        LINES_ADDED=$(echo "$DIFF" | grep '^+' | grep -v '^+++' | wc -l)
+        LINES_DELETED=$(echo "$DIFF" | grep '^-' | grep -v '^---' | wc -l)
+        FILES_CHANGED=$(echo "$DIFF" | grep '^diff --git' | wc -l)
+
+        echo "lines_added=$LINES_ADDED" >> $GITHUB_OUTPUT
+        echo "lines_deleted=$LINES_DELETED" >> $GITHUB_OUTPUT
+        echo "files_changed=$FILES_CHANGED" >> $GITHUB_OUTPUT
+
+        echo "diff<<EOF" >> $GITHUB_OUTPUT
+        echo "$DIFF" >> $GITHUB_OUTPUT
+        echo "EOF" >> $GITHUB_OUTPUT
+
+    - name: AI Code Review with Google Gemini
+      id: ai-review
+      if: steps.diff-analysis.outputs.files_changed != '0' && env.GOOGLE_AI_API_KEY != ''
+      env:
+        GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+      run: |
+        if [ -z "$GOOGLE_AI_API_KEY" ]; then
+          echo "No Google AI API key provided - skipping AI analysis"
+          echo "priority=NONE" >> $GITHUB_OUTPUT
+          echo "issues=NO_API_KEY" >> $GITHUB_OUTPUT
+          echo "recommendations=" >> $GITHUB_OUTPUT
+          exit 0
+        fi
+
+        # Create the analysis prompt for Gemini
+        cat > analysis_request.json << EOF
+        {
+          "contents": [
+            {
+              "parts": [
+                {
+                  "text": "You are an expert Rust code reviewer. Analyze this code diff and identify ONLY critical issues that could cause security vulnerabilities, data loss, performance problems, or safety issues. Focus on Rust-specific concerns like unsafe code, lifetime issues, and concurrency problems.\n\nCRITICAL ISSUES TO FLAG:\n1. Security: SQL injection, unsafe Rust usage, authentication bypasses\n2. Safety: Race conditions, memory unsafety, improper error handling\n3. Performance: Memory leaks, quadratic algorithms, unbounded resource usage\n4. Data integrity: Missing transactions, improper validation\n\nIGNORE: Style issues, documentation, minor optimizations, test coverage.\n\nIf no critical issues found, respond with: NO_CRITICAL_ISSUES\n\nOtherwise respond in JSON format:\n{\"priority\": \"HIGH|MEDIUM|LOW|NONE\", \"issues\": [\"issue1\", \"issue2\"], \"recommendations\": [\"rec1\", \"rec2\"]}\n\nCode diff:\n${{ steps.diff-analysis.outputs.diff }}"
+                }
+              ]
+            }
+          ],
+          "generationConfig": {
+            "temperature": 0.1,
+            "maxOutputTokens": 1500
+          }
+        }
+        EOF
+
+        # Call Google Gemini API
+        RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$GOOGLE_AI_API_KEY" \
+          -H "Content-Type: application/json" \
+          -d @analysis_request.json)
+
+        # Extract the response
+        if echo "$RESPONSE" | jq -e '.candidates[0].content.parts[0].text' >/dev/null 2>&1; then
+          ANALYSIS=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text')
+
+          # Parse JSON response (Gemini returns text that should be JSON)
+          PRIORITY=$(echo "$ANALYSIS" | jq -r '.priority // "NONE"' 2>/dev/null || echo "NONE")
+          ISSUES=$(echo "$ANALYSIS" | jq -r '.issues // [] | join("\n")' 2>/dev/null || echo "")
+          RECOMMENDATIONS=$(echo "$ANALYSIS" | jq -r '.recommendations // [] | join("\n")' 2>/dev/null || echo "")
+
+          echo "priority=$PRIORITY" >> $GITHUB_OUTPUT
+          echo "issues<<EOF" >> $GITHUB_OUTPUT
+          echo "$ISSUES" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+          echo "recommendations<<EOF" >> $GITHUB_OUTPUT
+          echo "$RECOMMENDATIONS" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+        else
+          echo "API call failed or returned invalid response"
+          echo "Response: $RESPONSE"
+          echo "priority=NONE" >> $GITHUB_OUTPUT
+          echo "issues=API_ERROR" >> $GITHUB_OUTPUT
+          echo "recommendations=" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Send Telegram Notification
+      if: steps.ai-review.outputs.priority != 'NONE' && steps.ai-review.outputs.issues != 'NO_CRITICAL_ISSUES' && steps.ai-review.outputs.issues != 'API_ERROR' && steps.ai-review.outputs.issues != ''
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        # Format the message
+        format_list() {
+          echo "$1" | sed 's/^/- /' | sed '/^$/d'
+        }
+
+        ISSUES_FORMATTED=$(format_list "${{ steps.ai-review.outputs.issues }}")
+        RECOMMENDATIONS_FORMATTED=$(format_list "${{ steps.ai-review.outputs.recommendations }}")
+
+        MESSAGE="🤖 *Google Gemini AI Code Review Alert*
+
+        📋 *PR:* #${{ github.event.pull_request.number }} - ${{ github.event.pull_request.title }}
+        👤 *Author:* ${{ github.event.pull_request.user.login }}
+        🔗 *Link:* ${{ github.event.pull_request.html_url }}
+
+        📊 *Changes:* ${{ steps.diff-analysis.outputs.files_changed }} files, +${{ steps.diff-analysis.outputs.lines_added }} -${{ steps.diff-analysis.outputs.lines_deleted }} lines
+
+        ⚠️ *Priority:* ${{ steps.ai-review.outputs.priority }}
+
+        🔍 *Critical Issues:*
+        $ISSUES_FORMATTED
+
+        💡 *Recommendations:*
+        $RECOMMENDATIONS_FORMATTED"
+
+        # Send to Telegram
+        if [ -n "$TELEGRAM_BOT_TOKEN" ] && [ -n "$TELEGRAM_CHAT_ID" ]; then
+          curl -s -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendMessage" \
+            -d chat_id="$TELEGRAM_CHAT_ID" \
+            -d parse_mode="Markdown" \
+            -d text="$MESSAGE"
+          echo "✅ Gemini AI review notification sent"
+        else
+          echo "⚠️  Telegram secrets not configured - notification skipped"
+          echo "📝 Message preview:"
+          echo "$MESSAGE"
+        fi
+
+    - name: Comment on PR
+      if: steps.ai-review.outputs.priority != 'NONE' && steps.ai-review.outputs.issues != 'NO_CRITICAL_ISSUES' && steps.ai-review.outputs.issues != 'API_ERROR' && steps.ai-review.outputs.issues != ''
+      uses: actions/github-script@v7
+      with:
+        script: |
+          const priority = '${{ steps.ai-review.outputs.priority }}';
+          const issues = `${{ steps.ai-review.outputs.issues }}`.split('\n').filter(line => line.trim());
+          const recommendations = `${{ steps.ai-review.outputs.recommendations }}`.split('\n').filter(line => line.trim());
+
+          let comment = `## 🤖 Google Gemini AI Code Review Results\n\n`;
+          comment += `**Priority:** ${priority}\n\n`;
+
+          if (issues.length > 0) {
+            comment += `### ⚠️ Critical Issues Found:\n`;
+            issues.forEach(issue => {
+              comment += `- ${issue}\n`;
+            });
+            comment += `\n`;
+          }
+
+          if (recommendations.length > 0) {
+            comment += `### 💡 Recommendations:\n`;
+            recommendations.forEach(rec => {
+              comment += `- ${rec}\n`;
+            });
+          }
+
+          comment += `\n---\n*This AI review focuses only on critical security, safety, and performance issues.*`;
+
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
