@@ -335,157 +335,29 @@ cargo run --example recipe_parser  # Run recipe parsing example
 - **Formatting**: `cargo fmt` (must match standard Rust formatting)
 - **Security**: `cargo deny` for dependency security auditing
 
-## Examples
+### SQLx Query Cache Management
 
-See the `examples/` directory for usage examples:
+When adding new `sqlx::query!` macros (compile-time checked queries), you must update the query cache:
 
-- `recipe_parser.rs`: Comprehensive recipe parsing demonstration
-- Shows both traditional measurements and quantity-only ingredients
-- Demonstrates configuration options and post-processing
-
-## Database Schema
-
-The bot uses a PostgreSQL schema with full-text search support:
-
-```sql
--- Users table: Maps Telegram IDs to internal IDs and tracks language preference
-CREATE TABLE users (
-    id SERIAL PRIMARY KEY,
-    telegram_id BIGINT UNIQUE NOT NULL,
-    language_code VARCHAR(10) DEFAULT 'en',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
--- Recipes table: Stores full OCR text blocks for audit/traceability
-CREATE TABLE recipes (
-    id SERIAL PRIMARY KEY,
-    telegram_id BIGINT NOT NULL,
-    content TEXT NOT NULL,
-    recipe_name VARCHAR(255),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
-);
-
--- Ingredients table: Links to users and optionally to recipes, stores parsed data
-CREATE TABLE ingredients (
-    id SERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL REFERENCES users(id),
-    recipe_id BIGINT REFERENCES recipes(id),
-    name VARCHAR(255) NOT NULL,
-    quantity DECIMAL(10,3),
-    unit VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id),
-    FOREIGN KEY (recipe_id) REFERENCES recipes(id)
-);
-
--- Indexes for performance
-CREATE INDEX recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
-CREATE INDEX ingredients_user_id_idx ON ingredients(user_id);
-CREATE INDEX ingredients_recipe_id_idx ON ingredients(recipe_id);
+**For queries in main source code (`src/`):**
+```bash
+cargo sqlx prepare
 ```
 
-## Contributing
+**For queries in test files (`tests/`):**
+```bash
+cargo sqlx prepare -- --all-targets
+```
 
-1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Add tests for new functionality
-5. Ensure all tests pass: `cargo test`
-6. Format code: `cargo fmt`
-7. Lint code: `cargo clippy`
-8. Commit your changes
-9. Push to your fork
-10. Create a pull request
+**Why this is needed:**
+- `sqlx::query!` macros require compile-time verification against your database schema
+- By default, `cargo sqlx prepare` only processes main source files, not tests
+- The `--all-targets` flag tells Cargo to include test files in the compilation
+- CI/CD will fail if the query cache is out of date
 
-## License
+**Common error:**
+```
+error: set `DATABASE_URL` to use query macros online, or run `cargo sqlx prepare` to update the query cache
+```
 
-This project is licensed under the MIT License - see the LICENSE file for details.
-
-## Changelog
-
-### v0.1.5 (2025-01-XX)
-- **New**: Advanced caching infrastructure for performance optimization
-  - Multi-level caching system (OCR results, database queries, user sessions)
-  - Instance pooling for Tesseract OCR operations (100-500ms startup savings)
-  - LRU eviction and memory management for cache efficiency
-  - Configurable TTL and size limits for different cache types
-- **New**: Comprehensive business metrics monitoring
-  - Recipe processing analytics (creation rates, ingredient counts, naming methods)
-  - User engagement tracking (command usage, photo uploads, editing actions)
-  - Dialogue completion metrics (success rates, step counts, abandonment)
-  - Feature adoption analytics (caption naming, multi-language usage)
-  - Business KPI dashboards for operational insights
-- **Enhanced**: Performance optimization with caching integration
-  - Up to 90% reduction in redundant OCR processing
-  - 60-80% improvement in database query response times
-  - Memory-efficient caching with automatic cleanup
-  - Request deduplication and result reuse
-- **Improved**: Observability stack with business intelligence
-  - Prometheus metrics for business KPIs and user behavior
-  - Enhanced Grafana dashboards for recipe analytics
-  - Structured logging for business events and user actions
-  - Alerting rules for engagement and performance metrics
-
-### v0.1.4 (2025-10-09)
-- **New**: Photo caption support for automatic recipe naming
-  - Uses photo captions as recipe name candidates with intelligent validation
-  - Graceful fallback to "Recipe" for missing or invalid captions
-  - User feedback messages when captions are used or rejected
-  - Full backward compatibility - no caption required
-- **Enhanced**: User experience with real-time caption feedback
-  - Clear messages when captions are accepted: "📝 Using photo caption as recipe name: 'Chocolate Cookies'"
-  - Informative messages for invalid captions: "⚠️ Caption is invalid, using default recipe name instead"
-  - Multi-language support for all caption-related messages
-- **Improved**: Testing coverage for caption functionality
-  - 9 new tests covering caption extraction, validation, and processing
-  - Integration tests for complete photo-with-caption workflows
-  - Edge case testing for Unicode, special characters, and boundary conditions
-  - Backward compatibility verification ensuring existing functionality preserved
-
-### v0.1.3 (2025-10-08)
-- **New**: Workflow transitions after ingredient validation with action buttons
-  - Added confirmation message with "Add Another Recipe", "List My Recipes", and "Search Recipes" options
-  - Improved user experience by removing edit/delete buttons after confirmation
-  - Enhanced recipe management workflow with clear next-action choices
-- **Refactored**: Function signatures with too many arguments using parameter structs
-  - Created `DialogueContext`, `RecipeNameInputParams`, `RecipeNameAfterConfirmInputParams`, etc.
-  - Improved code maintainability and reduced parameter complexity
-  - Added `ImageProcessingParams` for image processing functions
-- **Enhanced**: Testing coverage for new workflow functionality
-  - Added 4 new test functions covering workflow transitions and localization
-  - Comprehensive testing of post-confirmation keyboard creation
-  - Validation of workflow message formatting in both languages
-- **Improved**: Documentation and localization
-  - Added workflow-related localization keys in English and French
-  - Updated README with workflow transition examples
-  - Enhanced copilot instructions with new feature documentation
-
-### v0.1.2 (2025-10-02)
-- **Renamed**: `ocr_entries` table to `recipes` for better semantic clarity
-- **Renamed**: `OcrEntry` struct to `Recipe` 
-- **Renamed**: All related functions from `*_ocr_entry*` to `*_recipe*`
-- **Updated**: Foreign key `ocr_entry_id` to `recipe_id` in ingredients table
-- **Removed**: `raw_text` field from ingredients table (deemed unnecessary)
-- **Updated**: All tests, documentation, and code references
-
-### v0.1.1 (2025-09-29)
-- **Removed**: Conversion ratios table and related functionality
-- **Refactored**: Measurement units moved to external JSON configuration (`config/measurement_units.json`)
-- **Updated**: Database schema simplified to 3 core tables (users, recipes, ingredients)
-- **Improved**: Code cleanup and removal of unused imports
-- **Fixed**: Clippy warnings and placeholder tests
-
-### v0.1.0 (2025-09-26)
-- Initial release with OCR text extraction and ingredient parsing
-- Support for traditional measurements (cups, grams, liters, etc.)
-- **New**: Quantity-only ingredient support (e.g., "6 oeufs", "4 pommes")
-- PostgreSQL database with full-text search
-- English and French localization
-- Circuit breaker pattern for OCR reliability
-- Telegram bot integration</content>
-<parameter name="filePath">/Users/basile.du.plessis/Documents/ingredients/README.md# Test commit for CI/CD pipeline
-
-Testing deployment pipeline - Wed Oct 29 10:47:26 CET 2025
+**Solution:** Always run `cargo sqlx prepare -- --all-targets` after adding new `sqlx::query!` calls, especially in tests.

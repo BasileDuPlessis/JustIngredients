@@ -63,11 +63,14 @@ pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Re
     let start_time = std::time::Instant::now();
     debug!(telegram_id = %telegram_id, "Creating new recipe");
 
-    let result =
-        sqlx::query!("INSERT INTO recipes (telegram_id, content) VALUES ($1, $2) RETURNING id", telegram_id, content)
-            .fetch_one(pool)
-            .await
-            .context("Failed to insert new recipe");
+    let result = sqlx::query!(
+        "INSERT INTO recipes (telegram_id, content) VALUES ($1, $2) RETURNING id",
+        telegram_id,
+        content
+    )
+    .fetch_one(pool)
+    .await
+    .context("Failed to insert new recipe");
 
     let duration = start_time.elapsed();
     observability::record_db_performance_metrics(
