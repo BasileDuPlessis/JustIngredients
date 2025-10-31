@@ -91,10 +91,34 @@ jobs:
         }
         EOF
 
-        # Call Google Gemini API
-        RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GOOGLE_AI_API_KEY" \
-          -H "Content-Type: application/json" \
-          -d @analysis_request.json)
+        # Call Google Gemini API with retry logic for overload errors
+        MAX_RETRIES=3
+        RETRY_COUNT=0
+        RETRY_DELAY=5
+
+        while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
+          RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GOOGLE_AI_API_KEY" \
+            -H "Content-Type: application/json" \
+            -d @analysis_request.json)
+
+          # Check if the response contains an overload error (503)
+          if echo "$RESPONSE" | jq -e '.error.code == 503' >/dev/null 2>&1; then
+            if [ $RETRY_COUNT -lt $((MAX_RETRIES - 1)) ]; then
+              echo "Model is overloaded (attempt $((RETRY_COUNT + 1))/$MAX_RETRIES). Retrying in $RETRY_DELAY seconds..."
+              sleep $RETRY_DELAY
+              RETRY_COUNT=$((RETRY_COUNT + 1))
+              RETRY_DELAY=$((RETRY_DELAY * 2))  # Exponential backoff
+              continue
+            else
+              echo "Model still overloaded after $MAX_RETRIES attempts. Skipping AI analysis."
+              RESPONSE='{"error": {"code": 503, "message": "Model overloaded after retries"}}'
+              break
+            fi
+          else
+            # No overload error, proceed with normal processing
+            break
+          fi
+        done
 
         # Extract the response
         if echo "$RESPONSE" | jq -e '.candidates[0].content.parts[0].text' >/dev/null 2>&1; then
