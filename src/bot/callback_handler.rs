@@ -1389,19 +1389,28 @@ async fn handle_add_more_button(
 async fn handle_cancel_review_button(
     bot: &Bot,
     q: &teloxide::types::CallbackQuery,
-    dialogue_lang_code: &Option<String>,
+    _dialogue_lang_code: &Option<String>,
     dialogue: &RecipeDialogue,
-    localization: &Arc<crate::localization::LocalizationManager>,
+    _localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    bot.send_message(
-        q.message.as_ref().unwrap().chat().id,
-        t_lang(
-            localization,
-            "review-cancelled",
-            dialogue_lang_code.as_deref(),
-        ),
-    )
-    .await?;
+    // Get the message to edit
+    let message = q.message.as_ref().unwrap();
+    let chat_id = message.chat().id;
+    let message_id = message.id();
+
+    // Edit the message to remove all buttons and editing-related text
+    // Simply clear the inline keyboard by editing the message without reply_markup
+    match bot.edit_message_reply_markup(chat_id, message_id).await {
+        Ok(_) => (),
+        Err(e) => {
+            error_logging::log_internal_error(
+                &e,
+                "callback_handler",
+                "Failed to remove review buttons on cancel",
+                Some(q.from.id.0 as i64),
+            );
+        }
+    }
 
     // End the dialogue
     dialogue.exit().await?;
@@ -1997,15 +2006,28 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
 async fn handle_cancel_saved_ingredients_button(
     bot: &Bot,
     q: &teloxide::types::CallbackQuery,
-    language_code: &Option<String>,
+    _language_code: &Option<String>,
     dialogue: &RecipeDialogue,
-    localization: &Arc<crate::localization::LocalizationManager>,
+    _localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    bot.send_message(
-        q.message.as_ref().unwrap().chat().id,
-        t_lang(localization, "editing-cancelled", language_code.as_deref()),
-    )
-    .await?;
+    // Get the message to edit
+    let message = q.message.as_ref().unwrap();
+    let chat_id = message.chat().id;
+    let message_id = message.id();
+
+    // Edit the message to remove all buttons and editing-related text
+    // Simply clear the inline keyboard by editing the message without reply_markup
+    match bot.edit_message_reply_markup(chat_id, message_id).await {
+        Ok(_) => (),
+        Err(e) => {
+            error_logging::log_internal_error(
+                &e,
+                "callback_handler",
+                "Failed to remove editing buttons on cancel",
+                Some(q.from.id.0 as i64),
+            );
+        }
+    }
 
     // End the dialogue
     dialogue.exit().await?;
