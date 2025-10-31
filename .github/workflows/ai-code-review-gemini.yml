@@ -53,9 +53,10 @@ jobs:
 
     - name: AI Code Review with Google Gemini
       id: ai-review
-      if: env.GOOGLE_AI_API_KEY != ''
+      if: steps.changed-files.outputs.has_rust_changes == 'true' && env.GOOGLE_AI_API_KEY != ''
       env:
         GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
+        DIFF_CONTENT: ${{ steps.diff-analysis.outputs.diff }}
       run: |
         if [ -z "$GOOGLE_AI_API_KEY" ]; then
           echo "No Google AI API key provided - skipping AI analysis"
@@ -65,8 +66,7 @@ jobs:
           exit 0
         fi
 
-        # Create the analysis prompt for Gemini
-        DIFF_CONTENT="${{ steps.diff-analysis.outputs.diff }}"
+        # Use the diff content from environment variable
         if [ -z "$DIFF_CONTENT" ]; then
           DIFF_CONTENT="No Rust code changes in this commit."
         fi
@@ -119,7 +119,7 @@ jobs:
         fi
 
     - name: Send Telegram Notification
-      if: steps.ai-review.outputs.priority != 'NONE' && steps.ai-review.outputs.issues != 'NO_CRITICAL_ISSUES' && steps.ai-review.outputs.issues != 'API_ERROR' && steps.ai-review.outputs.issues != '' && steps.ai-review.outputs.issues != 'NO_API_KEY'
+      if: steps.changed-files.outputs.has_rust_changes == 'true' && steps.ai-review.outputs.priority != 'NONE' && steps.ai-review.outputs.issues != 'NO_CRITICAL_ISSUES' && steps.ai-review.outputs.issues != 'API_ERROR' && steps.ai-review.outputs.issues != '' && steps.ai-review.outputs.issues != 'NO_API_KEY'
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
