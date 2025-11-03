@@ -74,10 +74,7 @@ t, memory estimation
 - **`db.rs`**: PostgreSQL database operations with FTS (Full-Text Search) support, schema initialization, CRU
 D operations
 - **`dialogue.rs`**: Recipe dialogue state management, validation, and user interaction flow
-- **`text_processing.rs`**: Advanced text processing with regex patterns, measurement detection, ingredient e
-xtraction
-- **`measurement_types.rs`**: Data structures for measurements, ingredients, and processing results
-- **`measurement_patterns.rs`**: Regex patterns and configuration for measurement detection
+- **`text_processing.rs`**: Advanced text processing with regex patterns, measurement detection, ingredient extraction (loads patterns from config/measurement_units.json)
 - **`localization.rs`**: Internationalization using Fluent bundles (English/French)
 - **`ocr_config.rs`**: Configuration structures for OCR settings, recovery, and format limits
 - **`ocr_errors.rs`**: Custom error types for OCR operations with proper error handling
@@ -271,7 +268,7 @@ cargo test                    # Run complete test suite (93 tests)
 3. **New Commands**: Add handlers in `bot.rs` message processing logic with tests
 4. **OCR Enhancements**: Modify `ocr.rs` with new validation or processing logic and tests
 5. **Localization**: Add keys to `.ftl` files, update `localization.rs` if needed, test translations
-6. **Text Processing**: Update patterns in `measurement_patterns.rs`, add tests for new cases
+6. **Text Processing**: Update patterns in `config/measurement_units.json` and `text_processing.rs`, add tests for new cases
 7. **UI/UX Improvements**: Add workflow transitions and keyboard functions in `dialogue_manager.rs`
 8. **Function Refactoring**: Use parameter structs for functions with >6 parameters to maintain code quality
 
