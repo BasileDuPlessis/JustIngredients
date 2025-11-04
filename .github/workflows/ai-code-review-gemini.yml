@@ -68,10 +68,25 @@ jobs:
         # Create the analysis prompt for Gemini
         # Store diff content in a temporary file to avoid shell interpretation issues
         echo "${{ steps.diff-analysis.outputs.diff }}" > diff_content.txt
-        DIFF_CONTENT=$(cat diff_content.txt)
+        
+        # Truncate diff if too large (keep only first 100 lines to avoid token limits)
+        DIFF_CONTENT=$(head -100 diff_content.txt)
         if [ -z "$DIFF_CONTENT" ]; then
           DIFF_CONTENT="No Rust code changes in this commit."
         fi
+
+        # Create the analysis prompt for Gemini
+        # Store diff content in a temporary file to avoid shell interpretation issues
+        echo "${{ steps.diff-analysis.outputs.diff }}" > diff_content.txt
+        
+        # Truncate diff if too large (keep only first 100 lines to avoid token limits)
+        DIFF_CONTENT=$(head -100 diff_content.txt)
+        if [ -z "$DIFF_CONTENT" ]; then
+          DIFF_CONTENT="No Rust code changes in this commit."
+        fi
+
+        # Escape problematic characters in diff content
+        DIFF_CONTENT=$(echo "$DIFF_CONTENT" | sed 's/\\/\\\\/g; s/"/\\"/g; s/`/\\`/g; s/\$/\\$/g')
 
         cat > analysis_request.json << EOF
         {
@@ -121,7 +136,12 @@ jobs:
         done
 
         # Extract the response
-        if echo "$RESPONSE" | jq -e '.candidates[0].content.parts[0].text' >/dev/null 2>&1; then
+        if echo "$RESPONSE" | jq -e '.candidates[0].finishReason == "MAX_TOKENS"' >/dev/null 2>&1; then
+          echo "Response truncated due to token limit - diff too large for analysis"
+          echo "priority=NONE" >> $GITHUB_OUTPUT
+          echo "issues=DIFF_TOO_LARGE" >> $GITHUB_OUTPUT
+          echo "recommendations=Consider breaking large changes into smaller commits for better analysis" >> $GITHUB_OUTPUT
+        elif echo "$RESPONSE" | jq -e '.candidates[0].content.parts[0].text' >/dev/null 2>&1; then
           ANALYSIS=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text')
 
           # Parse JSON response (Gemini returns text that should be JSON)
@@ -148,7 +168,7 @@ jobs:
         rm -f diff_content.txt
 
     - name: Send Telegram Notification
-      if: steps.ai-review.outputs.priority != 'NONE' && steps.ai-review.outputs.issues != 'NO_CRITICAL_ISSUES' && steps.ai-review.outputs.issues != 'API_ERROR' && steps.ai-review.outputs.issues != '' && steps.ai-review.outputs.issues != 'NO_API_KEY'
+      if: steps.ai-review.outputs.priority != 'NONE' && steps.ai-review.outputs.issues != 'NO_CRITICAL_ISSUES' && steps.ai-review.outputs.issues != 'API_ERROR' && steps.ai-review.outputs.issues != 'DIFF_TOO_LARGE' && steps.ai-review.outputs.issues != '' && steps.ai-review.outputs.issues != 'NO_API_KEY'
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
