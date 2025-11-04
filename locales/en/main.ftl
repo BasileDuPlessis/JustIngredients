@@ -148,6 +148,7 @@ workflow-what-next = What would you like to do next?
 workflow-add-another = Add Another Recipe
 workflow-list-recipes = List My Recipes
 workflow-search-recipes = Search Recipes
+workflow-search-coming-soon = Recipe search coming soon! For now, use the 'List My Recipes' button.
 caption-recipe-saved = Recipe saved as: "{$recipe_name}"
 
 # Duplicate recipe handling messages

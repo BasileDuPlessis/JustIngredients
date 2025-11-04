@@ -140,6 +140,7 @@ workflow-what-next = Que souhaitez-vous faire ensuite ?
 workflow-add-another = Ajouter une autre recette
 workflow-list-recipes = Lister mes recettes
 workflow-search-recipes = Rechercher des recettes
+workflow-search-coming-soon = Recherche de recettes bientôt disponible ! Pour l'instant, utilisez le bouton 'Lister mes recettes'.
 caption-recipe-saved = Recette sauvegardée sous : "{$recipe_name}"
 
 # Messages de gestion des recettes dupliquées

@@ -5,7 +5,7 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
 // Import error logging utilities
 use crate::errors::error_logging;
@@ -29,6 +29,11 @@ use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_li
 
 // Import HandlerContext
 use super::HandlerContext;
+
+/// Check if the error is a "message not modified" Telegram API error
+fn is_message_not_modified_error(error: &teloxide::RequestError) -> bool {
+    error.to_string().contains("message is not modified")
+}
 
 /// Parameters for ingredient review input handling
 #[derive(Debug)]
@@ -661,14 +666,29 @@ async fn handle_edit_cancellation(params: EditCancellationParams<'_>) -> Result<
 
     // If we have a message_id, edit the existing message; otherwise send a new one
     if let Some(msg_id) = message_id {
-        ctx.bot
+        match ctx
+            .bot
             .edit_message_text(
                 msg.chat.id,
                 teloxide::types::MessageId(msg_id),
                 review_message,
             )
             .reply_markup(keyboard)
-            .await?;
+            .await
+        {
+            Ok(_) => (),
+            Err(e) if is_message_not_modified_error(&e) => {
+                debug!("Message edit skipped - content unchanged (edit cancellation)");
+            },
+            Err(e) => {
+                error_logging::log_internal_error(
+                    &e,
+                    "handle_edit_cancellation",
+                    "Failed to edit message after edit cancellation",
+                    Some(msg.chat.id.0),
+                );
+            }
+        }
     } else {
         ctx.bot
             .send_message(msg.chat.id, review_message)
@@ -722,14 +742,29 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
 
         // If we have a message_id, edit the existing message; otherwise send a new one
         if let Some(msg_id) = message_id {
-            ctx.bot
+            match ctx
+                .bot
                 .edit_message_text(
                     msg.chat.id,
                     teloxide::types::MessageId(msg_id),
                     review_message,
                 )
                 .reply_markup(keyboard)
-                .await?;
+                .await
+            {
+                Ok(_) => (),
+                Err(e) if is_message_not_modified_error(&e) => {
+                    debug!("Message edit skipped - content unchanged (edit success)");
+                },
+                Err(e) => {
+                    error_logging::log_internal_error(
+                        &e,
+                        "handle_edit_success",
+                        "Failed to edit message after edit success",
+                        Some(msg.chat.id.0),
+                    );
+                }
+            }
         } else {
             ctx.bot
                 .send_message(msg.chat.id, review_message)
@@ -1270,13 +1305,28 @@ async fn return_to_saved_ingredients_review(
 
     // If we have a message_id, edit the existing message; otherwise send a new one
     if let Some(msg_id) = message_id {
-        bot.edit_message_text(
-            msg.chat.id,
-            teloxide::types::MessageId(msg_id),
-            review_message,
-        )
-        .reply_markup(keyboard)
-        .await?;
+        match bot
+            .edit_message_text(
+                msg.chat.id,
+                teloxide::types::MessageId(msg_id),
+                review_message,
+            )
+            .reply_markup(keyboard)
+            .await
+        {
+            Ok(_) => (),
+            Err(e) if is_message_not_modified_error(&e) => {
+                debug!("Message edit skipped - content unchanged (saved ingredients)");
+            },
+            Err(e) => {
+                error_logging::log_internal_error(
+                    &e,
+                    "return_to_saved_ingredients_review",
+                    "Failed to edit message for saved ingredients review",
+                    Some(msg.chat.id.0),
+                );
+            }
+        }
     } else {
         bot.send_message(msg.chat.id, review_message)
             .reply_markup(keyboard)

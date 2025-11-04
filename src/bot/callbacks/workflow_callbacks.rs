@@ -235,7 +235,11 @@ pub async fn handle_workflow_button(
 
             bot.send_message(
                 q.message.as_ref().unwrap().chat().id,
-                "🔍 Recipe search coming soon! For now, use the 'List My Recipes' button.",
+                t_lang(
+                    localization,
+                    "workflow-search-coming-soon",
+                    q.from.language_code.as_deref(),
+                ),
             )
             .await?;
         }
