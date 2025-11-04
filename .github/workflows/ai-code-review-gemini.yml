@@ -168,7 +168,7 @@ jobs:
         rm -f diff_content.txt
 
     - name: Send Telegram Notification
-      if: steps.ai-review.outputs.priority != 'NONE' && steps.ai-review.outputs.issues != 'NO_CRITICAL_ISSUES' && steps.ai-review.outputs.issues != 'API_ERROR' && steps.ai-review.outputs.issues != 'DIFF_TOO_LARGE' && steps.ai-review.outputs.issues != '' && steps.ai-review.outputs.issues != 'NO_API_KEY'
+      if: steps.ai-review.outputs.issues != 'NO_API_KEY'
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
@@ -178,21 +178,37 @@ jobs:
           echo "$1" | sed 's/^/- /' | sed '/^$/d'
         }
 
-        ISSUES_FORMATTED=$(format_list "${{ steps.ai-review.outputs.issues }}")
-        RECOMMENDATIONS_FORMATTED=$(format_list "${{ steps.ai-review.outputs.recommendations }}")
+        # Handle different response types
+        if [ "${{ steps.ai-review.outputs.issues }}" = "DIFF_TOO_LARGE" ]; then
+          ISSUES_FORMATTED="- Code diff was too large for complete analysis (truncated to 100 lines)"
+          RECOMMENDATIONS_FORMATTED="- Consider breaking large changes into smaller commits for detailed analysis"
+          PRIORITY_LEVEL="ℹ️ INFO"
+        elif [ "${{ steps.ai-review.outputs.issues }}" = "API_ERROR" ]; then
+          ISSUES_FORMATTED="- AI analysis failed due to API error"
+          RECOMMENDATIONS_FORMATTED="- Check Gemini API status and retry later"
+          PRIORITY_LEVEL="⚠️ WARNING"
+        elif [ "${{ steps.ai-review.outputs.issues }}" = "NO_CRITICAL_ISSUES" ] || [ "${{ steps.ai-review.outputs.issues }}" = "" ]; then
+          ISSUES_FORMATTED="- No critical issues detected in code review"
+          RECOMMENDATIONS_FORMATTED="- Code changes look good!"
+          PRIORITY_LEVEL="✅ PASSED"
+        else
+          ISSUES_FORMATTED=$(format_list "${{ steps.ai-review.outputs.issues }}")
+          RECOMMENDATIONS_FORMATTED=$(format_list "${{ steps.ai-review.outputs.recommendations }}")
+          PRIORITY_LEVEL="${{ steps.ai-review.outputs.priority }}"
+        fi
 
-        MESSAGE="🤖 *Google Gemini AI Code Review Alert*
+        MESSAGE="🤖 *Google Gemini AI Code Review*
 
         📋 *Push to main branch*
         👤 *Author:* ${{ github.event.head_commit.author.name }}
-        � *Commit:* ${{ github.event.after }}
-        � *Message:* ${{ github.event.head_commit.message }}
+        🔗 *Commit:* ${{ github.event.after }}
+        📝 *Message:* ${{ github.event.head_commit.message }}
 
         📊 *Changes:* ${{ steps.diff-analysis.outputs.files_changed }} files, +${{ steps.diff-analysis.outputs.lines_added }} -${{ steps.diff-analysis.outputs.lines_deleted }} lines
 
-        ⚠️ *Priority:* ${{ steps.ai-review.outputs.priority }}
+        🔍 *Status:* $PRIORITY_LEVEL
 
-        🔍 *Critical Issues:*
+        � *Analysis Results:*
         $ISSUES_FORMATTED
 
         💡 *Recommendations:*
