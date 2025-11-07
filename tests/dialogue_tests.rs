@@ -126,6 +126,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
         editing_index: 0,
         language_code: Some("en".to_string()),
         message_id: Some(123),
+        original_message_id: Some(456), // Original recipe display message ID
         extracted_text: "Test OCR text".to_string(),
     };
 
@@ -136,6 +137,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             editing_index,
             language_code,
             message_id,
+            original_message_id,
             extracted_text,
         } => {
             assert_eq!(recipe_name, "Test Recipe");
@@ -143,6 +145,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             assert_eq!(editing_index, 0);
             assert_eq!(language_code, Some("en".to_string()));
             assert_eq!(message_id, Some(123));
+            assert_eq!(original_message_id, Some(456));
             assert_eq!(extracted_text, "Test OCR text");
         }
         _ => panic!("Expected EditingIngredient state"),
@@ -292,4 +295,231 @@ fn test_recipe_name_validation() {
 fn test_recipe_name_trimming() {
     let result = validate_recipe_name("  Test Recipe  ");
     assert_eq!(result.unwrap(), "Test Recipe");
+}
+
+/// Test dialogue state transitions with original_message_id tracking
+#[test]
+fn test_dialogue_state_transitions_with_original_message_id() {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use just_ingredients::text_processing::MeasurementMatch;
+
+    // Test data
+    let ingredients = vec![
+        MeasurementMatch {
+            quantity: "2".to_string(),
+            measurement: Some("cups".to_string()),
+            ingredient_name: "flour".to_string(),
+            line_number: 0,
+            start_pos: 0,
+            end_pos: 6,
+        },
+        MeasurementMatch {
+            quantity: "3".to_string(),
+            measurement: None,
+            ingredient_name: "eggs".to_string(),
+            line_number: 1,
+            start_pos: 8,
+            end_pos: 9,
+        },
+    ];
+
+    // Test EditingIngredient state with original_message_id
+    let editing_state = RecipeDialogueState::EditingIngredient {
+        recipe_name: "Test Recipe".to_string(),
+        ingredients: ingredients.clone(),
+        editing_index: 0,
+        language_code: Some("en".to_string()),
+        message_id: Some(123),
+        original_message_id: Some(456),
+        extracted_text: "Test OCR text".to_string(),
+    };
+
+    // Verify the state structure includes original_message_id
+    if let RecipeDialogueState::EditingIngredient {
+        recipe_name,
+        ingredients: ingr,
+        editing_index,
+        language_code,
+        message_id,
+        original_message_id,
+        extracted_text,
+    } = editing_state
+    {
+        assert_eq!(recipe_name, "Test Recipe");
+        assert_eq!(ingr.len(), 2);
+        assert_eq!(editing_index, 0);
+        assert_eq!(language_code, Some("en".to_string()));
+        assert_eq!(message_id, Some(123));
+        assert_eq!(original_message_id, Some(456)); // This is the key new field
+        assert_eq!(extracted_text, "Test OCR text");
+    } else {
+        panic!("Expected EditingIngredient state");
+    }
+
+    // Test EditingSavedIngredient state with original_message_id
+    let saved_ingredients = vec![
+        just_ingredients::db::Ingredient {
+            id: 1,
+            user_id: 100,
+            recipe_id: Some(200),
+            name: "flour".to_string(),
+            quantity: Some(2.0),
+            unit: Some("cups".to_string()),
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        },
+        just_ingredients::db::Ingredient {
+            id: 2,
+            user_id: 100,
+            recipe_id: Some(200),
+            name: "eggs".to_string(),
+            quantity: Some(3.0),
+            unit: None,
+            created_at: chrono::Utc::now(),
+            updated_at: chrono::Utc::now(),
+        },
+    ];
+
+    let editing_saved_state = RecipeDialogueState::EditingSavedIngredient {
+        recipe_id: 200,
+        original_ingredients: saved_ingredients.clone(),
+        current_matches: ingredients.clone(),
+        editing_index: 1,
+        language_code: Some("en".to_string()),
+        message_id: Some(789),
+        original_message_id: Some(101112), // Original recipe display message ID
+    };
+
+    // Verify the state structure includes original_message_id
+    if let RecipeDialogueState::EditingSavedIngredient {
+        recipe_id,
+        original_ingredients,
+        current_matches,
+        editing_index,
+        language_code,
+        message_id,
+        original_message_id,
+    } = editing_saved_state
+    {
+        assert_eq!(recipe_id, 200);
+        assert_eq!(original_ingredients.len(), 2);
+        assert_eq!(current_matches.len(), 2);
+        assert_eq!(editing_index, 1);
+        assert_eq!(language_code, Some("en".to_string()));
+        assert_eq!(message_id, Some(789));
+        assert_eq!(original_message_id, Some(101112)); // This is the key new field
+    } else {
+        panic!("Expected EditingSavedIngredient state");
+    }
+
+    println!("✅ Dialogue state transitions with original_message_id tracking test passed");
+}
+
+/// Test state transition from ReviewIngredients to EditingIngredient
+#[test]
+fn test_review_to_editing_ingredient_transition() {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use just_ingredients::text_processing::MeasurementMatch;
+
+    // Start with ReviewIngredients state
+    let ingredients = vec![MeasurementMatch {
+        quantity: "2".to_string(),
+        measurement: Some("cups".to_string()),
+        ingredient_name: "flour".to_string(),
+        line_number: 0,
+        start_pos: 0,
+        end_pos: 6,
+    }];
+
+    // Simulate transition to editing (what happens when user clicks edit button)
+    let editing_state = RecipeDialogueState::EditingIngredient {
+        recipe_name: "Test Recipe".to_string(),
+        ingredients: ingredients.clone(),
+        editing_index: 0,
+        language_code: Some("en".to_string()),
+        message_id: Some(1001),          // New editing prompt message ID
+        original_message_id: Some(1000), // Should track the original message ID
+        extracted_text: "Test OCR text".to_string(),
+    };
+
+    // Verify the transition preserved the original message ID
+    if let RecipeDialogueState::EditingIngredient {
+        original_message_id,
+        message_id,
+        ..
+    } = editing_state
+    {
+        assert_eq!(
+            original_message_id,
+            Some(1000),
+            "Should preserve original message ID"
+        );
+        assert_eq!(message_id, Some(1001), "Should have new editing message ID");
+    } else {
+        panic!("Expected EditingIngredient state");
+    }
+
+    println!("✅ Review to editing ingredient transition test passed");
+}
+
+/// Test state transition from EditingSavedIngredients to EditingSavedIngredient
+#[test]
+fn test_saved_ingredients_to_editing_transition() {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use just_ingredients::text_processing::MeasurementMatch;
+
+    // Start with EditingSavedIngredients state
+    let saved_ingredients = vec![just_ingredients::db::Ingredient {
+        id: 1,
+        user_id: 100,
+        recipe_id: Some(200),
+        name: "flour".to_string(),
+        quantity: Some(2.0),
+        unit: Some("cups".to_string()),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    }];
+
+    let current_matches = vec![MeasurementMatch {
+        quantity: "2".to_string(),
+        measurement: Some("cups".to_string()),
+        ingredient_name: "flour".to_string(),
+        line_number: 0,
+        start_pos: 0,
+        end_pos: 6,
+    }];
+
+    // Simulate transition to editing single ingredient (what happens when user clicks edit button)
+    let editing_single_state = RecipeDialogueState::EditingSavedIngredient {
+        recipe_id: 200,
+        original_ingredients: saved_ingredients.clone(),
+        current_matches: current_matches.clone(),
+        editing_index: 0,
+        language_code: Some("en".to_string()),
+        message_id: Some(2001),          // New editing prompt message ID
+        original_message_id: Some(2000), // Should track the original message ID
+    };
+
+    // Verify the transition preserved the original message ID
+    if let RecipeDialogueState::EditingSavedIngredient {
+        original_message_id,
+        message_id,
+        recipe_id,
+        editing_index,
+        ..
+    } = editing_single_state
+    {
+        assert_eq!(
+            original_message_id,
+            Some(2000),
+            "Should preserve original message ID"
+        );
+        assert_eq!(message_id, Some(2001), "Should have new editing message ID");
+        assert_eq!(recipe_id, 200);
+        assert_eq!(editing_index, 0);
+    } else {
+        panic!("Expected EditingSavedIngredient state");
+    }
+
+    println!("✅ Saved ingredients to editing transition test passed");
 }

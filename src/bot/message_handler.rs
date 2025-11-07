@@ -159,6 +159,7 @@ async fn handle_text_message(
                 editing_index,
                 language_code: dialogue_lang_code,
                 message_id,
+                original_message_id: _original_message_id,
                 extracted_text,
             }) => {
                 // Use dialogue language code if available, otherwise fall back to message language
@@ -259,6 +260,7 @@ async fn handle_text_message(
                 editing_index,
                 language_code: dialogue_lang_code,
                 message_id,
+                original_message_id,
             }) => {
                 // Use dialogue language code if available, otherwise fall back to message language
                 let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
@@ -284,6 +286,7 @@ async fn handle_text_message(
                         },
                         message_id,
                         editing_index,
+                        original_message_id,
                     },
                 )
                 .await;

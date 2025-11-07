@@ -19,8 +19,9 @@ use crate::localization::{t_args_lang, t_lang};
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
-// Import UI builder functions
-use crate::bot::ui_builder::{
+// Import UI components for the focused editing interface
+use crate::bot::ui_components::create_ingredient_editing_keyboard;
+use crate::bot::{
     create_ingredient_review_keyboard, create_post_confirmation_keyboard, format_ingredients_list,
 };
 
@@ -136,6 +137,13 @@ pub async fn handle_review_ingredients_callbacks(
 }
 
 /// Handle edit button in review ingredients state
+///
+/// This function implements the "focused editing interface" approach to eliminate user confusion:
+/// - Instead of leaving the full recipe display visible with inactive buttons during editing,
+///   we replace the entire recipe display message with a clean, focused editing prompt
+/// - Only a cancel button is shown, eliminating inactive button confusion
+/// - After editing or canceling, the original recipe display is restored seamlessly
+/// - This provides a clean, unambiguous editing experience without UI state confusion
 async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
     let ReviewIngredientsParams {
         ctx,
@@ -163,34 +171,71 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
         );
 
         let ingredient = &ingredients[index];
+
+        // Create focused editing prompt message
         let edit_prompt = format!(
             "✏️ {}\n\n{}: **{} {}**\n\n{}",
             t_lang(
                 ctx.localization,
-                "edit-ingredient-prompt",
+                "edit-ingredient-title",
                 dialogue_lang_code.as_deref()
             ),
             t_lang(
                 ctx.localization,
-                "current-ingredient",
+                "edit-ingredient-current",
                 dialogue_lang_code.as_deref()
             ),
             ingredient.quantity,
             ingredient.measurement.as_deref().unwrap_or(""),
-            ingredient.ingredient_name
+            t_lang(
+                ctx.localization,
+                "edit-ingredient-instruction",
+                dialogue_lang_code.as_deref()
+            )
         );
-        ctx.bot
-            .send_message(q.message.as_ref().unwrap().chat().id, edit_prompt)
-            .await?;
 
-        // Transition to editing state
+        // Create focused editing keyboard with cancel button only
+        let keyboard =
+            create_ingredient_editing_keyboard(dialogue_lang_code.as_deref(), ctx.localization);
+
+        // Replace the original recipe display message with focused editing prompt
+        let edited_message = match ctx
+            .bot
+            .edit_message_text(
+                q.message.as_ref().unwrap().chat().id,
+                teloxide::types::MessageId(
+                    message_id.expect("Message ID should be present for editing"),
+                ),
+                edit_prompt.clone(),
+            )
+            .reply_markup(keyboard.clone())
+            .await
+        {
+            Ok(msg) => msg,
+            Err(e) => {
+                error_logging::log_internal_error(
+                    &e,
+                    "handle_edit_button",
+                    "Failed to replace recipe display with editing prompt",
+                    Some(q.from.id.0 as i64),
+                );
+                // Fallback: send new message if editing fails
+                ctx.bot
+                    .send_message(q.message.as_ref().unwrap().chat().id, edit_prompt)
+                    .reply_markup(keyboard)
+                    .await?
+            }
+        };
+
+        // Transition to editing state with updated message tracking
         dialogue
             .update(RecipeDialogueState::EditingIngredient {
                 recipe_name: recipe_name.to_string(),
                 ingredients: ingredients.to_vec(),
                 editing_index: index,
                 language_code: dialogue_lang_code.clone(),
-                message_id,
+                message_id: Some(edited_message.id.0 as i32), // Track the editing prompt message
+                original_message_id: message_id, // Original recipe display message to replace
                 extracted_text: extracted_text.to_string(),
             })
             .await?;

@@ -124,6 +124,12 @@ pub async fn handle_editing_saved_ingredients_callbacks(
 }
 
 /// Handle edit button for saved ingredients
+///
+/// This function implements the same "focused editing interface" approach as the initial recipe editing:
+/// - Replaces the full recipe display with a clean editing prompt to eliminate inactive button confusion
+/// - Only shows a cancel button during editing for clarity
+/// - Tracks the original message ID to restore the recipe display after editing/canceling
+/// - Provides consistent UX across both initial recipe creation and saved recipe editing workflows
 async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>) -> Result<()> {
     let SavedIngredientsParams {
         ctx,
@@ -156,23 +162,56 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
             "✏️ {}\n\n{}: **{} {}**\n\n{}",
             t_lang(
                 ctx.localization,
-                "edit-ingredient-prompt",
+                "edit-ingredient-title",
                 language_code.as_deref()
             ),
             t_lang(
                 ctx.localization,
-                "current-ingredient",
+                "edit-ingredient-current",
                 language_code.as_deref()
             ),
             ingredient.quantity,
             ingredient.measurement.as_deref().unwrap_or(""),
-            ingredient.ingredient_name
+            t_lang(
+                ctx.localization,
+                "edit-ingredient-instruction",
+                language_code.as_deref()
+            )
         );
-        ctx.bot
-            .send_message(q.message.as_ref().unwrap().chat().id, edit_prompt)
-            .await?;
 
-        // Transition to editing state
+        let keyboard = crate::bot::ui_components::create_ingredient_editing_keyboard(
+            language_code.as_deref(),
+            ctx.localization,
+        );
+
+        // Replace the current recipe display with the focused editing prompt
+        match ctx
+            .bot
+            .edit_message_text(
+                q.message.as_ref().unwrap().chat().id,
+                q.message.as_ref().unwrap().id(),
+                edit_prompt.clone(),
+            )
+            .reply_markup(keyboard.clone())
+            .await
+        {
+            Ok(_) => (),
+            Err(e) => {
+                error_logging::log_internal_error(
+                    &e,
+                    "handle_edit_saved_ingredient_button",
+                    "Failed to edit message for ingredient editing prompt",
+                    Some(q.from.id.0 as i64),
+                );
+                // Fallback: send new message if editing fails
+                ctx.bot
+                    .send_message(q.message.as_ref().unwrap().chat().id, edit_prompt)
+                    .reply_markup(keyboard)
+                    .await?;
+            }
+        }
+
+        // Transition to editing state with original message ID tracking
         dialogue
             .update(RecipeDialogueState::EditingSavedIngredient {
                 recipe_id,
@@ -181,6 +220,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
                 editing_index: index,
                 language_code: language_code.clone(),
                 message_id,
+                original_message_id: Some(q.message.as_ref().unwrap().id().0),
             })
             .await?;
     }

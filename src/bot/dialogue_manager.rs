@@ -158,6 +158,7 @@ pub struct SavedIngredientEditInputParams<'a> {
     pub ctx: &'a HandlerContext<'a>,
     pub message_id: Option<i32>,
     pub editing_index: usize,
+    pub original_message_id: Option<i32>, // ID of the original recipe display message to replace
 }
 
 /// Handle recipe name input during dialogue
@@ -679,7 +680,7 @@ async fn handle_edit_cancellation(params: EditCancellationParams<'_>) -> Result<
             Ok(_) => (),
             Err(e) if is_message_not_modified_error(&e) => {
                 debug!("Message edit skipped - content unchanged (edit cancellation)");
-            },
+            }
             Err(e) => {
                 error_logging::log_internal_error(
                     &e,
@@ -755,7 +756,7 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
                 Ok(_) => (),
                 Err(e) if is_message_not_modified_error(&e) => {
                     debug!("Message edit skipped - content unchanged (edit success)");
-                },
+                }
                 Err(e) => {
                     error_logging::log_internal_error(
                         &e,
@@ -1171,8 +1172,9 @@ pub async fn handle_saved_ingredient_edit_input(
         original_ingredients,
         current_matches,
         ctx: handler_ctx,
-        message_id,
+        message_id: _,
         editing_index,
+        original_message_id,
     } = params;
 
     let input = edit_input.trim().to_lowercase();
@@ -1189,7 +1191,7 @@ pub async fn handle_saved_ingredient_edit_input(
             original_ingredients,
             current_matches,
             language_code: handler_ctx.language_code,
-            message_id,
+            message_id: original_message_id, // Use original message ID for editing
         })
         .await?;
         return Ok(());
@@ -1213,7 +1215,7 @@ pub async fn handle_saved_ingredient_edit_input(
                     original_ingredients,
                     current_matches: &updated_matches,
                     language_code: handler_ctx.language_code,
-                    message_id,
+                    message_id: original_message_id, // Use original message ID for editing
                 })
                 .await?;
             } else {
@@ -1236,7 +1238,7 @@ pub async fn handle_saved_ingredient_edit_input(
                     original_ingredients,
                     current_matches,
                     language_code: handler_ctx.language_code,
-                    message_id,
+                    message_id: original_message_id, // Use original message ID for editing
                 })
                 .await?;
             }
@@ -1317,7 +1319,7 @@ async fn return_to_saved_ingredients_review(
             Ok(_) => (),
             Err(e) if is_message_not_modified_error(&e) => {
                 debug!("Message edit skipped - content unchanged (saved ingredients)");
-            },
+            }
             Err(e) => {
                 error_logging::log_internal_error(
                     &e,

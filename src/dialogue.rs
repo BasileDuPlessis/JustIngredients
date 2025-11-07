@@ -31,7 +31,8 @@ pub enum RecipeDialogueState {
         editing_index: usize,
         language_code: Option<String>,
         message_id: Option<i32>, // ID of the review message to edit after editing
-        extracted_text: String,  // Store the original OCR text
+        original_message_id: Option<i32>, // ID of the original recipe display message to replace during focused editing
+        extracted_text: String,           // Store the original OCR text
     },
     WaitingForRecipeNameAfterConfirm {
         ingredients: Vec<MeasurementMatch>,
@@ -58,6 +59,7 @@ pub enum RecipeDialogueState {
         editing_index: usize,                  // Which ingredient is being edited
         language_code: Option<String>,
         message_id: Option<i32>,
+        original_message_id: Option<i32>, // ID of the original recipe display message to replace during focused editing
     },
     AddingIngredientToSavedRecipe {
         recipe_id: i64,

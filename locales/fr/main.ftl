@@ -207,6 +207,11 @@ add-ingredient = Ajouter un ingrédient
 add-ingredient-prompt = Envoyez-moi le nouvel ingrédient (ex: "2 tasses de farine" ou "3 œufs")
 ingredient-added = Ingrédient ajouté avec succès !
 
+# Messages d'interface d'édition focalisée
+edit-ingredient-title = Modifier l'ingrédient
+edit-ingredient-current = Actuel
+edit-ingredient-instruction = Entrez le nouveau texte d'ingrédient (ex: "3 tasses de blé entier") :
+
 # Messages de légende photo
 caption-used = 📝 Utilisation de la légende de la photo comme nom de recette : "{$caption}"
 caption-invalid = [CAPTION] La légende de la photo était invalide, utilisation du nom par défaut : "{$default_name}"

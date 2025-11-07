@@ -41,3 +41,4 @@ pub use ui_builder::{
     create_ingredient_review_keyboard, create_post_confirmation_keyboard,
     create_recipes_pagination_keyboard, format_ingredients_list,
 };
+pub use ui_components::create_ingredient_editing_keyboard;

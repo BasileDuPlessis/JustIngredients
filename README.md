@@ -291,6 +291,36 @@ After ingredient validation, users can seamlessly continue their workflow:
 User sends recipe image → Bot extracts ingredients → User reviews/edits → User confirms → Bot shows success message with action buttons → User chooses next step
 ```
 
+### Ingredient Editing Interface
+
+JustIngredients features a focused editing interface that eliminates user confusion during ingredient editing:
+
+**Focused Editing Experience:**
+- **Message Replacement**: When editing an ingredient, the full recipe display is replaced with a clean editing prompt
+- **Clear Instructions**: Users see the current ingredient value and receive clear guidance on how to enter new text
+- **Single Action**: Only a cancel button is shown during editing, eliminating inactive button confusion
+- **Seamless Transitions**: After editing or canceling, the original recipe display is restored automatically
+
+**Editing Flow:**
+```
+Recipe Display → Click "Edit" → Focused Editing Prompt → Enter new text → Recipe Display (updated)
+                                      ↓
+                                   Click "Cancel" → Recipe Display (unchanged)
+```
+
+**Example Editing Interface:**
+```
+✏️ Edit Ingredient
+
+Current: 2 cups flour
+
+Enter the new ingredient text (e.g., "3 cups whole wheat flour"):
+
+[❌ Cancel]
+```
+
+This approach provides a clean, unambiguous editing experience without the confusion of inactive buttons that were present in the previous interface.
+
 ## Architecture
 
 ### Core Modules

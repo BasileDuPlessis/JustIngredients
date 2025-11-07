@@ -39,10 +39,12 @@ pub fn create_localized_button_with_emoji(
 
 /// Truncate text to a maximum length, adding ellipsis if truncated
 pub fn truncate_text(text: &str, max_length: usize) -> String {
-    if text.len() <= max_length {
+    let char_count = text.chars().count();
+    if char_count <= max_length {
         text.to_string()
     } else {
-        format!("{}...", &text[..max_length.saturating_sub(3)])
+        let truncated: String = text.chars().take(max_length.saturating_sub(3)).collect();
+        format!("{}...", truncated)
     }
 }
 
@@ -175,6 +177,22 @@ pub fn create_add_button(
     create_localized_button_with_emoji(localization, "➕", text_key, callback_data, language_code)
 }
 
+/// Create inline keyboard for ingredient editing (focused interface)
+pub fn create_ingredient_editing_keyboard(
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> InlineKeyboardMarkup {
+    with_ui_metrics_sync("create_ingredient_editing_keyboard", 0, || {
+        let buttons = vec![vec![create_cancel_button(
+            localization,
+            "cancel_ingredient_editing".to_string(),
+            language_code,
+        )]];
+
+        InlineKeyboardMarkup::new(buttons)
+    })
+}
+
 /// Wrapper function that records UI metrics around an operation
 pub async fn with_ui_metrics<F, Fut, T>(operation_name: &str, input_count: usize, operation: F) -> T
 where
@@ -222,6 +240,11 @@ mod tests {
         assert_eq!(truncate_text("this is a very long text", 10), "this is...");
         assert_eq!(truncate_text("exactly", 7), "exactly");
         assert_eq!(truncate_text("toolong", 5), "to...");
+        // Test Unicode characters
+        assert_eq!(truncate_text("40 Millilitres → UN", 15), "40 Millilitr...");
+        assert_eq!(truncate_text("café", 4), "café"); // No truncation needed
+        assert_eq!(truncate_text("café", 3), "..."); // Truncated to just ellipsis
+        assert_eq!(truncate_text("🚀 rocket launch", 10), "🚀 rocke...");
     }
 
     #[tokio::test]

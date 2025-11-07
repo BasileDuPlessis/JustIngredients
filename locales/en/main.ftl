@@ -213,3 +213,8 @@ error-deleting-ingredients = Failed to delete ingredients
 add-ingredient = Add Ingredient
 add-ingredient-prompt = Send me the new ingredient (e.g., "2 cups flour" or "3 eggs")
 ingredient-added = Ingredient added successfully!
+
+# Focused editing interface messages
+edit-ingredient-title = Edit Ingredient
+edit-ingredient-current = Current
+edit-ingredient-instruction = Enter the new ingredient text (e.g., "3 cups whole wheat flour"):
