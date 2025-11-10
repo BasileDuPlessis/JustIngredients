@@ -594,4 +594,31 @@ mod tests {
         assert!(duplicate_units.contains("2 cups"));
         assert!(duplicate_units.contains("3 cups"));
     }
+
+    #[test]
+    fn test_quantity_only_ingredients_current_behavior() {
+        let detector = create_detector();
+
+        // Document current behavior with quantity-only ingredients (the alternation problem)
+        // This test documents the current behavior that will change with unified extraction
+
+        let test_cases = vec![
+            // Current behavior: alternation causes inconsistent ingredient extraction
+            ("2 crème fraîche", "2", None, "crème"), // Only captures first word after alternation
+            ("6 pommes de terre", "6", None, "pommes"), // Only captures first word after alternation
+            ("3 eggs", "3", None, "eggs"), // Works correctly (single word)
+            ("2g de chocolat", "2", Some("g"), "chocolat"), // Post-processing removes "de "
+            ("500g chocolat noir", "500", Some("g"), "chocolat noir"), // Works correctly (measurement present)
+        ];
+
+        for (input, expected_quantity, expected_measurement, expected_ingredient) in test_cases {
+            let matches = detector.extract_ingredient_measurements(input);
+            assert_eq!(matches.len(), 1, "Expected exactly one match for input: {}", input);
+
+            let m = &matches[0];
+            assert_eq!(m.quantity, expected_quantity, "Quantity mismatch for input: {}", input);
+            assert_eq!(m.measurement.as_deref(), expected_measurement, "Measurement mismatch for input: {}", input);
+            assert_eq!(m.ingredient_name, expected_ingredient, "Ingredient name mismatch for input: {}", input);
+        }
+    }
 }
