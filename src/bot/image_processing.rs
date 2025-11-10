@@ -230,10 +230,6 @@ pub async fn download_and_process_image(
                                 match crate::validation::validate_recipe_name(caption_text) {
                                     Ok(validated_name) => {
                                         info!(user_id = %chat_id, recipe_name = %validated_name, "Using caption as recipe name");
-                                        // Send feedback message about using caption
-                                        let caption_msg = t_lang(localization, "caption-used", language_code)
-                                            .replace("{$caption}", validated_name);
-                                        bot.send_message(chat_id, caption_msg).await?;
                                         (validated_name.to_string(), Some(caption_text.clone())) // Caption was successfully used
                                     }
                                     Err(_) => {
@@ -241,11 +237,6 @@ pub async fn download_and_process_image(
                                         // This provides graceful degradation and maintains functionality
                                         warn!(user_id = %chat_id, caption = %caption_text, "Caption is invalid, using default recipe name");
                                         let default_name = "Recipe";
-                                        // Send feedback message about invalid caption
-                                        let invalid_caption_msg = t_lang(localization, "caption-invalid", language_code)
-                                            .replace("{$caption}", caption_text)
-                                            .replace("{$default_name}", default_name);
-                                        bot.send_message(chat_id, invalid_caption_msg).await?;
                                         (default_name.to_string(), None) // Caption was not used
                                     }
                                 }

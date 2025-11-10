@@ -185,6 +185,7 @@ async fn handle_text_message(
                         },
                         message_id,
                         extracted_text,
+                        user_input_message_id: Some(msg.id.0), // Add user's input message ID for reply functionality
                     },
                 )
                 .await;
@@ -287,6 +288,7 @@ async fn handle_text_message(
                         message_id,
                         editing_index,
                         original_message_id,
+                        user_input_message_id: Some(msg.id.0), // Add user's input message ID for reply functionality
                     },
                 )
                 .await;

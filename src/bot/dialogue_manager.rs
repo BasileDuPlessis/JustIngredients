@@ -82,6 +82,7 @@ struct EditSuccessParams<'a> {
     recipe_name: String,
     message_id: Option<i32>,
     extracted_text: String,
+    user_input_message_id: Option<i32>, // ID of the user's input message for reply functionality
 }
 
 /// Common context for dialogue handlers
@@ -133,6 +134,7 @@ pub struct IngredientEditInputParams<'a> {
     pub ctx: &'a HandlerContext<'a>,
     pub message_id: Option<i32>,
     pub extracted_text: String,
+    pub user_input_message_id: Option<i32>, // ID of the user's input message for reply functionality
 }
 
 /// Parameters for adding ingredient input handling (saved recipes)
@@ -159,6 +161,7 @@ pub struct SavedIngredientEditInputParams<'a> {
     pub message_id: Option<i32>,
     pub editing_index: usize,
     pub original_message_id: Option<i32>, // ID of the original recipe display message to replace
+    pub user_input_message_id: Option<i32>, // ID of the user's input message for reply functionality
 }
 
 /// Handle recipe name input during dialogue
@@ -454,6 +457,7 @@ pub async fn handle_ingredient_edit_input(
         ctx: handler_ctx,
         message_id,
         extracted_text,
+        user_input_message_id,
     } = params;
 
     let input = edit_input.trim().to_lowercase();
@@ -485,6 +489,7 @@ pub async fn handle_ingredient_edit_input(
                 recipe_name,
                 message_id,
                 extracted_text,
+                user_input_message_id,
             })
             .await
         }
@@ -724,6 +729,7 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
         recipe_name,
         message_id,
         extracted_text,
+        user_input_message_id,
     } = params;
 
     // Update the ingredient at the editing index
@@ -767,10 +773,19 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
                 }
             }
         } else {
-            ctx.bot
+            // Send new message with reply to user's input if available
+            let mut send_request = ctx
+                .bot
                 .send_message(msg.chat.id, review_message)
-                .reply_markup(keyboard)
-                .await?;
+                .reply_markup(keyboard);
+
+            if let Some(input_msg_id) = user_input_message_id {
+                send_request = send_request.reply_parameters(
+                    teloxide::types::ReplyParameters::new(teloxide::types::MessageId(input_msg_id)),
+                );
+            }
+
+            send_request.await?;
         }
 
         // Update dialogue state to review ingredients
@@ -1105,6 +1120,7 @@ pub async fn handle_add_ingredient_input(
             current_matches,
             language_code: handler_ctx.language_code,
             message_id,
+            user_input_message_id: Some(msg.id.0), // Add user's input message ID for reply functionality
         })
         .await?;
         return Ok(());
@@ -1128,6 +1144,7 @@ pub async fn handle_add_ingredient_input(
                 current_matches: &updated_matches,
                 language_code: handler_ctx.language_code,
                 message_id,
+                user_input_message_id: Some(msg.id.0), // Add user's input message ID for reply functionality
             })
             .await?;
         }
@@ -1175,6 +1192,7 @@ pub async fn handle_saved_ingredient_edit_input(
         message_id: _,
         editing_index,
         original_message_id,
+        user_input_message_id,
     } = params;
 
     let input = edit_input.trim().to_lowercase();
@@ -1192,6 +1210,7 @@ pub async fn handle_saved_ingredient_edit_input(
             current_matches,
             language_code: handler_ctx.language_code,
             message_id: original_message_id, // Use original message ID for editing
+            user_input_message_id,
         })
         .await?;
         return Ok(());
@@ -1216,6 +1235,7 @@ pub async fn handle_saved_ingredient_edit_input(
                     current_matches: &updated_matches,
                     language_code: handler_ctx.language_code,
                     message_id: original_message_id, // Use original message ID for editing
+                    user_input_message_id,
                 })
                 .await?;
             } else {
@@ -1239,6 +1259,7 @@ pub async fn handle_saved_ingredient_edit_input(
                     current_matches,
                     language_code: handler_ctx.language_code,
                     message_id: original_message_id, // Use original message ID for editing
+                    user_input_message_id,
                 })
                 .await?;
             }
@@ -1278,6 +1299,7 @@ struct ReturnToSavedIngredientsReviewParams<'a> {
     current_matches: &'a [MeasurementMatch],
     language_code: Option<&'a str>,
     message_id: Option<i32>,
+    user_input_message_id: Option<i32>, // ID of the user's input message for reply functionality
 }
 
 /// Helper function to return to saved ingredients review state
@@ -1294,6 +1316,7 @@ async fn return_to_saved_ingredients_review(
         current_matches,
         language_code,
         message_id,
+        user_input_message_id,
     } = params;
     // Send updated ingredient list message
     let review_message = format!(
@@ -1330,9 +1353,18 @@ async fn return_to_saved_ingredients_review(
             }
         }
     } else {
-        bot.send_message(msg.chat.id, review_message)
-            .reply_markup(keyboard)
-            .await?;
+        // Send new message with reply to user's input if available
+        let mut send_request = bot
+            .send_message(msg.chat.id, review_message)
+            .reply_markup(keyboard);
+
+        if let Some(input_msg_id) = user_input_message_id {
+            send_request = send_request.reply_parameters(teloxide::types::ReplyParameters::new(
+                teloxide::types::MessageId(input_msg_id),
+            ));
+        }
+
+        send_request.await?;
     }
 
     // Update dialogue state
