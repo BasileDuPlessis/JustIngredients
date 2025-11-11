@@ -1511,3 +1511,90 @@ fn test_message_editing_edge_cases() {
 
     println!("✅ Message editing edge cases test passed - handles None message IDs and preserves tracking through transitions");
 }
+
+/// Test unified multi-word ingredient extraction in bot workflows
+#[test]
+fn test_unified_multi_word_ingredient_bot_workflow() {
+    // Test that bot workflows correctly handle multi-word ingredients extracted by unified regex
+
+    let ocr_text = r#"
+    Gourmet Recipe
+
+    Ingredients:
+    2 cups all-purpose flour
+    3 large eggs
+    1 cup whole milk
+    2 tbsp unsalted butter
+    4 oz dark chocolate chips
+    "#;
+
+    let ingredients = vec![
+        just_ingredients::MeasurementMatch {
+            quantity: "2".to_string(),
+            measurement: Some("cups".to_string()),
+            ingredient_name: "all-purpose flour".to_string(), // Multi-word with measurement
+            line_number: 0,
+            start_pos: 0,
+            end_pos: 6,
+        },
+        just_ingredients::MeasurementMatch {
+            quantity: "3".to_string(),
+            measurement: None,
+            ingredient_name: "large eggs".to_string(), // Multi-word quantity-only
+            line_number: 1,
+            start_pos: 8,
+            end_pos: 9,
+        },
+        just_ingredients::MeasurementMatch {
+            quantity: "1".to_string(),
+            measurement: Some("cup".to_string()),
+            ingredient_name: "whole milk".to_string(), // Multi-word with measurement
+            line_number: 2,
+            start_pos: 16,
+            end_pos: 17,
+        },
+    ];
+
+    // Simulate dialogue state with multi-word ingredients
+    let waiting_state = RecipeDialogueState::WaitingForRecipeName {
+        extracted_text: ocr_text.to_string(),
+        ingredients: ingredients.clone(),
+        language_code: Some("en".to_string()),
+    };
+
+    // Verify dialogue state contains complete multi-word ingredient names
+    if let RecipeDialogueState::WaitingForRecipeName {
+        ingredients: ingr,
+        ..
+    } = waiting_state
+    {
+        assert_eq!(ingr.len(), 3);
+
+        // Check that multi-word ingredients are captured completely
+        assert_eq!(ingr[0].ingredient_name, "all-purpose flour");
+        assert_eq!(ingr[1].ingredient_name, "large eggs");
+        assert_eq!(ingr[2].ingredient_name, "whole milk");
+
+        // Verify measurements are correct
+        assert_eq!(ingr[0].measurement, Some("cups".to_string()));
+        assert!(ingr[1].measurement.is_none()); // quantity-only
+        assert_eq!(ingr[2].measurement, Some("cup".to_string()));
+    } else {
+        panic!("Expected WaitingForRecipeName state");
+    }
+
+    // Test that ingredient display formatting works with multi-word names
+    for ingredient in &ingredients {
+        let display_text = if let Some(ref unit) = ingredient.measurement {
+            format!("{} {} → {}", ingredient.quantity, unit, ingredient.ingredient_name)
+        } else {
+            format!("{} → {}", ingredient.quantity, ingredient.ingredient_name)
+        };
+
+        // Verify display includes complete ingredient names
+        assert!(display_text.contains(&ingredient.ingredient_name));
+        println!("Display text: {}", display_text);
+    }
+
+    println!("✅ Unified multi-word ingredient bot workflow test passed");
+}

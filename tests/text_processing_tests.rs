@@ -54,17 +54,21 @@ mod tests {
 
         assert_eq!(matches.len(), 2);
 
-        // First match: "2 cups"
+        // First match: "2 cups flour"
         assert_eq!(matches[0].quantity, "2");
         assert_eq!(matches[0].measurement, Some("cups".to_string()));
+        assert_eq!(matches[0].ingredient_name, "flour");
         assert_eq!(matches[0].line_number, 0);
         assert_eq!(matches[0].start_pos, 4);
-        assert_eq!(matches[0].end_pos, 10);
+        assert_eq!(matches[0].end_pos, 16); // "2 cups flour" ends at position 16
 
-        // Second match: "1 tbsp"
+        // Second match: "1 tbsp sugar"
         assert_eq!(matches[1].quantity, "1");
         assert_eq!(matches[1].measurement, Some("tbsp".to_string()));
+        assert_eq!(matches[1].ingredient_name, "sugar");
         assert_eq!(matches[1].line_number, 0);
+        assert_eq!(matches[1].start_pos, 22); // "with 1" -> starts after "with "
+        assert_eq!(matches[1].end_pos, 34); // "1 tbsp sugar" ends at position 34
     }
 
     #[test]
@@ -362,7 +366,7 @@ mod tests {
 
         // Verify positions are correct
         assert_eq!(matches[0].start_pos, 4); // "Mix 2" -> position after "Mix "
-        assert_eq!(matches[0].end_pos, 10); // "Mix 2 cups" -> ends at position 10
+        assert_eq!(matches[0].end_pos, 16); // "Mix 2 cups flour" -> ends at position 16
     }
 
     #[test]
@@ -570,12 +574,13 @@ mod tests {
         // Test with various units
         let text = "2 cups flour\n500g sugar\n1 tablespoon vanilla\n250 ml milk\n3 eggs";
         let units = detector.get_unique_units(text);
-        assert_eq!(units.len(), 5); // 2 cups, 500g, 1 tablespoon, 250 ml, 3 eggs
+        
+        assert_eq!(units.len(), 5); // "2 cups", "500 g", "1 tablespoon", "250 ml", "3"
         assert!(units.contains("2 cups"));
-        assert!(units.contains("500g"));
+        assert!(units.contains("500 g"));
         assert!(units.contains("1 tablespoon"));
         assert!(units.contains("250 ml"));
-        assert!(units.contains("3 eggs"));
+        assert!(units.contains("3"));
 
         // Test empty text
         let empty_units = detector.get_unique_units("");
@@ -596,29 +601,376 @@ mod tests {
     }
 
     #[test]
-    fn test_quantity_only_ingredients_current_behavior() {
+    fn test_multi_word_ingredients_without_measurement() {
+        let detector = create_detector();
+        
+        let input = "3 large eggs";
+        let matches = detector.extract_ingredient_measurements(input);
+        println!("Input: '{}', matches: {}, ingredient: '{}'", input, matches.len(), matches[0].ingredient_name);
+        
+        let test_cases = vec![
+            ("2 crème fraîche", "crème fraîche"),           // French dairy
+            ("6 pommes de terre", "pommes de terre"),       // French vegetable
+            ("3 large eggs", "large eggs"),                 // English descriptive
+            ("4 fresh tomatoes", "fresh tomatoes"),         // English descriptive
+            ("2 red onions", "red onions"),                 // English color + ingredient
+            ("5 green bell peppers", "green bell peppers"), // Multiple adjectives
+        ];
+        
+        for (input, expected_ingredient) in test_cases {
+            let matches = detector.extract_ingredient_measurements(input);
+            assert_eq!(matches.len(), 1, "Expected exactly one match for: {}", input);
+            assert_eq!(matches[0].ingredient_name, expected_ingredient, "Ingredient mismatch for: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_unified_extraction_consistency() {
         let detector = create_detector();
 
-        // Document current behavior with quantity-only ingredients (the alternation problem)
-        // This test documents the current behavior that will change with unified extraction
+        // Test that the same extraction logic works for both measurement and non-measurement cases
+        let consistency_tests = vec![
+            // Both should extract "flour" consistently
+            ("2 cups flour", "flour"),
+            ("3 flour", "flour"),
+            
+            // Both should extract "sugar" consistently  
+            ("1 tablespoon sugar", "sugar"),
+            ("4 sugar", "sugar"),
+            
+            // Multi-word ingredients should work in both cases
+            ("2 cups all-purpose flour", "all-purpose flour"),
+            ("5 all-purpose flour", "all-purpose flour"),
+        ];
 
+        for (input, expected_ingredient) in consistency_tests {
+            let matches = detector.extract_ingredient_measurements(input);
+            assert_eq!(matches.len(), 1, "Expected exactly one match for: {}", input);
+            assert_eq!(matches[0].ingredient_name, expected_ingredient, "Consistency test failed for: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_french_prepositions_postprocessing() {
+        let detector = create_detector();
+        
         let test_cases = vec![
-            // Current behavior: alternation causes inconsistent ingredient extraction
-            ("2 crème fraîche", "2", None, "crème"), // Only captures first word after alternation
-            ("6 pommes de terre", "6", None, "pommes"), // Only captures first word after alternation
-            ("3 eggs", "3", None, "eggs"), // Works correctly (single word)
-            ("2g de chocolat", "2", Some("g"), "chocolat"), // Post-processing removes "de "
-            ("500g chocolat noir", "500", Some("g"), "chocolat noir"), // Works correctly (measurement present)
+            ("2g de chocolat noir", "chocolat noir"),    // "de" removed by post-processing
+            ("250 ml de lait", "lait"),                  // "de" removed by post-processing
+            ("1 sachet de levure", "levure"),            // "de" removed by post-processing
+            ("3 cuillères à soupe de sucre", "sucre"), // "cuillères à soupe" matched as measurement, "de" removed
+            ("1 verre d'eau", "verre d'eau"),                     // "verre" not a measurement unit, "d'" not removed
+            ("2 tranches de pain complet", "pain complet"), // "de" removed by post-processing
+        ];
+        
+        for (input, expected_ingredient) in test_cases {
+            let matches = detector.extract_ingredient_measurements(input);
+            assert_eq!(matches.len(), 1, "Expected exactly one match for: {}", input);
+            assert_eq!(matches[0].ingredient_name, expected_ingredient, "French preposition test failed for: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_mixed_measurement_multi_word() {
+        let detector = create_detector();
+        
+        let test_cases = vec![
+            // With measurements
+            ("2 cups all-purpose flour", "2", Some("cups"), "all-purpose flour"),
+            ("500g dark chocolate chips", "500", Some("g"), "dark chocolate chips"),
+            ("1 tbsp olive oil", "1", Some("tbsp"), "olive oil"),
+            ("3 tasses de crème fraîche", "3", Some("tasses"), "crème fraîche"),
+            
+            // Without measurements (quantity-only)
+            ("3 large eggs", "3", None, "large eggs"),
+            ("4 fresh basil leaves", "4", None, "fresh basil leaves"),
+            ("2 œufs frais", "2", None, "œufs frais"),
+            ("6 pommes de terre nouvelles", "6", None, "pommes de terre nouvelles"),
+        ];
+        
+        for (input, expected_quantity, expected_measurement, expected_ingredient) in test_cases {
+            let matches = detector.extract_ingredient_measurements(input);
+            assert_eq!(matches.len(), 1, "Expected exactly one match for: {}", input);
+            let m = &matches[0];
+            assert_eq!(m.quantity, expected_quantity, "Quantity mismatch for: {}", input);
+            assert_eq!(m.measurement.as_deref(), expected_measurement, "Measurement mismatch for: {}", input);
+            assert_eq!(m.ingredient_name, expected_ingredient, "Ingredient mismatch for: {}", input);
+        }
+    }
+
+    #[test]
+    fn test_unified_extraction_edge_cases() {
+        let detector = create_detector();
+        
+        // Empty and whitespace
+        assert_eq!(detector.extract_ingredient_measurements("").len(), 0);
+        assert_eq!(detector.extract_ingredient_measurements("   ").len(), 0);
+        
+        // Numbers without ingredients
+        assert_eq!(detector.extract_ingredient_measurements("42").len(), 0);
+        assert_eq!(detector.extract_ingredient_measurements("1/2").len(), 0);
+        
+        // Measurements without ingredients
+        let cups_matches = detector.extract_ingredient_measurements("2 cups");
+        assert_eq!(cups_matches.len(), 1);
+        assert_eq!(cups_matches[0].quantity, "2");
+        assert_eq!(cups_matches[0].measurement, Some("cups".to_string()));
+        assert_eq!(cups_matches[0].ingredient_name, "");
+        
+        let grams_matches = detector.extract_ingredient_measurements("500g");
+        assert_eq!(grams_matches.len(), 1);
+        assert_eq!(grams_matches[0].quantity, "500");
+        assert_eq!(grams_matches[0].measurement, Some("g".to_string()));
+        assert_eq!(grams_matches[0].ingredient_name, "");
+        
+        // Special characters and unicode
+        let unicode_test = detector.extract_ingredient_measurements("2 œufs français");
+        assert_eq!(unicode_test.len(), 1);
+        assert_eq!(unicode_test[0].ingredient_name, "œufs français");
+        
+        // Very long ingredient names (should be handled gracefully)
+        let long_ingredient = format!("2 {}", "very ".repeat(50) + "long ingredient name");
+        let long_test = detector.extract_ingredient_measurements(&long_ingredient);
+        assert_eq!(long_test.len(), 1);
+        assert!(long_test[0].ingredient_name.len() <= 100); // Should be truncated to max length
+        
+        // Boundary detection with commas
+        let comma_test = detector.extract_ingredient_measurements("2 cups flour, 1 cup sugar");
+        assert_eq!(comma_test.len(), 2); // Should match both ingredients
+        assert_eq!(comma_test[0].ingredient_name, "flour");
+        assert_eq!(comma_test[1].ingredient_name, "sugar");
+        
+        // Mixed case and special formatting
+        let mixed_case = detector.extract_ingredient_measurements("2 CUPS All-Purpose Flour");
+        assert_eq!(mixed_case.len(), 1);
+        assert_eq!(mixed_case[0].ingredient_name, "All-Purpose Flour");
+    }
+
+    #[test]
+    fn test_unified_extraction_regex_pattern_design() {
+        // Test the new unified regex pattern design for Task 1.2
+        // This simulates the new pattern that makes measurement optional and captures all remaining text as ingredient
+
+        // Build the new unified pattern (measurement optional, capture all remaining text)
+        let config = just_ingredients::text_processing::load_measurement_units_config();
+        let mut all_units: Vec<String> = Vec::new();
+        all_units.extend(config.measurement_units.volume_units);
+        all_units.extend(config.measurement_units.weight_units);
+        all_units.extend(config.measurement_units.volume_units_metric);
+        all_units.extend(config.measurement_units.us_units);
+        all_units.extend(config.measurement_units.french_units);
+
+        let unique_units: std::collections::HashSet<String> = all_units.into_iter().collect();
+        let mut sorted_units: Vec<String> = unique_units.into_iter().collect();
+        sorted_units.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
+        let escaped_units: Vec<String> = sorted_units
+            .into_iter()
+            .map(|unit| regex::escape(&unit))
+            .collect();
+        let units_pattern = escaped_units.join("|");
+
+        // New unified pattern: measurement is optional, ingredient captures all remaining text
+        let new_pattern = format!(
+            r"(?i)(?P<quantity>\d+/\d+|\d*\.?\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})(?:\s|$|[^a-zA-Z]))?\s*(?P<ingredient>.*)",
+            units_pattern
+        );
+
+        let regex = regex::Regex::new(&new_pattern).expect("New unified pattern should compile");
+
+        // Test cases for the new unified extraction pattern
+        let test_cases = vec![
+            // Quantity-only ingredients (should now capture full names)
+            ("2 crème fraîche", "2", None, "crème fraîche"),
+            ("6 pommes de terre", "6", None, "pommes de terre"),
+            ("3 eggs", "3", None, "eggs"),
+            ("4 apples", "4", None, "apples"),
+            // Traditional measurements (should work the same)
+            ("2 cups flour", "2", Some("cups"), "flour"),
+            ("500g chocolat noir", "500", Some("g"), "chocolat noir"),
+            ("1 tablespoon sugar", "1", Some("tablespoon"), "sugar"),
+            // Measurements with prepositions (post-processing will handle "de ")
+            ("2g de chocolat", "2", Some("g"), "de chocolat"),
+            ("250 ml de lait", "250", Some("ml"), "de lait"),
+            // Edge cases
+            ("1/2 cup sugar", "1/2", Some("cup"), "sugar"),
+            ("½ teaspoon vanilla", "½", Some("teaspoon"), "vanilla"),
         ];
 
         for (input, expected_quantity, expected_measurement, expected_ingredient) in test_cases {
-            let matches = detector.extract_ingredient_measurements(input);
-            assert_eq!(matches.len(), 1, "Expected exactly one match for input: {}", input);
+            let captures = regex
+                .captures(input)
+                .unwrap_or_else(|| panic!("Pattern should match: {}", input));
 
-            let m = &matches[0];
-            assert_eq!(m.quantity, expected_quantity, "Quantity mismatch for input: {}", input);
-            assert_eq!(m.measurement.as_deref(), expected_measurement, "Measurement mismatch for input: {}", input);
-            assert_eq!(m.ingredient_name, expected_ingredient, "Ingredient name mismatch for input: {}", input);
+            let quantity = captures.name("quantity").map(|m| m.as_str()).unwrap_or("");
+            let measurement = captures.name("measurement").map(|m| m.as_str());
+            let ingredient = captures
+                .name("ingredient")
+                .map(|m| m.as_str())
+                .unwrap_or("");
+
+            assert_eq!(
+                quantity, expected_quantity,
+                "Quantity mismatch for input: {}",
+                input
+            );
+            assert_eq!(
+                measurement, expected_measurement,
+                "Measurement mismatch for input: {}",
+                input
+            );
+            assert_eq!(
+                ingredient, expected_ingredient,
+                "Ingredient mismatch for input: {}",
+                input
+            );
+        }
+
+        // Test that pattern doesn't match non-measurement text
+        assert!(!regex.is_match("some plain text"));
+        assert!(!regex.is_match("flour"));
+        assert!(!regex.is_match("add salt"));
+    }
+
+    #[test]
+    fn test_unified_extraction_measurement_detection_accuracy() {
+        // Test that the new unified pattern maintains measurement detection accuracy
+        let config = just_ingredients::text_processing::load_measurement_units_config();
+        let mut all_units: Vec<String> = Vec::new();
+        all_units.extend(config.measurement_units.volume_units);
+        all_units.extend(config.measurement_units.weight_units);
+        all_units.extend(config.measurement_units.volume_units_metric);
+        all_units.extend(config.measurement_units.us_units);
+        all_units.extend(config.measurement_units.french_units);
+
+        let unique_units: std::collections::HashSet<String> = all_units.into_iter().collect();
+        let mut sorted_units: Vec<String> = unique_units.into_iter().collect();
+        sorted_units.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
+        let escaped_units: Vec<String> = sorted_units
+            .into_iter()
+            .map(|unit| regex::escape(&unit))
+            .collect();
+        let units_pattern = escaped_units.join("|");
+
+        let new_pattern = format!(
+            r"(?i)(?P<quantity>\d+/\d+|\d*\.?\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})(?:\s|$|[^a-zA-Z]))?\s*(?P<ingredient>.*)",
+            units_pattern
+        );
+
+        let regex = regex::Regex::new(&new_pattern).expect("New unified pattern should compile");
+
+        // Test comprehensive measurement detection
+        let should_match = vec![
+            // English measurements
+            "2 cups flour",
+            "1 tablespoon sugar",
+            "500g butter",
+            "1 kg tomatoes",
+            "250 ml milk",
+            "1 tsp salt",
+            "2 tbsp oil",
+            "1 lb beef",
+            "8 oz water",
+            // French measurements
+            "2 tasses de farine",
+            "1 cuillère à soupe de sucre",
+            "500 g de beurre",
+            "1 kg de tomates",
+            "250 ml de lait",
+            "1 sachet de levure",
+            // Quantity-only ingredients (no actual measurement units)
+            "6 œufs",
+            "4 pommes",
+            "3 eggs",
+            "2 apples",
+            // Fractions
+            "1/2 cup sugar",
+            "3/4 teaspoon salt",
+            "½ cup flour",
+            "⅓ teaspoon vanilla",
+        ];
+
+        let should_not_match = vec![
+            "some flour",
+            "add salt",
+            "flour",
+            "sugar",
+            "salt",
+            "",
+            "recipe",
+            "ingredients",
+            "cupboard",
+            "tablespoonful",
+            "cup of tea",
+            "abc",
+        ];
+
+        for text in should_match {
+            assert!(regex.is_match(text), "Pattern should match: '{}'", text);
+        }
+
+        for text in should_not_match {
+            assert!(
+                !regex.is_match(text),
+                "Pattern should NOT match: '{}'",
+                text
+            );
+        }
+    }
+
+    #[test]
+    fn test_unified_extraction_ingredient_capture_completeness() {
+        // Test that the new pattern captures all remaining text as ingredient
+        let config = just_ingredients::text_processing::load_measurement_units_config();
+        let mut all_units: Vec<String> = Vec::new();
+        all_units.extend(config.measurement_units.volume_units);
+        all_units.extend(config.measurement_units.weight_units);
+        all_units.extend(config.measurement_units.volume_units_metric);
+        all_units.extend(config.measurement_units.us_units);
+        all_units.extend(config.measurement_units.french_units);
+
+        let unique_units: std::collections::HashSet<String> = all_units.into_iter().collect();
+        let mut sorted_units: Vec<String> = unique_units.into_iter().collect();
+        sorted_units.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
+        let escaped_units: Vec<String> = sorted_units
+            .into_iter()
+            .map(|unit| regex::escape(&unit))
+            .collect();
+        let units_pattern = escaped_units.join("|");
+
+        let new_pattern = format!(
+            r"(?i)(?P<quantity>\d+/\d+|\d*\.?\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})(?:\s|$|[^a-zA-Z]))?\s*(?P<ingredient>.*)",
+            units_pattern
+        );
+
+        let regex = regex::Regex::new(&new_pattern).expect("New unified pattern should compile");
+
+        // Test that ingredient capture includes all remaining text
+        let completeness_tests = vec![
+            ("2 crème fraîche", "crème fraîche"),
+            ("6 pommes de terre bio", "pommes de terre bio"),
+            ("3 large eggs", "large eggs"),
+            ("500g dark chocolate chips", "dark chocolate chips"),
+            ("1 cup all-purpose flour", "all-purpose flour"),
+            ("250 ml whole milk", "whole milk"),
+            ("2g de chocolat noir 70%", "de chocolat noir 70%"),
+            ("1 sachet active dry yeast", "active dry yeast"),
+            ("4 fresh apples", "fresh apples"),
+        ];
+
+        for (input, expected_ingredient) in completeness_tests {
+            let captures = regex
+                .captures(input)
+                .unwrap_or_else(|| panic!("Pattern should match: {}", input));
+            let ingredient = captures
+                .name("ingredient")
+                .map(|m| m.as_str())
+                .unwrap_or("");
+
+            assert_eq!(
+                ingredient, expected_ingredient,
+                "Ingredient capture incomplete for input: '{}' (expected: '{}', got: '{}')",
+                input, expected_ingredient, ingredient
+            );
         }
     }
 }

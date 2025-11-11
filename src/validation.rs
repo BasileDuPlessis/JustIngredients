@@ -100,35 +100,12 @@ pub fn validate_basic_input(input: &str) -> Result<(), &'static str> {
 /// ```
 pub fn validate_measurement_match(
     measurement_match: &MeasurementMatch,
-    temp_text: &str,
+    _temp_text: &str,
 ) -> Result<(), &'static str> {
     let ingredient_name = measurement_match.ingredient_name.trim();
 
-    // For quantity-only ingredients (measurement is None), the ingredient name
-    // is already captured by the regex, so we don't need to extract it from temp_text
-    if measurement_match.measurement.is_none() {
-        // This is a quantity-only ingredient like "2 oeufs"
-        if ingredient_name.is_empty() {
-            return Err("edit-no-ingredient-name");
-        }
-        if ingredient_name.len() > 100 {
-            return Err("edit-ingredient-name-too-long");
-        }
-        return Ok(());
-    }
-
-    // For traditional measurements (measurement is Some), extract ingredient name from text after measurement
-    let measurement_end = measurement_match.end_pos;
-    let raw_ingredient_name = temp_text[measurement_end..].trim();
-
-    if raw_ingredient_name.is_empty() {
-        return Err("edit-no-ingredient-name");
-    }
-
-    if raw_ingredient_name.len() > 100 {
-        return Err("edit-ingredient-name-too-long");
-    }
-
+    // With the unified regex pattern, ingredient is always captured by the regex
+    // No need to extract from text after measurement
     if ingredient_name.is_empty() {
         return Err("edit-no-ingredient-name");
     }
@@ -542,5 +519,39 @@ mod tests {
         let mut match3 = create_match("2", 6);
         adjust_quantity_for_negative(&mut match3, "temp: 2 cups flour");
         assert_eq!(match3.quantity, "2");
+    }
+
+    #[test]
+    fn debug_parse_ingredient() {
+        use crate::text_processing::MeasurementDetector;
+        
+        println!("Testing parse_ingredient_from_text with '2 cups flour'");
+
+        match parse_ingredient_from_text("2 cups flour") {
+            Ok(result) => {
+                println!(
+                    "Success: quantity='{}', measurement={:?}, ingredient='{}'",
+                    result.quantity, result.measurement, result.ingredient_name
+                );
+            }
+            Err(e) => {
+                println!("Error: {}", e);
+            }
+        }
+
+        println!("\nTesting MeasurementDetector directly");
+        let detector = MeasurementDetector::new().unwrap();
+        let temp_text = format!("temp: {}", "2 cups flour");
+        println!("Input text: '{}'", temp_text);
+
+        let matches = detector.extract_ingredient_measurements(&temp_text);
+        println!("Found {} matches", matches.len());
+
+        for (i, m) in matches.iter().enumerate() {
+            println!(
+                "Match {}: quantity='{}', measurement={:?}, ingredient='{}'",
+                i, m.quantity, m.measurement, m.ingredient_name
+            );
+        }
     }
 }

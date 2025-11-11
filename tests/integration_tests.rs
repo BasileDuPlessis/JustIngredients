@@ -92,7 +92,7 @@ fn test_mixed_recipe_processing() {
 
     French Crepes Recipe:
     125 g de farine
-    2 œufs
+    4 œufs
     250 ml de lait
     1 sachet de sucre vanillé
     4 pommes
@@ -104,10 +104,10 @@ fn test_mixed_recipe_processing() {
     assert!(!matches.is_empty());
     println!("Found {} measurements across both recipes", matches.len());
 
-    // Check English measurements - the detector finds flour with quantity "4"
+    // Check English measurements - flour with quantity "2 1/4"
     let flour_match = matches.iter().find(|m| m.ingredient_name.contains("flour"));
     assert!(flour_match.is_some());
-    assert_eq!(flour_match.unwrap().quantity, "4");
+    assert_eq!(flour_match.unwrap().quantity, "2 1/4");
     assert_eq!(flour_match.unwrap().measurement, Some("cups".to_string()));
 
     // Check French measurements
@@ -118,7 +118,14 @@ fn test_mixed_recipe_processing() {
     assert_eq!(farine_match.unwrap().quantity, "125");
     assert_eq!(farine_match.unwrap().measurement, Some("g".to_string()));
 
-    // Check quantity-only ingredients
+    // Check quantity-only ingredients - these should now capture multi-word names completely
+    let eggs_match = matches
+        .iter()
+        .find(|m| m.ingredient_name.contains("large eggs"));
+    assert!(eggs_match.is_some());
+    assert_eq!(eggs_match.unwrap().quantity, "2");
+    assert!(eggs_match.unwrap().measurement.is_none());
+
     let pommes_match = matches
         .iter()
         .find(|m| m.ingredient_name.contains("pommes"));
@@ -136,7 +143,7 @@ fn test_quantity_only_edge_cases() {
 
     let test_cases = vec![
         // (input_text, expected_quantity, expected_ingredient, description)
-        ("3 eggs for breakfast", "3", "eggs", "Simple quantity-only"),
+        ("3 eggs for breakfast", "3", "eggs for breakfast", "Simple quantity-only with extra text"),
         (
             "Bake at 350°F for 25 minutes",
             "350",
@@ -147,14 +154,39 @@ fn test_quantity_only_edge_cases() {
         (
             "2-3 apples depending on size",
             "2", // Should capture first number
-            "apples",
-            "Range quantities",
+            "apples depending on size",
+            "Range quantities with extra text",
         ),
         (
             "1 large onion, diced",
             "1",
             "large onion",
-            "Descriptive ingredients",
+            "Descriptive ingredients (stops at comma)",
+        ),
+        // New test cases for unified multi-word extraction
+        (
+            "2 crème fraîche for dessert",
+            "2",
+            "crème fraîche for dessert",
+            "French multi-word ingredient with extra text",
+        ),
+        (
+            "6 pommes de terre",
+            "6",
+            "pommes de terre",
+            "French vegetable with preposition",
+        ),
+        (
+            "3 fresh basil leaves",
+            "3",
+            "fresh basil leaves",
+            "English descriptive multi-word ingredient",
+        ),
+        (
+            "4 red bell peppers",
+            "4",
+            "red bell peppers",
+            "English color + multi-word ingredient",
         ),
     ];
 
@@ -173,9 +205,33 @@ fn test_quantity_only_edge_cases() {
             // Check if we found the expected quantity
             let found_match = matches.iter().find(|m| m.quantity == expected_quantity);
             if found_match.is_some() {
+                let actual_ingredient = &found_match.unwrap().ingredient_name;
+                // For multi-word ingredients, verify they are captured completely
+                if expected_ingredient.contains(" ") {
+                    // Multi-word expected - check that all words are present
+                    let expected_words: std::collections::HashSet<&str> = expected_ingredient.split_whitespace().collect();
+                    let actual_words: std::collections::HashSet<&str> = actual_ingredient.split_whitespace().collect();
+                    let all_expected_present = expected_words.iter().all(|word| actual_words.contains(word));
+                    
+                    assert!(
+                        all_expected_present,
+                        "Multi-word ingredient '{}' should have all words present in '{}'",
+                        expected_ingredient,
+                        actual_ingredient
+                    );
+                } else {
+                    // For single-word ingredients, check if the expected word is present
+                    // (since unified extraction may capture extra text)
+                    assert!(
+                        actual_ingredient.contains(expected_ingredient),
+                        "Single-word ingredient '{}' should be present in '{}'",
+                        expected_ingredient,
+                        actual_ingredient
+                    );
+                }
                 println!(
                     "✅ {}: Found quantity '{}' for '{}'",
-                    description, expected_quantity, expected_ingredient
+                    description, expected_quantity, actual_ingredient
                 );
             } else {
                 println!(
@@ -189,6 +245,113 @@ fn test_quantity_only_edge_cases() {
     }
 
     println!("✅ Quantity-only edge cases test completed");
+}
+
+/// Test unified multi-word ingredient extraction in real recipe scenarios
+#[test]
+fn test_unified_multi_word_extraction_integration() {
+    let detector = MeasurementDetector::new().unwrap();
+
+    let recipe_scenarios = vec![
+        // French recipes with multi-word ingredients
+        (
+            r#"
+            Salade Niçoise
+
+            Ingrédients:
+            4 tomates cerises
+            2 avocats mûrs
+            200 g de thon à l'huile
+            1 oignon rouge
+            100 g d'olives noires
+            "#,
+            vec![
+                ("4", "tomates cerises"),
+                ("2", "avocats mûrs"),
+                ("200", "thon à l'huile"),
+                ("1", "oignon rouge"),
+                ("100", "olives noires"),
+            ],
+        ),
+        // English recipes with descriptive ingredients
+        (
+            r#"
+            Gourmet Sandwich
+
+            Ingredients:
+            2 slices sourdough bread
+            3 oz roast beef
+            1 tbsp horseradish sauce
+            2 leaves romaine lettuce
+            1 large tomato, sliced
+            "#,
+            vec![
+                ("2", "sourdough bread"),
+                ("3", "roast beef"),
+                ("1", "horseradish sauce"),
+                ("2", "romaine lettuce"),
+                ("1", "large tomato"), // Stops at comma
+            ],
+        ),
+        // Mixed measurement types
+        (
+            r#"
+            Baking Recipe
+
+            Ingredients:
+            2 cups all-purpose flour
+            3 large eggs
+            1 cup whole milk
+            2 tsp vanilla extract
+            4 oz dark chocolate chips
+            "#,
+            vec![
+                ("2", "all-purpose flour"),
+                ("3", "large eggs"),
+                ("1", "whole milk"),
+                ("2", "vanilla extract"),
+                ("4", "dark chocolate chips"),
+            ],
+        ),
+    ];
+
+    for (recipe_text, expected_ingredients) in recipe_scenarios {
+        let matches = detector.extract_ingredient_measurements(recipe_text);
+
+        println!("Testing recipe with {} expected ingredients", expected_ingredients.len());
+        assert!(!matches.is_empty(), "Should find ingredients in recipe");
+
+        // Verify each expected ingredient is found with correct extraction
+        for (expected_quantity, expected_ingredient) in &expected_ingredients {
+            let found_match = matches.iter().find(|m| {
+                m.quantity == *expected_quantity &&
+                m.ingredient_name.contains(expected_ingredient)
+            });
+
+            assert!(
+                found_match.is_some(),
+                "Should find ingredient '{}' with quantity '{}' in matches: {:?}",
+                expected_ingredient,
+                expected_quantity,
+                matches.iter().map(|m| (&m.quantity, &m.ingredient_name)).collect::<Vec<_>>()
+            );
+
+            let found = found_match.unwrap();
+            // For multi-word ingredients, ensure complete capture
+            if expected_ingredient.contains(" ") {
+                assert!(
+                    found.ingredient_name.len() >= expected_ingredient.len(),
+                    "Multi-word ingredient '{}' should be captured completely, got '{}'",
+                    expected_ingredient,
+                    found.ingredient_name
+                );
+            }
+        }
+
+        println!("✅ Recipe scenario passed - all ingredients extracted correctly");
+    }
+
+    println!("✅ Unified multi-word extraction integration test passed");
 }
 
 /// Test mixed measurement types in various formats

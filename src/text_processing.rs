@@ -394,8 +394,9 @@ fn build_measurement_regex_pattern() -> String {
     let units_pattern = escaped_units.join("|");
 
     // Build the complete regex pattern with named capture groups
+    // Unified pattern: measurement is optional, ingredient extracted from text after match
     format!(
-        r"(?i)(?P<quantity>\d*\.?\d+|\d+/\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})|\s+(?P<ingredient>\w+))",
+        r"(?i)(?P<quantity>\d+\s+\d+/\d+|\d+/\d+|\d*\.?\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})(?:\s|$|[^a-zA-Z]))?\s*",
         units_pattern
     )
 }
@@ -540,6 +541,7 @@ impl MeasurementDetector {
     ///       - Traditional: "2 cups flour" → "2", "cups", "flour"
     ///       - Quantity-only: "6 eggs" → "6", None, "eggs"
     ///     Extract ingredient name from text after measurement (if traditional)
+    ///     Or clean captured ingredient text (if quantity-only)
     ///     Apply post-processing to clean ingredient name
     ///     Record match with line number and character positions
     /// ```
@@ -564,7 +566,7 @@ impl MeasurementDetector {
     /// The pattern uses named capture groups for robust extraction:
     /// - `quantity`: Numbers, decimals, fractions (e.g., "2", "1.5", "½", "2¼")
     /// - `measurement`: Optional unit from configured measurement units
-    /// - `ingredient`: Direct ingredient name (for quantity-only patterns)
+    /// - `ingredient`: All remaining text after quantity (and optional measurement)
     ///
     /// Pattern structure: `(?i)(?P<quantity>...)(?:\s*(?P<measurement>...)|\s+(?P<ingredient>...))`
     ///
@@ -598,7 +600,7 @@ impl MeasurementDetector {
     /// Input: "6 oeufs"
     /// Processing:
     ///   - Regex match: "6 oeufs"
-    ///   - quantity: "6", ingredient: "oeufs" (direct capture)
+    ///   - quantity: "6", ingredient: "oeufs" (captured by unified pattern)
     ///   - measurement: None (quantity-only pattern)
     ///   - Result: MeasurementMatch { quantity: "6", measurement: None, ingredient_name: "oeufs", ... }
     /// ```
@@ -657,7 +659,7 @@ impl MeasurementDetector {
 
         for (line_number, line) in text.lines().enumerate() {
             trace!("Processing line {}: '{}'", line_number, line);
-            for capture in self.pattern.captures_iter(line) {
+            'capture_loop: for capture in self.pattern.captures_iter(line) {
                 let full_match = capture.get(0).unwrap();
                 let measurement_text = full_match.as_str();
                 debug!(
@@ -668,40 +670,133 @@ impl MeasurementDetector {
                 // Extract named capture groups
                 let quantity = capture.name("quantity").map(|m| m.as_str()).unwrap_or("");
                 let measurement_unit = capture.name("measurement").map(|m| m.as_str());
-                let ingredient_from_capture = capture.name("ingredient").map(|m| m.as_str());
 
-                // Determine the quantity, measurement, and ingredient name
-                let (final_quantity, final_measurement, raw_ingredient_name) =
-                    if let Some(ingredient) = ingredient_from_capture {
-                        // Quantity-only ingredient: no measurement unit
-                        debug!(
-                            "Quantity-only ingredient detected: quantity='{}', ingredient='{}'",
-                            quantity, ingredient
-                        );
-                        (quantity.to_string(), None, ingredient.to_string())
-                    } else if let Some(measurement) = measurement_unit {
-                        // Traditional measurement: extract ingredient name from text after the measurement
-                        let measurement_end = full_match.end();
-                        let ingredient_name = line[measurement_end..].trim().to_string();
-                        debug!(
-                        "Traditional measurement: quantity='{}', measurement='{}', ingredient='{}'",
-                        quantity, measurement, ingredient_name
+                // Debug output
+                debug!(
+                    "Capture groups - quantity: '{}', measurement: {:?}",
+                    quantity, measurement_unit
+                );
+
+                // Extract ingredient from text after the match with improved boundary detection
+                let match_end = capture.get(0).unwrap().end();
+                let remaining_text = &line[match_end..];
+                let trimmed_remaining = remaining_text.trim_start();
+
+                // Skip if no measurement unit and no ingredient text after the match
+                // This avoids false positives like "123" but allows valid cases like "2 cups" or "6 eggs"
+                let has_measurement = measurement_unit.is_some();
+                let has_ingredient_text = !trimmed_remaining.is_empty();
+                
+                if !has_measurement && !has_ingredient_text {
+                    debug!("Skipping match with no measurement and no ingredient text: '{}'", capture.get(0).unwrap().as_str());
+                    continue 'capture_loop;
+                }
+
+                // Extract ingredient from text after the match with improved boundary detection
+                let match_end = capture.get(0).unwrap().end();
+                let remaining_text = &line[match_end..];
+                let trimmed_remaining = remaining_text.trim_start();
+
+                // For measurements at end of line, allow empty ingredients
+                let ingredient = if trimmed_remaining.is_empty() {
+                    String::new()
+                } else {
+                // Extract ingredient until we hit another quantity or end of line
+                // This handles cases like "2 cups flour, 1 cup sugar" by stopping at comma
+                // or "2 cups flour with 1 tbsp sugar" by stopping before words followed by digits
+                let mut result = String::new();
+                let mut chars = trimmed_remaining.chars().peekable();
+                let mut word_start_char_index = 0;
+                let mut current_char_index = 0;
+                let mut in_word = false;
+
+                while let Some(ch) = chars.next() {
+                    // Stop at comma (next ingredient)
+                    if ch == ',' {
+                        break;
+                    }
+
+                    result.push(ch);
+                    current_char_index += 1;
+
+                    if ch.is_whitespace() || (!ch.is_alphanumeric() && ch != '-') {
+                        // End of word
+                        in_word = false;
+
+                        // Look ahead to see if this word is followed by a digit
+                        let mut temp_chars = chars.clone();
+                        let mut found_digit_after_whitespace = false;
+
+                        // Skip whitespace
+                        while let Some(next_ch) = temp_chars.next() {
+                            if !next_ch.is_whitespace() {
+                                if next_ch.is_ascii_digit() {
+                                    found_digit_after_whitespace = true;
+                                }
+                                break;
+                            }
+                        }
+
+                        if found_digit_after_whitespace {
+                            // Remove the current word and any trailing whitespace
+                            // Use character index to safely slice the string
+                            let char_indices: Vec<(usize, char)> = result.char_indices().collect();
+                            if word_start_char_index < char_indices.len() {
+                                let byte_pos = char_indices[word_start_char_index].0;
+                                result = result[..byte_pos].trim_end().to_string();
+                            }
+                            break;
+                        }
+                    } else if ch.is_alphanumeric() || ch == '-' {
+                        // Start of word
+                        if !in_word {
+                            word_start_char_index = current_char_index - 1; // Start of this character
+                            in_word = true;
+                        }
+                    }
+                }                    result.trim().to_string()
+                };
+
+                // Additional safeguard: skip if ingredient contains suspicious patterns
+                // that might indicate over-matching (like multiple measurements)
+                if ingredient.chars().filter(|c| c.is_ascii_digit()).count() > 2 {
+                    warn!(
+                        "Skipping match with suspicious ingredient containing multiple digits: '{}'",
+                        capture.get(0).unwrap().as_str()
                     );
+                    continue 'capture_loop;
+                }
+
+                let (final_quantity, final_measurement, match_end_pos) =
+                    if let Some(measurement) = measurement_unit {
+                        // Traditional measurement
+                        debug!(
+                            "Traditional measurement: quantity='{}', measurement='{}', ingredient='{}'",
+                            quantity, measurement, ingredient
+                        );
                         (
                             quantity.to_string(),
                             Some(measurement.to_string()),
-                            ingredient_name,
+                            match_end + (remaining_text.len() - remaining_text.trim_start().len()) + ingredient.len(),
                         )
                     } else {
-                        // Fallback: shouldn't happen with current regex
-                        (quantity.to_string(), None, String::new())
+                        // Quantity-only ingredient
+                        debug!(
+                            "Quantity-only ingredient: quantity='{}', ingredient='{}'",
+                            quantity, ingredient
+                        );
+                        (
+                            quantity.to_string(),
+                            None,
+                            match_end + (remaining_text.len() - remaining_text.trim_start().len()) + ingredient.len(),
+                        )
                     };
 
-                let ingredient_name = self.post_process_ingredient_name(&raw_ingredient_name);
+                let ingredient_name = self.post_process_ingredient_name(&ingredient);
 
                 trace!(
                     "Extracted ingredient name: '{}' -> '{}'",
-                    raw_ingredient_name,
+                    ingredient,
                     ingredient_name
                 );
 
@@ -711,7 +806,7 @@ impl MeasurementDetector {
                     ingredient_name,
                     line_number,
                     start_pos: current_pos + full_match.start(),
-                    end_pos: current_pos + full_match.end(),
+                    end_pos: current_pos + match_end_pos,
                 });
             }
             current_pos += line.len() + 1; // +1 for newline character
@@ -796,21 +891,29 @@ impl MeasurementDetector {
     /// assert!(!detector.has_measurements("some eggs")); // plain text without quantity
     /// # Ok::<(), regex::Error>(())
     /// ```
-    #[allow(dead_code)]
     pub fn has_measurements(&self, text: &str) -> bool {
-        let result = self.pattern.is_match(text);
-        debug!(
-            "Checking for measurements in text: '{}' -> {}",
-            text, result
-        );
-        if result {
-            trace!(
-                "Pattern '{}' matched in text: '{}'",
-                self.pattern.as_str(),
-                text
-            );
+        // Check if text contains measurements by looking for captures that have either:
+        // 1. A measurement unit, or
+        // 2. Ingredient text after the quantity
+        for capture in self.pattern.captures_iter(text) {
+            let measurement = capture.name("measurement");
+            if measurement.is_some() {
+                // Has a measurement unit
+                return true;
+            }
+            
+            // Check if there's ingredient text after the match
+            let full_match = capture.get(0).unwrap();
+            let match_end = full_match.end();
+            if match_end < text.len() {
+                let remaining = &text[match_end..];
+                if !remaining.trim().is_empty() {
+                    // Has ingredient text after
+                    return true;
+                }
+            }
         }
-        result
+        false
     }
 
     /// Post-process an ingredient name to clean it up
@@ -1051,10 +1154,19 @@ impl MeasurementDetector {
     /// ```
     #[allow(dead_code)]
     pub fn get_unique_units(&self, text: &str) -> HashSet<String> {
-        self.pattern
-            .find_iter(text)
-            .map(|m| m.as_str().to_lowercase())
-            .collect()
+        let mut units = HashSet::new();
+        for capture in self.pattern.captures_iter(text) {
+            let quantity = capture.name("quantity").map(|m| m.as_str()).unwrap_or("");
+            let measurement = capture.name("measurement").map(|m| m.as_str());
+            
+            let unit = if let Some(measurement) = measurement {
+                format!("{} {}", quantity, measurement)
+            } else {
+                quantity.to_string()
+            };
+            units.insert(unit.to_lowercase());
+        }
+        units
     }
 }
 
