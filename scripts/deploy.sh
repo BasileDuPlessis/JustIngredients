@@ -70,7 +70,7 @@ fly secrets set TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" --app "$APP_NAME"
 
 # Deploy the app
 echo "🚀 Deploying the application..."
-fly deploy --app "$APP_NAME"
+fly deploy --config deploy/fly.toml --app "$APP_NAME"
 
 # Wait for app to be ready
 echo "⏳ Waiting for application to start..."

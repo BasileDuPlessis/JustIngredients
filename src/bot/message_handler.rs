@@ -93,6 +93,7 @@ async fn handle_text_message(
                 language_code: dialogue_lang_code,
                 extracted_text,
                 recipe_name_from_caption: _,
+                message_id,
             }) => {
                 // Use dialogue language code if available, otherwise fall back to message language
                 let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
@@ -115,6 +116,7 @@ async fn handle_text_message(
                             language_code: effective_language_code,
                         },
                         extracted_text,
+                        message_id,
                     },
                 )
                 .await;

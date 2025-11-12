@@ -31,7 +31,7 @@ fi
 
 # Deploy Grafana
 echo "🚀 Deploying Grafana..."
-fly deploy --config fly-grafana.toml --app "$APP_NAME"
+fly deploy --config deploy/fly-grafana.toml --app "$APP_NAME"
 
 # Wait for Grafana to be ready
 echo "⏳ Waiting for Grafana to start..."

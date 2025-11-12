@@ -25,7 +25,9 @@ use crate::db::{
 };
 
 // Import UI builder functions
-use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
+use super::ui_builder::{
+    create_ingredient_review_keyboard, create_post_confirmation_keyboard, format_ingredients_list,
+};
 
 // Import HandlerContext
 use super::HandlerContext;
@@ -56,6 +58,7 @@ struct RecipeNameSuccessParams<'a> {
     ingredients: &'a [MeasurementMatch],
     extracted_text: &'a str,
     validated_name: &'a str,
+    message_id: Option<i32>, // ID of the prompt message to edit with confirmation
 }
 
 /// Parameters for edit cancellation handling
@@ -112,6 +115,7 @@ pub struct RecipeNameAfterConfirmInputParams<'a> {
     pub ingredients: Vec<MeasurementMatch>,
     pub ctx: &'a HandlerContext<'a>,
     pub extracted_text: String,
+    pub message_id: Option<i32>, // ID of the prompt message to edit with confirmation
 }
 
 /// Parameters for recipe rename input handling
@@ -299,6 +303,7 @@ pub async fn handle_recipe_name_after_confirm_input(
         ingredients,
         ctx: handler_ctx,
         extracted_text,
+        message_id,
     } = params;
 
     let input = recipe_name_input.trim().to_lowercase();
@@ -326,6 +331,7 @@ pub async fn handle_recipe_name_after_confirm_input(
                 ingredients: &ingredients,
                 extracted_text: &extracted_text,
                 validated_name,
+                message_id,
             })
             .await
         }
@@ -370,6 +376,7 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
         ingredients,
         extracted_text,
         validated_name,
+        message_id,
     } = params;
 
     // Recipe name is valid, save ingredients to database
@@ -390,18 +397,47 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
             Some(validated_name),
             Some(ingredients.len()),
         );
-        ctx.bot
-            .send_message(
+        // Edit the prompt message with error if possible, otherwise send new message
+        if let Some(prompt_msg_id) = message_id {
+            match ctx.bot.edit_message_text(
                 msg.chat.id,
+                teloxide::types::MessageId(prompt_msg_id as i32),
                 t_lang(
                     ctx.localization,
                     "error-processing-failed",
                     ctx.language_code,
                 ),
             )
-            .await?;
+            .await
+            {
+                Ok(_) => (),
+                Err(_) => {
+                    ctx.bot
+                        .send_message(
+                            msg.chat.id,
+                            t_lang(
+                                ctx.localization,
+                                "error-processing-failed",
+                                ctx.language_code,
+                            ),
+                        )
+                        .await?;
+                }
+            }
+        } else {
+            ctx.bot
+                .send_message(
+                    msg.chat.id,
+                    t_lang(
+                        ctx.localization,
+                        "error-processing-failed",
+                        ctx.language_code,
+                    ),
+                )
+                .await?;
+        }
     } else {
-        // Success! Send confirmation message
+        // Success! Edit the prompt message with confirmation
         let success_message = t_args_lang(
             ctx.localization,
             "recipe-complete",
@@ -411,7 +447,30 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
             ],
             ctx.language_code,
         );
-        ctx.bot.send_message(msg.chat.id, success_message).await?;
+
+        if let Some(prompt_msg_id) = message_id {
+            match ctx.bot.edit_message_text(
+                msg.chat.id,
+                teloxide::types::MessageId(prompt_msg_id as i32),
+                success_message.clone(),
+            ).await {
+                Ok(_) => (),
+                Err(_) => {
+                    // Fallback: send new message if editing fails
+                    ctx.bot.send_message(msg.chat.id, success_message).await?;
+                }
+            }
+            // Send post-confirmation menu for legacy workflow
+            let confirmation_keyboard = create_post_confirmation_keyboard(ctx.language_code, ctx.localization);
+            ctx.bot.send_message(
+                msg.chat.id,
+                t_lang(ctx.localization, "workflow-what-next", ctx.language_code),
+            )
+            .reply_markup(confirmation_keyboard)
+            .await?;
+        } else {
+            ctx.bot.send_message(msg.chat.id, success_message).await?;
+        }
     }
 
     // End the dialogue

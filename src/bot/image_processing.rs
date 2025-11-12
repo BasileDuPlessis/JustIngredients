@@ -158,13 +158,14 @@ pub async fn download_and_process_image(
     let result = async {
         info!("Image downloaded to: {}", temp_file_guard);
 
-        // Send initial success message
-        bot.send_message(chat_id, success_message).await?;
+        // Send initial success message and capture its ID
+        let success_msg = bot.send_message(chat_id, success_message).await?;
+        let success_message_id = success_msg.id;
 
         // Validate image format before OCR processing
         if !crate::ocr::is_supported_image_format(temp_file_guard.path(), &OCR_CONFIG) {
             warn!(user_id = %chat_id, "Unsupported image format rejected");
-            bot.send_message(chat_id, t_lang(localization, "error-unsupported-format", language_code))
+            bot.edit_message_text(chat_id, success_message_id, t_lang(localization, "error-unsupported-format", language_code))
                 .await?;
             return Ok(String::new());
         }
@@ -181,7 +182,7 @@ pub async fn download_and_process_image(
             Ok(extracted_text) => {
                 if extracted_text.is_empty() {
                     warn!(user_id = %chat_id, "OCR extraction returned empty text");
-                    bot.send_message(chat_id, t_lang(localization, "error-no-text-found", language_code))
+                    bot.edit_message_text(chat_id, success_message_id, t_lang(localization, "error-no-text-found", language_code))
                         .await?;
                     Ok(String::new())
                 } else {
@@ -196,14 +197,14 @@ pub async fn download_and_process_image(
                         process_ingredients_and_extract_matches(&extracted_text, language_code);
 
                     if ingredients.is_empty() {
-                        // No ingredients found, send message directly without dialogue
+                        // No ingredients found, edit the success message
                         let no_ingredients_msg = format!(
                             "📝 {}\n\n{}\n\n```\n{}\n```",
                             t_lang(localization, "no-ingredients-found", language_code),
                             t_lang(localization, "no-ingredients-suggestion", language_code),
                             extracted_text
                         );
-                        bot.send_message(chat_id, &no_ingredients_msg).await?;
+                        bot.edit_message_text(chat_id, success_message_id, &no_ingredients_msg).await?;
                     } else {
                         // Ingredients found, go directly to review interface
                         info!(user_id = %chat_id, ingredients_count = ingredients.len(), "Sending ingredients review interface");
@@ -214,9 +215,10 @@ pub async fn download_and_process_image(
                             format_ingredients_list(&ingredients, language_code, localization)
                         );
 
-                                                let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
+                        let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
 
-                        let sent_message = bot.send_message(chat_id, review_message)
+                        // Edit the success message with the ingredients review
+                        let sent_message = bot.edit_message_text(chat_id, success_message_id, review_message)
                             .reply_markup(keyboard)
                             .await?;
 
@@ -308,7 +310,7 @@ pub async fn download_and_process_image(
                     }
                 };
 
-                bot.send_message(chat_id, &error_message).await?;
+                bot.edit_message_text(chat_id, success_message_id, &error_message).await?;
                 Err(anyhow::anyhow!("OCR processing failed: {:?}", e))
             }
         }

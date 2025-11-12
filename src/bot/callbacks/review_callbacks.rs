@@ -468,7 +468,24 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
             return Ok(());
         }
 
-        // Show confirmation with caption recipe name
+        // Remove the keyboard from the ingredients message to keep it visible
+        match ctx
+            .bot
+            .edit_message_reply_markup(q.message.as_ref().unwrap().chat().id, q.message.as_ref().unwrap().id())
+            .await
+        {
+            Ok(_) => (),
+            Err(e) => {
+                error_logging::log_internal_error(
+                    &e,
+                    "handle_confirm_button",
+                    "Failed to remove keyboard from ingredients message",
+                    Some(q.from.id.0 as i64),
+                );
+            }
+        }
+
+        // Send confirmation as a new message
         let confirmation_message = format!(
             "✅ **{}**\n\n📝 {}\n\n{}",
             t_lang(
@@ -492,27 +509,10 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         let confirmation_keyboard =
             create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), ctx.localization);
 
-        // Update the original review message
-        match ctx
-            .bot
-            .edit_message_text(
-                q.message.as_ref().unwrap().chat().id,
-                q.message.as_ref().unwrap().id(),
-                confirmation_message,
-            )
+        ctx.bot
+            .send_message(q.message.as_ref().unwrap().chat().id, confirmation_message)
             .reply_markup(confirmation_keyboard)
-            .await
-        {
-            Ok(_) => (),
-            Err(e) => {
-                error_logging::log_internal_error(
-                    &e,
-                    "callback_handler",
-                    "Failed to update message after confirmation",
-                    Some(q.from.id.0 as i64),
-                );
-            }
-        }
+            .await?;
 
         // End the dialogue - workflow complete
         dialogue.exit().await?;
@@ -520,46 +520,24 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         // LEGACY WORKFLOW: No caption available, ask for recipe name
         debug!(user_id = %q.from.id, "No caption available, proceeding with recipe name input");
 
-        let confirmation_message = format!(
-            "✅ **{}**\n\n{}",
-            t_lang(
-                ctx.localization,
-                "workflow-recipe-saved",
-                dialogue_lang_code.as_deref()
-            ),
-            t_lang(
-                ctx.localization,
-                "workflow-what-next",
-                dialogue_lang_code.as_deref()
-            )
-        );
-
-        let confirmation_keyboard =
-            create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), ctx.localization);
-
-        // Update the original review message
+        // Remove the keyboard from the ingredients message to keep it visible
         match ctx
             .bot
-            .edit_message_text(
-                q.message.as_ref().unwrap().chat().id,
-                q.message.as_ref().unwrap().id(),
-                confirmation_message,
-            )
-            .reply_markup(confirmation_keyboard)
+            .edit_message_reply_markup(q.message.as_ref().unwrap().chat().id, q.message.as_ref().unwrap().id())
             .await
         {
             Ok(_) => (),
             Err(e) => {
                 error_logging::log_internal_error(
                     &e,
-                    "callback_handler",
-                    "Failed to update message after confirmation",
+                    "handle_confirm_button",
+                    "Failed to remove keyboard from ingredients message",
                     Some(q.from.id.0 as i64),
                 );
             }
         }
 
-        // Send recipe name prompt
+        // Send recipe name prompt as a new message
         let recipe_name_prompt = format!(
             "🏷️ **{}**\n\n{}",
             t_lang(
@@ -574,7 +552,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
             )
         );
 
-        ctx.bot
+        let prompt_msg = ctx.bot
             .send_message(q.message.as_ref().unwrap().chat().id, recipe_name_prompt)
             .await?;
 
@@ -585,6 +563,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
                 language_code: dialogue_lang_code.clone(),
                 extracted_text: extracted_text.to_string(),
                 recipe_name_from_caption: None, // No caption available
+                message_id: Some(prompt_msg.id.0 as i32), // Store prompt message ID
             })
             .await?;
     }

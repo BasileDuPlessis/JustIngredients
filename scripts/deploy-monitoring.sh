@@ -31,7 +31,7 @@ fi
 
 # Deploy Prometheus
 echo "🚀 Deploying Prometheus..."
-fly deploy --config fly-monitoring.toml --app "$APP_NAME"
+fly deploy --config deploy/fly-monitoring.toml --app "$APP_NAME"
 
 # Wait for Prometheus to be ready
 echo "⏳ Waiting for Prometheus to start..."

@@ -99,7 +99,7 @@ curl -L https://fly.io/install.sh | sh
 fly auth login
 
 # Run the automated deployment script
-./deploy.sh
+./scripts/deploy.sh
 ```
 
 The `deploy.sh` script automates:

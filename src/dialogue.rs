@@ -39,6 +39,7 @@ pub enum RecipeDialogueState {
         language_code: Option<String>,
         extracted_text: String, // Store the original OCR text
         recipe_name_from_caption: Option<String>, // Track recipe name from photo caption
+        message_id: Option<i32>, // ID of the prompt message to edit with confirmation
     },
     RenamingRecipe {
         recipe_id: i64,

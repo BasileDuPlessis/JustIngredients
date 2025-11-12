@@ -21,7 +21,8 @@ cd JustIngredients
 export TELEGRAM_BOT_TOKEN='your_bot_token_here'  # Optional: set beforehand or enter interactively
 
 # Run the deployment script
-./deploy.sh
+# Run the deployment script
+./scripts/deploy.sh
 ```
 
 The script will:
@@ -88,7 +89,7 @@ The application supports the following environment variables (set automatically 
 
 ### Fly.io Configuration
 
-The `fly.toml` file contains:
+The `deploy/fly.toml` file contains:
 
 - HTTP service configuration with auto-scaling settings
 - Health check endpoints
@@ -141,7 +142,7 @@ curl https://just-ingredients.fly.dev/health/live
 - Check DATABASE_URL is set correctly
 
 **OCR failures:**
-- Verify Tesseract dependencies in Dockerfile
+- Verify Tesseract dependencies in deploy/Dockerfile
 - Check instance pooling configuration
 
 **Telegram webhook errors:**
