@@ -157,6 +157,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
         language_code: Some("en".to_string()),
         extracted_text: "Test OCR text".to_string(),
         recipe_name_from_caption: None,
+        message_id: None,
     };
 
     match confirm_state {
@@ -165,6 +166,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             language_code,
             extracted_text,
             recipe_name_from_caption: _,
+            message_id: _,
         } => {
             assert_eq!(ingr.len(), 2);
             assert_eq!(language_code, Some("en".to_string()));
