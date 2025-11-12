@@ -7,7 +7,7 @@ app = 'just-ingredients-staging'
 primary_region = 'cdg'
 
 [build]
-  dockerfile = 'deploy/Dockerfile'
+  dockerfile = 'Dockerfile'
 
 [env]
   HEALTH_PORT = '8080'
