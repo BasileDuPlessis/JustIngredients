@@ -70,9 +70,9 @@ jobs:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
     - name: Deploy to staging
-      uses: superfly/flyctl-actions@master
-      with:
-        args: deploy --config deploy/fly-staging.toml --remote-only --app just-ingredients-staging
+      run: |
+        cd deploy
+        fly deploy --config fly-staging.toml --remote-only --app just-ingredients-staging
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
