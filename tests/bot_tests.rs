@@ -1073,23 +1073,17 @@ mod tests {
             inline_keyboard: keyboard_en,
         } = keyboard_en;
         {
-            // Should have 2 rows: first row with 2 buttons, second row with 1 button
+            // Should have 2 rows: each with 1 button
             assert_eq!(keyboard_en.len(), 2);
-            assert_eq!(keyboard_en[0].len(), 2); // Add Another, List Recipes
+            assert_eq!(keyboard_en[0].len(), 1); // List Recipes
             assert_eq!(keyboard_en[1].len(), 1); // Search Recipes
 
             // Check button texts and callbacks
-            assert!(keyboard_en[0][0].text.contains("Add Another"));
-            assert!(keyboard_en[0][1].text.contains("List My Recipes"));
+            assert!(keyboard_en[0][0].text.contains("List My Recipes"));
             assert!(keyboard_en[1][0].text.contains("Search Recipes"));
 
             // Check callback data
             if let InlineKeyboardButtonKind::CallbackData(data) = &keyboard_en[0][0].kind {
-                assert_eq!(data, "workflow_add_another");
-            } else {
-                panic!("Expected callback button");
-            }
-            if let InlineKeyboardButtonKind::CallbackData(data) = &keyboard_en[0][1].kind {
                 assert_eq!(data, "workflow_list_recipes");
             } else {
                 panic!("Expected callback button");
@@ -1108,14 +1102,13 @@ mod tests {
             inline_keyboard: keyboard_fr,
         } = keyboard_fr;
         {
-            // Should have 2 rows: first row with 2 buttons, second row with 1 button
+            // Should have 2 rows: each with 1 button
             assert_eq!(keyboard_fr.len(), 2);
-            assert_eq!(keyboard_fr[0].len(), 2); // Add Another, List Recipes
+            assert_eq!(keyboard_fr[0].len(), 1); // List Recipes
             assert_eq!(keyboard_fr[1].len(), 1); // Search Recipes
 
             // Check that French text is different from English
             assert_ne!(keyboard_fr[0][0].text, keyboard_en[0][0].text);
-            assert_ne!(keyboard_fr[0][1].text, keyboard_en[0][1].text);
             assert_ne!(keyboard_fr[1][0].text, keyboard_en[1][0].text);
         }
     }
@@ -1129,33 +1122,28 @@ mod tests {
         // Test English workflow keys
         let recipe_saved_en = t_lang(&manager, "workflow-recipe-saved", Some("en"));
         let what_next_en = t_lang(&manager, "workflow-what-next", Some("en"));
-        let add_another_en = t_lang(&manager, "workflow-add-another", Some("en"));
         let list_recipes_en = t_lang(&manager, "workflow-list-recipes", Some("en"));
         let search_recipes_en = t_lang(&manager, "workflow-search-recipes", Some("en"));
 
         assert!(!recipe_saved_en.is_empty());
         assert!(!what_next_en.is_empty());
-        assert!(!add_another_en.is_empty());
         assert!(!list_recipes_en.is_empty());
         assert!(!search_recipes_en.is_empty());
 
         // Test French workflow keys
         let recipe_saved_fr = t_lang(&manager, "workflow-recipe-saved", Some("fr"));
         let what_next_fr = t_lang(&manager, "workflow-what-next", Some("fr"));
-        let add_another_fr = t_lang(&manager, "workflow-add-another", Some("fr"));
         let list_recipes_fr = t_lang(&manager, "workflow-list-recipes", Some("fr"));
         let search_recipes_fr = t_lang(&manager, "workflow-search-recipes", Some("fr"));
 
         assert!(!recipe_saved_fr.is_empty());
         assert!(!what_next_fr.is_empty());
-        assert!(!add_another_fr.is_empty());
         assert!(!list_recipes_fr.is_empty());
         assert!(!search_recipes_fr.is_empty());
 
         // French and English should be different
         assert_ne!(recipe_saved_en, recipe_saved_fr);
         assert_ne!(what_next_en, what_next_fr);
-        assert_ne!(add_another_en, add_another_fr);
         assert_ne!(list_recipes_en, list_recipes_fr);
         assert_ne!(search_recipes_en, search_recipes_fr);
     }
@@ -1164,12 +1152,10 @@ mod tests {
     #[test]
     fn test_workflow_callback_data_parsing() {
         // Test workflow callback parsing
-        assert_eq!("workflow_add_another", "workflow_add_another");
         assert_eq!("workflow_list_recipes", "workflow_list_recipes");
         assert_eq!("workflow_search_recipes", "workflow_search_recipes");
 
         // Test that these are distinct from other callbacks
-        assert_ne!("workflow_add_another", "confirm");
         assert_ne!("workflow_list_recipes", "cancel_review");
         assert_ne!("workflow_search_recipes", "add_more");
     }

@@ -686,9 +686,12 @@ impl MeasurementDetector {
                 // This avoids false positives like "123" but allows valid cases like "2 cups" or "6 eggs"
                 let has_measurement = measurement_unit.is_some();
                 let has_ingredient_text = !trimmed_remaining.is_empty();
-                
+
                 if !has_measurement && !has_ingredient_text {
-                    debug!("Skipping match with no measurement and no ingredient text: '{}'", capture.get(0).unwrap().as_str());
+                    debug!(
+                        "Skipping match with no measurement and no ingredient text: '{}'",
+                        capture.get(0).unwrap().as_str()
+                    );
                     continue 'capture_loop;
                 }
 
@@ -701,60 +704,62 @@ impl MeasurementDetector {
                 let ingredient = if trimmed_remaining.is_empty() {
                     String::new()
                 } else {
-                // Extract ingredient until we hit another quantity or end of line
-                // This handles cases like "2 cups flour, 1 cup sugar" by stopping at comma
-                // or "2 cups flour with 1 tbsp sugar" by stopping before words followed by digits
-                let mut result = String::new();
-                let mut chars = trimmed_remaining.chars().peekable();
-                let mut word_start_char_index = 0;
-                let mut current_char_index = 0;
-                let mut in_word = false;
+                    // Extract ingredient until we hit another quantity or end of line
+                    // This handles cases like "2 cups flour, 1 cup sugar" by stopping at comma
+                    // or "2 cups flour with 1 tbsp sugar" by stopping before words followed by digits
+                    let mut result = String::new();
+                    let mut chars = trimmed_remaining.chars().peekable();
+                    let mut word_start_char_index = 0;
+                    let mut current_char_index = 0;
+                    let mut in_word = false;
 
-                while let Some(ch) = chars.next() {
-                    // Stop at comma (next ingredient)
-                    if ch == ',' {
-                        break;
-                    }
+                    while let Some(ch) = chars.next() {
+                        // Stop at comma (next ingredient)
+                        if ch == ',' {
+                            break;
+                        }
 
-                    result.push(ch);
-                    current_char_index += 1;
+                        result.push(ch);
+                        current_char_index += 1;
 
-                    if ch.is_whitespace() || (!ch.is_alphanumeric() && ch != '-') {
-                        // End of word
-                        in_word = false;
+                        if ch.is_whitespace() || (!ch.is_alphanumeric() && ch != '-') {
+                            // End of word
+                            in_word = false;
 
-                        // Look ahead to see if this word is followed by a digit
-                        let mut temp_chars = chars.clone();
-                        let mut found_digit_after_whitespace = false;
+                            // Look ahead to see if this word is followed by a digit
+                            let mut temp_chars = chars.clone();
+                            let mut found_digit_after_whitespace = false;
 
-                        // Skip whitespace
-                        while let Some(next_ch) = temp_chars.next() {
-                            if !next_ch.is_whitespace() {
-                                if next_ch.is_ascii_digit() {
-                                    found_digit_after_whitespace = true;
+                            // Skip whitespace
+                            for next_ch in temp_chars.by_ref() {
+                                if !next_ch.is_whitespace() {
+                                    if next_ch.is_ascii_digit() {
+                                        found_digit_after_whitespace = true;
+                                    }
+                                    break;
+                                }
+                            }
+
+                            if found_digit_after_whitespace {
+                                // Remove the current word and any trailing whitespace
+                                // Use character index to safely slice the string
+                                let char_indices: Vec<(usize, char)> =
+                                    result.char_indices().collect();
+                                if word_start_char_index < char_indices.len() {
+                                    let byte_pos = char_indices[word_start_char_index].0;
+                                    result = result[..byte_pos].trim_end().to_string();
                                 }
                                 break;
                             }
-                        }
-
-                        if found_digit_after_whitespace {
-                            // Remove the current word and any trailing whitespace
-                            // Use character index to safely slice the string
-                            let char_indices: Vec<(usize, char)> = result.char_indices().collect();
-                            if word_start_char_index < char_indices.len() {
-                                let byte_pos = char_indices[word_start_char_index].0;
-                                result = result[..byte_pos].trim_end().to_string();
+                        } else if ch.is_alphanumeric() || ch == '-' {
+                            // Start of word
+                            if !in_word {
+                                word_start_char_index = current_char_index - 1; // Start of this character
+                                in_word = true;
                             }
-                            break;
-                        }
-                    } else if ch.is_alphanumeric() || ch == '-' {
-                        // Start of word
-                        if !in_word {
-                            word_start_char_index = current_char_index - 1; // Start of this character
-                            in_word = true;
                         }
                     }
-                }                    result.trim().to_string()
+                    result.trim().to_string()
                 };
 
                 // Additional safeguard: skip if ingredient contains suspicious patterns
@@ -767,30 +772,35 @@ impl MeasurementDetector {
                     continue 'capture_loop;
                 }
 
-                let (final_quantity, final_measurement, match_end_pos) =
-                    if let Some(measurement) = measurement_unit {
-                        // Traditional measurement
-                        debug!(
-                            "Traditional measurement: quantity='{}', measurement='{}', ingredient='{}'",
-                            quantity, measurement, ingredient
-                        );
-                        (
-                            quantity.to_string(),
-                            Some(measurement.to_string()),
-                            match_end + (remaining_text.len() - remaining_text.trim_start().len()) + ingredient.len(),
-                        )
-                    } else {
-                        // Quantity-only ingredient
-                        debug!(
-                            "Quantity-only ingredient: quantity='{}', ingredient='{}'",
-                            quantity, ingredient
-                        );
-                        (
-                            quantity.to_string(),
-                            None,
-                            match_end + (remaining_text.len() - remaining_text.trim_start().len()) + ingredient.len(),
-                        )
-                    };
+                let (final_quantity, final_measurement, match_end_pos) = if let Some(measurement) =
+                    measurement_unit
+                {
+                    // Traditional measurement
+                    debug!(
+                        "Traditional measurement: quantity='{}', measurement='{}', ingredient='{}'",
+                        quantity, measurement, ingredient
+                    );
+                    (
+                        quantity.to_string(),
+                        Some(measurement.to_string()),
+                        match_end
+                            + (remaining_text.len() - remaining_text.trim_start().len())
+                            + ingredient.len(),
+                    )
+                } else {
+                    // Quantity-only ingredient
+                    debug!(
+                        "Quantity-only ingredient: quantity='{}', ingredient='{}'",
+                        quantity, ingredient
+                    );
+                    (
+                        quantity.to_string(),
+                        None,
+                        match_end
+                            + (remaining_text.len() - remaining_text.trim_start().len())
+                            + ingredient.len(),
+                    )
+                };
 
                 let ingredient_name = self.post_process_ingredient_name(&ingredient);
 
@@ -901,7 +911,7 @@ impl MeasurementDetector {
                 // Has a measurement unit
                 return true;
             }
-            
+
             // Check if there's ingredient text after the match
             let full_match = capture.get(0).unwrap();
             let match_end = full_match.end();
@@ -1158,7 +1168,7 @@ impl MeasurementDetector {
         for capture in self.pattern.captures_iter(text) {
             let quantity = capture.name("quantity").map(|m| m.as_str()).unwrap_or("");
             let measurement = capture.name("measurement").map(|m| m.as_str());
-            
+
             let unit = if let Some(measurement) = measurement {
                 format!("{} {}", quantity, measurement)
             } else {

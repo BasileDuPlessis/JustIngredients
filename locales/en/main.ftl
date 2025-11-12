@@ -145,7 +145,6 @@ recipe-details-coming-soon = Recipe details coming soon!
 # Post-confirmation workflow messages
 workflow-recipe-saved = ✅ Recipe saved successfully!
 workflow-what-next = What would you like to do next?
-workflow-add-another = Add Another Recipe
 workflow-list-recipes = List My Recipes
 workflow-search-recipes = Search Recipes
 workflow-search-coming-soon = Recipe search coming soon! For now, use the 'List My Recipes' button.

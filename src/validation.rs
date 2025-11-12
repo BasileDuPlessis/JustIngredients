@@ -524,7 +524,7 @@ mod tests {
     #[test]
     fn debug_parse_ingredient() {
         use crate::text_processing::MeasurementDetector;
-        
+
         println!("Testing parse_ingredient_from_text with '2 cups flour'");
 
         match parse_ingredient_from_text("2 cups flour") {

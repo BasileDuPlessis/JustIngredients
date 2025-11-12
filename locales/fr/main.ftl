@@ -137,7 +137,6 @@ recipe-details-coming-soon = Détails de la recette bientôt disponibles !
 # Messages de workflow post-confirmation
 workflow-recipe-saved = ✅ Recette sauvegardée avec succès !
 workflow-what-next = Que souhaitez-vous faire ensuite ?
-workflow-add-another = Ajouter une autre recette
 workflow-list-recipes = Lister mes recettes
 workflow-search-recipes = Rechercher des recettes
 workflow-search-coming-soon = Recherche de recettes bientôt disponible ! Pour l'instant, utilisez le bouton 'Lister mes recettes'.

@@ -574,7 +574,7 @@ mod tests {
         // Test with various units
         let text = "2 cups flour\n500g sugar\n1 tablespoon vanilla\n250 ml milk\n3 eggs";
         let units = detector.get_unique_units(text);
-        
+
         assert_eq!(units.len(), 5); // "2 cups", "500 g", "1 tablespoon", "250 ml", "3"
         assert!(units.contains("2 cups"));
         assert!(units.contains("500 g"));
@@ -603,11 +603,16 @@ mod tests {
     #[test]
     fn test_multi_word_ingredients_without_measurement() {
         let detector = create_detector();
-        
+
         let input = "3 large eggs";
         let matches = detector.extract_ingredient_measurements(input);
-        println!("Input: '{}', matches: {}, ingredient: '{}'", input, matches.len(), matches[0].ingredient_name);
-        
+        println!(
+            "Input: '{}', matches: {}, ingredient: '{}'",
+            input,
+            matches.len(),
+            matches[0].ingredient_name
+        );
+
         let test_cases = vec![
             ("2 crème fraîche", "crème fraîche"),           // French dairy
             ("6 pommes de terre", "pommes de terre"),       // French vegetable
@@ -616,11 +621,20 @@ mod tests {
             ("2 red onions", "red onions"),                 // English color + ingredient
             ("5 green bell peppers", "green bell peppers"), // Multiple adjectives
         ];
-        
+
         for (input, expected_ingredient) in test_cases {
             let matches = detector.extract_ingredient_measurements(input);
-            assert_eq!(matches.len(), 1, "Expected exactly one match for: {}", input);
-            assert_eq!(matches[0].ingredient_name, expected_ingredient, "Ingredient mismatch for: {}", input);
+            assert_eq!(
+                matches.len(),
+                1,
+                "Expected exactly one match for: {}",
+                input
+            );
+            assert_eq!(
+                matches[0].ingredient_name, expected_ingredient,
+                "Ingredient mismatch for: {}",
+                input
+            );
         }
     }
 
@@ -633,11 +647,9 @@ mod tests {
             // Both should extract "flour" consistently
             ("2 cups flour", "flour"),
             ("3 flour", "flour"),
-            
-            // Both should extract "sugar" consistently  
+            // Both should extract "sugar" consistently
             ("1 tablespoon sugar", "sugar"),
             ("4 sugar", "sugar"),
-            
             // Multi-word ingredients should work in both cases
             ("2 cups all-purpose flour", "all-purpose flour"),
             ("5 all-purpose flour", "all-purpose flour"),
@@ -645,101 +657,156 @@ mod tests {
 
         for (input, expected_ingredient) in consistency_tests {
             let matches = detector.extract_ingredient_measurements(input);
-            assert_eq!(matches.len(), 1, "Expected exactly one match for: {}", input);
-            assert_eq!(matches[0].ingredient_name, expected_ingredient, "Consistency test failed for: {}", input);
+            assert_eq!(
+                matches.len(),
+                1,
+                "Expected exactly one match for: {}",
+                input
+            );
+            assert_eq!(
+                matches[0].ingredient_name, expected_ingredient,
+                "Consistency test failed for: {}",
+                input
+            );
         }
     }
 
     #[test]
     fn test_french_prepositions_postprocessing() {
         let detector = create_detector();
-        
+
         let test_cases = vec![
-            ("2g de chocolat noir", "chocolat noir"),    // "de" removed by post-processing
-            ("250 ml de lait", "lait"),                  // "de" removed by post-processing
-            ("1 sachet de levure", "levure"),            // "de" removed by post-processing
+            ("2g de chocolat noir", "chocolat noir"), // "de" removed by post-processing
+            ("250 ml de lait", "lait"),               // "de" removed by post-processing
+            ("1 sachet de levure", "levure"),         // "de" removed by post-processing
             ("3 cuillères à soupe de sucre", "sucre"), // "cuillères à soupe" matched as measurement, "de" removed
-            ("1 verre d'eau", "verre d'eau"),                     // "verre" not a measurement unit, "d'" not removed
+            ("1 verre d'eau", "verre d'eau"), // "verre" not a measurement unit, "d'" not removed
             ("2 tranches de pain complet", "pain complet"), // "de" removed by post-processing
         ];
-        
+
         for (input, expected_ingredient) in test_cases {
             let matches = detector.extract_ingredient_measurements(input);
-            assert_eq!(matches.len(), 1, "Expected exactly one match for: {}", input);
-            assert_eq!(matches[0].ingredient_name, expected_ingredient, "French preposition test failed for: {}", input);
+            assert_eq!(
+                matches.len(),
+                1,
+                "Expected exactly one match for: {}",
+                input
+            );
+            assert_eq!(
+                matches[0].ingredient_name, expected_ingredient,
+                "French preposition test failed for: {}",
+                input
+            );
         }
     }
 
     #[test]
     fn test_mixed_measurement_multi_word() {
         let detector = create_detector();
-        
+
         let test_cases = vec![
             // With measurements
-            ("2 cups all-purpose flour", "2", Some("cups"), "all-purpose flour"),
-            ("500g dark chocolate chips", "500", Some("g"), "dark chocolate chips"),
+            (
+                "2 cups all-purpose flour",
+                "2",
+                Some("cups"),
+                "all-purpose flour",
+            ),
+            (
+                "500g dark chocolate chips",
+                "500",
+                Some("g"),
+                "dark chocolate chips",
+            ),
             ("1 tbsp olive oil", "1", Some("tbsp"), "olive oil"),
-            ("3 tasses de crème fraîche", "3", Some("tasses"), "crème fraîche"),
-            
+            (
+                "3 tasses de crème fraîche",
+                "3",
+                Some("tasses"),
+                "crème fraîche",
+            ),
             // Without measurements (quantity-only)
             ("3 large eggs", "3", None, "large eggs"),
             ("4 fresh basil leaves", "4", None, "fresh basil leaves"),
             ("2 œufs frais", "2", None, "œufs frais"),
-            ("6 pommes de terre nouvelles", "6", None, "pommes de terre nouvelles"),
+            (
+                "6 pommes de terre nouvelles",
+                "6",
+                None,
+                "pommes de terre nouvelles",
+            ),
         ];
-        
+
         for (input, expected_quantity, expected_measurement, expected_ingredient) in test_cases {
             let matches = detector.extract_ingredient_measurements(input);
-            assert_eq!(matches.len(), 1, "Expected exactly one match for: {}", input);
+            assert_eq!(
+                matches.len(),
+                1,
+                "Expected exactly one match for: {}",
+                input
+            );
             let m = &matches[0];
-            assert_eq!(m.quantity, expected_quantity, "Quantity mismatch for: {}", input);
-            assert_eq!(m.measurement.as_deref(), expected_measurement, "Measurement mismatch for: {}", input);
-            assert_eq!(m.ingredient_name, expected_ingredient, "Ingredient mismatch for: {}", input);
+            assert_eq!(
+                m.quantity, expected_quantity,
+                "Quantity mismatch for: {}",
+                input
+            );
+            assert_eq!(
+                m.measurement.as_deref(),
+                expected_measurement,
+                "Measurement mismatch for: {}",
+                input
+            );
+            assert_eq!(
+                m.ingredient_name, expected_ingredient,
+                "Ingredient mismatch for: {}",
+                input
+            );
         }
     }
 
     #[test]
     fn test_unified_extraction_edge_cases() {
         let detector = create_detector();
-        
+
         // Empty and whitespace
         assert_eq!(detector.extract_ingredient_measurements("").len(), 0);
         assert_eq!(detector.extract_ingredient_measurements("   ").len(), 0);
-        
+
         // Numbers without ingredients
         assert_eq!(detector.extract_ingredient_measurements("42").len(), 0);
         assert_eq!(detector.extract_ingredient_measurements("1/2").len(), 0);
-        
+
         // Measurements without ingredients
         let cups_matches = detector.extract_ingredient_measurements("2 cups");
         assert_eq!(cups_matches.len(), 1);
         assert_eq!(cups_matches[0].quantity, "2");
         assert_eq!(cups_matches[0].measurement, Some("cups".to_string()));
         assert_eq!(cups_matches[0].ingredient_name, "");
-        
+
         let grams_matches = detector.extract_ingredient_measurements("500g");
         assert_eq!(grams_matches.len(), 1);
         assert_eq!(grams_matches[0].quantity, "500");
         assert_eq!(grams_matches[0].measurement, Some("g".to_string()));
         assert_eq!(grams_matches[0].ingredient_name, "");
-        
+
         // Special characters and unicode
         let unicode_test = detector.extract_ingredient_measurements("2 œufs français");
         assert_eq!(unicode_test.len(), 1);
         assert_eq!(unicode_test[0].ingredient_name, "œufs français");
-        
+
         // Very long ingredient names (should be handled gracefully)
         let long_ingredient = format!("2 {}", "very ".repeat(50) + "long ingredient name");
         let long_test = detector.extract_ingredient_measurements(&long_ingredient);
         assert_eq!(long_test.len(), 1);
         assert!(long_test[0].ingredient_name.len() <= 100); // Should be truncated to max length
-        
+
         // Boundary detection with commas
         let comma_test = detector.extract_ingredient_measurements("2 cups flour, 1 cup sugar");
         assert_eq!(comma_test.len(), 2); // Should match both ingredients
         assert_eq!(comma_test[0].ingredient_name, "flour");
         assert_eq!(comma_test[1].ingredient_name, "sugar");
-        
+
         // Mixed case and special formatting
         let mixed_case = detector.extract_ingredient_measurements("2 CUPS All-Purpose Flour");
         assert_eq!(mixed_case.len(), 1);

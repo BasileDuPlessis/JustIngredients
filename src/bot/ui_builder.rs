@@ -136,22 +136,13 @@ pub fn create_post_confirmation_keyboard(
 ) -> InlineKeyboardMarkup {
     with_ui_metrics_sync("create_post_confirmation_keyboard", 0, || {
         let buttons = vec![
-            vec![
-                create_localized_button_with_emoji(
-                    localization,
-                    "➕",
-                    "workflow-add-another",
-                    "workflow_add_another".to_string(),
-                    language_code,
-                ),
-                create_localized_button_with_emoji(
-                    localization,
-                    "📚",
-                    "workflow-list-recipes",
-                    "workflow_list_recipes".to_string(),
-                    language_code,
-                ),
-            ],
+            vec![create_localized_button_with_emoji(
+                localization,
+                "📚",
+                "workflow-list-recipes",
+                "workflow_list_recipes".to_string(),
+                language_code,
+            )],
             vec![create_localized_button_with_emoji(
                 localization,
                 "🔍",

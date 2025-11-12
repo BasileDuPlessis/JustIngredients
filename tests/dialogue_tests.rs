@@ -213,7 +213,7 @@ fn test_ingredient_edit_validation() {
     assert!(parse_ingredient_from_text("2 cups").is_err()); // No ingredient name
     assert!(parse_ingredient_from_text("0 cups flour").is_err()); // Zero quantity
     assert!(parse_ingredient_from_text("-1 cups flour").is_err()); // Negative quantity
-    // Test long ingredient name (should be truncated by post-processing)
+                                                                   // Test long ingredient name (should be truncated by post-processing)
     let result = parse_ingredient_from_text("2 cups very_long_ingredient_name_that_exceeds_the_one_hundred_character_limit_and_should_be_rejected_by_the_validation");
     assert!(result.is_ok());
     let ingredient = result.unwrap();

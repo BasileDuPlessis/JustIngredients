@@ -471,7 +471,10 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         // Remove the keyboard from the ingredients message to keep it visible
         match ctx
             .bot
-            .edit_message_reply_markup(q.message.as_ref().unwrap().chat().id, q.message.as_ref().unwrap().id())
+            .edit_message_reply_markup(
+                q.message.as_ref().unwrap().chat().id,
+                q.message.as_ref().unwrap().id(),
+            )
             .await
         {
             Ok(_) => (),
@@ -523,7 +526,10 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         // Remove the keyboard from the ingredients message to keep it visible
         match ctx
             .bot
-            .edit_message_reply_markup(q.message.as_ref().unwrap().chat().id, q.message.as_ref().unwrap().id())
+            .edit_message_reply_markup(
+                q.message.as_ref().unwrap().chat().id,
+                q.message.as_ref().unwrap().id(),
+            )
             .await
         {
             Ok(_) => (),
@@ -552,7 +558,8 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
             )
         );
 
-        let prompt_msg = ctx.bot
+        let prompt_msg = ctx
+            .bot
             .send_message(q.message.as_ref().unwrap().chat().id, recipe_name_prompt)
             .await?;
 

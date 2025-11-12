@@ -399,16 +399,18 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
         );
         // Edit the prompt message with error if possible, otherwise send new message
         if let Some(prompt_msg_id) = message_id {
-            match ctx.bot.edit_message_text(
-                msg.chat.id,
-                teloxide::types::MessageId(prompt_msg_id as i32),
-                t_lang(
-                    ctx.localization,
-                    "error-processing-failed",
-                    ctx.language_code,
-                ),
-            )
-            .await
+            match ctx
+                .bot
+                .edit_message_text(
+                    msg.chat.id,
+                    teloxide::types::MessageId(prompt_msg_id),
+                    t_lang(
+                        ctx.localization,
+                        "error-processing-failed",
+                        ctx.language_code,
+                    ),
+                )
+                .await
             {
                 Ok(_) => (),
                 Err(_) => {
@@ -449,11 +451,15 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
         );
 
         if let Some(prompt_msg_id) = message_id {
-            match ctx.bot.edit_message_text(
-                msg.chat.id,
-                teloxide::types::MessageId(prompt_msg_id as i32),
-                success_message.clone(),
-            ).await {
+            match ctx
+                .bot
+                .edit_message_text(
+                    msg.chat.id,
+                    teloxide::types::MessageId(prompt_msg_id),
+                    success_message.clone(),
+                )
+                .await
+            {
                 Ok(_) => (),
                 Err(_) => {
                     // Fallback: send new message if editing fails
@@ -461,13 +467,15 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
                 }
             }
             // Send post-confirmation menu for legacy workflow
-            let confirmation_keyboard = create_post_confirmation_keyboard(ctx.language_code, ctx.localization);
-            ctx.bot.send_message(
-                msg.chat.id,
-                t_lang(ctx.localization, "workflow-what-next", ctx.language_code),
-            )
-            .reply_markup(confirmation_keyboard)
-            .await?;
+            let confirmation_keyboard =
+                create_post_confirmation_keyboard(ctx.language_code, ctx.localization);
+            ctx.bot
+                .send_message(
+                    msg.chat.id,
+                    t_lang(ctx.localization, "workflow-what-next", ctx.language_code),
+                )
+                .reply_markup(confirmation_keyboard)
+                .await?;
         } else {
             ctx.bot.send_message(msg.chat.id, success_message).await?;
         }

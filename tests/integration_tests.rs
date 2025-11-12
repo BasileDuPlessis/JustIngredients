@@ -143,7 +143,12 @@ fn test_quantity_only_edge_cases() {
 
     let test_cases = vec![
         // (input_text, expected_quantity, expected_ingredient, description)
-        ("3 eggs for breakfast", "3", "eggs for breakfast", "Simple quantity-only with extra text"),
+        (
+            "3 eggs for breakfast",
+            "3",
+            "eggs for breakfast",
+            "Simple quantity-only with extra text",
+        ),
         (
             "Bake at 350°F for 25 minutes",
             "350",
@@ -204,20 +209,23 @@ fn test_quantity_only_edge_cases() {
 
             // Check if we found the expected quantity
             let found_match = matches.iter().find(|m| m.quantity == expected_quantity);
-            if found_match.is_some() {
-                let actual_ingredient = &found_match.unwrap().ingredient_name;
+            if let Some(found_match) = found_match {
+                let actual_ingredient = &found_match.ingredient_name;
                 // For multi-word ingredients, verify they are captured completely
                 if expected_ingredient.contains(" ") {
                     // Multi-word expected - check that all words are present
-                    let expected_words: std::collections::HashSet<&str> = expected_ingredient.split_whitespace().collect();
-                    let actual_words: std::collections::HashSet<&str> = actual_ingredient.split_whitespace().collect();
-                    let all_expected_present = expected_words.iter().all(|word| actual_words.contains(word));
-                    
+                    let expected_words: std::collections::HashSet<&str> =
+                        expected_ingredient.split_whitespace().collect();
+                    let actual_words: std::collections::HashSet<&str> =
+                        actual_ingredient.split_whitespace().collect();
+                    let all_expected_present = expected_words
+                        .iter()
+                        .all(|word| actual_words.contains(word));
+
                     assert!(
                         all_expected_present,
                         "Multi-word ingredient '{}' should have all words present in '{}'",
-                        expected_ingredient,
-                        actual_ingredient
+                        expected_ingredient, actual_ingredient
                     );
                 } else {
                     // For single-word ingredients, check if the expected word is present
@@ -318,14 +326,16 @@ fn test_unified_multi_word_extraction_integration() {
     for (recipe_text, expected_ingredients) in recipe_scenarios {
         let matches = detector.extract_ingredient_measurements(recipe_text);
 
-        println!("Testing recipe with {} expected ingredients", expected_ingredients.len());
+        println!(
+            "Testing recipe with {} expected ingredients",
+            expected_ingredients.len()
+        );
         assert!(!matches.is_empty(), "Should find ingredients in recipe");
 
         // Verify each expected ingredient is found with correct extraction
         for (expected_quantity, expected_ingredient) in &expected_ingredients {
             let found_match = matches.iter().find(|m| {
-                m.quantity == *expected_quantity &&
-                m.ingredient_name.contains(expected_ingredient)
+                m.quantity == *expected_quantity && m.ingredient_name.contains(expected_ingredient)
             });
 
             assert!(
@@ -333,7 +343,10 @@ fn test_unified_multi_word_extraction_integration() {
                 "Should find ingredient '{}' with quantity '{}' in matches: {:?}",
                 expected_ingredient,
                 expected_quantity,
-                matches.iter().map(|m| (&m.quantity, &m.ingredient_name)).collect::<Vec<_>>()
+                matches
+                    .iter()
+                    .map(|m| (&m.quantity, &m.ingredient_name))
+                    .collect::<Vec<_>>()
             );
 
             let found = found_match.unwrap();
