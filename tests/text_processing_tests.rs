@@ -818,7 +818,7 @@ mod tests {
         // Test the new unified regex pattern design for Task 1.2
         // This simulates the new pattern that makes measurement optional and captures all remaining text as ingredient
 
-        // Build the new unified pattern (measurement optional, capture all remaining text)
+        // Build the new unified pattern (measurement optional, ingredient captures all remaining text)
         let config = just_ingredients::text_processing::load_measurement_units_config();
         let mut all_units: Vec<String> = Vec::new();
         all_units.extend(config.measurement_units.volume_units);
@@ -1039,5 +1039,42 @@ mod tests {
                 input, expected_ingredient, ingredient
             );
         }
+    }
+
+    #[test]
+    fn test_confidence_data_structures_instantiation() {
+        use just_ingredients::{IngredientConfidence, ConfidenceLevel};
+
+        // Test IngredientConfidence struct instantiation
+        let confidence = IngredientConfidence {
+            overall_score: 0.85,
+            pattern_strength: 0.9,
+            measurement_validity: 0.8,
+            context_consistency: 0.7,
+            ocr_quality: 0.95,
+        };
+
+        assert_eq!(confidence.overall_score, 0.85);
+        assert_eq!(confidence.pattern_strength, 0.9);
+        assert_eq!(confidence.measurement_validity, 0.8);
+        assert_eq!(confidence.context_consistency, 0.7);
+        assert_eq!(confidence.ocr_quality, 0.95);
+
+        // Test ConfidenceLevel enum variants
+        assert_eq!(ConfidenceLevel::High, ConfidenceLevel::High);
+        assert_eq!(ConfidenceLevel::Medium, ConfidenceLevel::Medium);
+        assert_eq!(ConfidenceLevel::Low, ConfidenceLevel::Low);
+        assert_eq!(ConfidenceLevel::Invalid, ConfidenceLevel::Invalid);
+
+        // Test that structs can be cloned
+        let confidence_clone = confidence.clone();
+        assert_eq!(confidence, confidence_clone);
+
+        // Test that enums can be cloned
+        let level = ConfidenceLevel::High;
+        let level_clone = level.clone();
+        assert_eq!(level, level_clone);
+
+        println!("✅ Confidence data structures successfully instantiated and validated!");
     }
 }

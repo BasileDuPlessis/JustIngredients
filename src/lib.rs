@@ -26,4 +26,4 @@ pub mod validation;
 // Re-export types for easier access
 pub use config::AppConfig;
 pub use deduplication::{RequestDeduplicator, RequestId, SharedDeduplicator};
-pub use text_processing::{MeasurementConfig, MeasurementDetector, MeasurementMatch};
+pub use text_processing::{MeasurementConfig, MeasurementDetector, MeasurementMatch, IngredientConfidence, ConfidenceLevel};

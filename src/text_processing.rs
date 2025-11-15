@@ -36,6 +36,34 @@ pub struct MeasurementMatch {
     pub end_pos: usize,
 }
 
+/// Represents confidence information for an ingredient extraction
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct IngredientConfidence {
+    /// Overall confidence score (0.0 to 1.0)
+    pub overall_score: f32,
+    /// How well the regex pattern matched
+    pub pattern_strength: f32,
+    /// How valid the measurement appears (quantity/unit compatibility)
+    pub measurement_validity: f32,
+    /// How well the ingredient fits with recipe context
+    pub context_consistency: f32,
+    /// Base OCR confidence for the matched text
+    pub ocr_quality: f32,
+}
+
+/// Represents the confidence level of an ingredient extraction
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum ConfidenceLevel {
+    /// High confidence (> 0.8) - Auto-accept recommended
+    High,
+    /// Medium confidence (0.5-0.8) - Review suggested
+    Medium,
+    /// Low confidence (0.3-0.5) - Manual correction needed
+    Low,
+    /// Invalid (< 0.3) - Not a valid ingredient
+    Invalid,
+}
+
 /// Configuration options for measurement detection
 #[derive(Clone, Debug)]
 pub struct MeasurementConfig {
