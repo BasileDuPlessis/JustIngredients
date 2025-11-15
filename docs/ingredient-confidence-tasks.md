@@ -25,10 +25,10 @@ This document outlines the tasks to implement confidence scoring for ingredients
 ## 🔧 Phase 1: Core Confidence Infrastructure
 
 ### Task 1.1: Create Confidence Data Structures
-- [ ] Define `IngredientConfidence` struct with overall_score, pattern_strength, measurement_validity, context_consistency, ocr_quality fields
-- [ ] Define `ConfidenceLevel` enum (High, Medium, Low, Invalid)
-- [ ] **Files**: `src/text_processing.rs`, `src/lib.rs`
-- [ ] **Validation**: Structs compile and can be instantiated
+- [x] Define `IngredientConfidence` struct with overall_score, pattern_strength, measurement_validity, context_consistency, ocr_quality fields
+- [x] Define `ConfidenceLevel` enum (High, Medium, Low, Invalid)
+- [x] **Files**: `src/text_processing.rs`, `src/lib.rs`
+- [x] **Validation**: Structs compile and can be instantiated
 
 ### Task 1.2: Extend MeasurementMatch with Confidence
 - [ ] Add optional confidence field to existing MeasurementMatch struct
