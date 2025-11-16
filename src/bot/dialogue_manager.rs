@@ -71,6 +71,7 @@ struct EditCancellationParams<'a> {
     recipe_name: String,
     message_id: Option<i32>,
     extracted_text: String,
+    recipe_name_from_caption: Option<String>, // Track recipe name from photo caption
 }
 
 /// Parameters for edit success handling
@@ -86,6 +87,7 @@ struct EditSuccessParams<'a> {
     message_id: Option<i32>,
     extracted_text: String,
     user_input_message_id: Option<i32>, // ID of the user's input message for reply functionality
+    recipe_name_from_caption: Option<String>, // Track recipe name from photo caption
 }
 
 /// Common context for dialogue handlers
@@ -139,6 +141,7 @@ pub struct IngredientEditInputParams<'a> {
     pub message_id: Option<i32>,
     pub extracted_text: String,
     pub user_input_message_id: Option<i32>, // ID of the user's input message for reply functionality
+    pub recipe_name_from_caption: Option<String>, // Track recipe name from photo caption
 }
 
 /// Parameters for adding ingredient input handling (saved recipes)
@@ -525,6 +528,7 @@ pub async fn handle_ingredient_edit_input(
         message_id,
         extracted_text,
         user_input_message_id,
+        recipe_name_from_caption,
     } = params;
 
     let input = edit_input.trim().to_lowercase();
@@ -539,6 +543,7 @@ pub async fn handle_ingredient_edit_input(
             recipe_name,
             message_id,
             extracted_text,
+            recipe_name_from_caption: recipe_name_from_caption.clone(),
         })
         .await;
     }
@@ -557,6 +562,7 @@ pub async fn handle_ingredient_edit_input(
                 message_id,
                 extracted_text,
                 user_input_message_id,
+                recipe_name_from_caption: recipe_name_from_caption.clone(),
             })
             .await
         }
@@ -724,6 +730,7 @@ async fn handle_edit_cancellation(params: EditCancellationParams<'_>) -> Result<
         recipe_name,
         message_id,
         extracted_text,
+        recipe_name_from_caption,
     } = params;
 
     // User cancelled editing, return to review state without changes
@@ -777,7 +784,7 @@ async fn handle_edit_cancellation(params: EditCancellationParams<'_>) -> Result<
             language_code: ctx.language_code.map(|s| s.to_string()),
             message_id,
             extracted_text,
-            recipe_name_from_caption: None, // Recipe name came from user input, not caption
+            recipe_name_from_caption, // Preserve caption info
         })
         .await?;
 
@@ -797,6 +804,7 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
         message_id,
         extracted_text,
         user_input_message_id,
+        recipe_name_from_caption,
     } = params;
 
     // Update the ingredient at the editing index
@@ -863,7 +871,7 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
                 language_code: ctx.language_code.map(|s| s.to_string()),
                 message_id,
                 extracted_text,
-                recipe_name_from_caption: None, // Recipe name came from user input, not caption
+                recipe_name_from_caption: recipe_name_from_caption.clone(), // Preserve caption info
             })
             .await?;
     } else {
@@ -881,7 +889,7 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
                 language_code: ctx.language_code.map(|s| s.to_string()),
                 message_id,
                 extracted_text,
-                recipe_name_from_caption: None, // Recipe name came from user input, not caption
+                recipe_name_from_caption: recipe_name_from_caption.clone(), // Preserve caption info
             })
             .await?;
     }

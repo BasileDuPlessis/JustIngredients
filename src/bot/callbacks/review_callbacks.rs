@@ -154,6 +154,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
         dialogue_lang_code,
         message_id,
         extracted_text,
+        recipe_name_from_caption,
         dialogue,
         ..
     } = params;
@@ -237,6 +238,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
                 message_id: Some(edited_message.id.0 as i32), // Track the editing prompt message
                 original_message_id: message_id, // Original recipe display message to replace
                 extracted_text: extracted_text.to_string(),
+                recipe_name_from_caption: recipe_name_from_caption.cloned().flatten(), // Preserve caption info
             })
             .await?;
     }
@@ -569,7 +571,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
                 ingredients: ingredients.to_vec(),
                 language_code: dialogue_lang_code.clone(),
                 extracted_text: extracted_text.to_string(),
-                recipe_name_from_caption: None, // No caption available
+                recipe_name_from_caption: recipe_name_from_caption.cloned().flatten(), // Preserve caption info from ReviewIngredients state
                 message_id: Some(prompt_msg.id.0 as i32), // Store prompt message ID
             })
             .await?;

@@ -128,6 +128,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
         message_id: Some(123),
         original_message_id: Some(456), // Original recipe display message ID
         extracted_text: "Test OCR text".to_string(),
+        recipe_name_from_caption: None,
     };
 
     match editing_state {
@@ -139,6 +140,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             message_id,
             original_message_id,
             extracted_text,
+            recipe_name_from_caption,
         } => {
             assert_eq!(recipe_name, "Test Recipe");
             assert_eq!(ingr.len(), 2);
@@ -147,6 +149,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             assert_eq!(message_id, Some(123));
             assert_eq!(original_message_id, Some(456));
             assert_eq!(extracted_text, "Test OCR text");
+            assert_eq!(recipe_name_from_caption, None);
         }
         _ => panic!("Expected EditingIngredient state"),
     }
@@ -339,6 +342,7 @@ fn test_dialogue_state_transitions_with_original_message_id() {
         message_id: Some(123),
         original_message_id: Some(456),
         extracted_text: "Test OCR text".to_string(),
+        recipe_name_from_caption: None,
     };
 
     // Verify the state structure includes original_message_id
@@ -350,6 +354,7 @@ fn test_dialogue_state_transitions_with_original_message_id() {
         message_id,
         original_message_id,
         extracted_text,
+        recipe_name_from_caption,
     } = editing_state
     {
         assert_eq!(recipe_name, "Test Recipe");
@@ -359,6 +364,7 @@ fn test_dialogue_state_transitions_with_original_message_id() {
         assert_eq!(message_id, Some(123));
         assert_eq!(original_message_id, Some(456)); // This is the key new field
         assert_eq!(extracted_text, "Test OCR text");
+        assert_eq!(recipe_name_from_caption, None);
     } else {
         panic!("Expected EditingIngredient state");
     }
@@ -447,6 +453,7 @@ fn test_review_to_editing_ingredient_transition() {
         message_id: Some(1001),          // New editing prompt message ID
         original_message_id: Some(1000), // Should track the original message ID
         extracted_text: "Test OCR text".to_string(),
+        recipe_name_from_caption: None,
     };
 
     // Verify the transition preserved the original message ID
