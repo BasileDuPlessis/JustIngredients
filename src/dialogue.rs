@@ -33,6 +33,7 @@ pub enum RecipeDialogueState {
         message_id: Option<i32>, // ID of the review message to edit after editing
         original_message_id: Option<i32>, // ID of the original recipe display message to replace during focused editing
         extracted_text: String,           // Store the original OCR text
+        recipe_name_from_caption: Option<String>, // Track recipe name from photo caption
     },
     WaitingForRecipeNameAfterConfirm {
         ingredients: Vec<MeasurementMatch>,
