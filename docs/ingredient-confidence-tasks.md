@@ -31,9 +31,9 @@ This document outlines the tasks to implement confidence scoring for ingredients
 - [x] **Validation**: Structs compile and can be instantiated
 
 ### Task 1.2: Extend MeasurementMatch with Confidence
-- [ ] Add optional confidence field to existing MeasurementMatch struct
-- [ ] **Files**: `src/text_processing.rs`
-- [ ] **Validation**: Existing code still works with confidence as optional
+- [x] Add optional confidence field to existing MeasurementMatch struct
+- [x] **Files**: `src/text_processing.rs`
+- [x] **Validation**: Existing code still works with confidence as optional
 
 ### Task 1.3: Create Confidence Calculator Module
 - [ ] Create new `src/confidence.rs` module
