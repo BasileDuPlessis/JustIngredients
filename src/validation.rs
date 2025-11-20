@@ -94,6 +94,7 @@ pub fn validate_basic_input(input: &str) -> Result<(), &'static str> {
 ///     line_number: 0,
 ///     start_pos: 0,
 ///     end_pos: 10,
+///     confidence: None,
 /// };
 ///
 /// assert!(validate_measurement_match(&valid_match, "temp: 2 cups flour").is_ok());
@@ -135,6 +136,7 @@ pub fn validate_measurement_match(
 ///     line_number: 0,
 ///     start_pos: 7, // Position of "2" in "-2 "
 ///     end_pos: 10,
+///     confidence: None,
 /// };
 ///
 /// adjust_quantity_for_negative(&mut match_with_negative, "temp: -2 cups flour");
@@ -181,6 +183,7 @@ pub fn adjust_quantity_for_negative(measurement_match: &mut MeasurementMatch, te
 ///     line_number: 0,
 ///     start_pos: 0,
 ///     end_pos: 10,
+///     confidence: None,
 /// };
 ///
 /// assert!(validate_quantity_range(&valid_match).is_ok());
@@ -192,6 +195,7 @@ pub fn adjust_quantity_for_negative(measurement_match: &mut MeasurementMatch, te
 ///     line_number: 0,
 ///     start_pos: 0,
 ///     end_pos: 10,
+///     confidence: None,
 /// };
 ///
 /// assert_eq!(validate_quantity_range(&invalid_match), Err("edit-invalid-quantity"));
@@ -365,6 +369,7 @@ fn parse_without_measurement_detector(trimmed: &str) -> Result<MeasurementMatch,
         line_number: 0,
         start_pos: 0,
         end_pos: trimmed.len(),
+        confidence: None,
     })
 }
 
@@ -398,6 +403,7 @@ fn parse_with_quantity(
         line_number: 0,
         start_pos: 0,
         end_pos: trimmed.len(),
+        confidence: None,
     })
 }
 
@@ -471,6 +477,7 @@ mod tests {
             line_number: 0,
             start_pos: 0,
             end_pos: 10,
+            confidence: None,
         };
 
         // Valid ranges
@@ -503,6 +510,7 @@ mod tests {
             line_number: 0,
             start_pos,
             end_pos: 10,
+            confidence: None,
         };
 
         // Should add negative sign

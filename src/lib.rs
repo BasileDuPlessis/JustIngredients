@@ -6,6 +6,7 @@
 pub mod bot;
 pub mod cache;
 pub mod circuit_breaker;
+pub mod confidence;
 pub mod config;
 pub mod db;
 pub mod deduplication;

@@ -408,6 +408,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                confidence: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -416,6 +417,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                confidence: None,
             },
             MeasurementMatch {
                 quantity: "1".to_string(),
@@ -424,6 +426,7 @@ mod tests {
                 line_number: 2,
                 start_pos: 15,
                 end_pos: 21,
+                confidence: None,
             },
         ];
 
@@ -483,6 +486,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                confidence: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -491,6 +495,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                confidence: None,
             },
         ];
 
@@ -581,6 +586,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                confidence: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -589,6 +595,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                confidence: None,
             },
         ];
 
@@ -668,6 +675,7 @@ mod tests {
             line_number: 0,
             start_pos: 0,
             end_pos: 50,
+            confidence: None,
         }];
 
         let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"), &manager);
@@ -697,6 +705,7 @@ mod tests {
             line_number: 0,
             start_pos: 0,
             end_pos: 6,
+            confidence: None,
         }];
 
         let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"), &manager);
@@ -747,6 +756,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                confidence: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -755,6 +765,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                confidence: None,
             },
             MeasurementMatch {
                 quantity: "1".to_string(),
@@ -763,6 +774,7 @@ mod tests {
                 line_number: 2,
                 start_pos: 15,
                 end_pos: 21,
+                confidence: None,
             },
         ];
 
@@ -812,6 +824,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                confidence: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -820,6 +833,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                confidence: None,
             },
         ];
 
@@ -1433,6 +1447,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                confidence: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -1441,6 +1456,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                confidence: None,
             },
         ];
 

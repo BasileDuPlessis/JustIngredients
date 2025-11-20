@@ -36,10 +36,10 @@ This document outlines the tasks to implement confidence scoring for ingredients
 - [x] **Validation**: Existing code still works with confidence as optional
 
 ### Task 1.3: Create Confidence Calculator Module
-- [ ] Create new `src/confidence.rs` module
-- [ ] Implement `calculate_ingredient_confidence()` function
-- [ ] Implement `confidence_to_level()` function
-- [ ] **Validation**: Calculator produces reasonable confidence scores
+- [x] Create new `src/confidence.rs` module
+- [x] Implement `calculate_ingredient_confidence()` function
+- [x] Implement `confidence_to_level()` function
+- [x] **Validation**: Calculator produces reasonable confidence scores
 
 ---
 

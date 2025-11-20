@@ -34,6 +34,8 @@ pub struct MeasurementMatch {
     pub start_pos: usize,
     /// The ending character position in the line
     pub end_pos: usize,
+    /// Optional confidence information for this measurement match
+    pub confidence: Option<IngredientConfidence>,
 }
 
 /// Represents confidence information for an ingredient extraction
@@ -845,6 +847,7 @@ impl MeasurementDetector {
                     line_number,
                     start_pos: current_pos + full_match.start(),
                     end_pos: current_pos + match_end_pos,
+                    confidence: None, // Confidence will be calculated later in the pipeline
                 });
             }
             current_pos += line.len() + 1; // +1 for newline character

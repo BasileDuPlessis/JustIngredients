@@ -18,6 +18,7 @@ pub fn ingredients_to_measurement_matches(ingredients: &[Ingredient]) -> Vec<Mea
             line_number: i,          // Use array index as line number
             start_pos: 0,            // Not meaningful for database data
             end_pos: ing.name.len(), // Use name length as approximation
+            confidence: None,        // Database ingredients don't have confidence scores
         })
         .collect()
 }
@@ -144,6 +145,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 5,
+                confidence: None,
             },
             MeasurementMatch {
                 quantity: "1".to_string(),
@@ -152,6 +154,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 0,
                 end_pos: 6,
+                confidence: None,
             },
         ];
 
