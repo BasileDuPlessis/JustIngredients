@@ -396,7 +396,7 @@ fn build_measurement_regex_pattern() -> String {
     // Build the complete regex pattern with named capture groups
     // Unified pattern: measurement is optional, ingredient extracted from text after match
     format!(
-        r"(?i)(?P<quantity>\d+\s+\d+/\d+|\d+/\d+|\d*\.?\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})(?:\s|$|[^a-zA-Z]))?\s*",
+        r"(?i)(?P<quantity>\d+\s+\d+/\d+|\d+/\d+|\d*\.?\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})(?:\s|$))?\s*",
         units_pattern
     )
 }
@@ -772,35 +772,34 @@ impl MeasurementDetector {
                     continue 'capture_loop;
                 }
 
-                let (final_quantity, final_measurement, match_end_pos) = if let Some(measurement) =
-                    measurement_unit
-                {
-                    // Traditional measurement
-                    debug!(
+                let (final_quantity, final_measurement, match_end_pos) =
+                    if let Some(measurement) = measurement_unit {
+                        // Traditional measurement
+                        debug!(
                         "Traditional measurement: quantity='{}', measurement='{}', ingredient='{}'",
                         quantity, measurement, ingredient
                     );
-                    (
-                        quantity.to_string(),
-                        Some(measurement.to_string()),
-                        match_end
-                            + (remaining_text.len() - remaining_text.trim_start().len())
-                            + ingredient.len(),
-                    )
-                } else {
-                    // Quantity-only ingredient
-                    debug!(
-                        "Quantity-only ingredient: quantity='{}', ingredient='{}'",
-                        quantity, ingredient
-                    );
-                    (
-                        quantity.to_string(),
-                        None,
-                        match_end
-                            + (remaining_text.len() - remaining_text.trim_start().len())
-                            + ingredient.len(),
-                    )
-                };
+                        (
+                            quantity.to_string(),
+                            Some(measurement.to_string()),
+                            match_end
+                                + (remaining_text.len() - remaining_text.trim_start().len())
+                                + ingredient.len(),
+                        )
+                    } else {
+                        // Quantity-only ingredient
+                        debug!(
+                            "Quantity-only ingredient: quantity='{}', ingredient='{}'",
+                            quantity, ingredient
+                        );
+                        (
+                            quantity.to_string(),
+                            None,
+                            match_end
+                                + (remaining_text.len() - remaining_text.trim_start().len())
+                                + ingredient.len(),
+                        )
+                    };
 
                 let ingredient_name = self.post_process_ingredient_name(&ingredient);
 

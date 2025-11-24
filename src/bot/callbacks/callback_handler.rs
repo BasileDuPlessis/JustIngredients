@@ -203,7 +203,7 @@ async fn handle_editing_ingredient_callbacks(
         message_id: _,
         original_message_id,
         extracted_text,
-        recipe_name_from_caption,
+        recipe_name_from_caption: _,
     }) = dialogue_state
     {
         if data == "cancel_ingredient_editing" {

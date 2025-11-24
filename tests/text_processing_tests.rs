@@ -985,59 +985,36 @@ mod tests {
     }
 
     #[test]
-    fn test_unified_extraction_ingredient_capture_completeness() {
-        // Test that the new pattern captures all remaining text as ingredient
-        let config = just_ingredients::text_processing::load_measurement_units_config();
-        let mut all_units: Vec<String> = Vec::new();
-        all_units.extend(config.measurement_units.volume_units);
-        all_units.extend(config.measurement_units.weight_units);
-        all_units.extend(config.measurement_units.volume_units_metric);
-        all_units.extend(config.measurement_units.us_units);
-        all_units.extend(config.measurement_units.french_units);
+    fn test_comma_separated_ingredients_bug() {
+        let detector = create_detector();
 
-        let unique_units: std::collections::HashSet<String> = all_units.into_iter().collect();
-        let mut sorted_units: Vec<String> = unique_units.into_iter().collect();
-        sorted_units.sort_by(|a, b| b.len().cmp(&a.len()).then(a.cmp(b)));
-        let escaped_units: Vec<String> = sorted_units
-            .into_iter()
-            .map(|unit| regex::escape(&unit))
-            .collect();
-        let units_pattern = escaped_units.join("|");
+        // This is the bug case: "150g de farine, 100g de sucre" should produce 2 separate ingredients
+        let text = "150g de farine, 100g de sucre";
+        let matches = detector.extract_ingredient_measurements(text);
 
-        let new_pattern = format!(
-            r"(?i)(?P<quantity>\d+/\d+|\d*\.?\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})(?:\s|$|[^a-zA-Z]))?\s*(?P<ingredient>.*)",
-            units_pattern
-        );
-
-        let regex = regex::Regex::new(&new_pattern).expect("New unified pattern should compile");
-
-        // Test that ingredient capture includes all remaining text
-        let completeness_tests = vec![
-            ("2 crème fraîche", "crème fraîche"),
-            ("6 pommes de terre bio", "pommes de terre bio"),
-            ("3 large eggs", "large eggs"),
-            ("500g dark chocolate chips", "dark chocolate chips"),
-            ("1 cup all-purpose flour", "all-purpose flour"),
-            ("250 ml whole milk", "whole milk"),
-            ("2g de chocolat noir 70%", "de chocolat noir 70%"),
-            ("1 sachet active dry yeast", "active dry yeast"),
-            ("4 fresh apples", "fresh apples"),
-        ];
-
-        for (input, expected_ingredient) in completeness_tests {
-            let captures = regex
-                .captures(input)
-                .unwrap_or_else(|| panic!("Pattern should match: {}", input));
-            let ingredient = captures
-                .name("ingredient")
-                .map(|m| m.as_str())
-                .unwrap_or("");
-
-            assert_eq!(
-                ingredient, expected_ingredient,
-                "Ingredient capture incomplete for input: '{}' (expected: '{}', got: '{}')",
-                input, expected_ingredient, ingredient
+        println!("Input text: '{}'", text);
+        println!("Number of matches: {}", matches.len());
+        for (i, m) in matches.iter().enumerate() {
+            println!(
+                "Match {}: quantity='{}', measurement={:?}, ingredient='{}'",
+                i, m.quantity, m.measurement, m.ingredient_name
             );
         }
+
+        // Expected: 2 matches
+        // Match 0: quantity="150", measurement=Some("g"), ingredient="farine"
+        // Match 1: quantity="100", measurement=Some("g"), ingredient="sucre"
+
+        assert_eq!(matches.len(), 2, "Should find 2 separate ingredients");
+
+        // First ingredient
+        assert_eq!(matches[0].quantity, "150");
+        assert_eq!(matches[0].measurement, Some("g".to_string()));
+        assert_eq!(matches[0].ingredient_name, "farine");
+
+        // Second ingredient
+        assert_eq!(matches[1].quantity, "100");
+        assert_eq!(matches[1].measurement, Some("g".to_string()));
+        assert_eq!(matches[1].ingredient_name, "sucre");
     }
 }
