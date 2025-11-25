@@ -69,7 +69,7 @@ pub async fn handle_review_ingredients_callbacks(
                     dialogue_lang_code: &dialogue_lang_code,
                     message_id,
                     extracted_text: &extracted_text,
-                    recipe_name_from_caption: None,
+                    recipe_name_from_caption: Some(&recipe_name_from_caption),
                     dialogue,
                     pool: None,
                 })
