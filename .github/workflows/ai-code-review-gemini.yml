@@ -75,18 +75,8 @@ jobs:
           DIFF_CONTENT="No Rust code changes in this commit."
         fi
 
-        # Create the analysis prompt for Gemini
-        # Store diff content in a temporary file to avoid shell interpretation issues
-        echo "${{ steps.diff-analysis.outputs.diff }}" > diff_content.txt
-        
-        # Truncate diff if too large (keep only first 100 lines to avoid token limits)
-        DIFF_CONTENT=$(head -100 diff_content.txt)
-        if [ -z "$DIFF_CONTENT" ]; then
-          DIFF_CONTENT="No Rust code changes in this commit."
-        fi
-
-        # Escape problematic characters in diff content
-        DIFF_CONTENT=$(echo "$DIFF_CONTENT" | sed 's/\\/\\\\/g; s/"/\\"/g; s/`/\\`/g; s/\$/\\$/g')
+        # Escape problematic characters in diff content more thoroughly
+        DIFF_CONTENT=$(echo "$DIFF_CONTENT" | sed 's/\\/\\\\/g; s/"/\\"/g; s/`/\\`/g; s/\$/\\$/g; s/\x0D$//' | tr -d '\000-\037')
 
         cat > analysis_request.json << EOF
         {
@@ -144,10 +134,27 @@ jobs:
         elif echo "$RESPONSE" | jq -e '.candidates[0].content.parts[0].text' >/dev/null 2>&1; then
           ANALYSIS=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text')
 
-          # Parse JSON response (Gemini returns text that should be JSON)
-          PRIORITY=$(echo "$ANALYSIS" | jq -r '.priority // "NONE"' 2>/dev/null || echo "NONE")
-          ISSUES=$(echo "$ANALYSIS" | jq -r '.issues // [] | join("\n")' 2>/dev/null || echo "")
-          RECOMMENDATIONS=$(echo "$ANALYSIS" | jq -r '.recommendations // [] | join("\n")' 2>/dev/null || echo "")
+          # Clean up the analysis text (remove markdown formatting if present)
+          ANALYSIS=$(echo "$ANALYSIS" | sed 's/```json//g; s/```//g' | tr -d '\n\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+
+          # Try to parse as JSON, fallback to text analysis
+          if echo "$ANALYSIS" | jq empty >/dev/null 2>&1; then
+            # Valid JSON response
+            PRIORITY=$(echo "$ANALYSIS" | jq -r '.priority // "NONE"' 2>/dev/null || echo "NONE")
+            ISSUES=$(echo "$ANALYSIS" | jq -r '.issues // [] | join("\n")' 2>/dev/null || echo "")
+            RECOMMENDATIONS=$(echo "$ANALYSIS" | jq -r '.recommendations // [] | join("\n")' 2>/dev/null || echo "")
+          else
+            # Plain text response - check for NO_CRITICAL_ISSUES
+            if echo "$ANALYSIS" | grep -q "NO_CRITICAL_ISSUES"; then
+              PRIORITY="NONE"
+              ISSUES=""
+              RECOMMENDATIONS=""
+            else
+              PRIORITY="UNKNOWN"
+              ISSUES="AI returned non-JSON response: $ANALYSIS"
+              RECOMMENDATIONS="Check AI response format"
+            fi
+          fi
 
           echo "priority=$PRIORITY" >> $GITHUB_OUTPUT
           echo "issues<<EOF" >> $GITHUB_OUTPUT

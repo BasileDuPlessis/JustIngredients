@@ -274,7 +274,7 @@ async fn handle_editing_ingredient_callbacks(
                         language_code,
                         message_id: original_message_id, // Use original message ID for the restored display
                         extracted_text,
-                        recipe_name_from_caption: None, // Recipe name came from user input, not caption
+                        recipe_name_from_caption, // Preserve original caption info
                     })
                     .await?;
             }
