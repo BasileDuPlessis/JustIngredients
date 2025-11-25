@@ -203,7 +203,7 @@ async fn handle_editing_ingredient_callbacks(
         message_id: _,
         original_message_id,
         extracted_text,
-        recipe_name_from_caption: _,
+        recipe_name_from_caption,
     }) = dialogue_state
     {
         if data == "cancel_ingredient_editing" {
@@ -274,7 +274,7 @@ async fn handle_editing_ingredient_callbacks(
                         language_code,
                         message_id: original_message_id, // Use original message ID for the restored display
                         extracted_text,
-                        recipe_name_from_caption: None, // Recipe name came from user input, not caption
+                        recipe_name_from_caption, // Preserve original caption info
                     })
                     .await?;
             }
