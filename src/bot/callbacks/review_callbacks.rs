@@ -175,7 +175,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
 
         // Create focused editing prompt message
         let edit_prompt = format!(
-            "✏️ {}\n\n{}: **{} {}**\n\n{}",
+            "✏️ {}\n\n{}: **{} {} {}**\n\n{}",
             t_lang(
                 ctx.localization,
                 "edit-ingredient-title",
@@ -188,6 +188,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
             ),
             ingredient.quantity,
             ingredient.measurement.as_deref().unwrap_or(""),
+            ingredient.ingredient_name,
             t_lang(
                 ctx.localization,
                 "edit-ingredient-instruction",
