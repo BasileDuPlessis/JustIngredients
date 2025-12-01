@@ -313,7 +313,14 @@ pub async fn get_or_create_user_cached(
 ) -> Result<User> {
     // Try cache first
     {
-        let cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
+        let cache_manager = match cache.lock() {
+            Ok(manager) => manager,
+            Err(poisoned) => {
+                crate::observability::record_mutex_poisoning("cache_manager", "user_lookup");
+                // For poisoned mutex, we can still access the data but log the incident
+                poisoned.into_inner()
+            }
+        };
         if let Some(user) = cache_manager.user_cache.get(&telegram_id) {
             debug!(telegram_id = %telegram_id, "User found in cache");
             return Ok(user);

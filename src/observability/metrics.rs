@@ -958,3 +958,15 @@ pub enum FeatureType {
     /// Workflow continuation buttons
     WorkflowButtons,
 }
+
+/// Record mutex poisoning incidents for monitoring critical system health
+pub fn record_mutex_poisoning(component: &str, operation: &str) {
+    metrics::counter!("mutex_poisoning_total", "component" => component.to_string(), "operation" => operation.to_string())
+        .increment(1);
+
+    tracing::error!(
+        component = %component,
+        operation = %operation,
+        "Mutex poisoning detected - this indicates a critical system error requiring investigation"
+    );
+}

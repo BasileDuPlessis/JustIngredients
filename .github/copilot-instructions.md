@@ -212,14 +212,14 @@ cargo test                    # Run complete test suite (93 tests)
 - **Quality Gate**: Code that fails tests cannot be merged or deployed
 
 ### ⚠️ CRITICAL: Error Handling Requirements
-**STRICTLY PROHIBITED: Usage of `.unwrap()`, `.expect()`, and panicking methods**
+**STRICTLY PROHIBITED: Usage of `.unwrap()` and panicking methods**
 
 - **Never Use `.unwrap()`**: Replace with proper error handling using `?`, `match`, or `if let`
-- **Never Use `.expect()`**: Same as unwrap - use proper error propagation instead
+- **Acceptable `.expect()` Usage**: Only for mutex poisoning with descriptive messages (e.g., `lock().expect("Failed to acquire mutex")`)
 - **Never Use Panicking Methods**: Avoid `panic!()`, unreachable code, and similar
 - **Error Propagation**: Use `Result<T, E>` and `?` operator for clean error handling
 - **Graceful Degradation**: Handle errors with user-friendly messages, not crashes
-- **Thread Safety**: Use proper mutex handling with `lock().map_err(...)` instead of `unwrap()`
+- **Thread Safety**: Use proper mutex handling with `lock().expect("descriptive message")` for poisoning
 
 ### Testing Approach
 - **Unit Tests**: Comprehensive coverage for all modules (77 tests)
@@ -258,13 +258,14 @@ cargo test                    # Run complete test suite (93 tests)
   - Treats all warnings as errors for maximum code quality
   - Only add Clippy allow attributes when strictly justified and document the rationale inline
   - Common allowed lints: `too_many_arguments` for database functions
-  - **STRICTLY PROHIBITED**: `unwrap_used`, `expect_used`, `panic` - use proper error handling instead
+  - **STRICTLY PROHIBITED**: `unwrap_used`, `panic` - use proper error handling instead
+  - **ALLOWED**: `expect_used` only for mutex poisoning with descriptive messages
 - **Rustfmt Enforcement**: All code must be formatted with `rustfmt`
   - Run `cargo fmt --all -- --check` to verify formatting
   - CI rejects PRs with formatting issues
 - **CI Integration**: PRs are automatically rejected if they fail:
   - `cargo test` (all 93 tests must pass)
-  - `cargo clippy --all-targets --all-features -- -D warnings` (includes unwrap/expect prohibitions)
+  - `cargo clippy --all-targets --all-features -- -D warnings` (includes unwrap prohibition, allows expect for mutex poisoning)
   - `cargo fmt --all -- --check`
 - **Copilot and AI Contributions**: AI-generated code must meet ALL quality standards
   - No exceptions for AI-generated code

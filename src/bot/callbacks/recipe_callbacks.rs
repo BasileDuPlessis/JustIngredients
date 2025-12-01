@@ -259,6 +259,12 @@ pub async fn handle_recipe_action(
             }
         }
         "delete" => {
+            // Get the original message ID to include in callback data
+            let original_message_id = match msg {
+                MaybeInaccessibleMessage::Regular(msg) => Some(msg.id),
+                MaybeInaccessibleMessage::Inaccessible(_) => None,
+            };
+
             let message = format!(
                 "🗑️ **{}**\n\n{}",
                 t_lang(
@@ -279,14 +285,22 @@ pub async fn handle_recipe_action(
                         "✅ {}",
                         t_lang(localization, "confirm", language_code.as_deref())
                     ),
-                    format!("confirm_delete_recipe:{}", recipe_id),
+                    format!(
+                        "confirm_delete_recipe:{}:{}",
+                        recipe_id,
+                        original_message_id.map(|id| id.0).unwrap_or(0)
+                    ),
                 ),
                 teloxide::types::InlineKeyboardButton::callback(
                     format!(
                         "❌ {}",
                         t_lang(localization, "cancel", language_code.as_deref())
                     ),
-                    format!("cancel_delete_recipe:{}", recipe_id),
+                    format!(
+                        "cancel_delete_recipe:{}:{}",
+                        recipe_id,
+                        original_message_id.map(|id| id.0).unwrap_or(0)
+                    ),
                 ),
             ]];
 
@@ -481,11 +495,15 @@ pub async fn handle_delete_recipe_confirmation(
         }
     };
 
-    // Parse callback data (format: "confirm_delete_recipe:{recipe_id}" or "cancel_delete_recipe:{recipe_id}")
+    // Parse callback data (format: "confirm_delete_recipe:{recipe_id}:{original_message_id}" or "cancel_delete_recipe:{recipe_id}:{original_message_id}")
     let parts: Vec<&str> = data.split(':').collect();
     let action = parts[0];
     let recipe_id_str = parts.get(1).unwrap_or(&"");
     let recipe_id: i64 = recipe_id_str.parse().unwrap_or(0);
+    let original_message_id: Option<i32> = parts
+        .get(2)
+        .and_then(|s| s.parse().ok())
+        .filter(|&id| id != 0);
 
     match action {
         "confirm_delete_recipe" => {
@@ -493,23 +511,117 @@ pub async fn handle_delete_recipe_confirmation(
             match crate::db::delete_recipe(&pool, recipe_id).await {
                 Ok(deleted) => {
                     if deleted {
-                        let message = format!(
-                            "🗑️ **{}**\n\n{}",
-                            t_lang(localization, "recipe-deleted", language_code.as_deref()),
-                            t_lang(
-                                localization,
-                                "recipe-deleted-help",
-                                language_code.as_deref()
-                            )
-                        );
-                        bot.send_message(chat_id, message).await?;
+                        // Delete the confirmation message entirely
+                        if let MaybeInaccessibleMessage::Regular(msg) = msg {
+                            match bot.delete_message(chat_id, msg.id).await {
+                                Ok(_) => (),
+                                Err(e) => {
+                                    crate::errors::error_logging::log_internal_error(
+                                        &e,
+                                        "handle_delete_recipe_confirmation",
+                                        "Failed to delete confirmation message",
+                                        Some(chat_id.0),
+                                    );
+                                }
+                            }
+                        }
+
+                        // Also delete the original recipe message
+                        if let Some(original_msg_id) = original_message_id {
+                            match bot
+                                .delete_message(
+                                    chat_id,
+                                    teloxide::types::MessageId(original_msg_id),
+                                )
+                                .await
+                            {
+                                Ok(_) => (),
+                                Err(e) => {
+                                    crate::errors::error_logging::log_internal_error(
+                                        &e,
+                                        "handle_delete_recipe_confirmation",
+                                        "Failed to delete original recipe message",
+                                        Some(chat_id.0),
+                                    );
+                                }
+                            }
+                        }
                     } else {
+                        // Recipe not found - show error and delete both messages
+                        if let MaybeInaccessibleMessage::Regular(msg) = msg {
+                            match bot.delete_message(chat_id, msg.id).await {
+                                Ok(_) => (),
+                                Err(e) => {
+                                    crate::errors::error_logging::log_internal_error(
+                                        &e,
+                                        "handle_delete_recipe_confirmation",
+                                        "Failed to delete confirmation message",
+                                        Some(chat_id.0),
+                                    );
+                                }
+                            }
+                        }
+
+                        // Also delete the original recipe message
+                        if let Some(original_msg_id) = original_message_id {
+                            match bot
+                                .delete_message(
+                                    chat_id,
+                                    teloxide::types::MessageId(original_msg_id),
+                                )
+                                .await
+                            {
+                                Ok(_) => (),
+                                Err(e) => {
+                                    crate::errors::error_logging::log_internal_error(
+                                        &e,
+                                        "handle_delete_recipe_confirmation",
+                                        "Failed to delete original recipe message",
+                                        Some(chat_id.0),
+                                    );
+                                }
+                            }
+                        }
+
                         let message =
                             t_lang(localization, "recipe-not-found", language_code.as_deref());
                         bot.send_message(chat_id, message).await?;
                     }
                 }
                 Err(e) => {
+                    // Database error - show error and delete both messages
+                    if let MaybeInaccessibleMessage::Regular(msg) = msg {
+                        match bot.delete_message(chat_id, msg.id).await {
+                            Ok(_) => (),
+                            Err(e) => {
+                                crate::errors::error_logging::log_internal_error(
+                                    &e,
+                                    "handle_delete_recipe_confirmation",
+                                    "Failed to delete confirmation message",
+                                    Some(chat_id.0),
+                                );
+                            }
+                        }
+                    }
+
+                    // Also delete the original recipe message
+                    if let Some(original_msg_id) = original_message_id {
+                        match bot
+                            .delete_message(chat_id, teloxide::types::MessageId(original_msg_id))
+                            .await
+                        {
+                            Ok(_) => (),
+                            Err(e) => {
+                                crate::errors::error_logging::log_internal_error(
+                                    &e,
+                                    "handle_delete_recipe_confirmation",
+                                    "Failed to delete original recipe message",
+                                    Some(chat_id.0),
+                                );
+                            }
+                        }
+                    }
+
                     error_logging::log_database_error(
                         &e,
                         "delete_recipe",
@@ -534,8 +646,38 @@ pub async fn handle_delete_recipe_confirmation(
             }
         }
         "cancel_delete_recipe" => {
-            let message = t_lang(localization, "delete-cancelled", language_code.as_deref());
-            bot.send_message(chat_id, message).await?;
+            // Delete the confirmation message entirely
+            if let MaybeInaccessibleMessage::Regular(msg) = msg {
+                match bot.delete_message(chat_id, msg.id).await {
+                    Ok(_) => (),
+                    Err(e) => {
+                        crate::errors::error_logging::log_internal_error(
+                            &e,
+                            "handle_delete_recipe_confirmation",
+                            "Failed to delete confirmation message",
+                            Some(chat_id.0),
+                        );
+                    }
+                }
+            }
+
+            // Also delete the original recipe message
+            if let Some(original_msg_id) = original_message_id {
+                match bot
+                    .delete_message(chat_id, teloxide::types::MessageId(original_msg_id))
+                    .await
+                {
+                    Ok(_) => (),
+                    Err(e) => {
+                        crate::errors::error_logging::log_internal_error(
+                            &e,
+                            "handle_delete_recipe_confirmation",
+                            "Failed to delete original recipe message",
+                            Some(chat_id.0),
+                        );
+                    }
+                }
+            }
         }
         _ => {}
     }
