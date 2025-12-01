@@ -46,24 +46,24 @@ This document outlines the tasks to implement confidence scoring for ingredients
 ## 🧠 Phase 2: Confidence Factor Implementation
 
 ### Task 2.1: Implement Pattern Strength Scoring
-- [ ] Evaluate how strongly the regex pattern matched
-- [ ] Consider exact matches, pattern scores, component completeness
-- [ ] **Files**: `src/confidence.rs`
-- [ ] **Validation**: Pattern strength correlates with match quality
+- [x] Evaluate how strongly the regex pattern matched
+- [x] Consider exact matches, pattern scores, component completeness
+- [x] **Files**: `src/confidence.rs`
+- [x] **Validation**: Pattern strength correlates with match quality
 
 ### Task 2.2: Implement Measurement Validity Checking
-- [ ] Validate quantities and units make sense (e.g., reject "500kg salt")
-- [ ] Check unit compatibility with ingredient types
-- [ ] Implement quantity reasonableness bounds
-- [ ] **Files**: `src/confidence.rs`
-- [ ] **Validation**: Correctly identifies unreasonable measurements
+- [x] Validate quantities and units make sense (e.g., reject "500kg salt")
+- [x] Check unit compatibility with ingredient types
+- [x] Implement quantity reasonableness bounds
+- [x] **Files**: `src/confidence.rs`
+- [x] **Validation**: Correctly identifies unreasonable measurements
 
 ### Task 2.3: Implement Context Consistency Analysis
-- [ ] Check if ingredient fits with recipe context
-- [ ] Consider recipe type alignment and ingredient category coherence
-- [ ] Avoid duplicate ingredients
-- [ ] **Files**: `src/confidence.rs`
-- [ ] **Validation**: Context consistency improves with recipe understanding
+- [x] Check if ingredient fits with recipe context
+- [x] Consider recipe type alignment and ingredient category coherence
+- [x] Avoid duplicate ingredients
+- [x] **Files**: `src/confidence.rs`
+- [x] **Validation**: Context consistency improves with recipe understanding
 
 ### Task 2.4: Integrate OCR Quality Factor
 - [ ] Incorporate base OCR confidence into overall scoring
@@ -189,8 +189,8 @@ This document outlines the tasks to implement confidence scoring for ingredients
 - [ ] Analyze existing regex patterns and their reliability
 
 ### Development Phases
-- [ ] Phase 1: Core confidence infrastructure (Tasks 1.1-1.3)
-- [ ] Phase 2: Confidence factor implementation (Tasks 2.1-2.4)
+- [x] Phase 1: Core confidence infrastructure (Tasks 1.1-1.3)
+- [x] Phase 2: Confidence factor implementation (Tasks 2.1-2.4)
 - [ ] Phase 3: Integration and configuration (Tasks 3.1-3.3)
 - [ ] Phase 4: User interface updates (Tasks 4.1-4.3)
 - [ ] Phase 5: Testing and validation (Tasks 5.1-5.3)

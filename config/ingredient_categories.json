@@ -1,0 +1,56 @@
+{
+  "categories": {
+    "protein": [
+      "chicken", "beef", "pork", "fish", "salmon", "tuna", "shrimp", "eggs", "tofu", "tempeh",
+      "lentils", "beans", "chickpeas", "turkey", "lamb", "duck", "crab", "lobster", "scallops",
+      "bacon", "sausage", "ham", "ground beef", "steak", "ribs", "meatballs", "poultry"
+    ],
+    "vegetable": [
+      "carrot", "broccoli", "spinach", "lettuce", "tomato", "cucumber", "bell pepper", "onion",
+      "garlic", "potato", "sweet potato", "zucchini", "eggplant", "mushroom", "celery", "kale",
+      "cabbage", "cauliflower", "brussels sprouts", "asparagus", "green beans", "peas", "corn",
+      "beets", "radish", "turnip", "parsnip", "squash", "pumpkin", "artichoke", "fennel"
+    ],
+    "fruit": [
+      "apple", "banana", "orange", "lemon", "lime", "strawberry", "blueberry", "raspberry",
+      "blackberry", "grape", "pineapple", "mango", "peach", "pear", "plum", "cherry", "kiwi",
+      "watermelon", "cantaloupe", "honeydew", "grapefruit", "pomegranate", "avocado"
+    ],
+    "grain": [
+      "rice", "pasta", "bread", "flour", "oats", "quinoa", "barley", "wheat", "couscous",
+      "noodles", "spaghetti", "macaroni", "lasagna", "tortilla", "cracker", "cereal", "bran"
+    ],
+    "dairy": [
+      "milk", "cheese", "yogurt", "butter", "cream", "sour cream", "cottage cheese",
+      "mozzarella", "cheddar", "parmesan", "feta", "goat cheese", "ricotta", "cream cheese"
+    ],
+    "spice": [
+      "salt", "pepper", "cumin", "paprika", "cinnamon", "nutmeg", "ginger", "curry powder",
+      "chili powder", "garam masala", "turmeric", "coriander", "cardamom", "cloves", "saffron",
+      "cayenne", "mustard", "oregano", "thyme", "rosemary", "basil", "parsley"
+    ],
+    "herb": [
+      "basil", "parsley", "cilantro", "mint", "dill", "chives", "tarragon", "sage", "oregano",
+      "thyme", "rosemary", "lavender", "bay leaf", "bay leaves"
+    ],
+    "oil": [
+      "olive oil", "vegetable oil", "canola oil", "coconut oil", "sesame oil", "peanut oil",
+      "avocado oil", "sunflower oil", "grapeseed oil", "butter", "ghee"
+    ],
+    "sweetener": [
+      "sugar", "brown sugar", "honey", "maple syrup", "agave", "stevia", "sucralose",
+      "aspartame", "corn syrup", "molasses", "powdered sugar"
+    ],
+    "baking": [
+      "baking powder", "baking soda", "yeast", "vanilla extract", "almond extract",
+      "cocoa powder", "chocolate chips", "sprinkles", "food coloring", "gelatin"
+    ],
+    "condiment": [
+      "ketchup", "mustard", "mayonnaise", "soy sauce", "hot sauce", "vinegar", "balsamic",
+      "worcestershire", "barbecue sauce", "teriyaki", "salsa", "pesto", "hummus"
+    ],
+    "beverage": [
+      "water", "coffee", "tea", "juice", "soda", "wine", "beer", "milk", "cocoa", "broth", "stock"
+    ]
+  }
+}
