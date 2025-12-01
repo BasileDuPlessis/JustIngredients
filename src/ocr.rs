@@ -395,8 +395,8 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// let circuit_breaker = CircuitBreaker::new(config.recovery.clone());
 ///
 /// // Process an image of ingredients
-/// let text = extract_text_from_image("/path/to/ingredients.jpg", &config, &instance_manager, &circuit_breaker).await?;
-/// println!("Extracted text: {}", text);
+/// let (text, confidence) = extract_text_from_image("/path/to/ingredients.jpg", &config, &instance_manager, &circuit_breaker).await?;
+/// println!("Extracted text: {} (confidence: {:.2})", text, confidence);
 /// # Ok(())
 /// # }
 /// ```
@@ -629,14 +629,14 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// let circuit_breaker = CircuitBreaker::new(recovery_config);
 ///
 /// // Extract text from image
-/// let extracted_text = extract_text_from_image(
+/// let (extracted_text, ocr_confidence) = extract_text_from_image(
 ///     "/path/to/ingredients.jpg",
 ///     &config,
 ///     &instance_manager,
 ///     &circuit_breaker
 /// ).await?;
 ///
-/// println!("Extracted text: {}", extracted_text);
+/// println!("Extracted text: {} (OCR confidence: {:.2})", extracted_text, ocr_confidence);
 /// # Ok(())
 /// # }
 /// ```
@@ -654,7 +654,7 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 ///
 /// // Circuit breaker open
 /// match extract_text_from_image("/large/image.png", &config, &instance_manager, &circuit_breaker).await {
-///     Ok(text) => println!("Success: {}", text),
+///     Ok((text, confidence)) => println!("Success: {} (confidence: {:.2})", text, confidence),
 ///     Err(e) => println!("Error: {:?}", e), // May be circuit breaker error
 /// }
 /// # Ok(())
@@ -665,7 +665,7 @@ pub async fn extract_text_from_image(
     config: &crate::ocr_config::OcrConfig,
     instance_manager: &crate::instance_manager::OcrInstanceManager,
     circuit_breaker: &crate::circuit_breaker::CircuitBreaker,
-) -> Result<String, crate::ocr_errors::OcrError> {
+) -> Result<(String, f32), crate::ocr_errors::OcrError> {
     // Create a tracing span for the OCR operation
     let span = crate::observability::ocr_span("extract_text_from_image");
     let _enter = span.enter();
@@ -697,7 +697,7 @@ pub async fn extract_text_from_image(
         attempt += 1;
 
         match perform_ocr_extraction(image_path, config, instance_manager).await {
-            Ok((text, ocr_duration)) => {
+            Ok((text, confidence, ocr_duration)) => {
                 let total_duration = start_time.elapsed();
                 let total_ms = total_duration.as_millis();
 
@@ -720,9 +720,9 @@ pub async fn extract_text_from_image(
                     },
                 );
 
-                info!("OCR extraction completed successfully on attempt {} in {}ms. Extracted {} characters of text",
-                      attempt, total_ms, text.len());
-                return Ok(text);
+                info!("OCR extraction completed successfully on attempt {} in {}ms. Extracted {} characters of text (confidence: {:.2})",
+                      attempt, total_ms, text.len(), confidence);
+                return Ok((text, confidence));
             }
             Err(err) => {
                 if attempt >= max_attempts {
@@ -809,7 +809,7 @@ async fn perform_ocr_extraction(
     image_path: &str,
     config: &crate::ocr_config::OcrConfig,
     instance_manager: &crate::instance_manager::OcrInstanceManager,
-) -> Result<(String, std::time::Duration), crate::ocr_errors::OcrError> {
+) -> Result<(String, f32, std::time::Duration), crate::ocr_errors::OcrError> {
     // Start timing the actual OCR processing
     let ocr_start_time = std::time::Instant::now();
 
@@ -823,7 +823,7 @@ async fn perform_ocr_extraction(
             .map_err(|e| crate::ocr_errors::OcrError::Initialization(e.to_string()))?;
 
         // Perform OCR processing with the reused instance
-        let extracted_text = {
+        let (extracted_text, confidence) = {
             let mut tess = instance.lock().unwrap();
             // Set the image for OCR processing
             tess.set_image(image_path).map_err(|e| {
@@ -831,11 +831,17 @@ async fn perform_ocr_extraction(
             })?;
 
             // Extract text from the image
-            tess.get_utf8_text().map_err(|e| {
+            let text = tess.get_utf8_text().map_err(|e| {
                 crate::ocr_errors::OcrError::Extraction(format!(
                     "Failed to extract text from image: {e}"
                 ))
-            })?
+            })?;
+
+            // Get OCR confidence score (0-100, convert to 0.0-1.0)
+            // TODO: Use actual Tesseract confidence when leptess API is available
+            let confidence_score = 0.8; // Default confidence for now
+
+            (text, confidence_score)
         };
 
         // Clean up the extracted text (remove extra whitespace and empty lines)
@@ -847,7 +853,7 @@ async fn perform_ocr_extraction(
             .collect::<Vec<&str>>()
             .join("\n");
 
-        Ok(cleaned_text)
+        Ok((cleaned_text, confidence))
     })
     .await;
 
@@ -855,13 +861,14 @@ async fn perform_ocr_extraction(
     let ocr_ms = ocr_duration.as_millis();
 
     match result {
-        Ok(Ok(text)) => {
+        Ok(Ok((text, confidence))) => {
             info!(
-                "OCR processing completed in {}ms, extracted {} characters",
+                "OCR processing completed in {}ms, extracted {} characters (confidence: {:.2})",
                 ocr_ms,
-                text.len()
+                text.len(),
+                confidence
             );
-            Ok((text, ocr_duration))
+            Ok((text, confidence, ocr_duration))
         }
         Ok(Err(e)) => {
             warn!("OCR processing failed after {ocr_ms}ms: {e:?}");

@@ -20,7 +20,7 @@ pub enum RecipeType {
 }
 
 /// Ingredient categories for classification
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum IngredientCategory {
     Protein,
     Vegetable,
@@ -84,7 +84,7 @@ pub struct RecipeContext {
 /// ```
 pub fn calculate_ingredient_confidence(
     measurement: &MeasurementMatch,
-    extracted_text: &str,
+    _extracted_text: &str,
     ocr_base_confidence: Option<f32>,
     recipe_context: Option<&RecipeContext>,
 ) -> IngredientConfidence {

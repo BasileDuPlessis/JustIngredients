@@ -179,7 +179,7 @@ pub async fn download_and_process_image(
         )
         .await
         {
-            Ok(extracted_text) => {
+            Ok((extracted_text, ocr_confidence)) => {
                 if extracted_text.is_empty() {
                     warn!(user_id = %chat_id, "OCR extraction returned empty text");
                     bot.edit_message_text(chat_id, success_message_id, t_lang(localization, "error-no-text-found", language_code))
@@ -189,12 +189,13 @@ pub async fn download_and_process_image(
                     info!(
                         user_id = %chat_id,
                         chars_extracted = extracted_text.len(),
+                        ocr_confidence = ocr_confidence,
                         "OCR extraction completed successfully"
                     );
 
                     // Process the extracted text to find ingredients with measurements
                     let ingredients =
-                        process_ingredients_and_extract_matches(&extracted_text, language_code);
+                        process_ingredients_and_extract_matches(&extracted_text, ocr_confidence, language_code);
 
                     if ingredients.is_empty() {
                         // No ingredients found, edit the success message
@@ -323,6 +324,7 @@ pub async fn download_and_process_image(
 /// Process extracted text and return measurement matches
 pub fn process_ingredients_and_extract_matches(
     extracted_text: &str,
+    ocr_confidence: f32,
     _language_code: Option<&str>,
 ) -> Vec<MeasurementMatch> {
     debug!(
@@ -345,10 +347,22 @@ pub fn process_ingredients_and_extract_matches(
     };
 
     // Find all measurements in the text
-    let matches = detector.extract_ingredient_measurements(extracted_text);
+    let mut matches = detector.extract_ingredient_measurements(extracted_text);
+    
+    // Calculate confidence for each match
+    for match_item in &mut matches {
+        let confidence = crate::confidence::calculate_ingredient_confidence(
+            match_item,
+            extracted_text,
+            Some(ocr_confidence),
+            None, // No recipe context for now
+        );
+        match_item.confidence = Some(confidence);
+    }
+    
     info!(
         matches_found = matches.len(),
-        "Measurement detection completed"
+        "Measurement detection and confidence calculation completed"
     );
 
     matches

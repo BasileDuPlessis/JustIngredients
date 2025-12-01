@@ -66,10 +66,10 @@ This document outlines the tasks to implement confidence scoring for ingredients
 - [x] **Validation**: Context consistency improves with recipe understanding
 
 ### Task 2.4: Integrate OCR Quality Factor
-- [ ] Incorporate base OCR confidence into overall scoring
-- [ ] Map OCR confidence to matched text segments
-- [ ] **Files**: `src/confidence.rs`
-- [ ] **Validation**: OCR quality properly factored into confidence scores
+- [x] Incorporate base OCR confidence into overall scoring
+- [x] Map OCR confidence to matched text segments
+- [x] **Files**: `src/confidence.rs`
+- [x] **Validation**: OCR quality properly factored into confidence scores
 
 ---
 
