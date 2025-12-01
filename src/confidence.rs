@@ -808,21 +808,21 @@ mod tests {
     #[test]
     fn test_context_consistency_normal() {
         let measurement = create_test_match("2", Some("cups"), "all-purpose flour");
-        let consistency = calculate_context_consistency(&measurement, "2 cups all-purpose flour");
+        let consistency = calculate_context_consistency(&measurement, None);
         assert!(consistency > 0.6);
     }
 
     #[test]
     fn test_context_consistency_short_name() {
         let measurement = create_test_match("2", Some("cups"), "a");
-        let consistency = calculate_context_consistency(&measurement, "2 cups a");
+        let consistency = calculate_context_consistency(&measurement, None);
         assert!(consistency < 0.5);
     }
 
     #[test]
     fn test_context_consistency_too_many_numbers() {
         let measurement = create_test_match("2", Some("cups"), "flour123456");
-        let consistency = calculate_context_consistency(&measurement, "2 cups flour123456");
+        let consistency = calculate_context_consistency(&measurement, None);
         assert!(consistency < 0.5);
     }
 
