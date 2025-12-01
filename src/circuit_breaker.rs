@@ -147,8 +147,14 @@ impl CircuitBreaker {
     /// - Automatically resets to closed state after reset timeout
     /// - Thread-safe using internal mutexes
     pub fn is_open(&self) -> bool {
-        let failure_count = *self.failure_count.lock().unwrap();
-        let last_failure = *self.last_failure_time.lock().unwrap();
+        let failure_count = *self
+            .failure_count
+            .lock()
+            .expect("Failed to acquire failure count lock");
+        let last_failure = *self
+            .last_failure_time
+            .lock()
+            .expect("Failed to acquire last failure time lock");
 
         if failure_count >= self.config.circuit_breaker_threshold {
             if let Some(last_time) = last_failure {
@@ -157,8 +163,14 @@ impl CircuitBreaker {
                     return true; // Circuit is still open
                 }
                 // Reset circuit breaker
-                *self.failure_count.lock().unwrap() = 0;
-                *self.last_failure_time.lock().unwrap() = None;
+                *self
+                    .failure_count
+                    .lock()
+                    .expect("Failed to acquire failure count lock") = 0;
+                *self
+                    .last_failure_time
+                    .lock()
+                    .expect("Failed to acquire last failure time lock") = None;
             }
         }
         false
@@ -173,8 +185,14 @@ impl CircuitBreaker {
     ///
     /// Uses internal mutex for thread-safe updates.
     pub fn record_failure(&self) {
-        *self.failure_count.lock().unwrap() += 1;
-        *self.last_failure_time.lock().unwrap() = Some(Instant::now());
+        *self
+            .failure_count
+            .lock()
+            .expect("Failed to acquire failure count lock") += 1;
+        *self
+            .last_failure_time
+            .lock()
+            .expect("Failed to acquire last failure time lock") = Some(Instant::now());
     }
 
     /// Record a success to reset the failure counter
@@ -186,7 +204,13 @@ impl CircuitBreaker {
     ///
     /// Uses internal mutex for thread-safe updates.
     pub fn record_success(&self) {
-        *self.failure_count.lock().unwrap() = 0;
-        *self.last_failure_time.lock().unwrap() = None;
+        *self
+            .failure_count
+            .lock()
+            .expect("Failed to acquire failure count lock") = 0;
+        *self
+            .last_failure_time
+            .lock()
+            .expect("Failed to acquire last failure time lock") = None;
     }
 }

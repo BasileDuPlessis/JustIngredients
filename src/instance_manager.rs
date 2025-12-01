@@ -104,7 +104,10 @@ impl OcrInstanceManager {
 
         // Try to get existing instance
         {
-            let instances = self.instances.lock().unwrap();
+            let instances = self
+                .instances
+                .lock()
+                .expect("Failed to acquire instances lock");
             if let Some(instance) = instances.get(&key) {
                 return Ok(Arc::clone(instance));
             }
@@ -119,7 +122,10 @@ impl OcrInstanceManager {
 
         // Store the instance
         {
-            let mut instances = self.instances.lock().unwrap();
+            let mut instances = self
+                .instances
+                .lock()
+                .expect("Failed to acquire instances lock");
             instances.insert(key, Arc::clone(&instance));
         }
 
@@ -128,7 +134,10 @@ impl OcrInstanceManager {
 
     /// Remove an instance (useful for cleanup or when configuration changes)
     pub fn _remove_instance(&self, languages: &str) {
-        let mut instances = self.instances.lock().unwrap();
+        let mut instances = self
+            .instances
+            .lock()
+            .expect("Failed to acquire instances lock");
         if instances.remove(languages).is_some() {
             info!("Removed OCR instance for languages: {languages}");
         }
@@ -136,7 +145,10 @@ impl OcrInstanceManager {
 
     /// Clear all instances (useful for memory cleanup)
     pub fn _clear_all_instances(&self) {
-        let mut instances = self.instances.lock().unwrap();
+        let mut instances = self
+            .instances
+            .lock()
+            .expect("Failed to acquire instances lock");
         let count = instances.len();
         instances.clear();
         if count > 0 {
@@ -146,7 +158,10 @@ impl OcrInstanceManager {
 
     /// Get the number of cached instances
     pub fn _instance_count(&self) -> usize {
-        let instances = self.instances.lock().unwrap();
+        let instances = self
+            .instances
+            .lock()
+            .expect("Failed to acquire instances lock");
         instances.len()
     }
 }

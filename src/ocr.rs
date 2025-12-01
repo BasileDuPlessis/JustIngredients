@@ -824,7 +824,9 @@ async fn perform_ocr_extraction(
 
         // Perform OCR processing with the reused instance
         let extracted_text = {
-            let mut tess = instance.lock().unwrap();
+            let mut tess = instance
+                .lock()
+                .expect("Failed to acquire Tesseract instance lock");
             // Set the image for OCR processing
             tess.set_image(image_path).map_err(|e| {
                 crate::ocr_errors::OcrError::ImageLoad(format!("Failed to load image for OCR: {e}"))

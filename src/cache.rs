@@ -111,12 +111,40 @@ where
 
     /// Get cache size
     pub fn len(&self) -> usize {
-        self.data.read().unwrap().len()
+        self.read_data().len()
     }
 
     /// Check if cache is empty
     pub fn is_empty(&self) -> bool {
-        self.data.read().unwrap().is_empty()
+        self.read_data().is_empty()
+    }
+
+    /// Helper method to acquire read lock on data with proper error handling
+    fn read_data(&self) -> std::sync::RwLockReadGuard<'_, HashMap<K, CacheEntry<V>>> {
+        self.data
+            .read()
+            .expect("Failed to acquire read lock on cache data")
+    }
+
+    /// Helper method to acquire write lock on data with proper error handling
+    fn write_data(&self) -> std::sync::RwLockWriteGuard<'_, HashMap<K, CacheEntry<V>>> {
+        self.data
+            .write()
+            .expect("Failed to acquire write lock on cache data")
+    }
+
+    /// Helper method to acquire read lock on stats with proper error handling
+    fn read_stats(&self) -> std::sync::RwLockReadGuard<'_, CacheStats> {
+        self.stats
+            .read()
+            .expect("Failed to acquire read lock on cache stats")
+    }
+
+    /// Helper method to acquire write lock on stats with proper error handling
+    fn write_stats(&self) -> std::sync::RwLockWriteGuard<'_, CacheStats> {
+        self.stats
+            .write()
+            .expect("Failed to acquire write lock on cache stats")
     }
 }
 
@@ -126,8 +154,8 @@ where
     V: Clone + std::fmt::Debug,
 {
     fn get(&self, key: &K) -> Option<V> {
-        let mut stats = self.stats.write().unwrap();
-        let data = self.data.read().unwrap();
+        let mut stats = self.write_stats();
+        let data = self.read_data();
 
         match data.get(key) {
             Some(entry) if !entry.is_expired() => {
@@ -148,19 +176,15 @@ where
 
     fn insert(&mut self, key: K, value: V, ttl: Duration) {
         let entry = CacheEntry::new(value, ttl);
-        self.data.write().unwrap().insert(key, entry);
+        self.write_data().insert(key, entry);
     }
 
     fn remove(&mut self, key: &K) -> Option<V> {
-        self.data
-            .write()
-            .unwrap()
-            .remove(key)
-            .map(|entry| entry.value)
+        self.write_data().remove(key).map(|entry| entry.value)
     }
 
     fn cleanup(&mut self) {
-        let mut data = self.data.write().unwrap();
+        let mut data = self.write_data();
         let initial_len = data.len();
 
         data.retain(|_, entry| !entry.is_expired());
@@ -172,8 +196,8 @@ where
     }
 
     fn stats(&self) -> CacheStats {
-        let mut stats = self.stats.read().unwrap().clone();
-        let data = self.data.read().unwrap();
+        let mut stats = self.read_stats().clone();
+        let data = self.read_data();
 
         stats.entries = data.len();
 
@@ -186,8 +210,8 @@ where
     }
 
     fn clear(&mut self) {
-        self.data.write().unwrap().clear();
-        *self.stats.write().unwrap() = CacheStats::default();
+        self.write_data().clear();
+        *self.write_stats() = CacheStats::default();
     }
 }
 
@@ -334,21 +358,30 @@ impl DbQueryCache {
         let value_size = value.size_bytes;
 
         // Check if adding this entry would exceed max size
-        let current_size = *self.current_size_bytes.read().unwrap();
+        let current_size = *self
+            .current_size_bytes
+            .read()
+            .expect("Failed to read current size");
         if current_size + value_size > self.max_size_bytes {
             // Evict some entries to make room (simple LRU-like eviction)
             self.evict_to_make_room(value_size);
         }
 
         self.cache.insert(key, value, ttl);
-        *self.current_size_bytes.write().unwrap() += value_size;
+        *self
+            .current_size_bytes
+            .write()
+            .expect("Failed to write current size") += value_size;
     }
 
     /// Remove query result from cache
     pub fn remove(&mut self, key: &DbCacheKey) -> Option<DbCacheValue> {
         let result = self.cache.remove(key);
         if let Some(ref value) = result {
-            *self.current_size_bytes.write().unwrap() -= value.size_bytes;
+            *self
+                .current_size_bytes
+                .write()
+                .expect("Failed to write current size") -= value.size_bytes;
         }
         result
     }
@@ -368,12 +401,18 @@ impl DbQueryCache {
     /// Clear all cached results
     pub fn clear(&mut self) {
         self.cache.clear();
-        *self.current_size_bytes.write().unwrap() = 0;
+        *self
+            .current_size_bytes
+            .write()
+            .expect("Failed to write current size") = 0;
     }
 
     /// Get current cache size in bytes
     pub fn current_size_bytes(&self) -> usize {
-        *self.current_size_bytes.read().unwrap()
+        *self
+            .current_size_bytes
+            .read()
+            .expect("Failed to read current size")
     }
 
     /// Get maximum cache size in bytes
@@ -385,19 +424,25 @@ impl DbQueryCache {
     fn evict_to_make_room(&mut self, needed_bytes: usize) {
         // Simple eviction strategy: remove oldest entries until we have enough space
         // In a real implementation, this could be more sophisticated (LRU, LFU, etc.)
-        let mut data = self.cache.data.write().unwrap();
+        let mut data = self.cache.write_data();
         let mut entries_to_remove = Vec::new();
 
         // Find entries to evict (starting with expired ones, then oldest)
         for (key, entry) in data.iter() {
             if entry.is_expired() {
                 entries_to_remove.push(key.clone());
-                *self.current_size_bytes.write().unwrap() -= entry.value.size_bytes;
+                *self
+                    .current_size_bytes
+                    .write()
+                    .expect("Failed to write current size") -= entry.value.size_bytes;
             }
         }
 
         // If we still need more space, remove additional entries
-        let current_size = *self.current_size_bytes.read().unwrap();
+        let current_size = *self
+            .current_size_bytes
+            .read()
+            .expect("Failed to read current size");
         let space_needed = (current_size + needed_bytes).saturating_sub(self.max_size_bytes);
 
         if space_needed > 0 {
@@ -412,7 +457,10 @@ impl DbQueryCache {
                 }
                 entries_to_remove.push(key.clone());
                 freed_space += entry.value.size_bytes;
-                *self.current_size_bytes.write().unwrap() -= entry.value.size_bytes;
+                *self
+                    .current_size_bytes
+                    .write()
+                    .expect("Failed to write current size") -= entry.value.size_bytes;
             }
         }
 
@@ -472,7 +520,7 @@ impl CacheManager {
     pub fn find_user_by_id(&self, user_id: i64) -> Option<crate::db::User> {
         // This is not the most efficient approach, but works for small caches
         // In production, you might want a separate cache or index
-        let data = self.user_cache.data.read().unwrap();
+        let data = self.user_cache.read_data();
         for (_, entry) in data.iter() {
             if !entry.is_expired() && entry.value.id == user_id {
                 return Some(entry.value.clone());

@@ -313,7 +313,7 @@ pub async fn get_or_create_user_cached(
 ) -> Result<User> {
     // Try cache first
     {
-        let cache_manager = cache.lock().unwrap();
+        let cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
         if let Some(user) = cache_manager.user_cache.get(&telegram_id) {
             debug!(telegram_id = %telegram_id, "User found in cache");
             return Ok(user);
@@ -325,7 +325,7 @@ pub async fn get_or_create_user_cached(
 
     // Cache the result
     {
-        let mut cache_manager = cache.lock().unwrap();
+        let mut cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
         cache_manager.user_cache.insert(
             telegram_id,
             user.clone(),
@@ -344,7 +344,7 @@ pub async fn get_user_by_telegram_id_cached(
 ) -> Result<Option<User>> {
     // Try cache first
     {
-        let cache_manager = cache.lock().unwrap();
+        let cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
         if let Some(user) = cache_manager.user_cache.get(&telegram_id) {
             debug!(telegram_id = %telegram_id, "User found in cache");
             return Ok(Some(user));
@@ -356,7 +356,7 @@ pub async fn get_user_by_telegram_id_cached(
 
     // Cache the result if found
     if let Some(ref user) = user {
-        let mut cache_manager = cache.lock().unwrap();
+        let mut cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
         cache_manager.user_cache.insert(
             telegram_id,
             user.clone(),
@@ -375,7 +375,7 @@ pub async fn get_user_by_id_cached(
 ) -> Result<Option<User>> {
     // Try cache first using the helper method
     {
-        let cache_manager = cache.lock().unwrap();
+        let cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
         if let Some(user) = cache_manager.find_user_by_id(user_id) {
             debug!(user_id = %user_id, "User found in cache by ID");
             return Ok(Some(user));
@@ -387,7 +387,7 @@ pub async fn get_user_by_id_cached(
 
     // Cache the result if found (by telegram_id for future lookups)
     if let Some(ref user) = user {
-        let mut cache_manager = cache.lock().unwrap();
+        let mut cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
         cache_manager.user_cache.insert(
             user.telegram_id,
             user.clone(),

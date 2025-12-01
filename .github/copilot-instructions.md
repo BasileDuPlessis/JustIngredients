@@ -211,6 +211,16 @@ cargo test                    # Run complete test suite (93 tests)
 - **Regression Prevention**: Tests catch breaking changes immediately
 - **Quality Gate**: Code that fails tests cannot be merged or deployed
 
+### ⚠️ CRITICAL: Error Handling Requirements
+**STRICTLY PROHIBITED: Usage of `.unwrap()`, `.expect()`, and panicking methods**
+
+- **Never Use `.unwrap()`**: Replace with proper error handling using `?`, `match`, or `if let`
+- **Never Use `.expect()`**: Same as unwrap - use proper error propagation instead
+- **Never Use Panicking Methods**: Avoid `panic!()`, unreachable code, and similar
+- **Error Propagation**: Use `Result<T, E>` and `?` operator for clean error handling
+- **Graceful Degradation**: Handle errors with user-friendly messages, not crashes
+- **Thread Safety**: Use proper mutex handling with `lock().map_err(...)` instead of `unwrap()`
+
 ### Testing Approach
 - **Unit Tests**: Comprehensive coverage for all modules (77 tests)
   - Pure logic testing without external dependencies
@@ -248,17 +258,19 @@ cargo test                    # Run complete test suite (93 tests)
   - Treats all warnings as errors for maximum code quality
   - Only add Clippy allow attributes when strictly justified and document the rationale inline
   - Common allowed lints: `too_many_arguments` for database functions
+  - **STRICTLY PROHIBITED**: `unwrap_used`, `expect_used`, `panic` - use proper error handling instead
 - **Rustfmt Enforcement**: All code must be formatted with `rustfmt`
   - Run `cargo fmt --all -- --check` to verify formatting
   - CI rejects PRs with formatting issues
 - **CI Integration**: PRs are automatically rejected if they fail:
   - `cargo test` (all 93 tests must pass)
-  - `cargo clippy --all-targets --all-features -- -D warnings`
+  - `cargo clippy --all-targets --all-features -- -D warnings` (includes unwrap/expect prohibitions)
   - `cargo fmt --all -- --check`
 - **Copilot and AI Contributions**: AI-generated code must meet ALL quality standards
   - No exceptions for AI-generated code
   - Must pass all tests, linting, and formatting checks
   - Follow established patterns and conventions
+  - **STRICTLY PROHIBITED**: Never use `.unwrap()`, `.expect()`, or panicking methods
 
 ## Common Development Tasks
 
