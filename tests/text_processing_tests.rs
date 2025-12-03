@@ -843,7 +843,11 @@ mod tests {
         );
 
         let regex = regex::Regex::new(&new_pattern);
-        assert!(regex.is_ok(), "New unified pattern should compile: {:?}", regex.err());
+        assert!(
+            regex.is_ok(),
+            "New unified pattern should compile: {:?}",
+            regex.err()
+        );
         let regex = regex.unwrap();
 
         // Test cases for the new unified extraction pattern
@@ -926,7 +930,11 @@ mod tests {
         );
 
         let regex = regex::Regex::new(&new_pattern);
-        assert!(regex.is_ok(), "New unified pattern should compile: {:?}", regex.err());
+        assert!(
+            regex.is_ok(),
+            "New unified pattern should compile: {:?}",
+            regex.err()
+        );
         let regex = regex.unwrap();
 
         // Test comprehensive measurement detection

@@ -192,8 +192,8 @@ async fn main() -> Result<()> {
         .map_err(|_| anyhow::anyhow!("TELEGRAM_BOT_TOKEN must be set"))?;
 
     // Get database path from environment
-    let database_url = env::var("DATABASE_URL")
-        .map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?;
+    let database_url =
+        env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?;
 
     info!(database_url = %database_url, "Initializing database connection");
 
