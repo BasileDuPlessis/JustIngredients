@@ -10,7 +10,12 @@
 //! - Basic input constraints
 
 use crate::text_processing::MeasurementMatch;
+use lazy_static::lazy_static;
 use regex::Regex;
+
+lazy_static! {
+    static ref QUANTITY_PATTERN: Regex = Regex::new(r"^(-?\d+(?:\.\d+)?(?:\s*\d+/\d+)?)").unwrap();
+}
 
 /// Validates a recipe name input
 ///
@@ -345,9 +350,7 @@ pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, &'sta
 /// Parse ingredient when no measurement detector match is found
 fn parse_without_measurement_detector(trimmed: &str) -> Result<MeasurementMatch, &'static str> {
     // Try to extract a simple quantity pattern
-    let quantity_pattern = Regex::new(r"^(-?\d+(?:\.\d+)?(?:\s*\d+/\d+)?)").unwrap();
-
-    if let Some(captures) = quantity_pattern.captures(trimmed) {
+    if let Some(captures) = QUANTITY_PATTERN.captures(trimmed) {
         if let Some(quantity_match) = captures.get(1) {
             return parse_with_quantity(trimmed, quantity_match);
         }
@@ -410,7 +413,10 @@ mod tests {
         // Valid names
         assert!(validate_recipe_name("My Recipe").is_ok());
         assert!(validate_recipe_name("  Recipe  ").is_ok());
-        assert_eq!(validate_recipe_name("  Recipe  ").unwrap(), "Recipe");
+        match validate_recipe_name("  Recipe  ") {
+            Ok(name) => assert_eq!(name, "Recipe"),
+            Err(e) => panic!("Expected valid recipe name, got error: {}", e),
+        }
 
         // Empty names
         assert_eq!(validate_recipe_name(""), Err("empty"));
@@ -540,7 +546,10 @@ mod tests {
         }
 
         println!("\nTesting MeasurementDetector directly");
-        let detector = MeasurementDetector::new().unwrap();
+        let detector = match MeasurementDetector::new() {
+            Ok(d) => d,
+            Err(e) => panic!("Failed to create MeasurementDetector: {}", e),
+        };
         let temp_text = format!("temp: {}", "2 cups flour");
         println!("Input text: '{}'", temp_text);
 

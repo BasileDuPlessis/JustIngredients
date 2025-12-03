@@ -1294,8 +1294,6 @@ mod tests {
             return;
         }
 
-        if let Err(e) = config.validate() {
-            panic!("Config validation failed: {}", e);
-        }
+        assert!(config.validate().is_ok(), "Config validation failed");
     }
 }

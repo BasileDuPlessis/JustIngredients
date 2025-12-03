@@ -193,14 +193,23 @@ mod tests {
         let request_id = RequestId::new(ChatId(123), MessageId(456));
 
         // First request should not be duplicate
-        assert!(!deduplicator.is_duplicate(&request_id).unwrap());
+        match deduplicator.is_duplicate(&request_id) {
+            Ok(is_duplicate) => assert!(!is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
 
         // Second request with same ID should be duplicate
-        assert!(deduplicator.is_duplicate(&request_id).unwrap());
+        match deduplicator.is_duplicate(&request_id) {
+            Ok(is_duplicate) => assert!(is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
 
         // Different request ID should not be duplicate
         let different_id = RequestId::new(ChatId(123), MessageId(457));
-        assert!(!deduplicator.is_duplicate(&different_id).unwrap());
+        match deduplicator.is_duplicate(&different_id) {
+            Ok(is_duplicate) => assert!(!is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
     }
 
     #[test]
@@ -209,13 +218,19 @@ mod tests {
         let request_id = RequestId::new(ChatId(123), MessageId(456));
 
         // First request
-        assert!(!deduplicator.is_duplicate(&request_id).unwrap());
+        match deduplicator.is_duplicate(&request_id) {
+            Ok(is_duplicate) => assert!(!is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
 
         // Wait for expiration
         thread::sleep(Duration::from_secs(2));
 
         // Same request should not be considered duplicate after expiration
-        assert!(!deduplicator.is_duplicate(&request_id).unwrap());
+        match deduplicator.is_duplicate(&request_id) {
+            Ok(is_duplicate) => assert!(!is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
     }
 
     #[test]
@@ -225,16 +240,24 @@ mod tests {
         // Add 3 unique requests
         for i in 0..3 {
             let request_id = RequestId::new(ChatId(i as i64), MessageId(i));
-            assert!(!deduplicator.is_duplicate(&request_id).unwrap());
+            match deduplicator.is_duplicate(&request_id) {
+                Ok(is_duplicate) => assert!(!is_duplicate),
+                Err(e) => panic!("Failed to check duplicate: {}", e),
+            }
         }
 
         // Add a 4th request - should trigger cleanup of oldest
         let fourth_id = RequestId::new(ChatId(999), MessageId(999));
-        assert!(!deduplicator.is_duplicate(&fourth_id).unwrap());
+        match deduplicator.is_duplicate(&fourth_id) {
+            Ok(is_duplicate) => assert!(!is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
 
         // Check that we don't exceed max entries
-        let stats = deduplicator.stats().unwrap();
-        assert!(stats.total_entries <= 3);
+        match deduplicator.stats() {
+            Ok(stats) => assert!(stats.total_entries <= 3),
+            Err(e) => panic!("Failed to get stats: {}", e),
+        }
     }
 
     #[test]
@@ -243,44 +266,76 @@ mod tests {
         let request_id = RequestId::new(ChatId(123), MessageId(456));
 
         // Initial stats should be empty
-        let initial_stats = deduplicator.stats().unwrap();
-        assert_eq!(initial_stats.total_entries, 0);
-        assert_eq!(initial_stats.total_duplicates, 0);
+        match deduplicator.stats() {
+            Ok(initial_stats) => {
+                assert_eq!(initial_stats.total_entries, 0);
+                assert_eq!(initial_stats.total_duplicates, 0);
+            }
+            Err(e) => panic!("Failed to get initial stats: {}", e),
+        }
 
         // Add a request
-        assert!(!deduplicator.is_duplicate(&request_id).unwrap());
+        match deduplicator.is_duplicate(&request_id) {
+            Ok(is_duplicate) => assert!(!is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
 
         // Check stats after first request
-        let stats = deduplicator.stats().unwrap();
-        assert_eq!(stats.total_entries, 1);
-        assert_eq!(stats.active_entries, 1);
-        assert_eq!(stats.total_duplicates, 0);
+        match deduplicator.stats() {
+            Ok(stats) => {
+                assert_eq!(stats.total_entries, 1);
+                assert_eq!(stats.active_entries, 1);
+                assert_eq!(stats.total_duplicates, 0);
+            }
+            Err(e) => panic!("Failed to get stats: {}", e),
+        }
 
         // Add duplicate
-        assert!(deduplicator.is_duplicate(&request_id).unwrap());
+        match deduplicator.is_duplicate(&request_id) {
+            Ok(is_duplicate) => assert!(is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
 
         // Check stats after duplicate
-        let stats = deduplicator.stats().unwrap();
-        assert_eq!(stats.total_entries, 1);
-        assert_eq!(stats.active_entries, 1);
-        assert_eq!(stats.total_duplicates, 1);
+        match deduplicator.stats() {
+            Ok(stats) => {
+                assert_eq!(stats.total_entries, 1);
+                assert_eq!(stats.active_entries, 1);
+                assert_eq!(stats.total_duplicates, 1);
+            }
+            Err(e) => panic!("Failed to get stats: {}", e),
+        }
     }
-
     #[test]
     fn test_clear_functionality() {
         let deduplicator = RequestDeduplicator::new(300, 100);
         let request_id = RequestId::new(ChatId(123), MessageId(456));
 
         // Add a request
-        assert!(!deduplicator.is_duplicate(&request_id).unwrap());
-        assert_eq!(deduplicator.stats().unwrap().total_entries, 1);
+        match deduplicator.is_duplicate(&request_id) {
+            Ok(is_duplicate) => assert!(!is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
+        match deduplicator.stats() {
+            Ok(stats) => assert_eq!(stats.total_entries, 1),
+            Err(e) => panic!("Failed to get stats: {}", e),
+        }
 
         // Clear all entries
-        deduplicator.clear().unwrap();
-        assert_eq!(deduplicator.stats().unwrap().total_entries, 0);
+        match deduplicator.clear() {
+            Ok(()) => (),
+            Err(e) => panic!("Failed to clear deduplicator: {}", e),
+        }
+        match deduplicator.stats() {
+            Ok(stats) => assert_eq!(stats.total_entries, 0),
+            Err(e) => panic!("Failed to get stats: {}", e),
+        }
 
         // Same request should be treated as new after clear
-        assert!(!deduplicator.is_duplicate(&request_id).unwrap());
+        match deduplicator.is_duplicate(&request_id) {
+            Ok(is_duplicate) => assert!(!is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
     }
 
     #[test]
@@ -289,7 +344,13 @@ mod tests {
         let request_id = RequestId::new(ChatId(123), MessageId(456));
 
         // Should work with Arc
-        assert!(!deduplicator.is_duplicate(&request_id).unwrap());
-        assert!(deduplicator.is_duplicate(&request_id).unwrap());
+        match deduplicator.is_duplicate(&request_id) {
+            Ok(is_duplicate) => assert!(!is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
+        match deduplicator.is_duplicate(&request_id) {
+            Ok(is_duplicate) => assert!(is_duplicate),
+            Err(e) => panic!("Failed to check duplicate: {}", e),
+        }
     }
 }

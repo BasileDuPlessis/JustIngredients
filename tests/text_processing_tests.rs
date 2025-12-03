@@ -842,7 +842,9 @@ mod tests {
             units_pattern
         );
 
-        let regex = regex::Regex::new(&new_pattern).expect("New unified pattern should compile");
+        let regex = regex::Regex::new(&new_pattern);
+        assert!(regex.is_ok(), "New unified pattern should compile: {:?}", regex.err());
+        let regex = regex.unwrap();
 
         // Test cases for the new unified extraction pattern
         let test_cases = vec![
@@ -923,7 +925,9 @@ mod tests {
             units_pattern
         );
 
-        let regex = regex::Regex::new(&new_pattern).expect("New unified pattern should compile");
+        let regex = regex::Regex::new(&new_pattern);
+        assert!(regex.is_ok(), "New unified pattern should compile: {:?}", regex.err());
+        let regex = regex.unwrap();
 
         // Test comprehensive measurement detection
         let should_match = vec![

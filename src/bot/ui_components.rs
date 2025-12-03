@@ -249,7 +249,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_localized_button() {
-        let localization = Arc::new(LocalizationManager::new().unwrap());
+        let localization = match LocalizationManager::new() {
+            Ok(manager) => Arc::new(manager),
+            Err(e) => panic!("Failed to create localization manager: {}", e),
+        };
 
         let button = create_localized_button(
             &localization,
@@ -259,16 +262,20 @@ mod tests {
         );
 
         assert_eq!(button.text, "Confirm");
-        if let teloxide::types::InlineKeyboardButtonKind::CallbackData(data) = &button.kind {
-            assert_eq!(data, "test_callback");
-        } else {
-            panic!("Expected callback button");
+        match &button.kind {
+            teloxide::types::InlineKeyboardButtonKind::CallbackData(data) => {
+                assert_eq!(data, "test_callback");
+            }
+            _ => panic!("Expected callback button"),
         }
     }
 
     #[tokio::test]
     async fn test_create_confirmation_dialog() {
-        let localization = Arc::new(LocalizationManager::new().unwrap());
+        let localization = match LocalizationManager::new() {
+            Ok(manager) => Arc::new(manager),
+            Err(e) => panic!("Failed to create localization manager: {}", e),
+        };
 
         let keyboard = create_confirmation_dialog(
             &localization,

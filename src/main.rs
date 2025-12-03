@@ -188,10 +188,12 @@ async fn main() -> Result<()> {
     validate_environment_variables()?;
 
     // Get bot token from environment
-    let bot_token = env::var("TELEGRAM_BOT_TOKEN").expect("TELEGRAM_BOT_TOKEN must be set");
+    let bot_token = env::var("TELEGRAM_BOT_TOKEN")
+        .map_err(|_| anyhow::anyhow!("TELEGRAM_BOT_TOKEN must be set"))?;
 
     // Get database path from environment
-    let database_url = env::var("DATABASE_URL").expect("DATABASE_URL must be set");
+    let database_url = env::var("DATABASE_URL")
+        .map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?;
 
     info!(database_url = %database_url, "Initializing database connection");
 
@@ -246,7 +248,7 @@ async fn main() -> Result<()> {
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30)) // 30 second timeout
         .build()
-        .expect("Failed to create HTTP client");
+        .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {}", e))?;
 
     let bot = Bot::with_client(bot_token, client);
 

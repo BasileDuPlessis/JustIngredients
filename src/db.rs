@@ -992,7 +992,11 @@ pub async fn get_user_recipe_statistics(
 
     // Get creation statistics
     let now = chrono::Utc::now();
-    let today_start = now.date_naive().and_hms_opt(0, 0, 0).unwrap().and_utc();
+    let today_start = now
+        .date_naive()
+        .and_hms_opt(0, 0, 0)
+        .ok_or_else(|| anyhow::anyhow!("Failed to create start of day datetime"))?
+        .and_utc();
     let week_start = now - chrono::Duration::days(7);
     let month_start = now - chrono::Duration::days(30);
 
@@ -1267,7 +1271,7 @@ pub mod migrations {
     }
 
     /// Split SQL string into individual statements by semicolons
-    pub fn split_sql_statements(sql: &str) -> Vec<String> {
+    pub fn split_sql_statements(sql: &str) -> Result<Vec<String>, String> {
         let mut statements = Vec::new();
         let mut current_statement = String::new();
         let mut in_string = false;
@@ -1294,7 +1298,14 @@ pub mod migrations {
                     if chars.peek() == Some(&'-') {
                         in_comment = true;
                         current_statement.push(ch); // Push first -
-                        current_statement.push(chars.next().unwrap()); // Push second -
+                        match chars.next() {
+                            Some(second_dash) => current_statement.push(second_dash), // Push second -
+                            None => {
+                                return Err(
+                                    "Unexpected end of input while parsing comment".to_string()
+                                )
+                            }
+                        }
                     } else {
                         current_statement.push(ch);
                     }
@@ -1320,7 +1331,7 @@ pub mod migrations {
             statements.push(current_statement.trim().to_string());
         }
 
-        statements
+        Ok(statements)
     }
 
     /// Initialize the migrations table
@@ -1373,7 +1384,13 @@ pub mod migrations {
                 ))?;
 
                 // Split the migration SQL into individual statements and execute each one
-                let statements = split_sql_statements(migration.up);
+                let statements = split_sql_statements(migration.up).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to parse SQL for migration {}: {}",
+                        migration.version,
+                        e
+                    )
+                })?;
                 for statement in statements {
                     if !statement.trim().is_empty() {
                         sqlx::query(&statement)
@@ -1443,7 +1460,13 @@ pub mod migrations {
                 ))?;
 
                 // Split the rollback SQL into individual statements and execute each one
-                let statements = split_sql_statements(down_sql);
+                let statements = split_sql_statements(down_sql).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Failed to parse rollback SQL for migration {}: {}",
+                        migration.version,
+                        e
+                    )
+                })?;
                 for statement in statements {
                     if !statement.trim().is_empty() {
                         sqlx::query(&statement)

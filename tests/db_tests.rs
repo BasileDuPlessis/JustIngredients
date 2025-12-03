@@ -463,7 +463,10 @@ async fn test_schema_validation_details_impl(pool: &PgPool) -> Result<()> {
 fn test_split_sql_statements_single_statement() {
     let sql = "CREATE TABLE test (id INT);";
     let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(statements, vec!["CREATE TABLE test (id INT);"]);
+    assert_eq!(
+        statements,
+        Ok(vec!["CREATE TABLE test (id INT);".to_string()])
+    );
 }
 
 #[test]
@@ -472,10 +475,10 @@ fn test_split_sql_statements_multiple_statements() {
     let statements = just_ingredients::db::migrations::split_sql_statements(sql);
     assert_eq!(
         statements,
-        vec![
-            "CREATE TABLE test (id INT);",
-            "INSERT INTO test VALUES (1);"
-        ]
+        Ok(vec![
+            "CREATE TABLE test (id INT);".to_string(),
+            "INSERT INTO test VALUES (1);".to_string()
+        ])
     );
 }
 
@@ -485,10 +488,10 @@ fn test_split_sql_statements_with_string_literals() {
     let statements = just_ingredients::db::migrations::split_sql_statements(sql);
     assert_eq!(
         statements,
-        vec![
-            "INSERT INTO test VALUES ('hello;world');",
-            "CREATE TABLE test2 (id INT);"
-        ]
+        Ok(vec![
+            "INSERT INTO test VALUES ('hello;world');".to_string(),
+            "CREATE TABLE test2 (id INT);".to_string()
+        ])
     );
 }
 
@@ -498,10 +501,10 @@ fn test_split_sql_statements_with_double_quotes() {
     let statements = just_ingredients::db::migrations::split_sql_statements(sql);
     assert_eq!(
         statements,
-        vec![
-            r#"INSERT INTO test VALUES ("hello;world");"#,
-            "CREATE TABLE test2 (id INT);"
-        ]
+        Ok(vec![
+            r#"INSERT INTO test VALUES ("hello;world");"#.to_string(),
+            "CREATE TABLE test2 (id INT);".to_string()
+        ])
     );
 }
 
@@ -516,10 +519,10 @@ fn test_split_sql_statements_with_comments() {
     let statements = just_ingredients::db::migrations::split_sql_statements(sql);
     assert_eq!(
         statements,
-        vec![
-            "-- This is a comment\n        CREATE TABLE test (id INT);",
-            "-- Another comment\n        INSERT INTO test VALUES (1);"
-        ]
+        Ok(vec![
+            "-- This is a comment\n        CREATE TABLE test (id INT);".to_string(),
+            "-- Another comment\n        INSERT INTO test VALUES (1);".to_string()
+        ])
     );
 }
 
@@ -535,30 +538,38 @@ fn test_split_sql_statements_mixed_strings_and_comments() {
         INSERT INTO test VALUES (1, 'hello;world');
     "#;
     let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(statements.len(), 2);
-    assert!(statements[0].contains("CREATE TABLE"));
-    assert!(statements[1].contains("INSERT INTO"));
+    match statements {
+        Ok(stmts) => {
+            assert_eq!(stmts.len(), 2);
+            assert!(stmts[0].contains("CREATE TABLE"));
+            assert!(stmts[1].contains("INSERT INTO"));
+        }
+        Err(e) => panic!("Failed to split SQL: {}", e),
+    }
 }
 
 #[test]
 fn test_split_sql_statements_empty_input() {
     let sql = "";
     let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(statements, Vec::<String>::new());
+    assert_eq!(statements, Ok(Vec::<String>::new()));
 }
 
 #[test]
 fn test_split_sql_statements_only_whitespace() {
     let sql = "   \n\t   ";
     let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(statements, Vec::<String>::new());
+    assert_eq!(statements, Ok(Vec::<String>::new()));
 }
 
 #[test]
 fn test_split_sql_statements_no_trailing_semicolon() {
     let sql = "CREATE TABLE test (id INT)";
     let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(statements, vec!["CREATE TABLE test (id INT)"]);
+    assert_eq!(
+        statements,
+        Ok(vec!["CREATE TABLE test (id INT)".to_string()])
+    );
 }
 
 #[test]
@@ -587,10 +598,15 @@ fn test_split_sql_statements_complex_migration_sql() {
         CREATE INDEX IF NOT EXISTS recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
     "#;
     let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(statements.len(), 3);
-    assert!(statements[0].contains("CREATE TABLE IF NOT EXISTS users"));
-    assert!(statements[1].contains("CREATE TABLE IF NOT EXISTS recipes"));
-    assert!(statements[2].contains("CREATE INDEX IF NOT EXISTS recipes_content_tsv_idx"));
+    match statements {
+        Ok(stmts) => {
+            assert_eq!(stmts.len(), 3);
+            assert!(stmts[0].contains("CREATE TABLE IF NOT EXISTS users"));
+            assert!(stmts[1].contains("CREATE TABLE IF NOT EXISTS recipes"));
+            assert!(stmts[2].contains("CREATE INDEX IF NOT EXISTS recipes_content_tsv_idx"));
+        }
+        Err(e) => panic!("Failed to split SQL: {}", e),
+    }
 }
 
 #[test]
@@ -602,7 +618,12 @@ fn test_split_sql_statements_semicolon_in_string_and_comment() {
         UPDATE test SET value = 'new;value';
     "#;
     let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(statements.len(), 2);
-    assert!(statements[0].contains("INSERT INTO"));
-    assert!(statements[1].contains("UPDATE"));
+    match statements {
+        Ok(stmts) => {
+            assert_eq!(stmts.len(), 2);
+            assert!(stmts[0].contains("INSERT INTO"));
+            assert!(stmts[1].contains("UPDATE"));
+        }
+        Err(e) => panic!("Failed to split SQL: {}", e),
+    }
 }
