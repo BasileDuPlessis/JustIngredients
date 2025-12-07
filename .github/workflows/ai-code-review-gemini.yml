@@ -21,6 +21,12 @@ jobs:
         BASE_SHA="${{ github.event.before }}"
         HEAD_SHA="${{ github.event.after }}"
 
+        # Handle case where before SHA is all zeros (new branch)
+        if [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+          echo "New branch detected, comparing with empty tree"
+          BASE_SHA="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        fi
+
         CHANGED_FILES=$(git diff --name-only $BASE_SHA $HEAD_SHA | head -20)
         echo "changed_files<<EOF" >> $GITHUB_OUTPUT
         echo "$CHANGED_FILES" >> $GITHUB_OUTPUT
@@ -36,6 +42,12 @@ jobs:
         # Compare with previous commit on push
         BASE_SHA="${{ github.event.before }}"
         HEAD_SHA="${{ github.event.after }}"
+
+        # Handle case where before SHA is all zeros (new branch)
+        if [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+          echo "New branch detected, comparing with empty tree"
+          BASE_SHA="4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        fi
 
         DIFF=$(git diff $BASE_SHA $HEAD_SHA --no-color --no-ext-diff | head -500)
 
@@ -53,7 +65,7 @@ jobs:
 
     - name: AI Code Review with Google Gemini
       id: ai-review
-      if: env.GOOGLE_AI_API_KEY != ''
+      if: steps.changed-files.outputs.has_rust_changes == 'true'
       env:
         GOOGLE_AI_API_KEY: ${{ secrets.GOOGLE_AI_API_KEY }}
       run: |
@@ -67,7 +79,9 @@ jobs:
 
         # Create the analysis prompt for Gemini
         # Store diff content in a temporary file to avoid shell interpretation issues
-        echo "${{ steps.diff-analysis.outputs.diff }}" > diff_content.txt
+        cat > diff_content.txt << 'EOF'
+${{ steps.diff-analysis.outputs.diff }}
+EOF
         
         # Truncate diff if too large (keep only first 100 lines to avoid token limits)
         DIFF_CONTENT=$(head -100 diff_content.txt)
@@ -75,26 +89,25 @@ jobs:
           DIFF_CONTENT="No Rust code changes in this commit."
         fi
 
-        # Escape problematic characters in diff content more thoroughly
-        DIFF_CONTENT=$(echo "$DIFF_CONTENT" | sed 's/\\/\\\\/g; s/"/\\"/g; s/`/\\`/g; s/\$/\\$/g; s/\x0D$//' | tr -d '\000-\037')
+        # Use jq to properly escape the diff content for JSON embedding
+        ESCAPED_DIFF=$(echo "$DIFF_CONTENT" | jq -R -s .)
 
-        cat > analysis_request.json << EOF
-        {
-          "contents": [
+        # Create the JSON request using jq for proper escaping
+        jq -n --arg diff "$DIFF_CONTENT" '{
+          contents: [
             {
-              "parts": [
+              parts: [
                 {
-                  "text": "You are an expert Rust code reviewer. Analyze this code diff and identify ONLY critical issues that could cause security vulnerabilities, data loss, performance problems, or safety issues. Focus on Rust-specific concerns like unsafe code, lifetime issues, and concurrency problems.\n\nCRITICAL ISSUES TO FLAG:\n1. Security: SQL injection, unsafe Rust usage, authentication bypasses\n2. Safety: Race conditions, memory unsafety, improper error handling\n3. Performance: Memory leaks, quadratic algorithms, unbounded resource usage\n4. Data integrity: Missing transactions, improper validation\n\nIGNORE: Style issues, documentation, minor optimizations, test coverage.\n\nIf no critical issues found, respond with: NO_CRITICAL_ISSUES\n\nOtherwise respond in JSON format:\n{\"priority\": \"HIGH|MEDIUM|LOW|NONE\", \"issues\": [\"issue1\", \"issue2\"], \"recommendations\": [\"rec1\", \"rec2\"]}\n\nCode diff:\n$DIFF_CONTENT"
+                  text: ("You are an expert Rust code reviewer. Analyze this code diff and identify ONLY critical issues that could cause security vulnerabilities, data loss, performance problems, or safety issues. Focus on Rust-specific concerns like unsafe code, lifetime issues, and concurrency problems.\n\nCRITICAL ISSUES TO FLAG:\n1. Security: SQL injection, unsafe Rust usage, authentication bypasses\n2. Safety: Race conditions, memory unsafety, improper error handling\n3. Performance: Memory leaks, quadratic algorithms, unbounded resource usage\n4. Data integrity: Missing transactions, improper validation\n\nIGNORE: Style issues, documentation, minor optimizations, test coverage.\n\nIf no critical issues found, respond with: NO_CRITICAL_ISSUES\n\nOtherwise respond in JSON format:\n{\"priority\": \"HIGH|MEDIUM|LOW|NONE\", \"issues\": [\"issue1\", \"issue2\"], \"recommendations\": [\"rec1\", \"rec2\"]}\n\nCode diff:\n" + $diff)
                 }
               ]
             }
           ],
-          "generationConfig": {
-            "temperature": 0.1,
-            "maxOutputTokens": 1500
+          generationConfig: {
+            temperature: 0.1,
+            maxOutputTokens: 1500
           }
-        }
-        EOF
+        }' > analysis_request.json
 
         # Call Google Gemini API with retry logic for overload errors
         MAX_RETRIES=3
@@ -102,7 +115,7 @@ jobs:
         RETRY_DELAY=5
 
         while [ $RETRY_COUNT -lt $MAX_RETRIES ]; do
-          RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=$GOOGLE_AI_API_KEY" \
+          RESPONSE=$(curl -s -X POST "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=$GOOGLE_AI_API_KEY" \
             -H "Content-Type: application/json" \
             -d @analysis_request.json)
 
@@ -134,8 +147,8 @@ jobs:
         elif echo "$RESPONSE" | jq -e '.candidates[0].content.parts[0].text' >/dev/null 2>&1; then
           ANALYSIS=$(echo "$RESPONSE" | jq -r '.candidates[0].content.parts[0].text')
 
-          # Clean up the analysis text (remove markdown formatting if present)
-          ANALYSIS=$(echo "$ANALYSIS" | sed 's/```json//g; s/```//g' | tr -d '\n\r' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
+          # Clean up the analysis text (remove markdown formatting if present, but preserve JSON structure)
+          ANALYSIS=$(echo "$ANALYSIS" | sed 's/```json//g; s/```//g' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')
 
           # Try to parse as JSON, fallback to text analysis
           if echo "$ANALYSIS" | jq empty >/dev/null 2>&1; then
@@ -204,12 +217,23 @@ jobs:
           PRIORITY_LEVEL="${{ steps.ai-review.outputs.priority }}"
         fi
 
+        # Get commit information safely
+        COMMIT_AUTHOR="${{ github.event.head_commit.author.name }}"
+        if [ -z "$COMMIT_AUTHOR" ]; then
+          COMMIT_AUTHOR="${{ github.actor }}"
+        fi
+
+        COMMIT_MESSAGE="${{ github.event.head_commit.message }}"
+        if [ -z "$COMMIT_MESSAGE" ]; then
+          COMMIT_MESSAGE="No commit message available"
+        fi
+
         MESSAGE="🤖 *Google Gemini AI Code Review*
 
         📋 *Push to main branch*
-        👤 *Author:* ${{ github.event.head_commit.author.name }}
+        👤 *Author:* $COMMIT_AUTHOR
         🔗 *Commit:* ${{ github.event.after }}
-        📝 *Message:* ${{ github.event.head_commit.message }}
+        📝 *Message:* $COMMIT_MESSAGE
 
         📊 *Changes:* ${{ steps.diff-analysis.outputs.files_changed }} files, +${{ steps.diff-analysis.outputs.lines_added }} -${{ steps.diff-analysis.outputs.lines_deleted }} lines
 
