@@ -106,7 +106,7 @@ pub async fn handle_editing_saved_ingredients_callbacks(
             } else if data == "add_ingredient" {
                 handle_add_ingredient_button(bot, q, &language_code, dialogue, localization)
                     .await?;
-            } else if data == "cancel_review" {
+            } else if data == "cancel_ingredient_editing" {
                 handle_cancel_saved_ingredients_button(
                     bot,
                     q,
