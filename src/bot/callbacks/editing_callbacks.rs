@@ -17,7 +17,7 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
 use crate::bot::ui_builder::{
-    create_ingredient_review_keyboard, create_post_confirmation_keyboard, format_ingredients_list,
+    create_ingredient_review_keyboard, create_recipe_details_keyboard, format_ingredients_list,
 };
 
 // Import HandlerContext
@@ -105,7 +105,7 @@ pub async fn handle_editing_saved_ingredients_callbacks(
             } else if data == "add_ingredient" {
                 handle_add_ingredient_button(bot, q, &language_code, dialogue, localization)
                     .await?;
-            } else if data == "cancel_ingredient_editing" {
+            } else if data == "cancel_review" {
                 handle_cancel_saved_ingredients_button(
                     bot,
                     q,
@@ -543,31 +543,77 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             }
         }
 
-        // Show success message
-        let success_message = format!(
-            "✅ **{}**\n\n{}",
-            t_lang(
-                ctx.localization,
-                "ingredients-updated",
-                language_code.as_deref()
-            ),
-            t_lang(
-                ctx.localization,
-                "ingredients-updated-help",
-                language_code.as_deref()
+        // Fetch updated recipe details and ingredients
+        let recipe = match crate::db::read_recipe_with_name(pool, recipe_id).await {
+            Ok(Some(recipe)) => recipe,
+            Ok(None) => {
+                error_logging::log_internal_error(
+                    &anyhow::anyhow!("Recipe not found"),
+                    "handle_confirm_saved_ingredients_button",
+                    "Recipe not found after confirmation",
+                    Some(q.from.id.0 as i64),
+                );
+                ctx.bot
+                    .send_message(
+                        q.message.as_ref().unwrap().chat().id,
+                        t_lang(
+                            ctx.localization,
+                            "error-recipe-not-found",
+                            language_code.as_deref(),
+                        ),
+                    )
+                    .await?;
+                return Ok(());
+            }
+            Err(e) => {
+                error_logging::log_database_error(
+                    &e,
+                    "read_recipe_with_name",
+                    Some(q.from.id.0 as i64),
+                    Some(&[("recipe_id", &recipe_id.to_string())]),
+                );
+                ctx.bot
+                    .send_message(
+                        q.message.as_ref().unwrap().chat().id,
+                        t_lang(
+                            ctx.localization,
+                            "error-processing-failed",
+                            language_code.as_deref(),
+                        ),
+                    )
+                    .await?;
+                return Ok(());
+            }
+        };
+
+        let updated_ingredients = crate::db::get_recipe_ingredients(pool, recipe_id).await?;
+        let updated_matches =
+            crate::ingredient_editing::ingredients_to_measurement_matches(&updated_ingredients);
+
+        // Show the updated recipe details
+        let recipe_name = recipe
+            .recipe_name
+            .unwrap_or_else(|| "Unnamed Recipe".to_string());
+        let recipe_message = format!(
+            "📝 **{}**\n\n{}",
+            recipe_name,
+            crate::bot::format_ingredients_list(
+                &updated_matches,
+                language_code.as_deref(),
+                ctx.localization
             )
         );
 
         let keyboard =
-            create_post_confirmation_keyboard(language_code.as_deref(), ctx.localization);
+            create_recipe_details_keyboard(recipe_id, language_code.as_deref(), ctx.localization);
 
-        // Update the original message
+        // Update the message to show the updated recipe
         match ctx
             .bot
             .edit_message_text(
                 q.message.as_ref().unwrap().chat().id,
                 q.message.as_ref().unwrap().id(),
-                success_message,
+                recipe_message,
             )
             .reply_markup(keyboard)
             .await
@@ -576,22 +622,96 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             Err(e) => {
                 error_logging::log_internal_error(
                     &e,
-                    "callback_handler",
-                    "Failed to update message after confirmation",
+                    "handle_confirm_saved_ingredients_button",
+                    "Failed to update message with recipe details after confirmation",
                     Some(q.from.id.0 as i64),
                 );
             }
         }
     } else {
-        // No changes made
-        let no_changes_message = t_lang(
-            ctx.localization,
-            "no-changes-made",
-            language_code.as_deref(),
+        // No changes made - still show the recipe details
+        let recipe = match crate::db::read_recipe_with_name(pool, recipe_id).await {
+            Ok(Some(recipe)) => recipe,
+            Ok(None) => {
+                error_logging::log_internal_error(
+                    &anyhow::anyhow!("Recipe not found"),
+                    "handle_confirm_saved_ingredients_button",
+                    "Recipe not found after confirmation (no changes)",
+                    Some(q.from.id.0 as i64),
+                );
+                ctx.bot
+                    .send_message(
+                        q.message.as_ref().unwrap().chat().id,
+                        t_lang(
+                            ctx.localization,
+                            "error-recipe-not-found",
+                            language_code.as_deref(),
+                        ),
+                    )
+                    .await?;
+                return Ok(());
+            }
+            Err(e) => {
+                error_logging::log_database_error(
+                    &e,
+                    "read_recipe_with_name",
+                    Some(q.from.id.0 as i64),
+                    Some(&[("recipe_id", &recipe_id.to_string())]),
+                );
+                ctx.bot
+                    .send_message(
+                        q.message.as_ref().unwrap().chat().id,
+                        t_lang(
+                            ctx.localization,
+                            "error-processing-failed",
+                            language_code.as_deref(),
+                        ),
+                    )
+                    .await?;
+                return Ok(());
+            }
+        };
+
+        let ingredients = crate::db::get_recipe_ingredients(pool, recipe_id).await?;
+        let matches = crate::ingredient_editing::ingredients_to_measurement_matches(&ingredients);
+
+        let recipe_name = recipe
+            .recipe_name
+            .unwrap_or_else(|| "Unnamed Recipe".to_string());
+        let recipe_message = format!(
+            "📝 **{}**\n\n{}",
+            recipe_name,
+            crate::bot::format_ingredients_list(
+                &matches,
+                language_code.as_deref(),
+                ctx.localization
+            )
         );
-        ctx.bot
-            .send_message(q.message.as_ref().unwrap().chat().id, no_changes_message)
-            .await?;
+
+        let keyboard =
+            create_recipe_details_keyboard(recipe_id, language_code.as_deref(), ctx.localization);
+
+        // Update the message to show the recipe details
+        match ctx
+            .bot
+            .edit_message_text(
+                q.message.as_ref().unwrap().chat().id,
+                q.message.as_ref().unwrap().id(),
+                recipe_message,
+            )
+            .reply_markup(keyboard)
+            .await
+        {
+            Ok(_) => (),
+            Err(e) => {
+                error_logging::log_internal_error(
+                    &e,
+                    "handle_confirm_saved_ingredients_button",
+                    "Failed to update message with recipe details after confirmation (no changes)",
+                    Some(q.from.id.0 as i64),
+                );
+            }
+        }
     }
 
     // End the dialogue
@@ -604,9 +724,9 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
 async fn handle_cancel_saved_ingredients_button(
     bot: &Bot,
     q: &teloxide::types::CallbackQuery,
-    _language_code: &Option<String>,
+    language_code: &Option<String>,
     dialogue: &RecipeDialogue,
-    _localization: &Arc<crate::localization::LocalizationManager>,
+    localization: &Arc<crate::localization::LocalizationManager>,
     pool: Arc<PgPool>,
 ) -> Result<()> {
     // Get current dialogue state to access recipe information
@@ -617,8 +737,8 @@ async fn handle_cancel_saved_ingredients_button(
         ..
     }) = dialogue_state
     {
-        // Fetch recipe details and ingredients from database (not used, but needed to verify recipe exists)
-        let _recipe = match crate::db::read_recipe_with_name(&pool, recipe_id).await? {
+        // Fetch recipe details and ingredients from database
+        let recipe = match crate::db::read_recipe_with_name(&pool, recipe_id).await? {
             Some(recipe) => recipe,
             None => {
                 // Recipe not found, just exit dialogue
@@ -627,12 +747,38 @@ async fn handle_cancel_saved_ingredients_button(
             }
         };
 
-        let _ingredients = crate::db::get_recipe_ingredients(&pool, recipe_id).await?;
+        let ingredients = crate::db::get_recipe_ingredients(&pool, recipe_id).await?;
 
-        // Delete the editing message to return to the original recipe view
+        // Convert ingredients to measurement matches for display
+        let measurement_matches =
+            crate::ingredient_editing::ingredients_to_measurement_matches(&ingredients);
+
+        // Create the recipe details message
+        let recipe_name = recipe
+            .recipe_name
+            .unwrap_or_else(|| "Unnamed Recipe".to_string());
+        let recipe_message = format!(
+            "📝 **{}**\n\n{}",
+            recipe_name,
+            crate::bot::format_ingredients_list(
+                &measurement_matches,
+                language_code.as_deref(),
+                localization
+            )
+        );
+
+        let keyboard =
+            create_recipe_details_keyboard(recipe_id, language_code.as_deref(), localization);
+
+        // Edit the editing message back to the recipe details
         if let Some(message_id) = message_id {
             match bot
-                .delete_message(q.message.as_ref().unwrap().chat().id, teloxide::types::MessageId(message_id))
+                .edit_message_text(
+                    q.message.as_ref().unwrap().chat().id,
+                    teloxide::types::MessageId(message_id),
+                    recipe_message,
+                )
+                .reply_markup(keyboard)
                 .await
             {
                 Ok(_) => (),
@@ -640,9 +786,16 @@ async fn handle_cancel_saved_ingredients_button(
                     error_logging::log_internal_error(
                         &e,
                         "handle_cancel_saved_ingredients_button",
-                        "Failed to delete editing message when canceling ingredient editing",
+                        "Failed to edit message back to recipe details when canceling ingredient editing",
                         Some(q.from.id.0 as i64),
                     );
+                    // Fallback: delete the message
+                    let _ = bot
+                        .delete_message(
+                            q.message.as_ref().unwrap().chat().id,
+                            teloxide::types::MessageId(message_id),
+                        )
+                        .await;
                 }
             }
         }

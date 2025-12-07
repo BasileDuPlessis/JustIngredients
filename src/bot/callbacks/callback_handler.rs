@@ -72,6 +72,10 @@ pub async fn callback_handler(
         Some(RecipeDialogueState::EditingIngredient { .. }) => {
             handle_editing_ingredient_callbacks(&bot, &q, data, &dialogue, &localization).await
         }
+        Some(RecipeDialogueState::EditingSavedIngredient { .. }) => {
+            handle_editing_saved_ingredient_callbacks(&bot, &q, data, &dialogue, &localization)
+                .await
+        }
         _ => Ok(()), // No state-specific handling needed
     };
 
@@ -275,6 +279,112 @@ async fn handle_editing_ingredient_callbacks(
                         message_id: original_message_id, // Use original message ID for the restored display
                         extracted_text,
                         recipe_name_from_caption, // Preserve original caption info
+                    })
+                    .await?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+/// Handle callbacks when in EditingSavedIngredient dialogue state
+///
+/// This function handles the cancel functionality for editing a single ingredient in a saved recipe:
+/// - When user clicks "Cancel" during ingredient editing, restores the editing list view
+/// - Uses the original_message_id to replace the editing prompt back to the ingredient list
+/// - Transitions dialogue state back to EditingSavedIngredients
+async fn handle_editing_saved_ingredient_callbacks(
+    bot: &Bot,
+    q: &teloxide::types::CallbackQuery,
+    data: &str,
+    dialogue: &RecipeDialogue,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    let dialogue_state = dialogue.get().await?;
+
+    if let Some(RecipeDialogueState::EditingSavedIngredient {
+        recipe_id,
+        original_ingredients,
+        current_matches,
+        editing_index: _,
+        language_code,
+        message_id: _,
+        original_message_id,
+    }) = dialogue_state
+    {
+        if data == "cancel_ingredient_editing" {
+            if let Some(msg) = &q.message {
+                // Record user engagement metric for ingredient editing cancellation
+                crate::observability::record_user_engagement_metrics(
+                    q.from.id.0 as i64,
+                    crate::observability::UserAction::IngredientEdit,
+                    None, // No session duration for individual actions
+                    language_code.as_deref(),
+                );
+
+                // Restore the editing list view
+                let edit_message = format!(
+                    "📝 **{}**\n\n{}\n\n{}",
+                    t_lang(localization, "editing-recipe", language_code.as_deref()),
+                    t_lang(
+                        localization,
+                        "editing-instructions",
+                        language_code.as_deref()
+                    ),
+                    crate::bot::format_ingredients_list(
+                        &current_matches,
+                        language_code.as_deref(),
+                        localization
+                    )
+                );
+
+                let keyboard = crate::bot::create_ingredient_review_keyboard(
+                    &current_matches,
+                    language_code.as_deref(),
+                    localization,
+                );
+
+                // Use the original message ID to restore the editing list
+                if let Some(original_msg_id) = original_message_id {
+                    match bot
+                        .edit_message_text(
+                            msg.chat().id,
+                            teloxide::types::MessageId(original_msg_id),
+                            edit_message.clone(),
+                        )
+                        .reply_markup(keyboard.clone())
+                        .await
+                    {
+                        Ok(_) => (),
+                        Err(e) => {
+                            crate::errors::error_logging::log_internal_error(
+                                &e,
+                                "handle_editing_saved_ingredient_callbacks",
+                                "Failed to restore editing list after cancel",
+                                Some(msg.chat().id.0),
+                            );
+                            // Fallback: send new message if editing fails
+                            bot.send_message(msg.chat().id, edit_message)
+                                .reply_markup(keyboard)
+                                .await?;
+                        }
+                    }
+                } else {
+                    // No original message ID, send new message
+                    bot.send_message(msg.chat().id, edit_message)
+                        .reply_markup(keyboard)
+                        .await?;
+                }
+
+                // Reset dialogue state to editing saved ingredients
+                dialogue
+                    .update(RecipeDialogueState::EditingSavedIngredients {
+                        recipe_id,
+                        original_ingredients,
+                        current_matches,
+                        language_code,
+                        message_id: original_message_id, // Use original message ID for the restored display
                     })
                     .await?;
             }
