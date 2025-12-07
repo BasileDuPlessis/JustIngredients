@@ -35,23 +35,7 @@ This document outlines tasks to address code quality issues identified in the co
 - [x] `cargo clippy --all-targets --all-features -- -D warnings` passes
 - [x] Tests still pass after changes
 
-#### 2. Security: Remove Exposed Secrets
-**Status:** ✅ Completed - Real credentials removed, test placeholders added
-**Severity:** Critical
-**Files:** `.env`, `.env.example`, `README.md`, `scripts/setup-local.sh`
 
-**Tasks:**
-- [x] Remove actual `TELEGRAM_BOT_TOKEN` and `DATABASE_URL` values from `.env`
-- [x] Ensure `.env.example` contains placeholder values only
-- [x] Verify `.env` is properly gitignored (should be ✅)
-- [x] Update documentation to emphasize secret management
-- [x] Create automated local setup script for easy development setup
-
-**Acceptance Criteria:**
-- [x] No real credentials in repository
-- [x] `.env.example` provides clear template
-- [x] CI/CD handles secrets securely
-- [x] Local development setup is documented and automated
 
 ## High Priority (Next Sprint)
 

@@ -159,7 +159,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
 
         let ingredient = &current_matches[index];
         let edit_prompt = format!(
-            "✏️ {}\n\n{}: **{} {}**\n\n{}",
+            "✏️ {}\n\n{}: **{} {} {}**\n\n{}",
             t_lang(
                 ctx.localization,
                 "edit-ingredient-title",
@@ -172,6 +172,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
             ),
             ingredient.quantity,
             ingredient.measurement.as_deref().unwrap_or(""),
+            ingredient.ingredient_name,
             t_lang(
                 ctx.localization,
                 "edit-ingredient-instruction",
