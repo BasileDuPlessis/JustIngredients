@@ -90,7 +90,7 @@ EOF
         fi
 
         # Use jq to properly escape the diff content for JSON embedding
-        # (Note: --arg automatically handles escaping)
+        ESCAPED_DIFF=$(echo "$DIFF_CONTENT" | jq -R -s .)
 
         # Create the JSON request using jq for proper escaping
         jq -n --arg diff "$DIFF_CONTENT" '{
@@ -98,7 +98,7 @@ EOF
             {
               parts: [
                 {
-                  text: "You are an expert Rust code reviewer. Analyze this code diff and identify ONLY critical issues that could cause security vulnerabilities, data loss, performance problems, or safety issues. Focus on Rust-specific concerns like unsafe code, lifetime issues, and concurrency problems.\n\nCRITICAL ISSUES TO FLAG:\n1. Security: SQL injection, unsafe Rust usage, authentication bypasses\n2. Safety: Race conditions, memory unsafety, improper error handling\n3. Performance: Memory leaks, quadratic algorithms, unbounded resource usage\n4. Data integrity: Missing transactions, improper validation\n\nIGNORE: Style issues, documentation, minor optimizations, test coverage.\n\nIf no critical issues found, respond with: NO_CRITICAL_ISSUES\n\nOtherwise respond in JSON format:\n{\"priority\": \"HIGH|MEDIUM|LOW|NONE\", \"issues\": [\"issue1\", \"issue2\"], \"recommendations\": [\"rec1\", \"rec2\"]}\n\nCode diff:\n\($diff)"
+                  text: ("You are an expert Rust code reviewer. Analyze this code diff and identify ONLY critical issues that could cause security vulnerabilities, data loss, performance problems, or safety issues. Focus on Rust-specific concerns like unsafe code, lifetime issues, and concurrency problems.\n\nCRITICAL ISSUES TO FLAG:\n1. Security: SQL injection, unsafe Rust usage, authentication bypasses\n2. Safety: Race conditions, memory unsafety, improper error handling\n3. Performance: Memory leaks, quadratic algorithms, unbounded resource usage\n4. Data integrity: Missing transactions, improper validation\n\nIGNORE: Style issues, documentation, minor optimizations, test coverage.\n\nIf no critical issues found, respond with: NO_CRITICAL_ISSUES\n\nOtherwise respond in JSON format:\n{\"priority\": \"HIGH|MEDIUM|LOW|NONE\", \"issues\": [\"issue1\", \"issue2\"], \"recommendations\": [\"rec1\", \"rec2\"]}\n\nCode diff:\n" + $diff)
                 }
               ]
             }
