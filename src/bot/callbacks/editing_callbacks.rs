@@ -144,9 +144,9 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
     } = params;
 
     let data = data.unwrap_or("");
-    let current_matches = current_matches_slice.unwrap();
+    let current_matches = current_matches_slice.expect("Current matches slice should be provided for edit callback");
 
-    let index: usize = data.strip_prefix("edit_").unwrap().parse().unwrap_or(0);
+    let index: usize = data.strip_prefix("edit_").expect("Edit callback data should start with 'edit_'").parse().unwrap_or(0);
     if index < current_matches.len() {
         // Record user engagement metric for ingredient editing
         crate::observability::record_user_engagement_metrics(
@@ -188,8 +188,8 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
         match ctx
             .bot
             .edit_message_text(
-                q.message.as_ref().unwrap().chat().id,
-                q.message.as_ref().unwrap().id(),
+                q.message.as_ref().expect("Callback query should have a message").chat().id,
+                q.message.as_ref().expect("Callback query should have a message").id(),
                 edit_prompt.clone(),
             )
             .reply_markup(keyboard.clone())
@@ -205,7 +205,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
                 );
                 // Fallback: send new message if editing fails
                 ctx.bot
-                    .send_message(q.message.as_ref().unwrap().chat().id, edit_prompt)
+                    .send_message(q.message.as_ref().expect("Callback query should have a message").chat().id, edit_prompt)
                     .reply_markup(keyboard)
                     .await?;
             }
@@ -220,7 +220,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
                 editing_index: index,
                 language_code: language_code.clone(),
                 message_id,
-                original_message_id: Some(q.message.as_ref().unwrap().id().0),
+                original_message_id: Some(q.message.as_ref().expect("Callback query should have a message").id().0),
             })
             .await?;
     }
@@ -243,9 +243,9 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
     } = params;
 
     let data = data.unwrap_or("");
-    let current_matches = current_matches.unwrap();
+    let current_matches = current_matches.expect("Current matches should be provided for delete callback");
 
-    let index: usize = data.strip_prefix("delete_").unwrap().parse().unwrap_or(0);
+    let index: usize = data.strip_prefix("delete_").expect("Delete callback data should start with 'delete_'").parse().unwrap_or(0);
 
     if index < current_matches.len() {
         // Record user engagement metric for ingredient deletion
@@ -295,8 +295,8 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
             match ctx
                 .bot
                 .edit_message_text(
-                    q.message.as_ref().unwrap().chat().id,
-                    q.message.as_ref().unwrap().id(),
+                    q.message.as_ref().expect("Callback query should have a message").chat().id,
+                    q.message.as_ref().expect("Callback query should have a message").id(),
                     empty_message,
                 )
                 .reply_markup(teloxide::types::InlineKeyboardMarkup::new(keyboard))
@@ -339,8 +339,8 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
             match ctx
                 .bot
                 .edit_message_text(
-                    q.message.as_ref().unwrap().chat().id,
-                    q.message.as_ref().unwrap().id(),
+                    q.message.as_ref().expect("Callback query should have a message").chat().id,
+                    q.message.as_ref().expect("Callback query should have a message").id(),
                     review_message,
                 )
                 .reply_markup(keyboard)
@@ -397,8 +397,8 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         ..
     } = params;
 
-    let current_matches = current_matches_slice.unwrap();
-    let pool = pool.unwrap();
+    let current_matches = current_matches_slice.expect("Current matches slice should be provided for confirm callback");
+    let pool = pool.expect("Database pool should be provided for confirm callback");
 
     // Record user engagement metric for recipe confirmation
     crate::observability::record_user_engagement_metrics(
@@ -434,7 +434,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 );
                 ctx.bot
                     .send_message(
-                        q.message.as_ref().unwrap().chat().id,
+                        q.message.as_ref().expect("Callback query should have a message").chat().id,
                         t_lang(
                             ctx.localization,
                             "error-updating-ingredients",
@@ -466,7 +466,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                     );
                     ctx.bot
                         .send_message(
-                            q.message.as_ref().unwrap().chat().id,
+                            q.message.as_ref().expect("Callback query should have a message").chat().id,
                             t_lang(
                                 ctx.localization,
                                 "error-processing-failed",
@@ -508,7 +508,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 );
                 ctx.bot
                     .send_message(
-                        q.message.as_ref().unwrap().chat().id,
+                        q.message.as_ref().expect("Callback query should have a message").chat().id,
                         t_lang(
                             ctx.localization,
                             "error-adding-ingredients",
@@ -531,7 +531,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 );
                 ctx.bot
                     .send_message(
-                        q.message.as_ref().unwrap().chat().id,
+                        q.message.as_ref().expect("Callback query should have a message").chat().id,
                         t_lang(
                             ctx.localization,
                             "error-deleting-ingredients",
@@ -555,7 +555,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 );
                 ctx.bot
                     .send_message(
-                        q.message.as_ref().unwrap().chat().id,
+                        q.message.as_ref().expect("Callback query should have a message").chat().id,
                         t_lang(
                             ctx.localization,
                             "error-recipe-not-found",
@@ -574,7 +574,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 );
                 ctx.bot
                     .send_message(
-                        q.message.as_ref().unwrap().chat().id,
+                        q.message.as_ref().expect("Callback query should have a message").chat().id,
                         t_lang(
                             ctx.localization,
                             "error-processing-failed",
@@ -611,8 +611,8 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         match ctx
             .bot
             .edit_message_text(
-                q.message.as_ref().unwrap().chat().id,
-                q.message.as_ref().unwrap().id(),
+                q.message.as_ref().expect("Callback query should have a message").chat().id,
+                q.message.as_ref().expect("Callback query should have a message").id(),
                 recipe_message,
             )
             .reply_markup(keyboard)
@@ -641,7 +641,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 );
                 ctx.bot
                     .send_message(
-                        q.message.as_ref().unwrap().chat().id,
+                        q.message.as_ref().expect("Callback query should have a message").chat().id,
                         t_lang(
                             ctx.localization,
                             "error-recipe-not-found",
@@ -660,7 +660,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 );
                 ctx.bot
                     .send_message(
-                        q.message.as_ref().unwrap().chat().id,
+                        q.message.as_ref().expect("Callback query should have a message").chat().id,
                         t_lang(
                             ctx.localization,
                             "error-processing-failed",
@@ -695,8 +695,8 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         match ctx
             .bot
             .edit_message_text(
-                q.message.as_ref().unwrap().chat().id,
-                q.message.as_ref().unwrap().id(),
+                q.message.as_ref().expect("Callback query should have a message").chat().id,
+                q.message.as_ref().expect("Callback query should have a message").id(),
                 recipe_message,
             )
             .reply_markup(keyboard)
@@ -774,7 +774,7 @@ async fn handle_cancel_saved_ingredients_button(
         if let Some(message_id) = message_id {
             match bot
                 .edit_message_text(
-                    q.message.as_ref().unwrap().chat().id,
+                    q.message.as_ref().expect("Callback query should have a message").chat().id,
                     teloxide::types::MessageId(message_id),
                     recipe_message,
                 )
@@ -792,7 +792,7 @@ async fn handle_cancel_saved_ingredients_button(
                     // Fallback: delete the message
                     let _ = bot
                         .delete_message(
-                            q.message.as_ref().unwrap().chat().id,
+                            q.message.as_ref().expect("Callback query should have a message").chat().id,
                             teloxide::types::MessageId(message_id),
                         )
                         .await;
@@ -825,7 +825,7 @@ async fn handle_add_ingredient_button(
     }) = dialogue_state
     {
         bot.send_message(
-            q.message.as_ref().unwrap().chat().id,
+            q.message.as_ref().expect("Callback query should have a message").chat().id,
             t_lang(
                 localization,
                 "add-ingredient-prompt",

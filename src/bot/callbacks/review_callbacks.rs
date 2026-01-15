@@ -160,8 +160,8 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
     } = params;
 
     let data = data.unwrap_or("");
-    let ingredients = ingredients_slice.unwrap();
-    let index: usize = data.strip_prefix("edit_").unwrap().parse().unwrap_or(0);
+    let ingredients = ingredients_slice.expect("Ingredients slice should be provided for edit callback");
+    let index: usize = data.strip_prefix("edit_").expect("Edit callback data should start with 'edit_'").parse().unwrap_or(0);
     if index < ingredients.len() {
         // Record user engagement metric for ingredient editing
         crate::observability::record_user_engagement_metrics(
@@ -204,7 +204,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
         let edited_message = match ctx
             .bot
             .edit_message_text(
-                q.message.as_ref().unwrap().chat().id,
+                q.message.as_ref().expect("Callback query should have a message").chat().id,
                 teloxide::types::MessageId(
                     message_id.expect("Message ID should be present for editing"),
                 ),
@@ -223,7 +223,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
                 );
                 // Fallback: send new message if editing fails
                 ctx.bot
-                    .send_message(q.message.as_ref().unwrap().chat().id, edit_prompt)
+                    .send_message(q.message.as_ref().expect("Callback query should have a message").chat().id, edit_prompt)
                     .reply_markup(keyboard)
                     .await?
             }
@@ -263,8 +263,8 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
     } = params;
 
     let data = data.unwrap_or("");
-    let ingredients = ingredients.unwrap();
-    let index: usize = data.strip_prefix("delete_").unwrap().parse().unwrap_or(0);
+    let ingredients = ingredients.expect("Ingredients should be provided for delete callback");
+    let index: usize = data.strip_prefix("delete_").expect("Delete callback data should start with 'delete_'").parse().unwrap_or(0);
 
     if index < ingredients.len() {
         // Record user engagement metric for ingredient deletion
@@ -318,8 +318,8 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
             match ctx
                 .bot
                 .edit_message_text(
-                    q.message.as_ref().unwrap().chat().id,
-                    q.message.as_ref().unwrap().id(),
+                    q.message.as_ref().expect("Callback query should have a message").chat().id,
+                    q.message.as_ref().expect("Callback query should have a message").id(),
                     empty_message,
                 )
                 .reply_markup(teloxide::types::InlineKeyboardMarkup::new(keyboard))
@@ -366,8 +366,8 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
             match ctx
                 .bot
                 .edit_message_text(
-                    q.message.as_ref().unwrap().chat().id,
-                    q.message.as_ref().unwrap().id(),
+                    q.message.as_ref().expect("Callback query should have a message").chat().id,
+                    q.message.as_ref().expect("Callback query should have a message").id(),
                     review_message,
                 )
                 .reply_markup(keyboard)
@@ -425,8 +425,8 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         ..
     } = params;
 
-    let ingredients = ingredients_slice.unwrap();
-    let pool = pool.unwrap();
+    let ingredients = ingredients_slice.expect("Ingredients slice should be provided for confirm callback");
+    let pool = pool.expect("Database pool should be provided for confirm callback");
 
     // Record user engagement metric for recipe confirmation
     crate::observability::record_user_engagement_metrics(
@@ -460,7 +460,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
             );
             ctx.bot
                 .send_message(
-                    q.message.as_ref().unwrap().chat().id,
+                    q.message.as_ref().expect("Callback query should have a message").chat().id,
                     t_lang(
                         ctx.localization,
                         "error-processing-failed",
@@ -475,8 +475,8 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         match ctx
             .bot
             .edit_message_reply_markup(
-                q.message.as_ref().unwrap().chat().id,
-                q.message.as_ref().unwrap().id(),
+                q.message.as_ref().expect("Callback query should have a message").chat().id,
+                q.message.as_ref().expect("Callback query should have a message").id(),
             )
             .await
         {
@@ -516,7 +516,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
             create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), ctx.localization);
 
         ctx.bot
-            .send_message(q.message.as_ref().unwrap().chat().id, confirmation_message)
+            .send_message(q.message.as_ref().expect("Callback query should have a message").chat().id, confirmation_message)
             .reply_markup(confirmation_keyboard)
             .await?;
 
@@ -530,8 +530,8 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         match ctx
             .bot
             .edit_message_reply_markup(
-                q.message.as_ref().unwrap().chat().id,
-                q.message.as_ref().unwrap().id(),
+                q.message.as_ref().expect("Callback query should have a message").chat().id,
+                q.message.as_ref().expect("Callback query should have a message").id(),
             )
             .await
         {
@@ -563,7 +563,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
 
         let prompt_msg = ctx
             .bot
-            .send_message(q.message.as_ref().unwrap().chat().id, recipe_name_prompt)
+            .send_message(q.message.as_ref().expect("Callback query should have a message").chat().id, recipe_name_prompt)
             .await?;
 
         // Transition to waiting for recipe name after confirmation
@@ -590,7 +590,7 @@ async fn handle_add_more_button(
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     bot.send_message(
-        q.message.as_ref().unwrap().chat().id,
+        q.message.as_ref().expect("Callback query should have a message").chat().id,
         t_lang(
             localization,
             "review-add-more-instructions",
@@ -613,7 +613,7 @@ async fn handle_cancel_review_button(
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     bot.send_message(
-        q.message.as_ref().unwrap().chat().id,
+        q.message.as_ref().expect("Callback query should have a message").chat().id,
         t_lang(
             localization,
             "review-cancelled",

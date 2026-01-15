@@ -41,7 +41,7 @@ impl RateLimiter {
         let now = Instant::now();
         let window = Duration::from_secs(self.window_secs);
 
-        let mut requests = self.requests.lock().unwrap();
+        let mut requests = self.requests.lock().expect("Failed to acquire mutex for rate limiting");
         let client_requests = requests.entry(ip.to_string()).or_default();
 
         // Remove old requests outside the window

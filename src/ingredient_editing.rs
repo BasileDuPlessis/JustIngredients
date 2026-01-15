@@ -163,12 +163,12 @@ mod tests {
         assert_eq!(changes.to_delete.len(), 0);
 
         // Check that flour was updated
-        let flour_update = changes.to_update.iter().find(|(id, _)| *id == 1).unwrap();
+        let flour_update = changes.to_update.iter().find(|(id, _)| *id == 1).expect("Flour update should be detected");
         assert_eq!(flour_update.1.quantity, "3");
         assert_eq!(flour_update.1.ingredient_name, "flour");
 
         // Check that sugar was updated to butter
-        let sugar_update = changes.to_update.iter().find(|(id, _)| *id == 2).unwrap();
+        let sugar_update = changes.to_update.iter().find(|(id, _)| *id == 2).expect("Sugar update should be detected");
         assert_eq!(sugar_update.1.quantity, "1");
         assert_eq!(sugar_update.1.ingredient_name, "butter");
         assert_eq!(sugar_update.1.measurement, None);

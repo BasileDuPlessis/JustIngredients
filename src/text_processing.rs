@@ -660,7 +660,7 @@ impl MeasurementDetector {
         for (line_number, line) in text.lines().enumerate() {
             trace!("Processing line {}: '{}'", line_number, line);
             'capture_loop: for capture in self.pattern.captures_iter(line) {
-                let full_match = capture.get(0).unwrap();
+                let full_match = capture.get(0).expect("Full match should always be available in regex capture");
                 let measurement_text = full_match.as_str();
                 debug!(
                     "Found measurement '{}' at line {}",
@@ -678,7 +678,7 @@ impl MeasurementDetector {
                 );
 
                 // Extract ingredient from text after the match with improved boundary detection
-                let match_end = capture.get(0).unwrap().end();
+                let match_end = capture.get(0).expect("Full match should always be available in regex capture").end();
                 let remaining_text = &line[match_end..];
                 let trimmed_remaining = remaining_text.trim_start();
 
@@ -690,13 +690,13 @@ impl MeasurementDetector {
                 if !has_measurement && !has_ingredient_text {
                     debug!(
                         "Skipping match with no measurement and no ingredient text: '{}'",
-                        capture.get(0).unwrap().as_str()
+                        capture.get(0).expect("Full match should always be available in regex capture").as_str()
                     );
                     continue 'capture_loop;
                 }
 
                 // Extract ingredient from text after the match with improved boundary detection
-                let match_end = capture.get(0).unwrap().end();
+                let match_end = capture.get(0).expect("Full match should always be available in regex capture").end();
                 let remaining_text = &line[match_end..];
                 let trimmed_remaining = remaining_text.trim_start();
 
@@ -767,7 +767,7 @@ impl MeasurementDetector {
                 if ingredient.chars().filter(|c| c.is_ascii_digit()).count() > 2 {
                     warn!(
                         "Skipping match with suspicious ingredient containing multiple digits: '{}'",
-                        capture.get(0).unwrap().as_str()
+                        capture.get(0).expect("Full match should always be available in regex capture").as_str()
                     );
                     continue 'capture_loop;
                 }
@@ -912,7 +912,7 @@ impl MeasurementDetector {
             }
 
             // Check if there's ingredient text after the match
-            let full_match = capture.get(0).unwrap();
+            let full_match = capture.get(0).expect("Full match should always be available in regex capture");
             let match_end = full_match.end();
             if match_end < text.len() {
                 let remaining = &text[match_end..];

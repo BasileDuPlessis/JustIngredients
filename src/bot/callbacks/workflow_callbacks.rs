@@ -194,7 +194,7 @@ pub async fn handle_workflow_button(
             );
 
             bot.send_message(
-                q.message.as_ref().unwrap().chat().id,
+                q.message.as_ref().expect("Callback query should have a message").chat().id,
                 t_lang(
                     localization,
                     "workflow-what-next",
@@ -217,7 +217,7 @@ pub async fn handle_workflow_button(
 
             handle_list_recipes(
                 bot,
-                q.message.as_ref().unwrap(),
+                q.message.as_ref().expect("Callback query should have a message"),
                 pool.clone(),
                 &q.from.language_code,
                 localization,
@@ -234,7 +234,7 @@ pub async fn handle_workflow_button(
             );
 
             bot.send_message(
-                q.message.as_ref().unwrap().chat().id,
+                q.message.as_ref().expect("Callback query should have a message").chat().id,
                 t_lang(
                     localization,
                     "workflow-search-coming-soon",

@@ -14,7 +14,7 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 lazy_static! {
-    static ref QUANTITY_PATTERN: Regex = Regex::new(r"^(-?\d+(?:\.\d+)?(?:\s*\d+/\d+)?)").unwrap();
+    static ref QUANTITY_PATTERN: Regex = Regex::new(r"^(-?\d+(?:\.\d+)?(?:\s*\d+/\d+)?)").expect("Invalid quantity regex pattern");
 }
 
 /// Validates a recipe name input
