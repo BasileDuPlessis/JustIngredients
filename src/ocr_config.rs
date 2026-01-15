@@ -229,6 +229,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(unused_assignments)]
     fn test_recovery_config_validation() {
         let mut config = RecoveryConfig::default();
 
@@ -267,6 +268,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(unused_assignments)]
     fn test_format_size_limits_validation() {
         let mut config = FormatSizeLimits::default();
 
