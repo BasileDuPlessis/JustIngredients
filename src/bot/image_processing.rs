@@ -24,7 +24,9 @@ use crate::ocr_errors::OcrError;
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
-use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
+use super::ui_builder::{
+    create_ingredient_review_keyboard, create_processing_keyboard, format_ingredients_list,
+};
 
 // Import HandlerContext
 // use super::HandlerContext;
@@ -158,8 +160,11 @@ pub async fn download_and_process_image(
     let result = async {
         info!("Image downloaded to: {}", temp_file_guard);
 
-        // Send initial success message and capture its ID
-        let success_msg = bot.send_message(chat_id, success_message).await?;
+        // Send initial success message with cancel button and capture its ID
+        let processing_keyboard = create_processing_keyboard(language_code, localization);
+        let success_msg = bot.send_message(chat_id, success_message)
+            .reply_markup(processing_keyboard)
+            .await?;
         let success_message_id = success_msg.id;
 
         // Validate image format before OCR processing

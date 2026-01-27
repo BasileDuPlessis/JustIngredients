@@ -89,6 +89,7 @@ review-title = Révisez vos ingrédients
 review-description = Veuillez réviser les ingrédients extraits ci-dessous. Utilisez les boutons pour modifier ou supprimer des éléments, puis confirmez quand vous êtes prêt.
 review-confirm = Confirmer et sauvegarder
 review-cancelled = [REVIEW_CANCEL] Révision des ingrédients annulée. Aucun ingrédient n'a été sauvegardé.
+processing-cancelled = [PROCESSING_CANCEL] Traitement de l'image annulé. Aucun ingrédient n'a été extrait.
 review-no-ingredients = Aucun ingrédient restant
 review-no-ingredients-help = Tous les ingrédients ont été supprimés. Vous pouvez ajouter plus d'ingrédients en envoyant une autre image, ou annuler cette recette.
 review-add-more = Ajouter plus d'ingrédients

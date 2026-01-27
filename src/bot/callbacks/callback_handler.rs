@@ -4,6 +4,7 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
+use teloxide::types::InlineKeyboardMarkup;
 use tracing::debug;
 
 // Import dialogue types
@@ -153,6 +154,8 @@ pub async fn callback_handler(
                 &localization,
             )
             .await?;
+        } else if data == "cancel_processing" {
+            handle_cancel_processing_button(&bot, &q, &dialogue, &localization).await?;
         }
     }
 
@@ -391,5 +394,44 @@ async fn handle_editing_saved_ingredient_callbacks(
         }
     }
 
+    Ok(())
+}
+
+/// Handle cancel processing button callback
+///
+/// This function handles cancellation during OCR processing:
+/// - Edits the processing message to show cancellation
+/// - Removes all buttons from the message
+/// - Exits the dialogue to clean up state
+async fn handle_cancel_processing_button(
+    bot: &Bot,
+    q: &teloxide::types::CallbackQuery,
+    dialogue: &RecipeDialogue,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    let message = q
+        .message
+        .as_ref()
+        .expect("Callback query should have a message");
+    let chat_id = message.chat().id;
+    let language_code = &q.from.language_code;
+
+    // Edit the existing message to show cancellation and remove all buttons
+    bot.edit_message_text(
+        chat_id,
+        message.id(),
+        t_lang(
+            localization,
+            "processing-cancelled",
+            language_code.as_deref(),
+        ),
+    )
+    .reply_markup(InlineKeyboardMarkup::new(Vec::<
+        Vec<teloxide::types::InlineKeyboardButton>,
+    >::new())) // Remove all inline keyboard buttons
+    .await?;
+
+    // End the dialogue
+    dialogue.exit().await?;
     Ok(())
 }

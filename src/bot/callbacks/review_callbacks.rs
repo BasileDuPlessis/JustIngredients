@@ -8,6 +8,7 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
+use teloxide::types::InlineKeyboardMarkup;
 use tracing::debug;
 
 // Import error logging utilities
@@ -683,18 +684,25 @@ async fn handle_cancel_review_button(
     dialogue: &RecipeDialogue,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    bot.send_message(
-        q.message
-            .as_ref()
-            .expect("Callback query should have a message")
-            .chat()
-            .id,
+    let message = q
+        .message
+        .as_ref()
+        .expect("Callback query should have a message");
+    let chat_id = message.chat().id;
+
+    // Edit the existing message to show cancellation and remove all buttons
+    bot.edit_message_text(
+        chat_id,
+        message.id(),
         t_lang(
             localization,
             "review-cancelled",
             dialogue_lang_code.as_deref(),
         ),
     )
+    .reply_markup(InlineKeyboardMarkup::new(Vec::<
+        Vec<teloxide::types::InlineKeyboardButton>,
+    >::new())) // Remove all inline keyboard buttons
     .await?;
 
     // End the dialogue

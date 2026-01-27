@@ -97,6 +97,7 @@ review-title = Review Your Ingredients
 review-description = Please review the extracted ingredients below. Use the buttons to edit or delete items, then confirm when ready.
 review-confirm = Confirm and Save
 review-cancelled = [REVIEW_CANCEL] Ingredient review cancelled. No ingredients were saved.
+processing-cancelled = [PROCESSING_CANCEL] Image processing cancelled. No ingredients were extracted.
 review-no-ingredients = No ingredients remaining
 review-no-ingredients-help = All ingredients have been deleted. You can add more ingredients by sending another image, or cancel this recipe.
 review-add-more = Add More Ingredients
