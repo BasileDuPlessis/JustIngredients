@@ -533,13 +533,14 @@ fn test_security_boundary_testing() {
 
 #[test]
 fn test_fraction_quantities_image_processing() {
-    use just_ingredients::ocr::{extract_text_from_image, OcrConfig};
-    use just_ingredients::instance_manager::OcrInstanceManager;
     use just_ingredients::circuit_breaker::CircuitBreaker;
+    use just_ingredients::instance_manager::OcrInstanceManager;
+    use just_ingredients::ocr::{extract_text_from_image, OcrConfig};
     use std::fs;
 
     // Copy the test image to a temporary location
-    let source_path = "/Users/basile.du.plessis/Documents/JustIngredients/docs/test_fraction_quantities.jpg";
+    let source_path =
+        "/Users/basile.du.plessis/Documents/JustIngredients/docs/test_fraction_quantities.jpg";
     let temp_file = tempfile::NamedTempFile::with_suffix(".jpg").unwrap();
     let temp_path = temp_file.path().to_str().unwrap().to_string();
 
@@ -585,11 +586,21 @@ fn test_fraction_quantities_image_processing() {
     let brown_sugar_match = ingredients
         .iter()
         .find(|m| m.ingredient_name.to_lowercase().contains("brown"));
-    assert!(brown_sugar_match.is_some(), "Should find brown sugar ingredient");
+    assert!(
+        brown_sugar_match.is_some(),
+        "Should find brown sugar ingredient"
+    );
 
     let brown_sugar = brown_sugar_match.unwrap();
-    assert_eq!(brown_sugar.quantity, "1/2", "Brown sugar quantity should be 1/2");
-    assert_eq!(brown_sugar.measurement, Some("cup".to_string()), "Brown sugar measurement should be cup");
+    assert_eq!(
+        brown_sugar.quantity, "1/2",
+        "Brown sugar quantity should be 1/2"
+    );
+    assert_eq!(
+        brown_sugar.measurement,
+        Some("cup".to_string()),
+        "Brown sugar measurement should be cup"
+    );
     assert!(
         brown_sugar.ingredient_name.to_lowercase().contains("brown"),
         "Ingredient should contain 'brown'"
@@ -599,11 +610,18 @@ fn test_fraction_quantities_image_processing() {
     let sugar_match = ingredients
         .iter()
         .find(|m| m.ingredient_name.to_lowercase().contains("granulated"));
-    assert!(sugar_match.is_some(), "Should find granulated sugar ingredient");
+    assert!(
+        sugar_match.is_some(),
+        "Should find granulated sugar ingredient"
+    );
 
     let sugar = sugar_match.unwrap();
     assert_eq!(sugar.quantity, "1/4", "Sugar quantity should be 1/4");
-    assert_eq!(sugar.measurement, Some("cup".to_string()), "Sugar measurement should be cup");
+    assert_eq!(
+        sugar.measurement,
+        Some("cup".to_string()),
+        "Sugar measurement should be cup"
+    );
     assert!(
         sugar.ingredient_name.to_lowercase().contains("sugar"),
         "Ingredient should contain 'sugar'"

@@ -673,7 +673,6 @@ fn correct_ocr_fraction_errors(text: &str) -> String {
     let corrections = [
         // 1/2 misreads
         ("Ye", "1/2"),
-
         // 1/4 misreads
         ("%", "1/4"),
     ];
@@ -692,7 +691,12 @@ fn correct_ocr_fraction_errors(text: &str) -> String {
             let before = corrected.clone();
             corrected = regex.replace_all(&corrected, *correction).to_string();
             if before != corrected {
-                tracing::debug!("OCR correction: '{}' -> '{}' in text: '{}'", ocr_error, correction, before);
+                tracing::debug!(
+                    "OCR correction: '{}' -> '{}' in text: '{}'",
+                    ocr_error,
+                    correction,
+                    before
+                );
             }
         }
     }
