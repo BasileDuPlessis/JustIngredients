@@ -673,32 +673,9 @@ fn correct_ocr_fraction_errors(text: &str) -> String {
     let corrections = [
         // 1/2 misreads
         ("Ye", "1/2"),
-        ("le", "1/2"),
-        ("I/", "1/2"),
-        ("I2", "1/2"),
-        ("12", "1/2"), // Sometimes OCR misses the slash entirely
 
         // 1/4 misreads
         ("%", "1/4"),
-        ("14", "1/4"),
-        ("I4", "1/4"),
-        ("l4", "1/4"), // lowercase L
-        ("L4", "1/4"), // uppercase L
-
-        // 1/3 misreads
-        ("13", "1/3"),
-        ("I3", "1/3"),
-
-        // 3/4 misreads
-        ("34", "3/4"),
-        ("3/", "3/4"),
-
-        // 2/3 misreads
-        ("23", "2/3"),
-
-        // 1/8 misreads
-        ("18", "1/8"),
-        ("I8", "1/8"),
     ];
 
     // Apply corrections with word boundaries to avoid false positives
