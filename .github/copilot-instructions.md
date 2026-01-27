@@ -273,7 +273,10 @@ cargo test                    # Run complete test suite (93 tests)
   - Follow established patterns and conventions
   - **STRICTLY PROHIBITED**: Never use `.unwrap()`, `.expect()`, or panicking methods
 
-## Common Development Tasks
+### Common Development Tasks
+
+#### Code Quality & Refactoring
+- **Automated Checks**: The agent checks for unwrap usage, excessive parameters, code complexity, and provides refactoring guidance
 
 ### Adding New Features
 1. **Write Tests First**: Create comprehensive tests before implementation

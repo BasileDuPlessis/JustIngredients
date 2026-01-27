@@ -973,3 +973,28 @@ pub fn record_mutex_poisoning(component: &str, operation: &str) {
         "Mutex poisoning detected - this indicates a critical system error requiring investigation"
     );
 }
+
+/// Record build time metrics for delivery performance tracking
+pub fn record_build_time(duration: std::time::Duration) {
+    metrics::histogram!("cargo_build_time_seconds").record(duration.as_secs_f64());
+}
+
+/// Record deployment events for velocity tracking
+pub fn record_deployment() {
+    metrics::counter!("deployments_total").increment(1);
+}
+
+/// Set AI velocity gain metric (e.g., percentage improvement)
+pub fn set_ai_velocity_gain(gain: f64) {
+    metrics::gauge!("ai_velocity_gain").set(gain);
+}
+
+/// Set classical development velocity baseline
+pub fn set_classical_velocity_baseline(baseline: f64) {
+    metrics::gauge!("classical_velocity_baseline").set(baseline);
+}
+
+/// Record bug fixes for quality tracking
+pub fn record_bug_fix() {
+    metrics::counter!("bugs_fixed_total").increment(1);
+}

@@ -364,6 +364,7 @@ cargo run --example recipe_parser  # Run recipe parsing example
 - **Linting**: `cargo clippy` (all warnings must pass)
 - **Formatting**: `cargo fmt` (must match standard Rust formatting)
 - **Security**: `cargo deny` for dependency security auditing
+- **Refactoring Agent**: `./scripts/refactor-agent.sh` (analyzes code for best practices and suggests improvements)
 
 ### SQLx Query Cache Management
 
