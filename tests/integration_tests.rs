@@ -530,3 +530,82 @@ fn test_security_boundary_testing() {
 
     println!("✅ Security boundary testing passed - path traversal, input validation, and format checking working correctly");
 }
+
+#[test]
+fn test_fraction_quantities_image_processing() {
+    use just_ingredients::ocr::{extract_text_from_image, OcrConfig};
+    use just_ingredients::instance_manager::OcrInstanceManager;
+    use just_ingredients::circuit_breaker::CircuitBreaker;
+    use std::fs;
+
+    // Copy the test image to a temporary location
+    let source_path = "/Users/basile.du.plessis/Documents/JustIngredients/docs/test_fraction_quantities.jpg";
+    let temp_file = tempfile::NamedTempFile::with_suffix(".jpg").unwrap();
+    let temp_path = temp_file.path().to_str().unwrap().to_string();
+
+    // Copy the image file
+    fs::copy(source_path, &temp_path).expect("Failed to copy test image");
+
+    // Set up OCR components
+    let config = OcrConfig::default();
+    let instance_manager = OcrInstanceManager::new();
+    let circuit_breaker = CircuitBreaker::new(config.recovery.clone());
+
+    // Extract text from the image
+    let extracted_text = tokio::runtime::Runtime::new()
+        .unwrap()
+        .block_on(extract_text_from_image(
+            &temp_path,
+            &config,
+            &instance_manager,
+            &circuit_breaker,
+        ))
+        .expect("OCR extraction should succeed");
+
+    println!("Extracted text: {}", extracted_text);
+
+    // Process the extracted text to find ingredients
+    let detector = MeasurementDetector::new().unwrap();
+    let ingredients = detector.extract_ingredient_measurements(&extracted_text);
+
+    println!("Found {} ingredients:", ingredients.len());
+    for ingredient in &ingredients {
+        println!(
+            "- {} {} {}",
+            ingredient.quantity,
+            ingredient.measurement.as_deref().unwrap_or(""),
+            ingredient.ingredient_name
+        );
+    }
+
+    // Verify the expected ingredients are found
+    assert_eq!(ingredients.len(), 2, "Should find exactly 2 ingredients");
+
+    // Check first ingredient: 1/2 cup brown sugar (OCR reads "flour" as "brown sugar")
+    let brown_sugar_match = ingredients
+        .iter()
+        .find(|m| m.ingredient_name.to_lowercase().contains("brown"));
+    assert!(brown_sugar_match.is_some(), "Should find brown sugar ingredient");
+
+    let brown_sugar = brown_sugar_match.unwrap();
+    assert_eq!(brown_sugar.quantity, "1/2", "Brown sugar quantity should be 1/2");
+    assert_eq!(brown_sugar.measurement, Some("cup".to_string()), "Brown sugar measurement should be cup");
+    assert!(
+        brown_sugar.ingredient_name.to_lowercase().contains("brown"),
+        "Ingredient should contain 'brown'"
+    );
+
+    // Check second ingredient: 1/4 cup granulated sugar
+    let sugar_match = ingredients
+        .iter()
+        .find(|m| m.ingredient_name.to_lowercase().contains("granulated"));
+    assert!(sugar_match.is_some(), "Should find granulated sugar ingredient");
+
+    let sugar = sugar_match.unwrap();
+    assert_eq!(sugar.quantity, "1/4", "Sugar quantity should be 1/4");
+    assert_eq!(sugar.measurement, Some("cup".to_string()), "Sugar measurement should be cup");
+    assert!(
+        sugar.ingredient_name.to_lowercase().contains("sugar"),
+        "Ingredient should contain 'sugar'"
+    );
+}

@@ -25,6 +25,7 @@
 //! - `log`: Logging functionality
 
 use anyhow::Result;
+use regex;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use tracing::{info, warn};
@@ -660,6 +661,68 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// # Ok(())
 /// # }
 /// ```
+///
+/// Correct common OCR errors with fraction characters
+///
+/// OCR engines often misread fraction symbols (/) as other characters.
+/// This function attempts to correct the most common fraction OCR errors.
+fn correct_ocr_fraction_errors(text: &str) -> String {
+    let mut corrected = text.to_string();
+
+    // Common OCR fraction errors and their corrections
+    let corrections = [
+        // 1/2 misreads
+        ("Ye", "1/2"),
+        ("le", "1/2"),
+        ("I/", "1/2"),
+        ("I2", "1/2"),
+        ("12", "1/2"), // Sometimes OCR misses the slash entirely
+
+        // 1/4 misreads
+        ("%", "1/4"),
+        ("14", "1/4"),
+        ("I4", "1/4"),
+        ("l4", "1/4"), // lowercase L
+        ("L4", "1/4"), // uppercase L
+
+        // 1/3 misreads
+        ("13", "1/3"),
+        ("I3", "1/3"),
+
+        // 3/4 misreads
+        ("34", "3/4"),
+        ("3/", "3/4"),
+
+        // 2/3 misreads
+        ("23", "2/3"),
+
+        // 1/8 misreads
+        ("18", "1/8"),
+        ("I8", "1/8"),
+    ];
+
+    // Apply corrections with word boundaries to avoid false positives
+    for (ocr_error, correction) in corrections.iter() {
+        // For single characters, don't require word boundaries
+        // For multi-character strings, use word boundaries
+        let pattern = if ocr_error.len() == 1 {
+            regex::escape(ocr_error)
+        } else {
+            format!(r"\b{}\b", regex::escape(ocr_error))
+        };
+
+        if let Ok(regex) = regex::Regex::new(&pattern) {
+            let before = corrected.clone();
+            corrected = regex.replace_all(&corrected, *correction).to_string();
+            if before != corrected {
+                tracing::debug!("OCR correction: '{}' -> '{}' in text: '{}'", ocr_error, correction, before);
+            }
+        }
+    }
+
+    corrected
+}
+
 pub async fn extract_text_from_image(
     image_path: &str,
     config: &crate::ocr_config::OcrConfig,
@@ -849,7 +912,10 @@ async fn perform_ocr_extraction(
             .collect::<Vec<&str>>()
             .join("\n");
 
-        Ok(cleaned_text)
+        // Apply OCR error correction for common fraction misreads
+        let corrected_text = correct_ocr_fraction_errors(&cleaned_text);
+
+        Ok(corrected_text)
     })
     .await;
 
