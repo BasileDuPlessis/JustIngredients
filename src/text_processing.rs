@@ -50,6 +50,8 @@ pub struct MeasurementConfig {
     /// Whether to include count-only measurements (e.g., "2 eggs" -> "2")
     #[allow(dead_code)]
     pub include_count_measurements: bool,
+    /// Maximum number of lines to combine for multi-line ingredients
+    pub max_combine_lines: usize,
 }
 
 impl Default for MeasurementConfig {
@@ -59,6 +61,7 @@ impl Default for MeasurementConfig {
             enable_ingredient_postprocessing: true,
             max_ingredient_length: 100,
             include_count_measurements: true,
+            max_combine_lines: 10,
         }
     }
 }
@@ -70,6 +73,13 @@ impl MeasurementConfig {
         if self.max_ingredient_length == 0 {
             return Err(crate::errors::AppError::Config(
                 "max_ingredient_length must be greater than 0".to_string(),
+            ));
+        }
+
+        // Validate max_combine_lines
+        if self.max_combine_lines == 0 {
+            return Err(crate::errors::AppError::Config(
+                "max_combine_lines must be greater than 0".to_string(),
             ));
         }
 
@@ -647,6 +657,27 @@ impl MeasurementDetector {
     /// assert_eq!(matches[1].ingredient_name, "sugar");
     /// # Ok::<(), regex::Error>(())
     /// ```
+    /// Extract ingredient measurements from text
+    ///
+    /// This function processes text line-by-line, finding measurement patterns on each line
+    /// independently. For each line, it uses regex to identify quantity/measurement combinations
+    /// and extracts the ingredient name from the remaining text on the same line.
+    ///
+    /// Current behavior (single-line processing):
+    /// - Processes each line separately without considering multi-line continuations
+    /// - Uses regex pattern built from config/measurement_units.json
+    /// - Supports quantity-only ingredients (e.g., "6 eggs") and traditional measurements (e.g., "2 cups flour")
+    /// - Extracts ingredient text until comma, next measurement, or end of line
+    /// - Applies post-processing to clean and normalize ingredient names
+    ///
+    /// Future enhancement: Multi-line ingredient parsing will combine text from consecutive
+    /// lines when ingredient names span multiple lines due to OCR text wrapping.
+    ///
+    /// # Arguments
+    /// * `text` - The input text containing ingredient measurements
+    ///
+    /// # Returns
+    /// A vector of `MeasurementMatch` structs containing parsed measurements
     pub fn extract_ingredient_measurements(&self, text: &str) -> Vec<MeasurementMatch> {
         let start_time = std::time::Instant::now();
         let text_length = text.len();
@@ -655,10 +686,30 @@ impl MeasurementDetector {
         let mut matches = Vec::new();
         let mut current_pos = 0;
 
+        // Multi-line parsing metrics tracking
+        let mut total_ingredients = 0;
+        let mut multi_line_ingredients = 0;
+        let mut lines_combined_total = 0;
+        let mut max_lines_per_ingredient = 1;
+
         debug!("Finding measurements in text with {} lines", line_count);
 
-        for (line_number, line) in text.lines().enumerate() {
+        // MAIN PROCESSING LOOP: Process lines with potential multi-line ingredient detection
+        // Changed from iterator-based to index-based loop to support skipping consumed lines
+        // when multi-line ingredients span multiple consecutive lines
+        let all_lines: Vec<&str> = text.lines().collect();
+        let mut line_index = 0;
+
+        while line_index < all_lines.len() {
+            let line_number = line_index;
+            let line = all_lines[line_index];
             trace!("Processing line {}: '{}'", line_number, line);
+
+            // Track how many lines are consumed by this measurement (for multi-line ingredients)
+            let mut lines_consumed = 1; // Default to 1 line consumed
+
+            // CAPTURE LOOP: Find all measurement patterns in current line
+            // This inner loop handles multiple measurements per line (rare but possible)
             'capture_loop: for capture in self.pattern.captures_iter(line) {
                 let full_match = capture
                     .get(0)
@@ -792,7 +843,7 @@ impl MeasurementDetector {
                     );
                         (
                             quantity.to_string(),
-                            Some(measurement.to_string()),
+                            Some(measurement.to_lowercase()),
                             match_end
                                 + (remaining_text.len() - remaining_text.trim_start().len())
                                 + ingredient.len(),
@@ -812,7 +863,7 @@ impl MeasurementDetector {
                         )
                     };
 
-                let ingredient_name = self.post_process_ingredient_name(&ingredient);
+                let mut ingredient_name = self.post_process_ingredient_name(&ingredient);
 
                 trace!(
                     "Extracted ingredient name: '{}' -> '{}'",
@@ -820,6 +871,36 @@ impl MeasurementDetector {
                     ingredient_name
                 );
 
+                // MULTI-LINE INTEGRATION: Check if ingredient is incomplete and combine lines if needed
+                // If the single-line ingredient extraction resulted in incomplete text (no ending punctuation),
+                // we need to combine it with subsequent lines to get the complete ingredient name
+                total_ingredients += 1; // Count this ingredient
+
+                if self.is_incomplete_ingredient(&ingredient_name) {
+                    debug!("Ingredient '{}' appears incomplete, checking for multi-line continuation", ingredient_name);
+
+                    // Use the pre-collected lines array for multi-line extraction
+                    let (combined_ingredient, consumed) = self.extract_multi_line_ingredient(&all_lines, line_number);
+
+                    if consumed > 1 {
+                        debug!("Combined {} lines for ingredient: '{}' -> '{}'",
+                              consumed, ingredient_name, combined_ingredient);
+                        ingredient_name = combined_ingredient;
+                        lines_consumed = consumed;
+                        multi_line_ingredients += 1; // Count multi-line ingredients
+                        lines_combined_total += consumed; // Track total lines combined
+                        max_lines_per_ingredient = max_lines_per_ingredient.max(consumed); // Track max lines per ingredient
+                    } else {
+                        debug!("Multi-line extraction returned single line, keeping original: '{}'", ingredient_name);
+                    }
+                }
+
+                // POSITION TRACKING: Calculate start/end positions within entire text
+                // current_pos tracks the cumulative position across all processed lines
+                // This ensures accurate character offsets for match reporting
+                // TODO: Task 7c - Update position tracking for multi-line ingredients
+                // When extract_multi_line_ingredient() combines multiple lines,
+                // we need to adjust current_pos and line_number accordingly
                 matches.push(MeasurementMatch {
                     quantity: final_quantity,
                     measurement: final_measurement,
@@ -829,11 +910,31 @@ impl MeasurementDetector {
                     end_pos: current_pos + match_end_pos,
                 });
             }
-            current_pos += line.len() + 1; // +1 for newline character
+
+            // POSITION UPDATE: Advance position by the length of consumed lines
+            // For single-line ingredients, lines_consumed = 1, so this maintains backward compatibility
+            // For multi-line ingredients, this advances past all consumed lines
+            for consumed_line_idx in 0..lines_consumed {
+                let actual_line_idx = line_index + consumed_line_idx;
+                if actual_line_idx < all_lines.len() {
+                    current_pos += all_lines[actual_line_idx].len() + 1; // +1 for newline
+                }
+            }
+
+            // Advance the loop index by the number of lines consumed
+            line_index += lines_consumed;
         }
 
         let duration = start_time.elapsed();
         let matches_count = matches.len();
+
+        // Record multi-line parsing metrics
+        crate::observability::record_multi_line_parsing_metrics(
+            total_ingredients,
+            multi_line_ingredients,
+            lines_combined_total,
+            max_lines_per_ingredient,
+        );
 
         // Record text processing performance metrics
         crate::observability::record_text_processing_metrics(
@@ -936,6 +1037,195 @@ impl MeasurementDetector {
             }
         }
         false
+    }
+
+    /// Check if a line starts with a measurement pattern
+    ///
+    /// This function determines if a line begins with a quantity/unit combination,
+    /// which is useful for classifying lines in multi-line ingredient parsing.
+    ///
+    /// # Arguments
+    ///
+    /// * `line` - The line of text to check
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the line starts with a measurement pattern (quantity + optional unit)
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use just_ingredients::text_processing::MeasurementDetector;
+    ///
+    /// let detector = MeasurementDetector::new()?;
+    /// assert!(detector.is_measurement_line("2 cups flour"));
+    /// assert!(detector.is_measurement_line("1/2 cup sugar"));
+    /// assert!(detector.is_measurement_line("6 eggs"));
+    /// assert!(!detector.is_measurement_line("some flour"));
+    /// assert!(!detector.is_measurement_line("chopped onions"));
+    /// # Ok::<(), regex::Error>(())
+    /// ```
+    pub fn is_measurement_line(&self, line: &str) -> bool {
+        // Check if the line starts with a measurement pattern
+        // We look for captures at the beginning of the line (start position 0)
+        if let Some(capture) = self.pattern.captures(line) {
+            if let Some(full_match) = capture.get(0) {
+                // The measurement must start at the beginning of the line
+                return full_match.start() == 0;
+            }
+        }
+        false
+    }
+
+    /// Check if an ingredient text appears incomplete (likely continues on next line)
+    ///
+    /// This function determines if ingredient text lacks ending punctuation that would
+    /// indicate the ingredient name is complete. Used in multi-line parsing to decide
+    /// whether to continue reading from subsequent lines.
+    ///
+    /// # Arguments
+    ///
+    /// * `text` - The ingredient text to check
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if the ingredient text appears incomplete (no ending punctuation)
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use just_ingredients::text_processing::MeasurementDetector;
+    ///
+    /// let detector = MeasurementDetector::new()?;
+    /// assert!(detector.is_incomplete_ingredient("old-fashioned rolled"));
+    /// assert!(!detector.is_incomplete_ingredient("flour (all-purpose)"));
+    /// assert!(!detector.is_incomplete_ingredient("sugar."));
+    /// # Ok::<(), regex::Error>(())
+    /// ```
+    pub fn is_incomplete_ingredient(&self, text: &str) -> bool {
+        let trimmed = text.trim();
+        if trimmed.is_empty() {
+            return false;
+        }
+
+        // Check if the text ends with punctuation that indicates completion
+        let last_char = trimmed.chars().last().unwrap();
+
+        // Complete endings: period, closing parenthesis, closing bracket, closing brace
+        // Also consider comma as complete (next ingredient separator)
+        match last_char {
+            '.' | ')' | ']' | '}' | ',' => false, // Complete
+            _ => true, // Incomplete
+        }
+    }
+
+    /// Extract multi-line ingredient by combining consecutive lines
+    ///
+    /// This function implements multi-line ingredient parsing by combining
+    /// text from consecutive lines when an ingredient name appears to continue
+    /// beyond a single line. It continues reading lines until a termination
+    /// condition is met, with robust handling of edge cases.
+    ///
+    /// # Termination Conditions
+    ///
+    /// The function stops combining lines when it encounters:
+    /// - A new measurement line (starts a new ingredient)
+    /// - An empty line or whitespace-only line
+    /// - A punctuation-only line (contains only punctuation marks)
+    /// - Combined text that ends with completion punctuation
+    /// - Maximum line limit exceeded (prevents runaway processing)
+    ///
+    /// # Edge Cases Handled
+    ///
+    /// - **Empty/whitespace-only lines**: Treated as termination boundaries
+    /// - **Punctuation-only lines**: Single characters like "." or ")" terminate combination
+    /// - **Very long ingredients**: Limited by configurable max_combine_lines to prevent excessive processing
+    /// - **Backward compatibility**: Single-line ingredients work unchanged
+    ///
+    /// # Arguments
+    ///
+    /// * `lines` - Array of text lines to process
+    /// * `start_idx` - Index of the line containing the initial ingredient text
+    ///
+    /// # Returns
+    ///
+    /// Returns a tuple of (combined_ingredient_text, lines_consumed)
+    /// where lines_consumed indicates how many lines were combined
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use just_ingredients::text_processing::MeasurementDetector;
+    ///
+    /// let detector = MeasurementDetector::new()?;
+    /// let lines = ["1 cup old-fashioned rolled", "oats"];
+    /// let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
+    /// assert_eq!(ingredient, "old-fashioned rolled oats");
+    /// assert_eq!(consumed, 2);
+    /// # Ok::<(), regex::Error>(())
+    /// ```
+    pub fn extract_multi_line_ingredient(&self, lines: &[&str], start_idx: usize) -> (String, usize) {
+        if start_idx >= lines.len() {
+            return (String::new(), 0);
+        }
+
+        let first_line = lines[start_idx].trim();
+
+        // Extract ingredient text from first line (everything after the measurement)
+        let ingredient_start = if let Some(capture) = self.pattern.captures(first_line) {
+            if let Some(full_match) = capture.get(0) {
+                full_match.end()
+            } else {
+                0
+            }
+        } else {
+            0
+        };
+
+        let mut combined_ingredient = first_line[ingredient_start..].trim().to_string();
+        let mut lines_consumed = 1;
+
+        // Maximum lines to combine (prevents runaway processing for very long ingredients)
+        let max_combine_lines = self.config.max_combine_lines;
+
+        // Continue reading lines until termination condition
+        for current_line in lines.iter().skip(start_idx + 1) {
+            // Safety check: don't combine too many lines
+            if lines_consumed >= max_combine_lines {
+                break;
+            }
+
+            let current_line = current_line.trim();
+
+            // Termination condition 1: Empty line or whitespace-only line
+            if current_line.is_empty() {
+                break;
+            }
+
+            // Termination condition 2: Punctuation-only line
+            // Check if line contains only punctuation (no alphanumeric characters)
+            if !current_line.is_empty() && current_line.chars().all(|c| !c.is_alphanumeric() && !c.is_whitespace()) {
+                // This is a punctuation-only line (e.g., just "." or ")")
+                // Don't include it in the combination, just terminate
+                break;
+            }
+
+            // Termination condition 3: New measurement line
+            if self.is_measurement_line(current_line) {
+                break;
+            }
+
+            // Add this line to the combined ingredient
+            combined_ingredient = format!("{} {}", combined_ingredient, current_line);
+            lines_consumed += 1;
+
+            // Termination condition 4: Combined text is now complete
+            if !self.is_incomplete_ingredient(&combined_ingredient) {
+                break;
+            }
+        }
+
+        (combined_ingredient, lines_consumed)
     }
 
     /// Post-process an ingredient name to clean it up

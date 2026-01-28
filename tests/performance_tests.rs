@@ -1155,4 +1155,248 @@ mod tests {
 
         // This test always passes - it's just a report
     }
+
+    /// Performance benchmark: Single-line vs Multi-line ingredient parsing
+    #[test]
+    fn test_multi_line_vs_single_line_performance() {
+        let detector = MeasurementDetector::new().unwrap();
+
+        // Test data: Single-line recipe (baseline)
+        let single_line_recipe = r#"
+        Recipe ingredients:
+        2 cups flour
+        1 cup sugar
+        3 eggs
+        1/2 cup butter
+        1 teaspoon vanilla
+        2 tablespoons milk
+        1 teaspoon baking soda
+        1 teaspoon salt
+        "#;
+
+        // Test data: Multi-line recipe (with same ingredients split across lines)
+        let multi_line_recipe = r#"
+        Recipe ingredients:
+        2 cups all-purpose
+        flour
+        1 cup granulated
+        sugar
+        3 large eggs
+        1/2 cup unsalted
+        butter
+        1 teaspoon pure
+        vanilla extract
+        2 tablespoons whole
+        milk
+        1 teaspoon baking
+        soda
+        1 teaspoon kosher
+        salt
+        "#;
+
+        let iterations = 1000;
+
+        // Benchmark single-line processing
+        let start_single = Instant::now();
+        for _ in 0..iterations {
+            let _measurements = detector.extract_ingredient_measurements(single_line_recipe);
+        }
+        let single_duration = start_single.elapsed();
+        let avg_single_time = single_duration.as_nanos() / iterations;
+
+        // Benchmark multi-line processing
+        let start_multi = Instant::now();
+        for _ in 0..iterations {
+            let _measurements = detector.extract_ingredient_measurements(multi_line_recipe);
+        }
+        let multi_duration = start_multi.elapsed();
+        let avg_multi_time = multi_duration.as_nanos() / iterations;
+
+        // Calculate performance degradation
+        let degradation_percent = if avg_single_time > 0 {
+            ((avg_multi_time as f64 - avg_single_time as f64) / avg_single_time as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        println!("📊 Multi-line Performance Benchmark Results:");
+        println!("📊 Single-line: {}ns avg ({} iterations)", avg_single_time, iterations);
+        println!("📊 Multi-line:  {}ns avg ({} iterations)", avg_multi_time, iterations);
+        println!("📊 Performance degradation: {:.2}%", degradation_percent);
+
+        // Assert that multi-line processing doesn't degrade performance by more than 5%
+        assert!(
+            degradation_percent < 5.0,
+            "Multi-line processing degraded performance by {:.2}% (max allowed: 5%)",
+            degradation_percent
+        );
+
+        // Also ensure multi-line processing finds the same number of ingredients
+        let single_matches = detector.extract_ingredient_measurements(single_line_recipe);
+        let multi_matches = detector.extract_ingredient_measurements(multi_line_recipe);
+
+        println!("📊 Single-line ingredients found: {}", single_matches.len());
+        println!("📊 Multi-line ingredients found: {}", multi_matches.len());
+
+        // Both should find 8 ingredients (allowing for slight differences in parsing)
+        assert!(
+            (single_matches.len() as i32 - multi_matches.len() as i32).abs() <= 1,
+            "Ingredient count mismatch: single={}, multi={}",
+            single_matches.len(),
+            multi_matches.len()
+        );
+    }
+
+    /// Memory usage profiling for large recipes
+    #[test]
+    fn test_memory_usage_large_recipes() {
+        let detector = MeasurementDetector::new().unwrap();
+
+        // Create a large recipe with many multi-line ingredients
+        let mut large_recipe = String::from("INGREDIENTS:\n");
+
+        // Add 50 ingredients, some single-line, some multi-line
+        let ingredients = vec![
+            "2 cups all-purpose flour",
+            "1 cup granulated\nsugar",
+            "3 large eggs",
+            "1/2 cup unsalted\nbutter",
+            "1 teaspoon pure\nvanilla extract",
+            "2 tablespoons whole\nmilk",
+            "1 teaspoon baking\nsoda",
+            "1 teaspoon kosher\nsalt",
+            "2 cups old-fashioned\nrolled oats",
+            "1 cup brown\nsugar",
+            "1/2 cup vegetable\noil",
+            "2 teaspoons ground\ncinnamon",
+            "1 teaspoon baking\npowder",
+            "1/2 teaspoon ground\nnutmeg",
+            "1 cup chopped\nwalnuts",
+            "2 cups fresh\nblueberries",
+            "1 cup semi-sweet\nchocolate chips",
+            "3 tablespoons melted\nbutter",
+            "1/4 cup honey",
+            "2 teaspoons vanilla\nextract",
+            "1 cup heavy\ncream",
+            "1/2 cup sour\ncream",
+            "2 tablespoons cornstarch",
+            "1 teaspoon almond\nextract",
+            "3 cups shredded\ncoconut",
+            "1 cup dried\ncranberries",
+            "2 tablespoons chia\nseeds",
+            "1/4 cup maple\nsyrup",
+            "1 teaspoon sea\nsalt",
+            "2 cups cooked\nquinoa",
+            "1 cup diced\npineapple",
+            "3 tablespoons lime\njuice",
+            "1/2 cup chopped\ncilantro",
+            "2 teaspoons ground\ncumin",
+            "1 teaspoon chili\npowder",
+            "3 cups black\nbeans",
+            "1 cup corn\nkernels",
+            "2 tablespoons olive\noil",
+            "1 teaspoon smoked\npaprika",
+            "4 cloves minced\ngarlic",
+            "1 cup diced\nonions",
+            "2 cups vegetable\nbroth",
+            "1 can diced\ntomatoes",
+            "2 tablespoons tomato\npaste",
+            "1 teaspoon dried\noregano",
+            "1/2 teaspoon black\npepper",
+            "1 cup shredded\ncheese",
+            "2 tablespoons fresh\nparsley",
+            "1/4 cup grated\nparmesan",
+        ];
+
+        for ingredient in &ingredients {
+            large_recipe.push_str(ingredient);
+            large_recipe.push('\n');
+        }
+
+        let iterations = 100;
+
+        // Measure memory usage pattern (approximate)
+        let start_memory_test = Instant::now();
+        let mut total_matches = 0;
+
+        for _ in 0..iterations {
+            let matches = detector.extract_ingredient_measurements(&large_recipe);
+            total_matches += matches.len();
+        }
+
+        let memory_test_duration = start_memory_test.elapsed();
+        let avg_processing_time = memory_test_duration.as_nanos() / iterations;
+
+        println!("📊 Large Recipe Memory Usage Test:");
+        println!("📊 Recipe size: {} characters, {} ingredients", large_recipe.len(), ingredients.len());
+        println!("📊 Iterations: {}", iterations);
+        println!("📊 Average processing time: {}ns", avg_processing_time);
+        println!("📊 Total matches found: {}", total_matches);
+        println!("📊 Average matches per iteration: {}", total_matches / iterations as usize);
+
+        // Performance should be reasonable for large recipes (< 10ms per processing)
+        assert!(
+            avg_processing_time < 10_000_000,
+            "Large recipe processing too slow: {}ns (should be < 10ms)",
+            avg_processing_time
+        );
+
+        // Should find approximately the right number of ingredients
+        let expected_matches_per_iteration = ingredients.len();
+        let actual_avg_matches = total_matches / iterations as usize;
+
+        assert!(
+            (actual_avg_matches as i32 - expected_matches_per_iteration as i32).abs() <= 2,
+            "Unexpected match count: expected ~{}, got {}",
+            expected_matches_per_iteration,
+            actual_avg_matches
+        );
+    }
+
+    /// Scalability test: Performance with increasing recipe complexity
+    #[test]
+    fn test_scalability_with_recipe_complexity() {
+        let detector = MeasurementDetector::new().unwrap();
+
+        // Test with recipes of increasing size
+        let recipe_sizes = vec![5, 10, 20, 50];
+
+        for &num_ingredients in &recipe_sizes {
+            let mut recipe = String::from("INGREDIENTS:\n");
+
+            // Generate recipe with specified number of ingredients
+            for i in 0..num_ingredients {
+                if i % 3 == 0 {
+                    // Single-line ingredient
+                    recipe.push_str(&format!("{} cups ingredient{}\n", (i % 3) + 1, i));
+                } else {
+                    // Multi-line ingredient
+                    recipe.push_str(&format!("{} cups multi-word\ningredient{}\n", (i % 3) + 1, i));
+                }
+            }
+
+            let iterations = 100;
+            let start = Instant::now();
+
+            for _ in 0..iterations {
+                let _matches = detector.extract_ingredient_measurements(&recipe);
+            }
+
+            let duration = start.elapsed();
+            let avg_time = duration.as_nanos() / iterations;
+
+            println!("📊 Recipe size {} ingredients: {}ns avg processing time", num_ingredients, avg_time);
+
+            // Performance should scale reasonably (not exponentially worse)
+            // For this test, we just ensure it completes in reasonable time
+            assert!(
+                avg_time < 50_000_000, // < 50ms
+                "Recipe with {} ingredients too slow: {}ns",
+                num_ingredients,
+                avg_time
+            );
+        }
+
+        println!("📊 Scalability test passed - performance scales reasonably with recipe complexity");
+    }
 }

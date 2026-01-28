@@ -182,6 +182,179 @@ mod tests {
     }
 
     #[test]
+    fn test_multi_line_ingredient_integration() {
+        let detector = create_detector();
+        let text = "Recipe:\n2 cups old-fashioned\nrolled oats\n1 cup sugar\n3 eggs";
+
+        let matches = detector.extract_ingredient_measurements(text);
+
+        assert_eq!(matches.len(), 3);
+
+        // First match: "2 cups old-fashioned rolled oats" (multi-line)
+        assert_eq!(matches[0].quantity, "2");
+        assert_eq!(matches[0].measurement, Some("cups".to_string()));
+        assert_eq!(matches[0].ingredient_name, "old-fashioned rolled oats");
+        assert_eq!(matches[0].line_number, 1); // Measurement found on line 1
+
+        // Second match: "1 cup sugar" (single-line)
+        assert_eq!(matches[1].quantity, "1");
+        assert_eq!(matches[1].measurement, Some("cup".to_string()));
+        assert_eq!(matches[1].ingredient_name, "sugar");
+        assert_eq!(matches[1].line_number, 3); // Measurement found on line 3
+
+        // Third match: "3 eggs" (single-line, quantity-only)
+        assert_eq!(matches[2].quantity, "3");
+        assert_eq!(matches[2].measurement, None);
+        assert_eq!(matches[2].ingredient_name, "eggs");
+        assert_eq!(matches[2].line_number, 4); // Measurement found on line 4
+    }
+
+    #[test]
+    fn test_is_measurement_line() {
+        let detector = create_detector();
+
+        // Lines that start with measurements
+        assert!(detector.is_measurement_line("2 cups flour"));
+        assert!(detector.is_measurement_line("1/2 cup sugar"));
+        assert!(detector.is_measurement_line("500g butter"));
+        assert!(detector.is_measurement_line("6 eggs"));
+        assert!(detector.is_measurement_line("1 kg tomatoes"));
+
+        // Lines that don't start with measurements
+        assert!(!detector.is_measurement_line("some flour"));
+        assert!(!detector.is_measurement_line("add salt"));
+        assert!(!detector.is_measurement_line("chopped onions"));
+        assert!(!detector.is_measurement_line(""));
+        assert!(!detector.is_measurement_line("   2 cups flour")); // leading whitespace
+    }
+
+    #[test]
+    fn test_is_incomplete_ingredient() {
+        let detector = create_detector();
+
+        // Incomplete ingredients (no ending punctuation)
+        assert!(detector.is_incomplete_ingredient("old-fashioned rolled"));
+        assert!(detector.is_incomplete_ingredient("unsalted butter, cold and"));
+        assert!(detector.is_incomplete_ingredient("all-purpose flour"));
+        assert!(detector.is_incomplete_ingredient("extra virgin olive oil"));
+        assert!(detector.is_incomplete_ingredient("fresh basil"));
+
+        // Complete ingredients (ending punctuation)
+        assert!(!detector.is_incomplete_ingredient("flour (all-purpose)"));
+        assert!(!detector.is_incomplete_ingredient("sugar."));
+        assert!(!detector.is_incomplete_ingredient("salt,"));
+        assert!(!detector.is_incomplete_ingredient("butter]"));
+        assert!(!detector.is_incomplete_ingredient("cream}"));
+
+        // Edge cases
+        assert!(!detector.is_incomplete_ingredient("")); // empty string
+        assert!(!detector.is_incomplete_ingredient("   ")); // whitespace only
+        assert!(detector.is_incomplete_ingredient("single word"));
+    }
+
+    #[test]
+    fn test_extract_multi_line_ingredient() {
+        let detector = create_detector();
+
+        // Test Case 1 from PRD: Basic multi-line combination
+        let lines = ["1 cup old-fashioned rolled", "oats"];
+        let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
+        assert_eq!(ingredient, "old-fashioned rolled oats");
+        assert_eq!(consumed, 2);
+
+        // Test Case 2 from PRD: Multi-line with notes (completes with punctuation)
+        let lines = ["8 tablespoons unsalted butter, cold and", "cubed (See note.)"];
+        let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
+        assert_eq!(ingredient, "unsalted butter, cold and cubed (See note.)");
+        assert_eq!(consumed, 2);
+
+        // Test Case 3 from PRD: Mixed single and multi-line
+        let lines1 = ["2 cups flour"];
+        let (ingredient1, consumed1) = detector.extract_multi_line_ingredient(&lines1, 0);
+        assert_eq!(ingredient1, "flour");
+        assert_eq!(consumed1, 1);
+
+        let lines2 = ["1 cup old-fashioned rolled", "oats"];
+        let (ingredient2, consumed2) = detector.extract_multi_line_ingredient(&lines2, 0);
+        assert_eq!(ingredient2, "old-fashioned rolled oats");
+        assert_eq!(consumed2, 2);
+
+        let lines3 = ["3 eggs"];
+        let (ingredient3, consumed3) = detector.extract_multi_line_ingredient(&lines3, 0);
+        assert_eq!(ingredient3, "eggs");
+        assert_eq!(consumed3, 1);
+
+        // Termination: Empty line
+        let lines = ["1 cup old-fashioned rolled", "", "oats"];
+        let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
+        assert_eq!(ingredient, "old-fashioned rolled");
+        assert_eq!(consumed, 1);
+
+        // Termination: Whitespace-only line
+        let lines = ["1 cup old-fashioned rolled", "   \t   ", "oats"];
+        let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
+        assert_eq!(ingredient, "old-fashioned rolled");
+        assert_eq!(consumed, 1);
+
+        // Termination: Punctuation-only line
+        let lines = ["1 cup old-fashioned rolled", ".", "oats"];
+        let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
+        assert_eq!(ingredient, "old-fashioned rolled");
+        assert_eq!(consumed, 1);
+
+        // Termination: New measurement line
+        let lines = ["1 cup old-fashioned rolled", "2 tablespoons sugar"];
+        let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
+        assert_eq!(ingredient, "old-fashioned rolled");
+        assert_eq!(consumed, 1);
+
+        // Single line complete ingredient
+        let lines = ["2 cups flour (all-purpose)"];
+        let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
+        assert_eq!(ingredient, "flour (all-purpose)");
+        assert_eq!(consumed, 1);
+
+        // Multi-line that becomes complete mid-way
+        let lines = ["8 tablespoons unsalted butter, cold", "and cubed."];
+        let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
+        assert_eq!(ingredient, "unsalted butter, cold and cubed.");
+        assert_eq!(consumed, 2);
+
+        // Edge case: Very long ingredient (should stop at max limit)
+        let lines = [
+            "1 cup very long ingredient name that spans",
+            "multiple lines and continues for quite",
+            "a while with lots of descriptive text",
+            "that makes this ingredient extremely",
+            "verbose and detailed in its description",
+            "requiring many lines to fully express",
+            "all the necessary information about",
+            "what this ingredient actually represents",
+            "in the context of the recipe being parsed",
+            "and should eventually be terminated",
+            "by the maximum line limit to prevent",
+            "runaway processing and memory issues"
+        ];
+        let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
+        // Should consume exactly 10 lines (MAX_COMBINE_LINES) and stop
+        assert_eq!(consumed, 10);
+        // The ingredient should be incomplete (ends without punctuation)
+        assert!(detector.is_incomplete_ingredient(&ingredient));
+
+        // Edge case: Out of bounds start index
+        let lines = ["1 cup flour"];
+        let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 5);
+        assert_eq!(ingredient, "");
+        assert_eq!(consumed, 0);
+
+        // Edge case: Empty input
+        let lines: Vec<&str> = vec![];
+        let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
+        assert_eq!(ingredient, "");
+        assert_eq!(consumed, 0);
+    }
+
+    #[test]
     fn test_custom_pattern() {
         let pattern = r"\b\d+\s*(?:cups?|tablespoons?)\b";
         let detector = MeasurementDetector::with_pattern(pattern).unwrap();
@@ -1028,5 +1201,197 @@ mod tests {
         assert_eq!(matches[1].quantity, "100");
         assert_eq!(matches[1].measurement, Some("g".to_string()));
         assert_eq!(matches[1].ingredient_name, "sucre");
+    }
+
+    #[test]
+    fn test_mixed_single_multi_line_recipe_integration() {
+        let detector = create_detector();
+
+        // Realistic OCR-like recipe text with mixed single and multi-line ingredients
+        let text = "INGREDIENTS:\n\
+                   2 cups all-purpose\n\
+                   flour\n\
+                   1 teaspoon baking\n\
+                   soda\n\
+                   1/2 teaspoon salt\n\
+                   3/4 cup unsalted\n\
+                   butter, softened\n\
+                   1 cup granulated sugar\n\
+                   2 large eggs\n\
+                   1 teaspoon vanilla\n\
+                   extract\n\
+                   1 cup buttermilk\n\
+                   2 tablespoons melted\n\
+                   butter";
+
+        let matches = detector.extract_ingredient_measurements(text);
+
+        // Should find 9 ingredients total
+        assert_eq!(matches.len(), 9, "Should extract 9 ingredients from complex recipe");
+
+        // Verify each ingredient is correctly parsed
+        // 1. Multi-line: "2 cups all-purpose flour"
+        assert_eq!(matches[0].quantity, "2");
+        assert_eq!(matches[0].measurement, Some("cups".to_string()));
+        assert_eq!(matches[0].ingredient_name, "all-purpose flour");
+
+        // 2. Multi-line: "1 teaspoon baking soda"
+        assert_eq!(matches[1].quantity, "1");
+        assert_eq!(matches[1].measurement, Some("teaspoon".to_string()));
+        assert_eq!(matches[1].ingredient_name, "baking soda");
+
+        // 3. Single-line: "1/2 teaspoon salt"
+        assert_eq!(matches[2].quantity, "1/2");
+        assert_eq!(matches[2].measurement, Some("teaspoon".to_string()));
+        assert_eq!(matches[2].ingredient_name, "salt");
+
+        // 4. Multi-line with comma: "3/4 cup unsalted butter, softened"
+        assert_eq!(matches[3].quantity, "3/4");
+        assert_eq!(matches[3].measurement, Some("cup".to_string()));
+        assert_eq!(matches[3].ingredient_name, "unsalted butter, softened");
+
+        // 5. Single-line: "1 cup granulated sugar"
+        assert_eq!(matches[4].quantity, "1");
+        assert_eq!(matches[4].measurement, Some("cup".to_string()));
+        assert_eq!(matches[4].ingredient_name, "granulated sugar");
+
+        // 6. Single-line: "2 large eggs"
+        assert_eq!(matches[5].quantity, "2");
+        assert_eq!(matches[5].measurement, None);
+        assert_eq!(matches[5].ingredient_name, "large eggs");
+
+        // 7. Multi-line: "1 teaspoon vanilla extract"
+        assert_eq!(matches[6].quantity, "1");
+        assert_eq!(matches[6].measurement, Some("teaspoon".to_string()));
+        assert_eq!(matches[6].ingredient_name, "vanilla extract");
+
+        // 8. Single-line: "1 cup buttermilk"
+        assert_eq!(matches[7].quantity, "1");
+        assert_eq!(matches[7].measurement, Some("cup".to_string()));
+        assert_eq!(matches[7].ingredient_name, "buttermilk");
+
+        // 9. Multi-line: "2 tablespoons melted butter"
+        assert_eq!(matches[8].quantity, "2");
+        assert_eq!(matches[8].measurement, Some("tablespoons".to_string()));
+        assert_eq!(matches[8].ingredient_name, "melted butter");
+    }
+
+    #[test]
+    fn test_ocr_like_text_with_noise_integration() {
+        let detector = create_detector();
+
+        // OCR-like text with common OCR errors and noise
+        let text = "Recipe from old cookbook\n\
+                   \n\
+                   2 cups all purpose\n\
+                   flour sifted\n\
+                   1 tsp baking\n\
+                   powder\n\
+                   1/2 tsp salt\n\
+                   \n\
+                   3/4 cup butter\n\
+                   softened\n\
+                   1 cup brown sugar\n\
+                   packed\n\
+                   2 eggs\n\
+                   room temperature\n\
+                   \n\
+                   For the topping:\n\
+                   1/4 cup flour\n\
+                   1 tbsp sugar\n\
+                   1/2 tsp cinnamon\n\
+                   ground";
+
+        let matches = detector.extract_ingredient_measurements(text);
+
+        // Should find 9 ingredients despite noise and empty lines
+        assert_eq!(matches.len(), 9, "Should handle OCR noise and extract correct ingredients");
+
+        // Verify key ingredients are parsed correctly
+        // Multi-line with OCR error: "2 cups all purpose flour sifted"
+        assert_eq!(matches[0].quantity, "2");
+        assert_eq!(matches[0].measurement, Some("cups".to_string()));
+        assert_eq!(matches[0].ingredient_name, "all purpose flour sifted");
+
+        // Multi-line: "1 tsp baking powder"
+        assert_eq!(matches[1].quantity, "1");
+        assert_eq!(matches[1].measurement, Some("tsp".to_string()));
+        assert_eq!(matches[1].ingredient_name, "baking powder");
+
+        // Multi-line with comma: "3/4 cup butter softened"
+        assert_eq!(matches[3].quantity, "3/4");
+        assert_eq!(matches[3].measurement, Some("cup".to_string()));
+        assert_eq!(matches[3].ingredient_name, "butter softened");
+
+        // Multi-line: "1 cup brown sugar packed"
+        assert_eq!(matches[4].quantity, "1");
+        assert_eq!(matches[4].measurement, Some("cup".to_string()));
+        assert_eq!(matches[4].ingredient_name, "brown sugar packed");
+
+        // Multi-line: "2 eggs room temperature"
+        assert_eq!(matches[5].quantity, "2");
+        assert_eq!(matches[5].measurement, None);
+        assert_eq!(matches[5].ingredient_name, "eggs room temperature");
+    }
+
+    #[test]
+    fn test_multi_line_accuracy_metrics() {
+        let detector = create_detector();
+
+        // Test recipe with known expected outcomes for accuracy calculation
+        let text = "Cookie Recipe:\n\
+                   2 1/2 cups all-purpose\n\
+                   flour\n\
+                   1 teaspoon baking\n\
+                   soda\n\
+                   1 teaspoon salt\n\
+                   1 cup butter\n\
+                   3/4 cup sugar\n\
+                   3/4 cup brown\n\
+                   sugar\n\
+                   2 eggs\n\
+                   2 teaspoons vanilla\n\
+                   extract";
+
+        let matches = detector.extract_ingredient_measurements(text);
+
+        // Should extract exactly 8 ingredients
+        assert_eq!(matches.len(), 8, "Should extract all 8 ingredients accurately");
+
+        // Verify accuracy by checking each ingredient
+        let expected_ingredients = vec![
+            ("2 1/2", Some("cups".to_string()), "all-purpose flour".to_string()),
+            ("1", Some("teaspoon".to_string()), "baking soda".to_string()),
+            ("1", Some("teaspoon".to_string()), "salt".to_string()),
+            ("1", Some("cup".to_string()), "butter".to_string()),
+            ("3/4", Some("cup".to_string()), "sugar".to_string()),
+            ("3/4", Some("cup".to_string()), "brown sugar".to_string()),
+            ("2", None, "eggs".to_string()),
+            ("2", Some("teaspoons".to_string()), "vanilla extract".to_string()),
+        ];
+
+        for (i, (expected_qty, expected_unit, expected_name)) in expected_ingredients.iter().enumerate() {
+            assert_eq!(&matches[i].quantity, expected_qty,
+                      "Ingredient {} quantity should be '{}'", i, expected_qty);
+            assert_eq!(&matches[i].measurement, expected_unit,
+                      "Ingredient {} measurement should be {:?}", i, expected_unit);
+            assert_eq!(&matches[i].ingredient_name, expected_name,
+                      "Ingredient {} name should be '{}'", i, expected_name);
+        }
+
+        // Calculate accuracy: all ingredients correctly parsed = 100% accuracy
+        let total_ingredients = expected_ingredients.len();
+        let correctly_parsed = expected_ingredients.iter().enumerate()
+            .filter(|(i, (qty, unit, name))| {
+                matches[*i].quantity == *qty &&
+                matches[*i].measurement == *unit &&
+                matches[*i].ingredient_name == *name
+            })
+            .count();
+
+        let accuracy = (correctly_parsed as f64 / total_ingredients as f64) * 100.0;
+        assert!(accuracy >= 95.0,
+                "Accuracy should be >= 95%, got {:.1}% ({}/{} correct)",
+                accuracy, correctly_parsed, total_ingredients);
     }
 }

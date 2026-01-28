@@ -635,6 +635,30 @@ pub fn record_text_processing_metrics(
         .record(throughput);
 }
 
+/// Record multi-line ingredient parsing metrics
+pub fn record_multi_line_parsing_metrics(
+    total_ingredients: usize,
+    multi_line_ingredients: usize,
+    lines_combined_total: usize,
+    max_lines_per_ingredient: usize,
+) {
+    metrics::histogram!("multi_line_ingredients_total").record(total_ingredients as f64);
+    metrics::histogram!("multi_line_ingredients_combined").record(multi_line_ingredients as f64);
+    metrics::histogram!("multi_line_lines_combined_total").record(lines_combined_total as f64);
+    metrics::histogram!("multi_line_max_lines_per_ingredient").record(max_lines_per_ingredient as f64);
+
+    // Calculate multi-line parsing success rate
+    let success_rate = if total_ingredients > 0 {
+        (multi_line_ingredients as f64 / total_ingredients as f64) * 100.0
+    } else {
+        0.0
+    };
+    metrics::histogram!("multi_line_parsing_success_rate_percent").record(success_rate);
+
+    // Counter for multi-line parsing operations
+    metrics::counter!("multi_line_parsing_operations_total").increment(1);
+}
+
 /// Record UI interaction metrics
 pub fn record_ui_metrics(
     operation: &str,

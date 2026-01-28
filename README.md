@@ -6,6 +6,7 @@ A Telegram bot that extracts text from images using OCR (Optical Character Recog
 
 - **OCR Text Extraction**: Uses Tesseract OCR to extract text from images and photos
 - **Ingredient Parsing**: Automatically detects and parses measurements and ingredients from recipe text
+- **Multi-Line Ingredient Support**: Intelligently combines ingredient names that span multiple lines (e.g., "all-purpose flour", "extra virgin olive oil")
 - **Quantity-Only Support**: Recognizes ingredients with quantities but no measurement units (e.g., "6 oeufs", "4 pommes")
 - **Photo Caption Support**: Uses photo captions as recipe name candidates with intelligent fallback
 - **Full-Text Search**: PostgreSQL full-text search for efficient content searching
@@ -28,6 +29,19 @@ A Telegram bot that extracts text from images using OCR (Optical Character Recog
 ### Quantity-Only Ingredients
 - French: `6 oeufs`, `4 pommes`, `3 carottes`
 - English: `5 apples`, `2 onions`, `8 potatoes`
+
+### Multi-Line Ingredients
+The bot intelligently handles ingredient names that span multiple lines in OCR text:
+```
+2 cups all-purpose
+flour
+1 cup extra virgin
+olive oil
+3/4 cup unsalted butter,
+softened
+```
+
+These are automatically combined into complete ingredient names: "all-purpose flour", "extra virgin olive oil", "unsalted butter, softened".
 
 ## Installation
 

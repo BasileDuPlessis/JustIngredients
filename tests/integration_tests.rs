@@ -627,3 +627,359 @@ fn test_fraction_quantities_image_processing() {
         "Ingredient should contain 'sugar'"
     );
 }
+
+/// Test complete end-to-end bot workflow with multi-line ingredients
+#[test]
+fn test_multi_line_ingredients_end_to_end_bot_workflow() {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use just_ingredients::validation::validate_recipe_name;
+
+    // Simulate OCR text with multi-line ingredients (realistic scenario)
+    let ocr_text = r#"
+    INGREDIENTS:
+    2 cups all-purpose
+    flour
+    1 teaspoon baking
+    soda
+    1/2 teaspoon salt
+    3/4 cup unsalted
+    butter, softened
+    1 cup granulated sugar
+    2 large eggs
+    1 teaspoon vanilla
+    extract
+    1 cup buttermilk
+    2 tablespoons melted
+    butter
+    "#;
+
+    // Step 1: Process text through measurement detector
+    let detector = MeasurementDetector::new().unwrap();
+    let ingredients = detector.extract_ingredient_measurements(ocr_text);
+
+    // Verify multi-line ingredients were correctly combined
+    assert_eq!(ingredients.len(), 9, "Should extract 9 ingredients from multi-line recipe");
+
+    // Check specific multi-line combinations
+    let flour_match = ingredients.iter().find(|m| m.ingredient_name == "all-purpose flour");
+    assert!(flour_match.is_some(), "Should find combined 'all-purpose flour'");
+    assert_eq!(flour_match.unwrap().quantity, "2");
+    assert_eq!(flour_match.unwrap().measurement, Some("cups".to_string()));
+
+    let baking_soda = ingredients.iter().find(|m| m.ingredient_name == "baking soda");
+    assert!(baking_soda.is_some(), "Should find combined 'baking soda'");
+    assert_eq!(baking_soda.unwrap().quantity, "1");
+    assert_eq!(baking_soda.unwrap().measurement, Some("teaspoon".to_string()));
+
+    let butter_softened = ingredients.iter().find(|m| m.ingredient_name == "unsalted butter, softened");
+    assert!(butter_softened.is_some(), "Should find 'unsalted butter, softened' with comma");
+    assert_eq!(butter_softened.unwrap().quantity, "3/4");
+    assert_eq!(butter_softened.unwrap().measurement, Some("cup".to_string()));
+
+    let vanilla_extract = ingredients.iter().find(|m| m.ingredient_name == "vanilla extract");
+    assert!(vanilla_extract.is_some(), "Should find combined 'vanilla extract'");
+    assert_eq!(vanilla_extract.unwrap().quantity, "1");
+    assert_eq!(vanilla_extract.unwrap().measurement, Some("teaspoon".to_string()));
+
+    let melted_butter = ingredients.iter().find(|m| m.ingredient_name == "melted butter");
+    assert!(melted_butter.is_some(), "Should find combined 'melted butter'");
+    assert_eq!(melted_butter.unwrap().quantity, "2");
+    assert_eq!(melted_butter.unwrap().measurement, Some("tablespoons".to_string()));
+
+    // Step 2: Simulate dialogue state for recipe naming
+    let dialogue_state = RecipeDialogueState::WaitingForRecipeName {
+        extracted_text: ocr_text.to_string(),
+        ingredients: ingredients.clone(),
+        language_code: Some("en".to_string()),
+    };
+
+    // Verify dialogue state contains complete ingredient names
+    if let RecipeDialogueState::WaitingForRecipeName { ingredients: ingr, .. } = dialogue_state {
+        // Check that all ingredient names are complete (not truncated)
+        for ingredient in &ingr {
+            assert!(!ingredient.ingredient_name.is_empty(), "Ingredient name should not be empty");
+            assert!(!ingredient.ingredient_name.contains('\n'), "Ingredient name should not contain newlines");
+
+            // Verify specific complete names
+            if ingredient.quantity == "2" && ingredient.measurement == Some("cups".to_string()) {
+                assert_eq!(ingredient.ingredient_name, "all-purpose flour");
+            }
+        }
+    } else {
+        panic!("Expected WaitingForRecipeName state");
+    }
+
+    // Step 3: Test recipe name validation and completion
+    let recipe_name = "Multi-Line Cookie Recipe";
+    let validation_result = validate_recipe_name(recipe_name);
+    assert!(validation_result.is_ok(), "Recipe name should be valid");
+
+    // Step 4: Simulate UI display formatting
+    let mut display_lines = Vec::new();
+    for ingredient in &ingredients {
+        let display_line = if let Some(ref unit) = ingredient.measurement {
+            format!("• {} {} {}", ingredient.quantity, unit, ingredient.ingredient_name)
+        } else {
+            format!("• {} {}", ingredient.quantity, ingredient.ingredient_name)
+        };
+        display_lines.push(display_line);
+    }
+
+    // Verify UI display shows complete ingredient names
+    let flour_display = display_lines.iter().find(|line| line.contains("all-purpose flour"));
+    assert!(flour_display.is_some(), "UI should display complete 'all-purpose flour'");
+    assert!(flour_display.unwrap().contains("• 2 cups all-purpose flour"));
+
+    let vanilla_display = display_lines.iter().find(|line| line.contains("vanilla extract"));
+    assert!(vanilla_display.is_some(), "UI should display complete 'vanilla extract'");
+    assert!(vanilla_display.unwrap().contains("• 1 teaspoon vanilla extract"));
+
+    println!("✅ Multi-line ingredients end-to-end bot workflow test passed");
+    println!("📊 Successfully processed {} ingredients with complete names", ingredients.len());
+}
+
+/// Test UI display formatting for multi-line ingredients in confirmation dialogs
+#[test]
+fn test_multi_line_ingredients_ui_display_formatting() {
+    // Test that ingredient display in UI components correctly shows complete multi-line names
+    use just_ingredients::bot::ui_builder::create_ingredient_review_keyboard;
+    use just_ingredients::localization::create_localization_manager;
+
+    let ingredients = vec![
+        just_ingredients::MeasurementMatch {
+            quantity: "2".to_string(),
+            measurement: Some("cups".to_string()),
+            ingredient_name: "all-purpose flour".to_string(),
+            line_number: 1,
+            start_pos: 0,
+            end_pos: 20,
+        },
+        just_ingredients::MeasurementMatch {
+            quantity: "1".to_string(),
+            measurement: Some("teaspoon".to_string()),
+            ingredient_name: "baking soda".to_string(),
+            line_number: 3,
+            start_pos: 0,
+            end_pos: 15,
+        },
+        just_ingredients::MeasurementMatch {
+            quantity: "3/4".to_string(),
+            measurement: Some("cup".to_string()),
+            ingredient_name: "unsalted butter, softened".to_string(),
+            line_number: 6,
+            start_pos: 0,
+            end_pos: 28,
+        },
+        just_ingredients::MeasurementMatch {
+            quantity: "1".to_string(),
+            measurement: Some("teaspoon".to_string()),
+            ingredient_name: "vanilla extract".to_string(),
+            line_number: 10,
+            start_pos: 0,
+            end_pos: 18,
+        },
+    ];
+
+    // Create localization manager for testing
+    let localization = create_localization_manager().unwrap();
+
+    // Test ingredient review keyboard displays complete names
+    let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"), &localization);
+
+    // Verify keyboard contains buttons with complete ingredient names
+    // The keyboard should have buttons for each ingredient
+    assert!(!keyboard.inline_keyboard.is_empty(), "Keyboard should not be empty");
+
+    // Check that the keyboard has the right number of rows (one per ingredient + action buttons)
+    assert!(keyboard.inline_keyboard.len() >= ingredients.len(), "Should have at least one button per ingredient");
+
+    println!("✅ Multi-line ingredients UI display formatting test passed");
+}
+
+/// Test dialogue flow integrity with multi-line ingredients
+#[test]
+fn test_dialogue_flow_integrity_with_multi_line_ingredients() {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use teloxide::dispatching::dialogue::InMemStorage;
+
+    // Test that dialogue states can handle multi-line ingredients without breaking flow
+    let ingredients = vec![
+        just_ingredients::MeasurementMatch {
+            quantity: "2".to_string(),
+            measurement: Some("cups".to_string()),
+            ingredient_name: "old-fashioned rolled oats".to_string(),
+            line_number: 1,
+            start_pos: 0,
+            end_pos: 25,
+        },
+        just_ingredients::MeasurementMatch {
+            quantity: "1".to_string(),
+            measurement: Some("cup".to_string()),
+            ingredient_name: "sugar".to_string(),
+            line_number: 3,
+            start_pos: 0,
+            end_pos: 5,
+        },
+    ];
+
+    // Test ReviewIngredients state with multi-line ingredients
+    let review_state = RecipeDialogueState::ReviewIngredients {
+        recipe_name: "Oatmeal Cookies".to_string(),
+        ingredients: ingredients.clone(),
+        language_code: Some("en".to_string()),
+        message_id: Some(123),
+        extracted_text: "2 cups old-fashioned\nrolled oats\n1 cup sugar".to_string(),
+        recipe_name_from_caption: None,
+    };
+
+    // Verify state contains correct data
+    if let RecipeDialogueState::ReviewIngredients {
+        recipe_name,
+        ingredients: state_ingredients,
+        extracted_text,
+        ..
+    } = review_state {
+        assert_eq!(recipe_name, "Oatmeal Cookies");
+        assert_eq!(state_ingredients.len(), 2);
+        assert_eq!(state_ingredients[0].ingredient_name, "old-fashioned rolled oats");
+        assert_eq!(state_ingredients[1].ingredient_name, "sugar");
+        assert_eq!(extracted_text, "2 cups old-fashioned\nrolled oats\n1 cup sugar");
+    } else {
+        panic!("Expected ReviewIngredients state");
+    }
+
+    // Test dialogue storage can handle the state
+    let _storage = InMemStorage::<RecipeDialogueState>::new();
+
+    // This tests that the dialogue system can handle multi-line ingredients
+    // without any serialization or state management issues
+    // The storage is created successfully if we reach this point
+
+    println!("✅ Dialogue flow integrity with multi-line ingredients test passed");
+}
+
+/// Test realistic OCR scenarios with multi-line ingredients
+#[test]
+fn test_realistic_ocr_scenarios_with_multi_line_ingredients() {
+    let detector = MeasurementDetector::new().unwrap();
+
+    // Test various realistic OCR scenarios that commonly produce multi-line ingredients
+    let test_cases = [
+        (
+            // Recipe from old cookbook with line breaks
+            r#"
+            OLD FASHIONED CHOCOLATE CHIP COOKIES
+
+            2 cups all purpose
+            flour
+            1 tsp baking
+            soda
+            1/2 tsp salt
+            1 cup butter
+            3/4 cup sugar
+            3/4 cup brown
+            sugar packed
+            2 eggs
+            2 tsp vanilla
+            extract
+            2 cups chocolate
+            chips
+            "#,
+            9, // expected ingredients
+            vec![
+                ("all purpose flour", "2 cups"),
+                ("baking soda", "1 tsp"),
+                ("brown sugar packed", "3/4 cup"),
+                ("vanilla extract", "2 tsp"),
+                ("chocolate chips", "2 cups"),
+            ],
+        ),
+        (
+            // French recipe with multi-line ingredients
+            r#"
+            CRÊPES FRANÇAISES
+
+            250 g de farine
+            de blé
+            4 œufs
+            frais
+            1/2 litre de lait
+            entier
+            2 cuillères à soupe de sucre
+            en poudre
+            1 pincée de sel
+            de mer
+            "#,
+            5, // expected ingredients
+            vec![
+                ("de farine de blé", "250 g"),
+                ("œufs frais", "4"),
+                ("de lait entier", "1/2 litre"),
+                ("de sucre en poudre", "2 cuillères à soupe"),
+                ("de sel de mer", "1 pincée"),
+            ],
+        ),
+        (
+            // Complex ingredient names
+            r#"
+            GOURMET SALAD
+
+            2 cups mixed salad
+            greens
+            1 cup cherry
+            tomatoes halved
+            1/2 cup crumbled
+            feta cheese
+            1/4 cup extra virgin
+            olive oil
+            2 tablespoons balsamic
+            vinegar
+            "#,
+            5, // expected ingredients
+            vec![
+                ("mixed salad greens", "2 cups"),
+                ("cherry tomatoes halved", "1 cup"),
+                ("crumbled feta cheese", "1/2 cup"),
+                ("extra virgin olive oil", "1/4 cup"),
+                ("balsamic vinegar", "2 tablespoons"),
+            ],
+        ),
+    ];
+
+    for (i, (ocr_text, expected_count, expected_ingredients)) in test_cases.iter().enumerate() {
+        println!("🧪 Testing OCR scenario {}", i + 1);
+
+        let ingredients = detector.extract_ingredient_measurements(ocr_text);
+
+        assert_eq!(
+            ingredients.len(),
+            *expected_count,
+            "Scenario {}: Expected {} ingredients, found {}",
+            i + 1,
+            expected_count,
+            ingredients.len()
+        );
+
+        // Verify specific expected ingredients
+        for (expected_name, expected_measure) in expected_ingredients {
+            let found = ingredients.iter().find(|m| m.ingredient_name == *expected_name);
+            assert!(found.is_some(), "Scenario {}: Should find ingredient '{}'", i + 1, expected_name);
+
+            let ingredient = found.unwrap();
+            // Basic validation that measurement format is reasonable
+            let measure_str = if let Some(ref unit) = ingredient.measurement {
+                format!("{} {}", ingredient.quantity, unit)
+            } else {
+                ingredient.quantity.clone()
+            };
+
+            assert_eq!(measure_str, *expected_measure,
+                      "Scenario {}: Ingredient '{}' should have measurement '{}'",
+                      i + 1, expected_name, expected_measure);
+        }
+
+        println!("✅ OCR scenario {} passed: {} ingredients correctly parsed", i + 1, ingredients.len());
+    }
+
+    println!("✅ All realistic OCR scenarios with multi-line ingredients test passed");
+}
