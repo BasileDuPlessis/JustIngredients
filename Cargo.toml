@@ -25,6 +25,7 @@ chrono = { version = "0.4.42", features = ["serde"] } # DateTime handling
 tracing = "0.1" # Structured logging
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] } # Tracing subscriber with filtering
 parking_lot = "0.12.5" # Efficient synchronization primitives
+async-trait = "0.1" # Async traits for provider abstraction
 
 # Observability dependencies
 metrics = "0.24" # Metrics collection
