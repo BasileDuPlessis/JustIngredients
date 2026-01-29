@@ -19,6 +19,8 @@ pub mod observability_config;
 pub mod ocr;
 pub mod ocr_config;
 pub mod ocr_errors;
+pub mod ocr_provider_manager;
+pub mod ocr_providers;
 pub mod path_validation;
 pub mod text_processing;
 pub mod validation;

@@ -38,6 +38,18 @@ use super::HandlerContext;
 // Import observability
 use crate::observability;
 
+/// Parameters for message handler with cache
+pub struct MessageHandlerWithCacheParams<'a> {
+    pub bot: Bot,
+    pub msg: Message,
+    pub pool: Arc<PgPool>,
+    pub dialogue: RecipeDialogue,
+    pub localization: Arc<crate::localization::LocalizationManager>,
+    pub cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
+    pub deduplicator: Option<&'a crate::deduplication::SharedDeduplicator>,
+    pub provider_manager: &'a crate::ocr_provider_manager::OcrProviderManager,
+}
+
 async fn handle_text_message(
     bot: &Bot,
     msg: &Message,
@@ -465,6 +477,7 @@ pub async fn message_handler(
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
     deduplicator: Option<&crate::deduplication::SharedDeduplicator>,
+    provider_manager: &crate::ocr_provider_manager::OcrProviderManager,
 ) -> Result<()> {
     let span = crate::observability::telegram_span(
         "message_handler",
@@ -501,9 +514,9 @@ pub async fn message_handler(
     let result = if msg.text().is_some() {
         handle_text_message(&bot, &msg, dialogue, pool, &localization).await
     } else if msg.photo().is_some() {
-        handle_photo_message(&bot, &msg, dialogue, pool, &localization).await
+        handle_photo_message(&bot, &msg, dialogue, pool, &localization, provider_manager).await
     } else if msg.document().is_some() {
-        handle_document_message(&bot, &msg, dialogue, pool, &localization).await
+        handle_document_message(&bot, &msg, dialogue, pool, &localization, provider_manager).await
     } else {
         handle_unsupported_message(&bot, &msg, &localization).await
     };
@@ -531,15 +544,20 @@ pub async fn message_handler(
 /// This version includes caching for database queries and OCR results
 /// to reduce processing time and database load.
 pub async fn message_handler_with_cache(
-    bot: Bot,
-    msg: Message,
-    pool: Arc<PgPool>,
-    dialogue: RecipeDialogue,
-    localization: Arc<crate::localization::LocalizationManager>,
-    _cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
-    deduplicator: Option<&crate::deduplication::SharedDeduplicator>,
+    params: MessageHandlerWithCacheParams<'_>,
 ) -> Result<()> {
+    let MessageHandlerWithCacheParams {
+        bot,
+        msg,
+        pool,
+        dialogue,
+        localization,
+        cache: _cache,
+        deduplicator,
+        provider_manager,
+    } = params;
+
     // For now, delegate to the original handler
     // TODO: Integrate caching into specific operations
-    message_handler(bot, msg, pool, dialogue, localization, deduplicator).await
+    message_handler(bot, msg, pool, dialogue, localization, deduplicator, provider_manager).await
 }

@@ -28,6 +28,7 @@ pub async fn handle_photo_message(
     dialogue: RecipeDialogue,
     pool: Arc<PgPool>,
     localization: &Arc<crate::localization::LocalizationManager>,
+    provider_manager: &crate::ocr_provider_manager::OcrProviderManager,
 ) -> Result<()> {
     // Extract user's language code from Telegram
     let language_code = msg
@@ -66,6 +67,7 @@ pub async fn handle_photo_message(
                     caption,
                 },
                 localization,
+                provider_manager,
             )
             .await;
         }
@@ -80,6 +82,7 @@ pub async fn handle_document_message(
     dialogue: RecipeDialogue,
     pool: Arc<PgPool>,
     localization: &Arc<crate::localization::LocalizationManager>,
+    provider_manager: &crate::ocr_provider_manager::OcrProviderManager,
 ) -> Result<()> {
     // Extract user's language code from Telegram
     let language_code = msg
@@ -119,6 +122,7 @@ pub async fn handle_document_message(
                         caption: None, // Documents don't have captions like photos do
                     },
                     localization,
+                    provider_manager,
                 )
                 .await;
             } else {

@@ -290,6 +290,14 @@ mod tests {
         let instance_manager = OcrInstanceManager::new();
         let circuit_breaker = CircuitBreaker::new(config.recovery.clone());
 
+        // Create provider manager with Tesseract provider
+        let mut provider_manager = just_ingredients::ocr_provider_manager::OcrProviderManager::new();
+        let instance_manager_arc = std::sync::Arc::new(instance_manager);
+        provider_manager.register_default_tesseract_provider(
+            std::sync::Arc::clone(&instance_manager_arc),
+            config.clone(),
+        );
+
         // Initially circuit breaker should be closed
         assert!(!circuit_breaker.is_open());
 
@@ -303,10 +311,11 @@ mod tests {
         let _future = just_ingredients::ocr::extract_text_from_image(
             &temp_path,
             &config,
-            &instance_manager,
+            &instance_manager_arc,
             &circuit_breaker,
+            &provider_manager,
         );
-        // The function compiles and can be called with 4 parameters as expected
+        // The function compiles and can be called with 5 parameters as expected
     }
 
     #[test]

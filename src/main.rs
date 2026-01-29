@@ -1,11 +1,14 @@
 use anyhow::Result;
 use just_ingredients::bot;
+use just_ingredients::bot::message_handler::MessageHandlerWithCacheParams;
 use just_ingredients::cache::CacheManager;
 use just_ingredients::db;
 use just_ingredients::deduplication;
 use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
 use just_ingredients::localization;
 use just_ingredients::observability;
+use just_ingredients::ocr_provider_manager::OcrProviderManager;
+use just_ingredients::ocr_providers::OcrProviderType;
 use sqlx::postgres::PgPool;
 use std::env;
 use std::sync::Arc;
@@ -13,6 +16,16 @@ use std::time::Duration;
 use teloxide::dispatching::dialogue::InMemStorage;
 use teloxide::prelude::*;
 use tracing::info;
+
+/// Application state containing all shared components
+#[derive(Clone)]
+pub struct ApplicationState {
+    pub pool: Arc<PgPool>,
+    pub localization: Arc<just_ingredients::localization::LocalizationManager>,
+    pub cache: Arc<std::sync::Mutex<CacheManager>>,
+    pub deduplicator: just_ingredients::deduplication::SharedDeduplicator,
+    pub provider_manager: Arc<OcrProviderManager>,
+}
 
 /// Validate environment variables at startup
 fn validate_environment_variables() -> Result<()> {
@@ -78,12 +91,52 @@ fn validate_environment_variables() -> Result<()> {
     Ok(())
 }
 
-/// Validate OCR configuration at startup
-fn validate_ocr_configuration() -> Result<()> {
-    // Force initialization of the lazy static to trigger validation
-    let config = just_ingredients::ocr_config::OcrConfig::default();
+/// Validate OCR configuration at startup and return the config
+fn validate_ocr_configuration() -> Result<just_ingredients::ocr_config::OcrConfig> {
+    use just_ingredients::ocr_config::{OcrConfig, PpocrConfig};
+    use std::path::PathBuf;
 
-    // Validate the configuration
+    let mut config = OcrConfig::default();
+
+    // Check if PPOCR is enabled and load configuration
+    let ppocr_enabled = std::env::var("PPOCR_ENABLED")
+        .unwrap_or_else(|_| "false".to_string())
+        .parse::<bool>()
+        .unwrap_or(false);
+
+    if ppocr_enabled {
+        let ppocr_config = PpocrConfig {
+            enabled: true,
+            python_path: PathBuf::from(
+                std::env::var("PPOCR_PYTHON_PATH")
+                    .unwrap_or_else(|_| "python3".to_string())
+            ),
+            model_cache_dir: PathBuf::from(
+                std::env::var("PPOCR_MODEL_CACHE_DIR")
+                    .unwrap_or_else(|_| "./ppocr_models".to_string())
+            ),
+            language: std::env::var("PPOCR_LANGUAGE")
+                .unwrap_or_else(|_| "en".to_string()),
+            use_gpu: std::env::var("PPOCR_USE_GPU")
+                .unwrap_or_else(|_| "false".to_string())
+                .parse::<bool>()
+                .unwrap_or(false),
+            timeout_seconds: std::env::var("PPOCR_TIMEOUT_SECONDS")
+                .unwrap_or_else(|_| "30".to_string())
+                .parse::<u64>()
+                .unwrap_or(30),
+        };
+
+        // Validate PPOCR config
+        ppocr_config.validate().map_err(|e| {
+            anyhow::anyhow!("PPOCR configuration validation failed: {}", e)
+        })?;
+
+        config.ppocr = Some(ppocr_config);
+        info!("PPOCR configuration loaded and validated");
+    }
+
+    // Validate the complete configuration
     config.validate().map_err(|e| {
         anyhow::anyhow!(
             "OCR configuration validation failed: {}. Please check your configuration values.",
@@ -92,7 +145,7 @@ fn validate_ocr_configuration() -> Result<()> {
     })?;
 
     info!("OCR configuration validated successfully");
-    Ok(())
+    Ok(config)
 }
 
 /// Validate HTTP client configuration
@@ -218,7 +271,19 @@ async fn main() -> Result<()> {
     info!("Request deduplicator initialized for duplicate message prevention");
 
     // Validate OCR configuration before initializing observability
-    validate_ocr_configuration()?;
+    let ocr_config = validate_ocr_configuration()?;
+
+    // Initialize OCR provider manager
+    let mut provider_manager = OcrProviderManager::new();
+
+    // Register PPOCR provider if configured
+    if let Some(ppocr_config) = &ocr_config.ppocr {
+        provider_manager.register_ppocr_provider(ppocr_config.clone())?;
+        provider_manager.set_primary_provider(OcrProviderType::Ppocr);
+        info!("PPOCR provider registered and set as primary OCR provider");
+    } else {
+        info!("PPOCR not configured, using Tesseract as primary OCR provider");
+    }
 
     // Validate text processing configuration
     validate_text_processing_config()?;
@@ -244,6 +309,15 @@ async fn main() -> Result<()> {
     // Initialize localization manager
     let localization_manager = localization::create_localization_manager()?;
 
+    // Create application state with all shared components
+    let app_state = ApplicationState {
+        pool: Arc::clone(&shared_pool),
+        localization: Arc::clone(&localization_manager),
+        cache: Arc::clone(&cache_manager),
+        deduplicator,
+        provider_manager: Arc::new(provider_manager),
+    };
+
     // Initialize the bot with custom client configuration for better reliability
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30)) // 30 second timeout
@@ -260,42 +334,35 @@ async fn main() -> Result<()> {
     // Set up the dispatcher with shared connection and dialogue support
     let handler = dptree::entry()
         .branch(Update::filter_message().endpoint({
-            let pool = Arc::clone(&shared_pool);
+            let app_state = app_state.clone();
             let storage = dialogue_storage.clone();
-            let localization = Arc::clone(&localization_manager);
-            let cache = Arc::clone(&cache_manager);
-            let dedup = Arc::clone(&deduplicator);
             move |bot: Bot, msg: Message| {
-                let pool = Arc::clone(&pool);
+                let app_state = app_state.clone();
                 let storage = storage.clone();
-                let localization = Arc::clone(&localization);
-                let cache = Arc::clone(&cache);
-                let dedup = Arc::clone(&dedup);
                 let dialogue = RecipeDialogue::new(storage, msg.chat.id);
                 async move {
                     bot::message_handler_with_cache(
-                        bot,
-                        msg,
-                        pool,
-                        dialogue,
-                        localization,
-                        cache,
-                        Some(&dedup),
+                        MessageHandlerWithCacheParams {
+                            bot,
+                            msg,
+                            pool: Arc::clone(&app_state.pool),
+                            dialogue,
+                            localization: Arc::clone(&app_state.localization),
+                            cache: Arc::clone(&app_state.cache),
+                            deduplicator: Some(&app_state.deduplicator),
+                            provider_manager: &app_state.provider_manager,
+                        },
                     )
                     .await
                 }
             }
         }))
         .branch(Update::filter_callback_query().endpoint({
-            let pool = Arc::clone(&shared_pool);
+            let app_state = app_state.clone();
             let storage = dialogue_storage.clone();
-            let localization = Arc::clone(&localization_manager);
-            let cache = Arc::clone(&cache_manager);
             move |bot: Bot, q: CallbackQuery| {
-                let pool = Arc::clone(&pool);
+                let app_state = app_state.clone();
                 let storage = storage.clone();
-                let localization = Arc::clone(&localization);
-                let cache = Arc::clone(&cache);
                 // Use the chat ID from the original message that contained the inline keyboard
                 let chat_id = match &q.message {
                     Some(msg) => match msg {
@@ -308,8 +375,15 @@ async fn main() -> Result<()> {
                 };
                 let dialogue = RecipeDialogue::new(storage, chat_id);
                 async move {
-                    bot::callback_handler_with_cache(bot, q, pool, dialogue, localization, cache)
-                        .await
+                    bot::callback_handler_with_cache(
+                        bot,
+                        q,
+                        Arc::clone(&app_state.pool),
+                        dialogue,
+                        Arc::clone(&app_state.localization),
+                        Arc::clone(&app_state.cache),
+                    )
+                    .await
                 }
             }
         }));

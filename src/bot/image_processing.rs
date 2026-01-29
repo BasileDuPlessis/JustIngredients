@@ -88,8 +88,8 @@ pub struct ImageProcessingParams<'a> {
 
 // Create OCR configuration with default settings
 static OCR_CONFIG: std::sync::LazyLock<OcrConfig> = std::sync::LazyLock::new(OcrConfig::default);
-static OCR_INSTANCE_MANAGER: std::sync::LazyLock<OcrInstanceManager> =
-    std::sync::LazyLock::new(OcrInstanceManager::default);
+static OCR_INSTANCE_MANAGER: std::sync::LazyLock<std::sync::Arc<OcrInstanceManager>> =
+    std::sync::LazyLock::new(|| std::sync::Arc::new(OcrInstanceManager::default()));
 static CIRCUIT_BREAKER: std::sync::LazyLock<CircuitBreaker> =
     std::sync::LazyLock::new(|| CircuitBreaker::new(OCR_CONFIG.recovery.clone()));
 
@@ -132,6 +132,7 @@ pub async fn download_and_process_image(
     bot: &Bot,
     params: ImageProcessingParams<'_>,
     localization: &Arc<crate::localization::LocalizationManager>,
+    provider_manager: &crate::ocr_provider_manager::OcrProviderManager,
 ) -> Result<String> {
     let ImageProcessingParams {
         file_id,
@@ -181,6 +182,7 @@ pub async fn download_and_process_image(
             &OCR_CONFIG,
             &OCR_INSTANCE_MANAGER,
             &CIRCUIT_BREAKER,
+            provider_manager,
         )
         .await
         {

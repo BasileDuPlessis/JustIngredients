@@ -37,6 +37,7 @@ pub use crate::instance_manager::OcrInstanceManager;
 pub use crate::observability;
 pub use crate::ocr_config::{OcrConfig, RecoveryConfig};
 pub use crate::ocr_errors::OcrError;
+pub use crate::ocr_provider_manager::OcrProviderManager;
 
 /// Validate image file path and basic properties using enhanced security validation
 pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConfig) -> Result<()> {
@@ -388,15 +389,16 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// # Examples
 ///
 /// ```rust,no_run
-/// use just_ingredients::ocr::{extract_text_from_image, OcrConfig, OcrInstanceManager, CircuitBreaker};
+/// use just_ingredients::ocr::{extract_text_from_image, OcrConfig, OcrInstanceManager, CircuitBreaker, OcrProviderManager};
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = OcrConfig::default();
 /// let instance_manager = OcrInstanceManager::new();
 /// let circuit_breaker = CircuitBreaker::new(config.recovery.clone());
+/// let provider_manager = OcrProviderManager::new();
 ///
 /// // Process an image of ingredients
-/// let text = extract_text_from_image("/path/to/ingredients.jpg", &config, &instance_manager, &circuit_breaker).await?;
+/// let text = extract_text_from_image("/path/to/ingredients.jpg", &config, &instance_manager, &circuit_breaker, &provider_manager).await?;
 /// println!("Extracted text: {}", text);
 /// # Ok(())
 /// # }
@@ -611,6 +613,7 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// * `config` - OCR configuration with timeout, language, and size limit settings
 /// * `instance_manager` - Manager for OCR instance reuse and lifecycle
 /// * `circuit_breaker` - Circuit breaker for fault tolerance and overload protection
+/// * `provider_manager` - Manager for OCR provider selection and execution
 ///
 /// # Returns
 ///
@@ -619,7 +622,7 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// # Examples
 ///
 /// ```rust,no_run
-/// use just_ingredients::ocr::{extract_text_from_image, OcrConfig, OcrInstanceManager, CircuitBreaker};
+/// use just_ingredients::ocr::{extract_text_from_image, OcrConfig, OcrInstanceManager, CircuitBreaker, OcrProviderManager};
 /// use just_ingredients::ocr_config::RecoveryConfig;
 ///
 /// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -628,13 +631,15 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// let instance_manager = OcrInstanceManager::new();
 /// let recovery_config = RecoveryConfig::default();
 /// let circuit_breaker = CircuitBreaker::new(recovery_config);
+/// let provider_manager = OcrProviderManager::new();
 ///
 /// // Extract text from image
 /// let extracted_text = extract_text_from_image(
 ///     "/path/to/ingredients.jpg",
 ///     &config,
 ///     &instance_manager,
-///     &circuit_breaker
+///     &circuit_breaker,
+///     &provider_manager
 /// ).await?;
 ///
 /// println!("Extracted text: {}", extracted_text);
@@ -645,16 +650,17 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// # Error Examples
 ///
 /// ```rust,no_run
-/// use just_ingredients::ocr::{extract_text_from_image, OcrConfig, OcrInstanceManager, CircuitBreaker};
+/// use just_ingredients::ocr::{extract_text_from_image, OcrConfig, OcrInstanceManager, CircuitBreaker, OcrProviderManager};
 ///
 /// # async fn error_example() -> Result<(), Box<dyn std::error::Error>> {
 /// let config = OcrConfig::default();
 /// let instance_manager = OcrInstanceManager::new();
 /// let recovery_config = just_ingredients::ocr_config::RecoveryConfig::default();
 /// let circuit_breaker = CircuitBreaker::new(recovery_config);
+/// let provider_manager = OcrProviderManager::new();
 ///
 /// // Circuit breaker open
-/// match extract_text_from_image("/large/image.png", &config, &instance_manager, &circuit_breaker).await {
+/// match extract_text_from_image("/large/image.png", &config, &instance_manager, &circuit_breaker, &provider_manager).await {
 ///     Ok(text) => println!("Success: {}", text),
 ///     Err(e) => println!("Error: {:?}", e), // May be circuit breaker error
 /// }
@@ -666,7 +672,7 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 ///
 /// OCR engines often misread fraction symbols (/) as other characters.
 /// This function attempts to correct the most common fraction OCR errors.
-fn correct_ocr_fraction_errors(text: &str) -> String {
+pub fn correct_ocr_fraction_errors(text: &str) -> String {
     let mut corrected = text.to_string();
 
     // Common OCR fraction errors and their corrections
@@ -707,8 +713,9 @@ fn correct_ocr_fraction_errors(text: &str) -> String {
 pub async fn extract_text_from_image(
     image_path: &str,
     config: &crate::ocr_config::OcrConfig,
-    instance_manager: &crate::instance_manager::OcrInstanceManager,
+    _instance_manager: &crate::instance_manager::OcrInstanceManager,
     circuit_breaker: &crate::circuit_breaker::CircuitBreaker,
+    provider_manager: &crate::ocr_provider_manager::OcrProviderManager,
 ) -> Result<String, crate::ocr_errors::OcrError> {
     // Create a tracing span for the OCR operation
     let span = crate::observability::ocr_span("extract_text_from_image");
@@ -740,8 +747,12 @@ pub async fn extract_text_from_image(
     loop {
         attempt += 1;
 
-        match perform_ocr_extraction(image_path, config, instance_manager).await {
-            Ok((text, ocr_duration)) => {
+        // Start timing the OCR extraction
+        let ocr_start_time = std::time::Instant::now();
+
+        match provider_manager.extract_text(image_path).await {
+            Ok(text) => {
+                let ocr_duration = ocr_start_time.elapsed();
                 let total_duration = start_time.elapsed();
                 let total_ms = total_duration.as_millis();
 
@@ -849,6 +860,7 @@ pub async fn extract_text_from_image(
 /// - `ImageLoadError` - Could not load image into Tesseract
 /// - `ExtractionError` - OCR processing failed
 /// - `TimeoutError` - Operation exceeded configured timeout
+#[allow(dead_code)]
 async fn perform_ocr_extraction(
     image_path: &str,
     config: &crate::ocr_config::OcrConfig,

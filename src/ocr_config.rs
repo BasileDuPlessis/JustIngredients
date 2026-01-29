@@ -3,11 +3,79 @@
 //! This module defines configuration structures for OCR processing,
 //! including recovery settings, format limits, and processing parameters.
 
+use std::path::PathBuf;
+use serde::{Deserialize, Serialize};
+
 // Constants for OCR configuration
 pub const DEFAULT_LANGUAGES: &str = "eng+fra";
 pub const FORMAT_DETECTION_BUFFER_SIZE: usize = 32;
 pub const MIN_FORMAT_BYTES: usize = 8;
 pub const MAX_FILE_SIZE: u64 = 10 * 1024 * 1024; // 10MB limit for image files
+
+/// Configuration structure for PPOCR (PaddlePaddle OCR) processing
+#[derive(Debug, Clone, Deserialize, Serialize)]
+pub struct PpocrConfig {
+    /// Whether PPOCR is enabled
+    pub enabled: bool,
+    /// Path to Python executable for running PPOCR
+    pub python_path: PathBuf,
+    /// Directory for caching PPOCR models
+    pub model_cache_dir: PathBuf,
+    /// Language code for OCR (e.g., "en", "fr", "ch")
+    pub language: String,
+    /// Whether to use GPU acceleration
+    pub use_gpu: bool,
+    /// Timeout for PPOCR operations in seconds
+    pub timeout_seconds: u64,
+}
+
+impl Default for PpocrConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            python_path: PathBuf::from("python3"),
+            model_cache_dir: PathBuf::from("./ppocr_models"),
+            language: "en".to_string(),
+            use_gpu: false,
+            timeout_seconds: 30,
+        }
+    }
+}
+
+impl PpocrConfig {
+    /// Validate PPOCR configuration parameters
+    pub fn validate(&self) -> crate::errors::AppResult<()> {
+        // Validate python_path exists and is not empty
+        if self.python_path.as_os_str().is_empty() {
+            return Err(crate::errors::AppError::Config(
+                "python_path cannot be empty".to_string(),
+            ));
+        }
+
+        // Validate language is not empty
+        if self.language.trim().is_empty() {
+            return Err(crate::errors::AppError::Config(
+                "language cannot be empty".to_string(),
+            ));
+        }
+
+        // Validate timeout is reasonable
+        if self.timeout_seconds == 0 {
+            return Err(crate::errors::AppError::Config(
+                "timeout_seconds must be greater than 0".to_string(),
+            ));
+        }
+
+        // Validate timeout is not too long (max 5 minutes)
+        if self.timeout_seconds > 300 {
+            return Err(crate::errors::AppError::Config(
+                "timeout_seconds cannot exceed 300 seconds (5 minutes)".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+}
 
 /// Recovery configuration for error handling
 #[derive(Debug, Clone)]
@@ -81,6 +149,8 @@ pub struct OcrConfig {
     pub format_limits: FormatSizeLimits,
     /// Recovery and error handling configuration
     pub recovery: RecoveryConfig,
+    /// PPOCR configuration (optional)
+    pub ppocr: Option<PpocrConfig>,
 }
 
 impl RecoveryConfig {
@@ -177,6 +247,7 @@ impl Default for OcrConfig {
             max_file_size: MAX_FILE_SIZE,
             format_limits: FormatSizeLimits::default(),
             recovery: RecoveryConfig::default(),
+            ppocr: None,
         }
     }
 }
@@ -219,6 +290,11 @@ impl OcrConfig {
         // Validate nested configurations
         self.format_limits.validate()?;
         self.recovery.validate()?;
+
+        // Validate PPOCR config if present
+        if let Some(ref ppocr_config) = self.ppocr {
+            ppocr_config.validate()?;
+        }
 
         Ok(())
     }
@@ -327,5 +403,51 @@ mod tests {
         config.max_file_size = 0;
         assert!(config.validate().is_err());
         config.max_file_size = MAX_FILE_SIZE;
+    }
+
+    #[test]
+    fn test_ppocr_config_validation() {
+        let mut config = PpocrConfig::default();
+
+        // Valid config should pass
+        assert!(config.validate().is_ok());
+
+        // Test invalid python_path
+        config.python_path = PathBuf::new();
+        assert!(config.validate().is_err());
+        config.python_path = PathBuf::from("python3");
+
+        // Test invalid language
+        config.language = "".to_string();
+        assert!(config.validate().is_err());
+        config.language = "en".to_string();
+
+        // Test invalid timeout_seconds
+        config.timeout_seconds = 0;
+        assert!(config.validate().is_err());
+        config.timeout_seconds = 30;
+
+        // Test timeout_seconds too long
+        config.timeout_seconds = 400;
+        assert!(config.validate().is_err());
+        config.timeout_seconds = 30;
+    }
+
+    #[test]
+    fn test_ocr_config_with_ppocr_validation() {
+        let mut config = OcrConfig::default();
+
+        // Config without PPOCR should pass
+        assert!(config.validate().is_ok());
+
+        // Add valid PPOCR config
+        config.ppocr = Some(PpocrConfig::default());
+        assert!(config.validate().is_ok());
+
+        // Add invalid PPOCR config
+        if let Some(ref mut ppocr_config) = config.ppocr {
+            ppocr_config.timeout_seconds = 0;
+        }
+        assert!(config.validate().is_err());
     }
 }
