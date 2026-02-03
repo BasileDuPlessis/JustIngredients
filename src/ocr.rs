@@ -28,6 +28,7 @@ use anyhow::Result;
 use regex;
 use std::fs::File;
 use std::io::{BufReader, Read};
+use tempfile::NamedTempFile;
 use tracing::{info, warn};
 
 // Re-export types for easier access from documentation and external usage
@@ -849,6 +850,74 @@ pub async fn extract_text_from_image(
 /// - `ImageLoadError` - Could not load image into Tesseract
 /// - `ExtractionError` - OCR processing failed
 /// - `TimeoutError` - Operation exceeded configured timeout
+///
+/// Apply image preprocessing for OCR optimization
+///
+/// This function loads an image, applies OCR-optimized preprocessing (scaling),
+/// and saves the result to a temporary file for Tesseract processing.
+///
+/// # Arguments
+///
+/// * `image_path` - Path to the original image file
+/// * `config` - OCR configuration (unused for now, but for future extensibility)
+///
+/// # Returns
+///
+/// Returns a tuple of (temp_file, temp_file_path, preprocessing_duration) on success.
+/// The NamedTempFile will be automatically cleaned up when it goes out of scope,
+/// but the OCR operation should complete before that happens.
+///
+/// # Errors
+///
+/// Returns `OcrError::ImageLoad` if the image cannot be loaded or processed.
+/// Returns `OcrError::ProcessingFailed` if preprocessing fails.
+async fn apply_image_preprocessing(
+    image_path: &str,
+    _config: &crate::ocr_config::OcrConfig,
+) -> Result<(NamedTempFile, String, std::time::Duration), crate::ocr_errors::OcrError> {
+    let preprocessing_start = std::time::Instant::now();
+
+    // Load the original image
+    let img = image::open(image_path).map_err(|e| {
+        crate::ocr_errors::OcrError::ImageLoad(format!("Failed to load image for preprocessing: {}", e))
+    })?;
+
+    // Apply OCR-optimized scaling
+    let scaler = crate::preprocessing::ImageScaler::new();
+    let scaled_result = scaler.scale_for_ocr(&img).map_err(|e| {
+        crate::ocr_errors::OcrError::Extraction(format!("Image preprocessing failed: {:?}", e))
+    })?;
+
+    // Create a temporary file for the preprocessed image
+    let temp_file = NamedTempFile::with_suffix(".png").map_err(|e| {
+        crate::ocr_errors::OcrError::Extraction(format!("Failed to create temporary file: {}", e))
+    })?;
+
+    // Save the preprocessed image to the temporary file
+    scaled_result.image.save_with_format(
+        temp_file.path(),
+        image::ImageFormat::Png
+    ).map_err(|e| {
+        crate::ocr_errors::OcrError::Extraction(format!("Failed to save preprocessed image: {}", e))
+    })?;
+
+    let temp_path = temp_file.path().to_string_lossy().to_string();
+    let preprocessing_duration = preprocessing_start.elapsed();
+
+    info!(
+        target: "ocr_preprocessing",
+        "Image preprocessing completed in {:.2}ms: {}x{} -> {}x{} (scale: {:.2})",
+        preprocessing_duration.as_millis(),
+        scaled_result.original_dimensions.0,
+        scaled_result.original_dimensions.1,
+        scaled_result.new_dimensions.0,
+        scaled_result.new_dimensions.1,
+        scaled_result.scale_factor
+    );
+
+    Ok((temp_file, temp_path, preprocessing_duration))
+}
+
 async fn perform_ocr_extraction(
     image_path: &str,
     config: &crate::ocr_config::OcrConfig,
@@ -861,6 +930,14 @@ async fn perform_ocr_extraction(
     let timeout_duration = tokio::time::Duration::from_secs(config.recovery.operation_timeout_secs);
 
     let result = tokio::time::timeout(timeout_duration, async {
+        // Apply image preprocessing for OCR optimization
+        let (_temp_file, processed_image_path, preprocessing_duration) = apply_image_preprocessing(image_path, config).await?;
+
+        info!(
+            "Using preprocessed image for OCR: preprocessing took {:.2}ms",
+            preprocessing_duration.as_millis()
+        );
+
         // Get or create OCR instance from the manager
         let instance = instance_manager
             .get_instance(config)
@@ -871,18 +948,20 @@ async fn perform_ocr_extraction(
             let mut tess = instance
                 .lock()
                 .expect("Failed to acquire Tesseract instance lock");
-            // Set the image for OCR processing
-            tess.set_image(image_path).map_err(|e| {
-                crate::ocr_errors::OcrError::ImageLoad(format!("Failed to load image for OCR: {e}"))
+            // Set the preprocessed image for OCR processing
+            tess.set_image(&processed_image_path).map_err(|e| {
+                crate::ocr_errors::OcrError::ImageLoad(format!("Failed to load preprocessed image for OCR: {e}"))
             })?;
 
             // Extract text from the image
             tess.get_utf8_text().map_err(|e| {
                 crate::ocr_errors::OcrError::Extraction(format!(
-                    "Failed to extract text from image: {e}"
+                    "Failed to extract text from preprocessed image: {e}"
                 ))
             })?
         };
+
+        // Note: The temporary file will be automatically cleaned up when _temp_file goes out of scope
 
         // Clean up the extracted text (remove extra whitespace and empty lines)
         let cleaned_text = extracted_text
