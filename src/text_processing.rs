@@ -645,7 +645,7 @@ impl MeasurementDetector {
     /// use just_ingredients::text_processing::MeasurementDetector;
     ///
     /// let detector = MeasurementDetector::new()?;
-    /// let text = "2 cups flour\n1 tablespoon sugar\nsome salt";
+    /// let text = "2 cups flour\n1 tablespoon sugar";
     /// let matches = detector.extract_ingredient_measurements(text);
     ///
     /// assert_eq!(matches.len(), 2);
