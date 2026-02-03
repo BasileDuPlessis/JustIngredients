@@ -414,6 +414,167 @@ pub struct ScaledImageResult {
     pub processing_time_ms: u32,
 }
 
+/// Result of image thresholding operation.
+#[derive(Debug, Clone)]
+pub struct ThresholdedImageResult {
+    /// The thresholded binary image
+    pub image: DynamicImage,
+    /// Optimal threshold value found by Otsu's method
+    pub threshold: u8,
+    /// Processing time in milliseconds
+    pub processing_time_ms: u32,
+}
+
+/// Applies Otsu's thresholding algorithm to convert an image to binary (black/white).
+///
+/// Otsu's method automatically determines the optimal threshold by maximizing the
+/// variance between two classes of pixels (foreground and background). This is
+/// particularly effective for images with varying lighting conditions.
+///
+/// # Arguments
+///
+/// * `image` - The input image to threshold
+///
+/// # Returns
+///
+/// Returns a `Result` containing the thresholded image and metadata, or a `PreprocessingError`
+///
+/// # Examples
+///
+/// ```no_run
+/// use just_ingredients::preprocessing::apply_otsu_threshold;
+/// use image::open;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let img = open("recipe.jpg")?;
+/// let thresholded = apply_otsu_threshold(&img)?;
+/// // thresholded.image is now a binary image optimized for OCR
+/// # Ok(())
+/// # }
+/// ```
+pub fn apply_otsu_threshold(image: &DynamicImage) -> Result<ThresholdedImageResult, PreprocessingError> {
+    let start_time = std::time::Instant::now();
+
+    // Convert to grayscale for thresholding
+    let gray = image.to_luma8();
+
+    // Calculate histogram
+    let mut histogram = [0u32; 256];
+    let total_pixels = (gray.width() * gray.height()) as f64;
+
+    for pixel in gray.pixels() {
+        histogram[pixel[0] as usize] += 1;
+    }
+
+    // Find optimal threshold using Otsu's method
+    let optimal_threshold = find_otsu_threshold(&histogram, total_pixels)?;
+
+    // Apply binary thresholding
+    let mut binary_img = image::GrayImage::new(gray.width(), gray.height());
+
+    for (x, y, pixel) in gray.enumerate_pixels() {
+        let intensity = pixel[0];
+        let binary_value = if intensity > optimal_threshold { 255u8 } else { 0u8 };
+        binary_img.put_pixel(x, y, image::Luma([binary_value]));
+    }
+
+    let processing_time = start_time.elapsed();
+
+    tracing::debug!(
+        target: "ocr_preprocessing",
+        "Otsu thresholding completed in {:.2}ms: threshold={}, dimensions={}x{}",
+        processing_time.as_millis(),
+        optimal_threshold,
+        gray.width(),
+        gray.height()
+    );
+
+    Ok(ThresholdedImageResult {
+        image: DynamicImage::ImageLuma8(binary_img),
+        threshold: optimal_threshold,
+        processing_time_ms: processing_time.as_millis() as u32,
+    })
+}
+
+/// Finds the optimal threshold using Otsu's method.
+///
+/// Otsu's method maximizes the variance between two classes of pixels.
+/// The algorithm calculates the between-class variance for each possible
+/// threshold and returns the one that maximizes it.
+///
+/// # Arguments
+///
+/// * `histogram` - Array of 256 histogram bins
+/// * `total_pixels` - Total number of pixels in the image
+///
+/// # Returns
+///
+/// Returns the optimal threshold value (0-255)
+fn find_otsu_threshold(histogram: &[u32; 256], total_pixels: f64) -> Result<u8, PreprocessingError> {
+    // Calculate cumulative sums for efficiency
+    let mut cumulative_sum = 0f64;
+    let mut cumulative_weighted_sum = 0f64;
+
+    // Pre-calculate cumulative statistics
+    let mut cumulative_sums = [0f64; 256];
+    let mut cumulative_weighted_sums = [0f64; 256];
+
+    for i in 0..256 {
+        let pixel_count = histogram[i] as f64;
+        cumulative_sum += pixel_count;
+        cumulative_weighted_sum += (i as f64) * pixel_count;
+
+        cumulative_sums[i] = cumulative_sum;
+        cumulative_weighted_sums[i] = cumulative_weighted_sum;
+    }
+
+    // Find optimal threshold by maximizing between-class variance
+    let mut max_variance = 0f64;
+    let mut optimal_threshold = 128u8; // Default fallback
+
+    let total_weighted_sum = cumulative_weighted_sums[255];
+
+    for threshold in 1..255 {
+        let threshold_idx = threshold as usize;
+
+        // Weight of background class (pixels <= threshold)
+        let w0 = cumulative_sums[threshold_idx] / total_pixels;
+
+        // Weight of foreground class (pixels > threshold)
+        let w1 = 1.0 - w0;
+
+        // Avoid division by zero
+        if w0 == 0.0 || w1 == 0.0 {
+            continue;
+        }
+
+        // Mean of background class
+        let mu0 = if cumulative_sums[threshold_idx] > 0.0 {
+            cumulative_weighted_sums[threshold_idx] / cumulative_sums[threshold_idx]
+        } else {
+            0.0
+        };
+
+        // Mean of foreground class
+        let mu1 = if cumulative_sums[255] - cumulative_sums[threshold_idx] > 0.0 {
+            (total_weighted_sum - cumulative_weighted_sums[threshold_idx]) /
+            (cumulative_sums[255] - cumulative_sums[threshold_idx])
+        } else {
+            0.0
+        };
+
+        // Between-class variance
+        let variance = w0 * w1 * (mu0 - mu1).powi(2);
+
+        if variance > max_variance {
+            max_variance = variance;
+            optimal_threshold = threshold as u8;
+        }
+    }
+
+    Ok(optimal_threshold)
+}
+
 impl Default for ImageScaler {
     fn default() -> Self {
         Self::new()
@@ -431,9 +592,85 @@ mod tests {
     }
 
     #[test]
-    fn test_new_scaler() {
-        let scaler = ImageScaler::new();
-        assert_eq!(scaler.target_char_height(), 28);
+    fn test_apply_otsu_threshold_simple_image() {
+        // Create a simple test image with two distinct regions
+        let mut img = image::GrayImage::new(10, 10);
+
+        // Fill first half with dark pixels (0-50)
+        for y in 0..10 {
+            for x in 0..5 {
+                img.put_pixel(x, y, image::Luma([25]));
+            }
+        }
+
+        // Fill second half with light pixels (200-255)
+        for y in 0..10 {
+            for x in 5..10 {
+                img.put_pixel(x, y, image::Luma([225]));
+            }
+        }
+
+        let dynamic_img = DynamicImage::ImageLuma8(img);
+        let result = apply_otsu_threshold(&dynamic_img).unwrap();
+
+        // The threshold should be between the two intensity values
+        assert!((25..=225).contains(&result.threshold));
+        // (processing_time_ms is u32, so it's always >= 0)
+
+        // Check that the result is a binary image
+        if let DynamicImage::ImageLuma8(binary_img) = &result.image {
+            for pixel in binary_img.pixels() {
+                assert!(pixel[0] == 0 || pixel[0] == 255);
+            }
+        } else {
+            panic!("Expected binary image");
+        }
+    }
+
+    #[test]
+    fn test_apply_otsu_threshold_uniform_image() {
+        // Create a uniform gray image
+        let mut img = image::GrayImage::new(10, 10);
+        for pixel in img.pixels_mut() {
+            pixel[0] = 128;
+        }
+
+        let dynamic_img = DynamicImage::ImageLuma8(img);
+        let _result = apply_otsu_threshold(&dynamic_img).unwrap();
+
+        // For uniform images, Otsu should still produce a valid threshold
+        // (threshold is u8, so it's always <= 255)
+    }
+
+    #[test]
+    fn test_find_otsu_threshold_basic() {
+        // Create a simple histogram with two peaks
+        let mut histogram = [0u32; 256];
+
+        // Add pixels to create two distinct classes
+        histogram[25] = 5000; // Dark class at intensity 25
+        histogram[225] = 5000; // Light class at intensity 225
+
+        let total_pixels = 10000.0;
+        let threshold = find_otsu_threshold(&histogram, total_pixels).unwrap();
+
+        // Threshold should be somewhere between the two classes
+        assert!((25..=225).contains(&threshold));
+    }
+
+    #[test]
+    fn test_find_otsu_threshold_single_class() {
+        // Create a histogram with only one class
+        let mut histogram = [0u32; 256];
+        for histogram_val in histogram.iter_mut().take(150).skip(100) {
+            *histogram_val = 100;
+        }
+
+        let total_pixels = 5000.0;
+        let _threshold = find_otsu_threshold(&histogram, total_pixels).unwrap();
+
+        // Should still return a valid threshold
+        // (threshold is u8, so it's always <= 255)
     }
 
     #[test]

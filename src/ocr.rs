@@ -888,13 +888,18 @@ async fn apply_image_preprocessing(
         crate::ocr_errors::OcrError::Extraction(format!("Image preprocessing failed: {:?}", e))
     })?;
 
+    // Apply Otsu thresholding for binary conversion
+    let thresholded_result = crate::preprocessing::apply_otsu_threshold(&scaled_result.image).map_err(|e| {
+        crate::ocr_errors::OcrError::Extraction(format!("Image thresholding failed: {:?}", e))
+    })?;
+
     // Create a temporary file for the preprocessed image
     let temp_file = NamedTempFile::with_suffix(".png").map_err(|e| {
         crate::ocr_errors::OcrError::Extraction(format!("Failed to create temporary file: {}", e))
     })?;
 
     // Save the preprocessed image to the temporary file
-    scaled_result.image.save_with_format(
+    thresholded_result.image.save_with_format(
         temp_file.path(),
         image::ImageFormat::Png
     ).map_err(|e| {
@@ -906,13 +911,14 @@ async fn apply_image_preprocessing(
 
     info!(
         target: "ocr_preprocessing",
-        "Image preprocessing completed in {:.2}ms: {}x{} -> {}x{} (scale: {:.2})",
+        "Image preprocessing completed in {:.2}ms: {}x{} -> {}x{} (scale: {:.2}, threshold: {})",
         preprocessing_duration.as_millis(),
         scaled_result.original_dimensions.0,
         scaled_result.original_dimensions.1,
         scaled_result.new_dimensions.0,
         scaled_result.new_dimensions.1,
-        scaled_result.scale_factor
+        scaled_result.scale_factor,
+        thresholded_result.threshold
     );
 
     Ok((temp_file, temp_path, preprocessing_duration))
