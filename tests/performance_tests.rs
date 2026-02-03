@@ -1220,8 +1220,14 @@ mod tests {
         };
 
         println!("📊 Multi-line Performance Benchmark Results:");
-        println!("📊 Single-line: {}ns avg ({} iterations)", avg_single_time, iterations);
-        println!("📊 Multi-line:  {}ns avg ({} iterations)", avg_multi_time, iterations);
+        println!(
+            "📊 Single-line: {}ns avg ({} iterations)",
+            avg_single_time, iterations
+        );
+        println!(
+            "📊 Multi-line:  {}ns avg ({} iterations)",
+            avg_multi_time, iterations
+        );
         println!("📊 Performance degradation: {:.2}%", degradation_percent);
 
         // Assert that multi-line processing doesn't degrade performance by more than 5%
@@ -1328,11 +1334,18 @@ mod tests {
         let avg_processing_time = memory_test_duration.as_nanos() / iterations;
 
         println!("📊 Large Recipe Memory Usage Test:");
-        println!("📊 Recipe size: {} characters, {} ingredients", large_recipe.len(), ingredients.len());
+        println!(
+            "📊 Recipe size: {} characters, {} ingredients",
+            large_recipe.len(),
+            ingredients.len()
+        );
         println!("📊 Iterations: {}", iterations);
         println!("📊 Average processing time: {}ns", avg_processing_time);
         println!("📊 Total matches found: {}", total_matches);
-        println!("📊 Average matches per iteration: {}", total_matches / iterations as usize);
+        println!(
+            "📊 Average matches per iteration: {}",
+            total_matches / iterations as usize
+        );
 
         // Performance should be reasonable for large recipes (< 10ms per processing)
         assert!(
@@ -1371,7 +1384,11 @@ mod tests {
                     recipe.push_str(&format!("{} cups ingredient{}\n", (i % 3) + 1, i));
                 } else {
                     // Multi-line ingredient
-                    recipe.push_str(&format!("{} cups multi-word\ningredient{}\n", (i % 3) + 1, i));
+                    recipe.push_str(&format!(
+                        "{} cups multi-word\ningredient{}\n",
+                        (i % 3) + 1,
+                        i
+                    ));
                 }
             }
 
@@ -1385,7 +1402,10 @@ mod tests {
             let duration = start.elapsed();
             let avg_time = duration.as_nanos() / iterations;
 
-            println!("📊 Recipe size {} ingredients: {}ns avg processing time", num_ingredients, avg_time);
+            println!(
+                "📊 Recipe size {} ingredients: {}ns avg processing time",
+                num_ingredients, avg_time
+            );
 
             // Performance should scale reasonably (not exponentially worse)
             // For this test, we just ensure it completes in reasonable time
@@ -1397,6 +1417,8 @@ mod tests {
             );
         }
 
-        println!("📊 Scalability test passed - performance scales reasonably with recipe complexity");
+        println!(
+            "📊 Scalability test passed - performance scales reasonably with recipe complexity"
+        );
     }
 }

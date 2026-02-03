@@ -877,21 +877,31 @@ impl MeasurementDetector {
                 total_ingredients += 1; // Count this ingredient
 
                 if self.is_incomplete_ingredient(&ingredient_name) {
-                    debug!("Ingredient '{}' appears incomplete, checking for multi-line continuation", ingredient_name);
+                    debug!(
+                        "Ingredient '{}' appears incomplete, checking for multi-line continuation",
+                        ingredient_name
+                    );
 
                     // Use the pre-collected lines array for multi-line extraction
-                    let (combined_ingredient, consumed) = self.extract_multi_line_ingredient(&all_lines, line_number);
+                    let (combined_ingredient, consumed) =
+                        self.extract_multi_line_ingredient(&all_lines, line_number);
 
                     if consumed > 1 {
-                        debug!("Combined {} lines for ingredient: '{}' -> '{}'",
-                              consumed, ingredient_name, combined_ingredient);
+                        debug!(
+                            "Combined {} lines for ingredient: '{}' -> '{}'",
+                            consumed, ingredient_name, combined_ingredient
+                        );
                         ingredient_name = combined_ingredient;
                         lines_consumed = consumed;
                         multi_line_ingredients += 1; // Count multi-line ingredients
                         lines_combined_total += consumed; // Track total lines combined
-                        max_lines_per_ingredient = max_lines_per_ingredient.max(consumed); // Track max lines per ingredient
+                        max_lines_per_ingredient = max_lines_per_ingredient.max(consumed);
+                    // Track max lines per ingredient
                     } else {
-                        debug!("Multi-line extraction returned single line, keeping original: '{}'", ingredient_name);
+                        debug!(
+                            "Multi-line extraction returned single line, keeping original: '{}'",
+                            ingredient_name
+                        );
                     }
                 }
 
@@ -1115,7 +1125,7 @@ impl MeasurementDetector {
         // Also consider comma as complete (next ingredient separator)
         match last_char {
             '.' | ')' | ']' | '}' | ',' => false, // Complete
-            _ => true, // Incomplete
+            _ => true,                            // Incomplete
         }
     }
 
@@ -1164,7 +1174,11 @@ impl MeasurementDetector {
     /// assert_eq!(consumed, 2);
     /// # Ok::<(), regex::Error>(())
     /// ```
-    pub fn extract_multi_line_ingredient(&self, lines: &[&str], start_idx: usize) -> (String, usize) {
+    pub fn extract_multi_line_ingredient(
+        &self,
+        lines: &[&str],
+        start_idx: usize,
+    ) -> (String, usize) {
         if start_idx >= lines.len() {
             return (String::new(), 0);
         }
@@ -1204,7 +1218,11 @@ impl MeasurementDetector {
 
             // Termination condition 2: Punctuation-only line
             // Check if line contains only punctuation (no alphanumeric characters)
-            if !current_line.is_empty() && current_line.chars().all(|c| !c.is_alphanumeric() && !c.is_whitespace()) {
+            if !current_line.is_empty()
+                && current_line
+                    .chars()
+                    .all(|c| !c.is_alphanumeric() && !c.is_whitespace())
+            {
                 // This is a punctuation-only line (e.g., just "." or ")")
                 // Don't include it in the combination, just terminate
                 break;

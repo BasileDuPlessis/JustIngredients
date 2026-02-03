@@ -20,6 +20,7 @@ pub mod ocr;
 pub mod ocr_config;
 pub mod ocr_errors;
 pub mod path_validation;
+pub mod preprocessing;
 pub mod text_processing;
 pub mod validation;
 

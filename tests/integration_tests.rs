@@ -658,33 +658,71 @@ fn test_multi_line_ingredients_end_to_end_bot_workflow() {
     let ingredients = detector.extract_ingredient_measurements(ocr_text);
 
     // Verify multi-line ingredients were correctly combined
-    assert_eq!(ingredients.len(), 9, "Should extract 9 ingredients from multi-line recipe");
+    assert_eq!(
+        ingredients.len(),
+        9,
+        "Should extract 9 ingredients from multi-line recipe"
+    );
 
     // Check specific multi-line combinations
-    let flour_match = ingredients.iter().find(|m| m.ingredient_name == "all-purpose flour");
-    assert!(flour_match.is_some(), "Should find combined 'all-purpose flour'");
+    let flour_match = ingredients
+        .iter()
+        .find(|m| m.ingredient_name == "all-purpose flour");
+    assert!(
+        flour_match.is_some(),
+        "Should find combined 'all-purpose flour'"
+    );
     assert_eq!(flour_match.unwrap().quantity, "2");
     assert_eq!(flour_match.unwrap().measurement, Some("cups".to_string()));
 
-    let baking_soda = ingredients.iter().find(|m| m.ingredient_name == "baking soda");
+    let baking_soda = ingredients
+        .iter()
+        .find(|m| m.ingredient_name == "baking soda");
     assert!(baking_soda.is_some(), "Should find combined 'baking soda'");
     assert_eq!(baking_soda.unwrap().quantity, "1");
-    assert_eq!(baking_soda.unwrap().measurement, Some("teaspoon".to_string()));
+    assert_eq!(
+        baking_soda.unwrap().measurement,
+        Some("teaspoon".to_string())
+    );
 
-    let butter_softened = ingredients.iter().find(|m| m.ingredient_name == "unsalted butter, softened");
-    assert!(butter_softened.is_some(), "Should find 'unsalted butter, softened' with comma");
+    let butter_softened = ingredients
+        .iter()
+        .find(|m| m.ingredient_name == "unsalted butter, softened");
+    assert!(
+        butter_softened.is_some(),
+        "Should find 'unsalted butter, softened' with comma"
+    );
     assert_eq!(butter_softened.unwrap().quantity, "3/4");
-    assert_eq!(butter_softened.unwrap().measurement, Some("cup".to_string()));
+    assert_eq!(
+        butter_softened.unwrap().measurement,
+        Some("cup".to_string())
+    );
 
-    let vanilla_extract = ingredients.iter().find(|m| m.ingredient_name == "vanilla extract");
-    assert!(vanilla_extract.is_some(), "Should find combined 'vanilla extract'");
+    let vanilla_extract = ingredients
+        .iter()
+        .find(|m| m.ingredient_name == "vanilla extract");
+    assert!(
+        vanilla_extract.is_some(),
+        "Should find combined 'vanilla extract'"
+    );
     assert_eq!(vanilla_extract.unwrap().quantity, "1");
-    assert_eq!(vanilla_extract.unwrap().measurement, Some("teaspoon".to_string()));
+    assert_eq!(
+        vanilla_extract.unwrap().measurement,
+        Some("teaspoon".to_string())
+    );
 
-    let melted_butter = ingredients.iter().find(|m| m.ingredient_name == "melted butter");
-    assert!(melted_butter.is_some(), "Should find combined 'melted butter'");
+    let melted_butter = ingredients
+        .iter()
+        .find(|m| m.ingredient_name == "melted butter");
+    assert!(
+        melted_butter.is_some(),
+        "Should find combined 'melted butter'"
+    );
     assert_eq!(melted_butter.unwrap().quantity, "2");
-    assert_eq!(melted_butter.unwrap().measurement, Some("tablespoons".to_string()));
+    assert_eq!(
+        melted_butter.unwrap().measurement,
+        Some("tablespoons".to_string())
+    );
 
     // Step 2: Simulate dialogue state for recipe naming
     let dialogue_state = RecipeDialogueState::WaitingForRecipeName {
@@ -694,11 +732,20 @@ fn test_multi_line_ingredients_end_to_end_bot_workflow() {
     };
 
     // Verify dialogue state contains complete ingredient names
-    if let RecipeDialogueState::WaitingForRecipeName { ingredients: ingr, .. } = dialogue_state {
+    if let RecipeDialogueState::WaitingForRecipeName {
+        ingredients: ingr, ..
+    } = dialogue_state
+    {
         // Check that all ingredient names are complete (not truncated)
         for ingredient in &ingr {
-            assert!(!ingredient.ingredient_name.is_empty(), "Ingredient name should not be empty");
-            assert!(!ingredient.ingredient_name.contains('\n'), "Ingredient name should not contain newlines");
+            assert!(
+                !ingredient.ingredient_name.is_empty(),
+                "Ingredient name should not be empty"
+            );
+            assert!(
+                !ingredient.ingredient_name.contains('\n'),
+                "Ingredient name should not contain newlines"
+            );
 
             // Verify specific complete names
             if ingredient.quantity == "2" && ingredient.measurement == Some("cups".to_string()) {
@@ -718,7 +765,10 @@ fn test_multi_line_ingredients_end_to_end_bot_workflow() {
     let mut display_lines = Vec::new();
     for ingredient in &ingredients {
         let display_line = if let Some(ref unit) = ingredient.measurement {
-            format!("• {} {} {}", ingredient.quantity, unit, ingredient.ingredient_name)
+            format!(
+                "• {} {} {}",
+                ingredient.quantity, unit, ingredient.ingredient_name
+            )
         } else {
             format!("• {} {}", ingredient.quantity, ingredient.ingredient_name)
         };
@@ -726,16 +776,33 @@ fn test_multi_line_ingredients_end_to_end_bot_workflow() {
     }
 
     // Verify UI display shows complete ingredient names
-    let flour_display = display_lines.iter().find(|line| line.contains("all-purpose flour"));
-    assert!(flour_display.is_some(), "UI should display complete 'all-purpose flour'");
-    assert!(flour_display.unwrap().contains("• 2 cups all-purpose flour"));
+    let flour_display = display_lines
+        .iter()
+        .find(|line| line.contains("all-purpose flour"));
+    assert!(
+        flour_display.is_some(),
+        "UI should display complete 'all-purpose flour'"
+    );
+    assert!(flour_display
+        .unwrap()
+        .contains("• 2 cups all-purpose flour"));
 
-    let vanilla_display = display_lines.iter().find(|line| line.contains("vanilla extract"));
-    assert!(vanilla_display.is_some(), "UI should display complete 'vanilla extract'");
-    assert!(vanilla_display.unwrap().contains("• 1 teaspoon vanilla extract"));
+    let vanilla_display = display_lines
+        .iter()
+        .find(|line| line.contains("vanilla extract"));
+    assert!(
+        vanilla_display.is_some(),
+        "UI should display complete 'vanilla extract'"
+    );
+    assert!(vanilla_display
+        .unwrap()
+        .contains("• 1 teaspoon vanilla extract"));
 
     println!("✅ Multi-line ingredients end-to-end bot workflow test passed");
-    println!("📊 Successfully processed {} ingredients with complete names", ingredients.len());
+    println!(
+        "📊 Successfully processed {} ingredients with complete names",
+        ingredients.len()
+    );
 }
 
 /// Test UI display formatting for multi-line ingredients in confirmation dialogs
@@ -788,10 +855,16 @@ fn test_multi_line_ingredients_ui_display_formatting() {
 
     // Verify keyboard contains buttons with complete ingredient names
     // The keyboard should have buttons for each ingredient
-    assert!(!keyboard.inline_keyboard.is_empty(), "Keyboard should not be empty");
+    assert!(
+        !keyboard.inline_keyboard.is_empty(),
+        "Keyboard should not be empty"
+    );
 
     // Check that the keyboard has the right number of rows (one per ingredient + action buttons)
-    assert!(keyboard.inline_keyboard.len() >= ingredients.len(), "Should have at least one button per ingredient");
+    assert!(
+        keyboard.inline_keyboard.len() >= ingredients.len(),
+        "Should have at least one button per ingredient"
+    );
 
     println!("✅ Multi-line ingredients UI display formatting test passed");
 }
@@ -838,12 +911,19 @@ fn test_dialogue_flow_integrity_with_multi_line_ingredients() {
         ingredients: state_ingredients,
         extracted_text,
         ..
-    } = review_state {
+    } = review_state
+    {
         assert_eq!(recipe_name, "Oatmeal Cookies");
         assert_eq!(state_ingredients.len(), 2);
-        assert_eq!(state_ingredients[0].ingredient_name, "old-fashioned rolled oats");
+        assert_eq!(
+            state_ingredients[0].ingredient_name,
+            "old-fashioned rolled oats"
+        );
         assert_eq!(state_ingredients[1].ingredient_name, "sugar");
-        assert_eq!(extracted_text, "2 cups old-fashioned\nrolled oats\n1 cup sugar");
+        assert_eq!(
+            extracted_text,
+            "2 cups old-fashioned\nrolled oats\n1 cup sugar"
+        );
     } else {
         panic!("Expected ReviewIngredients state");
     }
@@ -962,8 +1042,15 @@ fn test_realistic_ocr_scenarios_with_multi_line_ingredients() {
 
         // Verify specific expected ingredients
         for (expected_name, expected_measure) in expected_ingredients {
-            let found = ingredients.iter().find(|m| m.ingredient_name == *expected_name);
-            assert!(found.is_some(), "Scenario {}: Should find ingredient '{}'", i + 1, expected_name);
+            let found = ingredients
+                .iter()
+                .find(|m| m.ingredient_name == *expected_name);
+            assert!(
+                found.is_some(),
+                "Scenario {}: Should find ingredient '{}'",
+                i + 1,
+                expected_name
+            );
 
             let ingredient = found.unwrap();
             // Basic validation that measurement format is reasonable
@@ -973,12 +1060,21 @@ fn test_realistic_ocr_scenarios_with_multi_line_ingredients() {
                 ingredient.quantity.clone()
             };
 
-            assert_eq!(measure_str, *expected_measure,
-                      "Scenario {}: Ingredient '{}' should have measurement '{}'",
-                      i + 1, expected_name, expected_measure);
+            assert_eq!(
+                measure_str,
+                *expected_measure,
+                "Scenario {}: Ingredient '{}' should have measurement '{}'",
+                i + 1,
+                expected_name,
+                expected_measure
+            );
         }
 
-        println!("✅ OCR scenario {} passed: {} ingredients correctly parsed", i + 1, ingredients.len());
+        println!(
+            "✅ OCR scenario {} passed: {} ingredients correctly parsed",
+            i + 1,
+            ingredients.len()
+        );
     }
 
     println!("✅ All realistic OCR scenarios with multi-line ingredients test passed");

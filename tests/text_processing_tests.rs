@@ -263,7 +263,10 @@ mod tests {
         assert_eq!(consumed, 2);
 
         // Test Case 2 from PRD: Multi-line with notes (completes with punctuation)
-        let lines = ["8 tablespoons unsalted butter, cold and", "cubed (See note.)"];
+        let lines = [
+            "8 tablespoons unsalted butter, cold and",
+            "cubed (See note.)",
+        ];
         let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
         assert_eq!(ingredient, "unsalted butter, cold and cubed (See note.)");
         assert_eq!(consumed, 2);
@@ -333,7 +336,7 @@ mod tests {
             "in the context of the recipe being parsed",
             "and should eventually be terminated",
             "by the maximum line limit to prevent",
-            "runaway processing and memory issues"
+            "runaway processing and memory issues",
         ];
         let (ingredient, consumed) = detector.extract_multi_line_ingredient(&lines, 0);
         // Should consume exactly 10 lines (MAX_COMBINE_LINES) and stop
@@ -1227,7 +1230,11 @@ mod tests {
         let matches = detector.extract_ingredient_measurements(text);
 
         // Should find 9 ingredients total
-        assert_eq!(matches.len(), 9, "Should extract 9 ingredients from complex recipe");
+        assert_eq!(
+            matches.len(),
+            9,
+            "Should extract 9 ingredients from complex recipe"
+        );
 
         // Verify each ingredient is correctly parsed
         // 1. Multi-line: "2 cups all-purpose flour"
@@ -1305,7 +1312,11 @@ mod tests {
         let matches = detector.extract_ingredient_measurements(text);
 
         // Should find 9 ingredients despite noise and empty lines
-        assert_eq!(matches.len(), 9, "Should handle OCR noise and extract correct ingredients");
+        assert_eq!(
+            matches.len(),
+            9,
+            "Should handle OCR noise and extract correct ingredients"
+        );
 
         // Verify key ingredients are parsed correctly
         // Multi-line with OCR error: "2 cups all purpose flour sifted"
@@ -1356,42 +1367,71 @@ mod tests {
         let matches = detector.extract_ingredient_measurements(text);
 
         // Should extract exactly 8 ingredients
-        assert_eq!(matches.len(), 8, "Should extract all 8 ingredients accurately");
+        assert_eq!(
+            matches.len(),
+            8,
+            "Should extract all 8 ingredients accurately"
+        );
 
         // Verify accuracy by checking each ingredient
         let expected_ingredients = vec![
-            ("2 1/2", Some("cups".to_string()), "all-purpose flour".to_string()),
+            (
+                "2 1/2",
+                Some("cups".to_string()),
+                "all-purpose flour".to_string(),
+            ),
             ("1", Some("teaspoon".to_string()), "baking soda".to_string()),
             ("1", Some("teaspoon".to_string()), "salt".to_string()),
             ("1", Some("cup".to_string()), "butter".to_string()),
             ("3/4", Some("cup".to_string()), "sugar".to_string()),
             ("3/4", Some("cup".to_string()), "brown sugar".to_string()),
             ("2", None, "eggs".to_string()),
-            ("2", Some("teaspoons".to_string()), "vanilla extract".to_string()),
+            (
+                "2",
+                Some("teaspoons".to_string()),
+                "vanilla extract".to_string(),
+            ),
         ];
 
-        for (i, (expected_qty, expected_unit, expected_name)) in expected_ingredients.iter().enumerate() {
-            assert_eq!(&matches[i].quantity, expected_qty,
-                      "Ingredient {} quantity should be '{}'", i, expected_qty);
-            assert_eq!(&matches[i].measurement, expected_unit,
-                      "Ingredient {} measurement should be {:?}", i, expected_unit);
-            assert_eq!(&matches[i].ingredient_name, expected_name,
-                      "Ingredient {} name should be '{}'", i, expected_name);
+        for (i, (expected_qty, expected_unit, expected_name)) in
+            expected_ingredients.iter().enumerate()
+        {
+            assert_eq!(
+                &matches[i].quantity, expected_qty,
+                "Ingredient {} quantity should be '{}'",
+                i, expected_qty
+            );
+            assert_eq!(
+                &matches[i].measurement, expected_unit,
+                "Ingredient {} measurement should be {:?}",
+                i, expected_unit
+            );
+            assert_eq!(
+                &matches[i].ingredient_name, expected_name,
+                "Ingredient {} name should be '{}'",
+                i, expected_name
+            );
         }
 
         // Calculate accuracy: all ingredients correctly parsed = 100% accuracy
         let total_ingredients = expected_ingredients.len();
-        let correctly_parsed = expected_ingredients.iter().enumerate()
+        let correctly_parsed = expected_ingredients
+            .iter()
+            .enumerate()
             .filter(|(i, (qty, unit, name))| {
-                matches[*i].quantity == *qty &&
-                matches[*i].measurement == *unit &&
-                matches[*i].ingredient_name == *name
+                matches[*i].quantity == *qty
+                    && matches[*i].measurement == *unit
+                    && matches[*i].ingredient_name == *name
             })
             .count();
 
         let accuracy = (correctly_parsed as f64 / total_ingredients as f64) * 100.0;
-        assert!(accuracy >= 95.0,
-                "Accuracy should be >= 95%, got {:.1}% ({}/{} correct)",
-                accuracy, correctly_parsed, total_ingredients);
+        assert!(
+            accuracy >= 95.0,
+            "Accuracy should be >= 95%, got {:.1}% ({}/{} correct)",
+            accuracy,
+            correctly_parsed,
+            total_ingredients
+        );
     }
 }

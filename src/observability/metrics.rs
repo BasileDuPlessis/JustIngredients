@@ -645,7 +645,8 @@ pub fn record_multi_line_parsing_metrics(
     metrics::histogram!("multi_line_ingredients_total").record(total_ingredients as f64);
     metrics::histogram!("multi_line_ingredients_combined").record(multi_line_ingredients as f64);
     metrics::histogram!("multi_line_lines_combined_total").record(lines_combined_total as f64);
-    metrics::histogram!("multi_line_max_lines_per_ingredient").record(max_lines_per_ingredient as f64);
+    metrics::histogram!("multi_line_max_lines_per_ingredient")
+        .record(max_lines_per_ingredient as f64);
 
     // Calculate multi-line parsing success rate
     let success_rate = if total_ingredients > 0 {

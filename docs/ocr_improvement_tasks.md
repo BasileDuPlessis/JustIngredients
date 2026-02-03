@@ -5,32 +5,125 @@ This document outlines a simplified, phased approach to improving Tesseract OCR 
 
 ## Phase 1: Image Processing Foundation (Weeks 1-8)
 
-### Task 1.1: Basic Image Scaling (Week 1)
-**Objective**: Implement dynamic image scaling to optimize text size for OCR.
+### Task 1.1: Create ImageScaler Structure (Week 1, Days 1-2)
+**Objective**: Create the basic ImageScaler struct and core functionality.
 
 **Requirements:**
-- Add image scaling functionality to existing OCR pipeline
-- Scale images so text characters are 20-30 pixels tall
-- Use cubic interpolation for quality
-- Maintain aspect ratio
+- Create new `preprocessing.rs` module
+- Implement `ImageScaler` struct with target height configuration
+- Add basic scaling method with cubic interpolation
+- Include proper error handling
 
 **Implementation Steps:**
-1. Create `ImageScaler` struct in new `preprocessing.rs` module
-2. Add `scale_for_ocr()` function that calculates optimal scale factor
-3. Integrate scaling into `perform_ocr_extraction()` before Tesseract processing
-4. Test with sample recipe images
+1. Create `src/preprocessing.rs` with module documentation
+2. Implement `ImageScaler` struct with `target_char_height` field
+3. Add constructor methods (`new()`, `with_target_height()`)
+4. Implement basic `scale()` method using cubic interpolation
+5. Add input validation for target height (20-35 pixels)
 
 **Success Criteria:**
-- [ ] Scaling function processes images without errors
-- [ ] Text in scaled images is consistently 20-30 pixels tall
-- [ ] No degradation in image quality (visual inspection)
+- [x] `preprocessing.rs` module compiles without errors
+- [x] `ImageScaler` struct can be created with default and custom heights
+- [x] Basic scaling method processes images without crashing
+- [x] Input validation prevents invalid target heights
+- [x] Unit tests pass for basic functionality
+
+**Testing:**
+- Test struct creation and configuration
+- Test basic scaling with small test images
+- Verify cubic interpolation is applied
+
+---
+
+### Task 1.2: Implement OCR-Optimized Scaling Logic (Week 1, Days 3-4)
+**Objective**: Add intelligent scaling logic optimized for OCR text recognition.
+
+**Requirements:**
+- Implement text height estimation algorithm
+- Add scale factor calculation based on estimated text size
+- Include safeguards against excessive scaling
+- Optimize for recipe image characteristics
+
+**Implementation Steps:**
+1. Implement `estimate_text_height()` heuristic method
+2. Add `scale_for_ocr()` method that calculates optimal scaling
+3. Include scaling limits to prevent excessive image sizes
+4. Add logging for scaling operations and performance metrics
+5. Optimize for typical recipe image dimensions
+
+**Success Criteria:**
+- [ ] Text height estimation provides reasonable values (10-150 pixels)
+- [ ] Scale factor calculation works for various image sizes
+- [ ] Scaling limits prevent creation of excessively large images
+- [ ] Performance logging shows scaling duration
+- [ ] Optimized for images 100x100 to 2000x2000 pixels
+
+**Testing:**
+- Test with images of various sizes and text densities
+- Verify scaling decisions (upscale small text, preserve large text)
+- Measure scaling performance and memory usage
+
+---
+
+### Task 1.3: Integrate Scaling into OCR Pipeline (Week 1, Day 5)
+**Objective**: Connect the ImageScaler to the existing OCR processing pipeline.
+
+**Requirements:**
+- Modify `perform_ocr_extraction()` to use image preprocessing
+- Create temporary file handling for processed images
+- Maintain backward compatibility with existing error handling
+- Preserve original image format when possible
+
+**Implementation Steps:**
+1. Add `apply_image_preprocessing()` function to `ocr.rs`
+2. Modify `perform_ocr_extraction()` to call preprocessing before OCR
+3. Implement temporary file creation and cleanup
+4. Handle preprocessing errors gracefully
+5. Ensure Tesseract receives properly formatted images
+
+**Success Criteria:**
+- [ ] OCR pipeline calls preprocessing before Tesseract
+- [ ] Temporary files are created and cleaned up properly
+- [ ] Preprocessing errors are converted to appropriate OCR errors
+- [ ] Original OCR functionality remains intact
+- [ ] No performance regression in OCR processing
+
+**Testing:**
+- Test OCR processing with and without scaling enabled
+- Verify temporary file cleanup works correctly
+- Test error handling for preprocessing failures
+- Compare OCR accuracy and performance
+
+---
+
+### Task 1.4: End-to-End Testing and Optimization (Week 1, Day 5)
+**Objective**: Test the complete scaling integration and optimize performance.
+
+**Requirements:**
+- Test with real recipe images
+- Measure accuracy improvements
+- Optimize scaling parameters
+- Document performance characteristics
+
+**Implementation Steps:**
+1. Collect sample recipe images for testing
+2. Run OCR accuracy tests with scaling enabled/disabled
+3. Measure processing time and memory usage
+4. Fine-tune scaling parameters based on results
+5. Add comprehensive logging and metrics
+
+**Success Criteria:**
+- [ ] Scaling improves OCR accuracy by 5-15% on test images
 - [ ] Processing time increase < 200ms per image
+- [ ] Memory usage remains reasonable (< 50MB per image)
+- [ ] No image quality degradation from scaling
 - [ ] Integration doesn't break existing OCR functionality
 
 **Testing:**
-- Test with 10 diverse recipe images
-- Verify scaled images still contain readable text
-- Measure processing time before/after scaling
+- Test with 10-20 diverse recipe images
+- Compare OCR results with/without scaling
+- Measure performance impact
+- Validate on different image formats (PNG, JPEG)
 
 ---
 
