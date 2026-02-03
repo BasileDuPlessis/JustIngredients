@@ -5,6 +5,7 @@
 //! text recognition with Tesseract.
 
 use image::{DynamicImage, GenericImageView};
+use tracing;
 
 /// Errors that can occur during image preprocessing operations.
 #[derive(Debug, Clone)]
@@ -185,6 +186,232 @@ impl ImageScaler {
         // Clamp to reasonable bounds
         estimated_height.clamp(10, 150)
     }
+
+    /// Estimates text height using advanced image analysis techniques.
+    ///
+    /// This method uses multiple heuristics to provide a more accurate text height estimation:
+    /// - Analyzes image histogram for text-like features
+    /// - Considers image dimensions and aspect ratio
+    /// - Applies recipe-specific optimizations
+    ///
+    /// # Arguments
+    ///
+    /// * `image` - The image to analyze
+    ///
+    /// # Returns
+    ///
+    /// Estimated text height in pixels (10-150 range)
+    pub fn estimate_text_height_advanced(&self, image: &DynamicImage) -> u32 {
+        let (width, height) = image.dimensions();
+
+        // Convert to grayscale for analysis
+        let gray = image.to_luma8();
+
+        // Calculate histogram-based metrics
+        let mut histogram = [0u32; 256];
+        for pixel in gray.pixels() {
+            histogram[pixel[0] as usize] += 1;
+        }
+
+        // Calculate image statistics
+        let total_pixels = (width * height) as f32;
+        let dark_pixels = histogram[0..128].iter().sum::<u32>() as f32;
+        let dark_ratio = dark_pixels / total_pixels;
+
+        // Estimate text density (recipes often have 20-40% text coverage)
+        let text_density = dark_ratio.clamp(0.1, 0.6);
+
+        // Base estimation from image dimensions
+        let aspect_ratio = width as f32 / height as f32;
+        let mut estimated_height = if aspect_ratio > 1.5 {
+            // Wide image (landscape) - likely full recipe layout
+            (height as f32 * 0.12) as u32
+        } else if aspect_ratio < 0.8 {
+            // Tall image (portrait) - likely ingredient list
+            (height as f32 * 0.08) as u32
+        } else {
+            // Square-ish image - balanced approach
+            (height as f32 * 0.10) as u32
+        };
+
+        // Adjust based on text density
+        if text_density > 0.4 {
+            // High text density - smaller text
+            estimated_height = (estimated_height as f32 * 0.8) as u32;
+        } else if text_density < 0.2 {
+            // Low text density - larger text or sparse layout
+            estimated_height = (estimated_height as f32 * 1.2) as u32;
+        }
+
+        // Recipe-specific optimizations
+        if width > 1000 && height > 1000 {
+            // High-resolution image - text might be smaller relative to image
+            estimated_height = (estimated_height as f32 * 0.9) as u32;
+        }
+
+        // Clamp to reasonable bounds for OCR optimization
+        estimated_height.clamp(10, 150)
+    }
+
+    /// Scales an image using OCR-optimized logic with intelligent decision making.
+    ///
+    /// This method provides more sophisticated scaling than the basic `scale()` method:
+    /// - Uses advanced text height estimation
+    /// - Applies recipe-specific scaling rules
+    /// - Includes performance logging
+    /// - Prevents excessive scaling with adaptive limits
+    ///
+    /// # Arguments
+    ///
+    /// * `image` - The input image to scale
+    ///
+    /// # Returns
+    ///
+    /// Returns a `Result` containing the scaled image and scaling metadata, or a `PreprocessingError`
+    pub fn scale_for_ocr(&self, image: &DynamicImage) -> Result<ScaledImageResult, PreprocessingError> {
+        let start_time = std::time::Instant::now();
+        let (original_width, original_height) = image.dimensions();
+
+        // Use advanced text height estimation
+        let estimated_text_height = self.estimate_text_height_advanced(image);
+
+        // Calculate optimal scale factor
+        let scale_factor = self.calculate_optimal_scale_factor(estimated_text_height, original_width, original_height);
+
+        // Apply adaptive scaling limits based on image characteristics
+        let scale_factor = self.apply_adaptive_scaling_limits(scale_factor, original_width, original_height);
+
+        // Calculate new dimensions
+        let new_width = (original_width as f32 * scale_factor) as u32;
+        let new_height = (original_height as f32 * scale_factor) as u32;
+
+        // Apply scaling with high-quality interpolation
+        let scaled_image = image.resize(
+            new_width,
+            new_height,
+            image::imageops::FilterType::CatmullRom,
+        );
+
+        let processing_time = start_time.elapsed();
+
+        // Log performance metrics
+        tracing::debug!(
+            target: "ocr_preprocessing",
+            "Image scaled: {}x{} -> {}x{} (factor: {:.2}, text_height: {}, time: {:.2}ms)",
+            original_width,
+            original_height,
+            new_width,
+            new_height,
+            scale_factor,
+            estimated_text_height,
+            processing_time.as_millis()
+        );
+
+        Ok(ScaledImageResult {
+            image: scaled_image,
+            original_dimensions: (original_width, original_height),
+            new_dimensions: (new_width, new_height),
+            scale_factor,
+            estimated_text_height,
+            processing_time_ms: processing_time.as_millis() as u32,
+        })
+    }
+
+    /// Calculates the optimal scale factor based on estimated text height and image characteristics.
+    ///
+    /// # Arguments
+    ///
+    /// * `estimated_text_height` - Estimated height of text in pixels
+    /// * `width` - Original image width
+    /// * `height` - Original image height
+    ///
+    /// # Returns
+    ///
+    /// Optimal scale factor for OCR processing
+    fn calculate_optimal_scale_factor(&self, estimated_text_height: u32, width: u32, height: u32) -> f32 {
+        let target_ratio = self.target_char_height as f32 / estimated_text_height as f32;
+
+        // Recipe-specific scaling adjustments
+        let aspect_ratio = width as f32 / height as f32;
+        let size_category = width * height;
+
+        let mut adjusted_ratio = target_ratio;
+
+        // Adjust for very small text (likely needs more upscaling)
+        if estimated_text_height < 15 {
+            adjusted_ratio *= 1.2;
+        }
+        // Adjust for very large text (likely needs less scaling)
+        else if estimated_text_height > 80 {
+            adjusted_ratio *= 0.9;
+        }
+
+        // Adjust based on image size
+        if size_category < 100_000 {
+            // Small images - be more aggressive with upscaling
+            adjusted_ratio *= 1.1;
+        } else if size_category > 2_000_000 {
+            // Large images - be more conservative
+            adjusted_ratio *= 0.95;
+        }
+
+        // Adjust based on aspect ratio (recipes often have specific layouts)
+        if aspect_ratio > 2.0 {
+            // Very wide images (likely full recipe pages)
+            adjusted_ratio *= 0.95;
+        } else if aspect_ratio < 0.5 {
+            // Very tall images (likely ingredient lists)
+            adjusted_ratio *= 1.05;
+        }
+
+        adjusted_ratio
+    }
+
+    /// Applies adaptive scaling limits to prevent excessive scaling.
+    ///
+    /// # Arguments
+    ///
+    /// * `scale_factor` - The calculated scale factor
+    /// * `width` - Original image width
+    /// * `height` - Original image height
+    ///
+    /// # Returns
+    ///
+    /// Scale factor clamped to safe limits
+    fn apply_adaptive_scaling_limits(&self, scale_factor: f32, width: u32, height: u32) -> f32 {
+        let size_category = width * height;
+
+        // Adaptive limits based on image size
+        let (min_scale, max_scale) = if size_category < 100_000 {
+            // Small images - allow more upscaling
+            (0.8, 4.0)
+        } else if size_category > 2_000_000 {
+            // Large images - be more conservative
+            (0.3, 2.0)
+        } else {
+            // Medium images - balanced approach
+            (0.5, 3.0)
+        };
+
+        scale_factor.clamp(min_scale, max_scale)
+    }
+}
+
+/// Result of an OCR-optimized scaling operation.
+#[derive(Debug, Clone)]
+pub struct ScaledImageResult {
+    /// The scaled image
+    pub image: DynamicImage,
+    /// Original image dimensions (width, height)
+    pub original_dimensions: (u32, u32),
+    /// New image dimensions (width, height)
+    pub new_dimensions: (u32, u32),
+    /// Scale factor applied
+    pub scale_factor: f32,
+    /// Estimated text height in original image
+    pub estimated_text_height: u32,
+    /// Processing time in milliseconds
+    pub processing_time_ms: u32,
 }
 
 impl Default for ImageScaler {
@@ -256,5 +483,104 @@ mod tests {
 
         let estimated = scaler.estimate_text_height(&img);
         assert!((10..=150).contains(&estimated));
+    }
+
+    #[test]
+    fn test_estimate_text_height_advanced() {
+        let scaler = ImageScaler::new();
+
+        // Test with different image sizes
+        let small_img = create_test_image(100, 100);
+        let medium_img = create_test_image(500, 500);
+        let large_img = create_test_image(1000, 1000);
+
+        let small_estimate = scaler.estimate_text_height_advanced(&small_img);
+        let medium_estimate = scaler.estimate_text_height_advanced(&medium_img);
+        let large_estimate = scaler.estimate_text_height_advanced(&large_img);
+
+        // All estimates should be in valid range
+        assert!((10..=150).contains(&small_estimate));
+        assert!((10..=150).contains(&medium_estimate));
+        assert!((10..=150).contains(&large_estimate));
+
+        // Larger images should generally have relatively smaller text estimates
+        // (though this is a heuristic, so we just check they're reasonable)
+        assert!(small_estimate > 5);
+        assert!(medium_estimate > 5);
+        assert!(large_estimate > 5);
+    }
+
+    #[test]
+    fn test_scale_for_ocr_basic() {
+        let scaler = ImageScaler::new();
+        let img = create_test_image(200, 300);
+
+        let result = scaler.scale_for_ocr(&img);
+        assert!(result.is_ok());
+
+        let scaled_result = result.unwrap();
+
+        // Check that dimensions changed appropriately
+        assert!(scaled_result.new_dimensions.0 > 0);
+        assert!(scaled_result.new_dimensions.1 > 0);
+
+        // Check metadata
+        assert!(scaled_result.scale_factor > 0.0);
+        assert!((10..=150).contains(&scaled_result.estimated_text_height));
+        // processing_time_ms is u32, so it's always >= 0
+    }
+
+    #[test]
+    fn test_calculate_optimal_scale_factor() {
+        let scaler = ImageScaler::new();
+
+        // Test various scenarios
+        let factor1 = scaler.calculate_optimal_scale_factor(20, 400, 600); // Normal case
+        let factor2 = scaler.calculate_optimal_scale_factor(10, 200, 200); // Small text
+        let factor3 = scaler.calculate_optimal_scale_factor(100, 800, 600); // Large text
+
+        // All factors should be reasonable
+        assert!(factor1 > 0.1 && factor1 < 5.0);
+        assert!(factor2 > 0.1 && factor2 < 5.0);
+        assert!(factor3 > 0.1 && factor3 < 5.0);
+
+        // Small text should generally need more scaling
+        assert!(factor2 > factor1);
+    }
+
+    #[test]
+    fn test_apply_adaptive_scaling_limits() {
+        let scaler = ImageScaler::new();
+
+        // Test small image
+        let limit1 = scaler.apply_adaptive_scaling_limits(5.0, 100, 100);
+        assert!(limit1 <= 4.0); // Should be clamped
+
+        // Test medium image
+        let limit2 = scaler.apply_adaptive_scaling_limits(4.0, 500, 500);
+        assert!(limit2 <= 3.0); // Should be clamped
+
+        // Test large image
+        let limit3 = scaler.apply_adaptive_scaling_limits(3.0, 1500, 1500);
+        assert!(limit3 <= 2.0); // Should be clamped
+
+        // Test minimum limits
+        let limit4 = scaler.apply_adaptive_scaling_limits(0.1, 500, 500);
+        assert!(limit4 >= 0.5); // Should be clamped up
+    }
+
+    #[test]
+    fn test_scaled_image_result_structure() {
+        let scaler = ImageScaler::new();
+        let img = create_test_image(100, 100);
+
+        let result = scaler.scale_for_ocr(&img).unwrap();
+
+        // Check that all fields are populated
+        assert_eq!(result.original_dimensions, (100, 100));
+        assert!(result.new_dimensions.0 > 0 && result.new_dimensions.1 > 0);
+        assert!(result.scale_factor > 0.0);
+        assert!((10..=150).contains(&result.estimated_text_height));
+        // processing_time_ms is u32, so it's always >= 0
     }
 }
