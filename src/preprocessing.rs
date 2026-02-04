@@ -425,6 +425,17 @@ pub struct ThresholdedImageResult {
     pub processing_time_ms: u32,
 }
 
+/// Result of image noise reduction operation.
+#[derive(Debug, Clone)]
+pub struct DenoisedImageResult {
+    /// The denoised image
+    pub image: DynamicImage,
+    /// Sigma value used for Gaussian blur
+    pub sigma: f32,
+    /// Processing time in milliseconds
+    pub processing_time_ms: u32,
+}
+
 /// Applies Otsu's thresholding algorithm to convert an image to binary (black/white).
 ///
 /// Otsu's method automatically determines the optimal threshold by maximizing the
@@ -492,6 +503,67 @@ pub fn apply_otsu_threshold(image: &DynamicImage) -> Result<ThresholdedImageResu
     Ok(ThresholdedImageResult {
         image: DynamicImage::ImageLuma8(binary_img),
         threshold: optimal_threshold,
+        processing_time_ms: processing_time.as_millis() as u32,
+    })
+}
+
+/// Applies Gaussian blur to reduce image noise while preserving text edges.
+///
+/// This function uses Gaussian blur with a configurable sigma value to reduce
+/// salt-and-pepper noise and other high-frequency noise that can interfere with
+/// OCR accuracy. The blur is applied before thresholding to improve the quality
+/// of the binary image.
+///
+/// # Arguments
+///
+/// * `image` - The input image to denoise
+/// * `sigma` - Standard deviation for Gaussian kernel (recommended: 1.0-1.5)
+///
+/// # Returns
+///
+/// Returns a `Result` containing the denoised image and metadata, or a `PreprocessingError`
+///
+/// # Examples
+///
+/// ```no_run
+/// use just_ingredients::preprocessing::reduce_noise;
+/// use image::open;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let img = open("noisy_recipe.jpg")?;
+/// let denoised = reduce_noise(&img, 1.2)?;
+/// // denoised.image has reduced noise while preserving text edges
+/// # Ok(())
+/// # }
+/// ```
+pub fn reduce_noise(image: &DynamicImage, sigma: f32) -> Result<DenoisedImageResult, PreprocessingError> {
+    let start_time = std::time::Instant::now();
+
+    // Validate sigma parameter
+    if sigma <= 0.0 || sigma > 5.0 {
+        return Err(PreprocessingError::ProcessingFailed {
+            message: format!("Invalid sigma value: {}. Must be between 0.1 and 5.0", sigma)
+        });
+    }
+
+    // Apply Gaussian blur using image crate's built-in filter
+    // The image crate's blur function uses a Gaussian kernel
+    let blurred = image.blur(sigma);
+
+    let processing_time = start_time.elapsed();
+
+    tracing::debug!(
+        target: "ocr_preprocessing",
+        "Noise reduction completed in {:.2}ms: sigma={:.2}, dimensions={}x{}",
+        processing_time.as_millis(),
+        sigma,
+        blurred.width(),
+        blurred.height()
+    );
+
+    Ok(DenoisedImageResult {
+        image: blurred,
+        sigma,
         processing_time_ms: processing_time.as_millis() as u32,
     })
 }
@@ -819,5 +891,63 @@ mod tests {
         assert!(result.scale_factor > 0.0);
         assert!((10..=150).contains(&result.estimated_text_height));
         // processing_time_ms is u32, so it's always >= 0
+    }
+
+    #[test]
+    fn test_reduce_noise_basic() {
+        let img = create_test_image(50, 50);
+        let result = reduce_noise(&img, 1.2).unwrap();
+
+        // Check that result has correct structure
+        assert_eq!(result.sigma, 1.2);
+        assert!(result.processing_time_ms >= 0);
+        assert_eq!(result.image.width(), 50);
+        assert_eq!(result.image.height(), 50);
+    }
+
+    #[test]
+    fn test_reduce_noise_invalid_sigma() {
+        let img = create_test_image(50, 50);
+
+        // Test invalid sigma values
+        assert!(reduce_noise(&img, 0.0).is_err());
+        assert!(reduce_noise(&img, -1.0).is_err());
+        assert!(reduce_noise(&img, 6.0).is_err());
+    }
+
+    #[test]
+    fn test_reduce_noise_different_sigma_values() {
+        let img = create_test_image(30, 30);
+
+        // Test different valid sigma values
+        let result1 = reduce_noise(&img, 1.0).unwrap();
+        assert_eq!(result1.sigma, 1.0);
+
+        let result2 = reduce_noise(&img, 1.5).unwrap();
+        assert_eq!(result2.sigma, 1.5);
+
+        let result3 = reduce_noise(&img, 2.0).unwrap();
+        assert_eq!(result3.sigma, 2.0);
+    }
+
+    #[test]
+    fn test_reduce_noise_preserves_image_format() {
+        let rgb_img = image::DynamicImage::ImageRgb8(image::RgbImage::new(20, 20));
+        let result = reduce_noise(&rgb_img, 1.0).unwrap();
+
+        // Should preserve the image format
+        match &result.image {
+            DynamicImage::ImageRgb8(_) => {} // Expected
+            _ => panic!("Expected RGB image format to be preserved"),
+        }
+    }
+
+    #[test]
+    fn test_reduce_noise_performance() {
+        let img = create_test_image(100, 100);
+        let result = reduce_noise(&img, 1.2).unwrap();
+
+        // Should complete in reasonable time (< 50ms as per requirements)
+        assert!(result.processing_time_ms < 50);
     }
 }

@@ -888,8 +888,13 @@ async fn apply_image_preprocessing(
         crate::ocr_errors::OcrError::Extraction(format!("Image preprocessing failed: {:?}", e))
     })?;
 
+    // Apply noise reduction with Gaussian blur (sigma = 1.2 for optimal balance)
+    let denoised_result = crate::preprocessing::reduce_noise(&scaled_result.image, 1.2).map_err(|e| {
+        crate::ocr_errors::OcrError::Extraction(format!("Noise reduction failed: {:?}", e))
+    })?;
+
     // Apply Otsu thresholding for binary conversion
-    let thresholded_result = crate::preprocessing::apply_otsu_threshold(&scaled_result.image).map_err(|e| {
+    let thresholded_result = crate::preprocessing::apply_otsu_threshold(&denoised_result.image).map_err(|e| {
         crate::ocr_errors::OcrError::Extraction(format!("Image thresholding failed: {:?}", e))
     })?;
 
@@ -911,13 +916,14 @@ async fn apply_image_preprocessing(
 
     info!(
         target: "ocr_preprocessing",
-        "Image preprocessing completed in {:.2}ms: {}x{} -> {}x{} (scale: {:.2}, threshold: {})",
+        "Image preprocessing completed in {:.2}ms: {}x{} -> {}x{} (scale: {:.2}, sigma: {:.2}, threshold: {})",
         preprocessing_duration.as_millis(),
         scaled_result.original_dimensions.0,
         scaled_result.original_dimensions.1,
         scaled_result.new_dimensions.0,
         scaled_result.new_dimensions.1,
         scaled_result.scale_factor,
+        denoised_result.sigma,
         thresholded_result.threshold
     );
 
