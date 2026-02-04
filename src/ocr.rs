@@ -851,6 +851,179 @@ pub async fn extract_text_from_image(
 /// - `ExtractionError` - OCR processing failed
 /// - `TimeoutError` - Operation exceeded configured timeout
 ///
+/// Result of adaptive image preprocessing.
+#[derive(Debug)]
+pub struct AdaptivePreprocessingResult {
+    /// The final preprocessed image
+    pub image: image::DynamicImage,
+    /// Description of the preprocessing strategy applied
+    pub preprocessing_strategy: String,
+}
+
+/// Applies adaptive preprocessing based on assessed image quality.
+///
+/// This function selects an appropriate preprocessing pipeline based on image quality:
+/// - High quality: Minimal preprocessing (scaling only)
+/// - Medium quality: Standard preprocessing (scaling + light noise reduction)
+/// - Low quality: Full preprocessing pipeline (all steps)
+///
+/// # Arguments
+///
+/// * `image` - The input image to preprocess
+/// * `quality` - The assessed image quality
+///
+/// # Returns
+///
+/// Returns the preprocessed image and strategy description
+pub fn apply_adaptive_preprocessing(
+    image: &image::DynamicImage,
+    quality: &crate::preprocessing::types::ImageQualityResult,
+) -> Result<AdaptivePreprocessingResult, crate::ocr_errors::OcrError> {
+    match quality.quality {
+        crate::preprocessing::types::ImageQuality::High => {
+            // High quality images: minimal preprocessing for speed
+            let scaler = crate::preprocessing::scaling::ImageScaler::new();
+            let scaled_result = scaler.scale_for_ocr(image).map_err(|e| {
+                crate::ocr_errors::OcrError::Extraction(format!(
+                    "High quality scaling failed: {:?}",
+                    e
+                ))
+            })?;
+
+            Ok(AdaptivePreprocessingResult {
+                image: scaled_result.image,
+                preprocessing_strategy: "high_quality_minimal".to_string(),
+            })
+        }
+
+        crate::preprocessing::types::ImageQuality::Medium => {
+            // Medium quality images: standard preprocessing
+            let scaler = crate::preprocessing::scaling::ImageScaler::new();
+            let scaled_result = scaler.scale_for_ocr(image).map_err(|e| {
+                crate::ocr_errors::OcrError::Extraction(format!(
+                    "Medium quality scaling failed: {:?}",
+                    e
+                ))
+            })?;
+
+            // Light noise reduction (lower sigma for medium quality)
+            let denoised_result =
+                crate::preprocessing::filtering::reduce_noise(&scaled_result.image, 0.8).map_err(
+                    |e| {
+                        crate::ocr_errors::OcrError::Extraction(format!(
+                            "Medium quality noise reduction failed: {:?}",
+                            e
+                        ))
+                    },
+                )?;
+
+            // Basic thresholding
+            let thresholded_result =
+                crate::preprocessing::thresholding::apply_otsu_threshold(&denoised_result.image)
+                    .map_err(|e| {
+                        crate::ocr_errors::OcrError::Extraction(format!(
+                            "Medium quality thresholding failed: {:?}",
+                            e
+                        ))
+                    })?;
+
+            Ok(AdaptivePreprocessingResult {
+                image: thresholded_result.image,
+                preprocessing_strategy: "medium_quality_standard".to_string(),
+            })
+        }
+
+        crate::preprocessing::types::ImageQuality::Low => {
+            // Low quality images: full preprocessing pipeline
+            let scaler = crate::preprocessing::scaling::ImageScaler::new();
+            let scaled_result = scaler.scale_for_ocr(image).map_err(|e| {
+                crate::ocr_errors::OcrError::Extraction(format!(
+                    "Low quality scaling failed: {:?}",
+                    e
+                ))
+            })?;
+
+            // Apply CLAHE for contrast enhancement if contrast is low
+            let preprocessing_image = if quality.contrast_ratio < 0.3 {
+                let clahe_result =
+                    crate::preprocessing::filtering::apply_clahe(&scaled_result.image, 3.0, (8, 8))
+                        .map_err(|e| {
+                            crate::ocr_errors::OcrError::Extraction(format!(
+                                "Low quality CLAHE failed: {:?}",
+                                e
+                            ))
+                        })?;
+                clahe_result.image
+            } else {
+                // No CLAHE needed, use scaled image directly
+                scaled_result.image
+            };
+
+            // Deskewing for low quality images (corrects text rotation)
+            let deskew_result = crate::preprocessing::deskewing::deskew_image(&preprocessing_image)
+                .map_err(|e| {
+                    crate::ocr_errors::OcrError::Extraction(format!(
+                        "Low quality deskewing failed: {:?}",
+                        e
+                    ))
+                })?;
+
+            // Strong noise reduction
+            let denoised_result =
+                crate::preprocessing::filtering::reduce_noise(&deskew_result.image, 1.2).map_err(
+                    |e| {
+                        crate::ocr_errors::OcrError::Extraction(format!(
+                            "Low quality noise reduction failed: {:?}",
+                            e
+                        ))
+                    },
+                )?;
+
+            // Thresholding
+            let thresholded_result =
+                crate::preprocessing::thresholding::apply_otsu_threshold(&denoised_result.image)
+                    .map_err(|e| {
+                        crate::ocr_errors::OcrError::Extraction(format!(
+                            "Low quality thresholding failed: {:?}",
+                            e
+                        ))
+                    })?;
+
+            // Morphological operations for cleanup
+            let opened_result = crate::preprocessing::filtering::apply_morphological_operation(
+                &thresholded_result.image,
+                crate::preprocessing::types::MorphologicalOperation::Opening,
+            )
+            .map_err(|e| {
+                crate::ocr_errors::OcrError::Extraction(format!(
+                    "Low quality morphological opening failed: {:?}",
+                    e
+                ))
+            })?;
+
+            let final_result = crate::preprocessing::filtering::apply_morphological_operation(
+                &opened_result.image,
+                crate::preprocessing::types::MorphologicalOperation::Closing,
+            )
+            .map_err(|e| {
+                crate::ocr_errors::OcrError::Extraction(format!(
+                    "Low quality morphological closing failed: {:?}",
+                    e
+                ))
+            })?;
+
+            Ok(AdaptivePreprocessingResult {
+                image: final_result.image,
+                preprocessing_strategy: if quality.contrast_ratio < 0.3 {
+                    "low_quality_full_with_clahe_deskew".to_string()
+                } else {
+                    "low_quality_full_with_deskew".to_string()
+                },
+            })
+        }
+    }
+}
+
 /// Apply image preprocessing for OCR optimization
 ///
 /// This function loads an image, applies OCR-optimized preprocessing (scaling),
@@ -879,23 +1052,21 @@ async fn apply_image_preprocessing(
 
     // Load the original image
     let img = image::open(image_path).map_err(|e| {
-        crate::ocr_errors::OcrError::ImageLoad(format!("Failed to load image for preprocessing: {}", e))
+        crate::ocr_errors::OcrError::ImageLoad(format!(
+            "Failed to load image for preprocessing: {}",
+            e
+        ))
     })?;
 
-    // Apply OCR-optimized scaling
-    let scaler = crate::preprocessing::ImageScaler::new();
-    let scaled_result = scaler.scale_for_ocr(&img).map_err(|e| {
-        crate::ocr_errors::OcrError::Extraction(format!("Image preprocessing failed: {:?}", e))
-    })?;
+    // Assess image quality to determine preprocessing strategy
+    let quality_result =
+        crate::preprocessing::quality::assess_image_quality(&img).map_err(|e| {
+            crate::ocr_errors::OcrError::Extraction(format!("Quality assessment failed: {:?}", e))
+        })?;
 
-    // Apply noise reduction with Gaussian blur (sigma = 1.2 for optimal balance)
-    let denoised_result = crate::preprocessing::reduce_noise(&scaled_result.image, 1.2).map_err(|e| {
-        crate::ocr_errors::OcrError::Extraction(format!("Noise reduction failed: {:?}", e))
-    })?;
-
-    // Apply Otsu thresholding for binary conversion
-    let thresholded_result = crate::preprocessing::apply_otsu_threshold(&denoised_result.image).map_err(|e| {
-        crate::ocr_errors::OcrError::Extraction(format!("Image thresholding failed: {:?}", e))
+    // Apply adaptive preprocessing based on image quality
+    let processed_image = apply_adaptive_preprocessing(&img, &quality_result).map_err(|e| {
+        crate::ocr_errors::OcrError::Extraction(format!("Adaptive preprocessing failed: {:?}", e))
     })?;
 
     // Create a temporary file for the preprocessed image
@@ -904,27 +1075,28 @@ async fn apply_image_preprocessing(
     })?;
 
     // Save the preprocessed image to the temporary file
-    thresholded_result.image.save_with_format(
-        temp_file.path(),
-        image::ImageFormat::Png
-    ).map_err(|e| {
-        crate::ocr_errors::OcrError::Extraction(format!("Failed to save preprocessed image: {}", e))
-    })?;
+    processed_image
+        .image
+        .save_with_format(temp_file.path(), image::ImageFormat::Png)
+        .map_err(|e| {
+            crate::ocr_errors::OcrError::Extraction(format!(
+                "Failed to save preprocessed image: {}",
+                e
+            ))
+        })?;
 
     let temp_path = temp_file.path().to_string_lossy().to_string();
     let preprocessing_duration = preprocessing_start.elapsed();
 
     info!(
         target: "ocr_preprocessing",
-        "Image preprocessing completed in {:.2}ms: {}x{} -> {}x{} (scale: {:.2}, sigma: {:.2}, threshold: {})",
+        "Adaptive preprocessing completed in {:.2}ms: quality={:?} (contrast: {:.3}, brightness: {:.3}, sharpness: {:.3}), strategy: {}",
         preprocessing_duration.as_millis(),
-        scaled_result.original_dimensions.0,
-        scaled_result.original_dimensions.1,
-        scaled_result.new_dimensions.0,
-        scaled_result.new_dimensions.1,
-        scaled_result.scale_factor,
-        denoised_result.sigma,
-        thresholded_result.threshold
+        quality_result.quality,
+        quality_result.contrast_ratio,
+        quality_result.brightness,
+        quality_result.sharpness,
+        processed_image.preprocessing_strategy
     );
 
     Ok((temp_file, temp_path, preprocessing_duration))
@@ -943,7 +1115,8 @@ async fn perform_ocr_extraction(
 
     let result = tokio::time::timeout(timeout_duration, async {
         // Apply image preprocessing for OCR optimization
-        let (_temp_file, processed_image_path, preprocessing_duration) = apply_image_preprocessing(image_path, config).await?;
+        let (_temp_file, processed_image_path, preprocessing_duration) =
+            apply_image_preprocessing(image_path, config).await?;
 
         info!(
             "Using preprocessed image for OCR: preprocessing took {:.2}ms",
@@ -962,7 +1135,9 @@ async fn perform_ocr_extraction(
                 .expect("Failed to acquire Tesseract instance lock");
             // Set the preprocessed image for OCR processing
             tess.set_image(&processed_image_path).map_err(|e| {
-                crate::ocr_errors::OcrError::ImageLoad(format!("Failed to load preprocessed image for OCR: {e}"))
+                crate::ocr_errors::OcrError::ImageLoad(format!(
+                    "Failed to load preprocessed image for OCR: {e}"
+                ))
             })?;
 
             // Extract text from the image
