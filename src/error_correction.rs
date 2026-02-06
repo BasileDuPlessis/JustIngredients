@@ -149,23 +149,6 @@ impl OcrErrorCorrector {
     /// Initialize word-level corrections for common OCR mistakes
     fn initialize_word_corrections(&mut self) {
         let corrections = [
-            // Common word corrections
-            ("teaspoon", "teaspoon"), // Already correct, but ensure consistency
-            ("tablespoon", "tablespoon"),
-            ("cup", "cup"),
-            ("cups", "cups"),
-            ("pound", "pound"),
-            ("pounds", "pounds"),
-            ("ounce", "ounce"),
-            ("ounces", "ounces"),
-            ("gram", "gram"),
-            ("grams", "grams"),
-            ("kilogram", "kilogram"),
-            ("kilograms", "kilograms"),
-            ("liter", "liter"),
-            ("liters", "liters"),
-            ("milliliter", "milliliter"),
-            ("milliliters", "milliliters"),
             // Common OCR misreads
             ("teaspoo", "teaspoon"),
             ("tablespoo", "tablespoon"),
@@ -175,37 +158,12 @@ impl OcrErrorCorrector {
             ("tsp", "teaspoon"),
             ("tbsp", "tablespoon"),
             ("tbs", "tablespoon"),
-            ("cup", "cup"),
-            ("cups", "cups"),
             ("Ib", "lb"), // Capital i mistaken for lowercase L
             ("Ibs", "lbs"),
-            ("pound", "pound"),
-            ("pounds", "pounds"),
-            ("ounce", "ounce"),
-            ("ounces", "ounces"),
-            ("gram", "gram"),
-            ("grams", "grams"),
-            ("kilogram", "kilogram"),
-            ("kilograms", "kilograms"),
-            ("liter", "liter"),
-            ("liters", "liters"),
             ("litre", "liter"),
             ("litres", "liters"),
-            ("milliliter", "milliliter"),
-            ("milliliters", "milliliters"),
             ("millilitre", "milliliter"),
             ("millilitres", "milliliters"),
-            // Cooking terms
-            ("chopped", "chopped"),
-            ("diced", "diced"),
-            ("minced", "minced"),
-            ("sliced", "sliced"),
-            ("grated", "grated"),
-            ("ground", "ground"),
-            ("fresh", "fresh"),
-            ("large", "large"),
-            ("medium", "medium"),
-            ("small", "small"),
         ];
 
         for (from, to) in corrections {
