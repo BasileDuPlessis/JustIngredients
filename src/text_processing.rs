@@ -406,7 +406,7 @@ fn build_measurement_regex_pattern() -> String {
     // Build the complete regex pattern with named capture groups
     // Unified pattern: measurement is optional, ingredient extracted from text after match
     format!(
-        r"(?i)(?P<quantity>\d+\s+\d+/\d+|\d+/\d+|\d*\.?\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})(?:\s|$))?\s*",
+        r"(?i)(?P<quantity>\d+\s+\d+/\d+|\d+[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟]|[lO\d]+/\d+|\d*\.?\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})(?:\s|$))?\s*",
         units_pattern
     )
 }
@@ -842,7 +842,7 @@ impl MeasurementDetector {
                         quantity, measurement, ingredient
                     );
                         (
-                            quantity.to_string(),
+                            self.post_process_quantity(quantity),
                             Some(measurement.to_lowercase()),
                             match_end
                                 + (remaining_text.len() - remaining_text.trim_start().len())
@@ -855,7 +855,7 @@ impl MeasurementDetector {
                             quantity, ingredient
                         );
                         (
-                            quantity.to_string(),
+                            self.post_process_quantity(quantity),
                             None,
                             match_end
                                 + (remaining_text.len() - remaining_text.trim_start().len())
@@ -1454,6 +1454,70 @@ impl MeasurementDetector {
         name.trim().to_string()
     }
 
+    /// Post-process a quantity string to correct common OCR errors in fractions
+    ///
+    /// This function applies context-aware corrections to fraction quantities,
+    /// fixing common OCR mistakes that occur with fraction characters.
+    ///
+    /// # Arguments
+    ///
+    /// * `quantity` - The raw quantity string from regex matching
+    ///
+    /// # Returns
+    ///
+    /// Returns the corrected quantity string
+    fn post_process_quantity(&self, quantity: &str) -> String {
+        let mut corrected = quantity.to_string();
+
+        // Common OCR corrections for fractions
+        let corrections = [
+            // Letter 'l' mistaken for '1' in fractions
+            ("l/2", "1/2"),
+            ("l/3", "1/3"),
+            ("l/4", "1/4"),
+            ("l/5", "1/5"),
+            ("l/6", "1/6"),
+            ("l/7", "1/7"),
+            ("l/8", "1/8"),
+            ("l/9", "1/9"),
+            // Letter 'O' mistaken for '0' in fractions
+            ("O/2", "0/2"),
+            ("O/3", "0/3"),
+            ("O/4", "0/4"),
+            // Similar corrections for other common OCR errors
+            ("1/", "1/2"), // Incomplete fraction, assume /2
+            ("/2", "1/2"), // Missing numerator
+            ("/3", "1/3"),
+            ("/4", "1/4"),
+            // Unicode fraction corrections if needed
+            // (Add more corrections based on observed OCR errors)
+        ];
+
+        for (from, to) in &corrections {
+            if corrected == *from {
+                debug!("Corrected quantity '{}' -> '{}'", quantity, to);
+                corrected = to.to_string();
+                break;
+            }
+        }
+
+        // Additional validation: ensure fractions are in valid format
+        if corrected.contains('/') {
+            let parts: Vec<&str> = corrected.split('/').collect();
+            if parts.len() == 2 {
+                // Validate numerator and denominator are numeric
+                if let (Ok(_), Ok(_)) = (parts[0].parse::<u32>(), parts[1].parse::<u32>()) {
+                    // Valid fraction format
+                } else {
+                    warn!("Invalid fraction format detected: '{}'", corrected);
+                    // Could attempt further correction here
+                }
+            }
+        }
+
+        corrected
+    }
+
     /// Get all unique measurement units found in the text
     ///
     /// # Arguments
@@ -1487,12 +1551,13 @@ impl MeasurementDetector {
         let mut units = HashSet::new();
         for capture in self.pattern.captures_iter(text) {
             let quantity = capture.name("quantity").map(|m| m.as_str()).unwrap_or("");
+            let corrected_quantity = self.post_process_quantity(quantity);
             let measurement = capture.name("measurement").map(|m| m.as_str());
 
             let unit = if let Some(measurement) = measurement {
-                format!("{} {}", quantity, measurement)
+                format!("{} {}", corrected_quantity, measurement)
             } else {
-                quantity.to_string()
+                corrected_quantity
             };
             units.insert(unit.to_lowercase());
         }

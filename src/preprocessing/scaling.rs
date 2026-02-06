@@ -532,8 +532,8 @@ mod tests {
         assert!(result.new_dimensions.0 > 0 && result.new_dimensions.1 > 0);
         assert!(result.scale_factor > 0.0);
         assert!((10..=150).contains(&result.estimated_text_height));
-        assert!(result.processing_time_ms >= 0);
-        // Allow small differences due to rounding in resize operation
+        assert!(result.processing_time_ms < 500); // Should be reasonably fast
+                                                  // Allow small differences due to rounding in resize operation
         assert!((result.image.width() as i32 - result.new_dimensions.0 as i32).abs() <= 1);
         assert!((result.image.height() as i32 - result.new_dimensions.1 as i32).abs() <= 1);
     }

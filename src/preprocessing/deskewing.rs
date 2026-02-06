@@ -459,7 +459,7 @@ mod tests {
         // Horizontal lines should have near-zero skew
         assert!(result.skew_angle_degrees.abs() < 1.0);
         assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 200); // Should be reasonably fast
         assert_eq!(result.image.width(), 100);
         assert_eq!(result.image.height(), 100);
     }
@@ -472,7 +472,7 @@ mod tests {
         // Vertical lines should have near-zero skew (they're already "horizontal" in projection)
         assert!(result.skew_angle_degrees.abs() < 1.0);
         assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 200); // Should be reasonably fast
     }
 
     #[test]
@@ -483,7 +483,7 @@ mod tests {
         // Uniform image should have zero skew (no rotation applied)
         assert_eq!(result.skew_angle_degrees, 0.0);
         assert_eq!(result.confidence, 0.0);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 200); // Should be reasonably fast
     }
 
     #[test]

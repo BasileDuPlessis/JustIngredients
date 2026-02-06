@@ -205,7 +205,7 @@ mod tests {
         }
 
         // Check processing time
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 1000); // Should be fast
     }
 
     #[test]

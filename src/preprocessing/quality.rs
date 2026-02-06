@@ -256,7 +256,7 @@ mod tests {
         assert_eq!(result.contrast_ratio, 0.0);
         assert_eq!(result.brightness, 0.0);
         assert!(result.sharpness >= 0.0 && result.sharpness <= 1.0);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 100); // Should be fast
     }
 
     #[test]
@@ -268,7 +268,7 @@ mod tests {
         assert_eq!(result.contrast_ratio, 0.0);
         assert_eq!(result.brightness, 1.0);
         assert!(result.sharpness >= 0.0 && result.sharpness <= 1.0);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 100); // Should be fast
     }
 
     #[test]
@@ -281,7 +281,7 @@ mod tests {
         // 128/255 ≈ 0.50196, not exactly 0.5
         assert!((result.brightness - 0.50196).abs() < 0.0001);
         assert!(result.sharpness >= 0.0 && result.sharpness <= 1.0);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 100); // Should be fast
     }
 
     #[test]
@@ -293,7 +293,7 @@ mod tests {
         assert!(result.contrast_ratio > 0.5);
         assert!(result.brightness > 0.4 && result.brightness < 0.6);
         assert!(result.sharpness >= 0.0 && result.sharpness <= 1.0);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 100); // Should be fast
     }
 
     #[test]

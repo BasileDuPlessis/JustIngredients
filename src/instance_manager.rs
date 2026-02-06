@@ -100,7 +100,8 @@ impl OcrInstanceManager {
     /// - First call for a language: ~100-500ms (Tesseract initialization)
     /// - Subsequent calls: ~1ms (instance lookup and Arc clone)
     pub fn get_instance(&self, config: &OcrConfig) -> anyhow::Result<Arc<Mutex<LepTess>>> {
-        let key = config.languages.clone();
+        // Create a unique key that includes both languages and model type
+        let key = format!("{}:{}", config.languages, config.model_type.tessdata_dir());
 
         // Try to get existing instance
         {
@@ -114,9 +115,44 @@ impl OcrInstanceManager {
         }
 
         // Create new instance if none exists
-        info!("Creating new OCR instance for languages: {key}");
-        let tess = LepTess::new(None, &key)
+        info!(
+            "Creating new OCR instance for languages: {} with model: {}",
+            config.languages,
+            config.model_type.tessdata_dir()
+        );
+
+        // Determine tessdata path based on model type
+        let tessdata_path = Self::get_tessdata_path(config.model_type);
+
+        let mut tess = LepTess::new(tessdata_path.as_deref(), &config.languages)
             .map_err(|e| anyhow::anyhow!("Failed to initialize Tesseract OCR instance: {}", e))?;
+
+        // Set default PSM mode (can be overridden later)
+        tess.set_variable(
+            leptess::Variable::TesseditPagesegMode,
+            config.psm_mode.as_str(),
+        )
+        .map_err(|e| anyhow::anyhow!("Failed to set PSM mode: {}", e))?;
+
+        // Set custom user words file if configured
+        if let Some(user_words_path) = &config.user_words_file {
+            tess.set_variable(leptess::Variable::UserWordsFile, user_words_path)
+                .map_err(|e| anyhow::anyhow!("Failed to set user words file: {}", e))?;
+            info!(
+                "Configured Tesseract with custom user words file: {}",
+                user_words_path
+            );
+        }
+
+        // Set character whitelist if configured
+        if let Some(whitelist) = &config.character_whitelist {
+            tess.set_variable(leptess::Variable::TesseditCharWhitelist, whitelist)
+                .map_err(|e| anyhow::anyhow!("Failed to set character whitelist: {}", e))?;
+            info!(
+                "Configured Tesseract with character whitelist: {} characters",
+                whitelist.len()
+            );
+        }
 
         let instance = Arc::new(Mutex::new(tess));
 
@@ -132,14 +168,58 @@ impl OcrInstanceManager {
         Ok(instance)
     }
 
+    /// Get the tessdata path for the specified model type
+    ///
+    /// Attempts to find the appropriate tessdata directory based on the model type.
+    /// Falls back to default path if specific model directory is not found.
+    fn get_tessdata_path(model_type: crate::ocr_config::ModelType) -> Option<String> {
+        use crate::ocr_config::ModelType;
+
+        // Common tessdata installation paths to try
+        let possible_paths = match model_type {
+            ModelType::Fast => vec![
+                "/usr/share/tesseract-ocr/5/tessdata_fast",
+                "/usr/share/tesseract-ocr/4.00/tessdata_fast",
+                "/usr/share/tessdata_fast",
+                "/usr/local/share/tessdata_fast",
+            ],
+            ModelType::Best => vec![
+                "/usr/share/tesseract-ocr/5/tessdata_best",
+                "/usr/share/tesseract-ocr/4.00/tessdata_best",
+                "/usr/share/tessdata_best",
+                "/usr/local/share/tessdata_best",
+            ],
+        };
+
+        // Try each path and return the first one that exists
+        for path in possible_paths {
+            if std::path::Path::new(path).exists() {
+                info!("Using tessdata path: {}", path);
+                return Some(path.to_string());
+            }
+        }
+
+        // Fall back to default (None) if no specific path found
+        info!(
+            "No specific tessdata path found for model type {:?}, using default",
+            model_type
+        );
+        None
+    }
+
     /// Remove an instance (useful for cleanup or when configuration changes)
-    pub fn _remove_instance(&self, languages: &str) {
+    pub fn _remove_instance(&self, languages: &str, model_type: crate::ocr_config::ModelType) {
+        let key = format!("{}:{}", languages, model_type.tessdata_dir());
         let mut instances = self
             .instances
             .lock()
             .expect("Failed to acquire instances lock");
-        if instances.remove(languages).is_some() {
-            info!("Removed OCR instance for languages: {languages}");
+        if instances.remove(&key).is_some() {
+            info!(
+                "Removed OCR instance for languages: {} with model: {}",
+                languages,
+                model_type.tessdata_dir()
+            );
         }
     }
 

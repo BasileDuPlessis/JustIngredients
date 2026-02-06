@@ -434,7 +434,7 @@ mod tests {
 
         // Check that result has expected properties
         assert!(result.sigma == 1.0);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 100); // Should be fast
         assert!(result.image.width() == 100);
         assert!(result.image.height() == 100);
     }
@@ -461,7 +461,7 @@ mod tests {
         for &sigma in &sigmas {
             let result = reduce_noise(&img, sigma).unwrap();
             assert_eq!(result.sigma, sigma);
-            assert!(result.processing_time_ms >= 0);
+            assert!(result.processing_time_ms < 100); // Should be fast
         }
     }
 
@@ -493,7 +493,7 @@ mod tests {
 
         assert_eq!(result.operation, MorphologicalOperation::Erosion);
         assert_eq!(result.kernel_size, 3);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 50); // Should be fast
     }
 
     #[test]
@@ -503,7 +503,7 @@ mod tests {
 
         assert_eq!(result.operation, MorphologicalOperation::Dilation);
         assert_eq!(result.kernel_size, 3);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 50); // Should be fast
     }
 
     #[test]
@@ -513,7 +513,7 @@ mod tests {
 
         assert_eq!(result.operation, MorphologicalOperation::Opening);
         assert_eq!(result.kernel_size, 3);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 50); // Should be fast
     }
 
     #[test]
@@ -523,7 +523,7 @@ mod tests {
 
         assert_eq!(result.operation, MorphologicalOperation::Closing);
         assert_eq!(result.kernel_size, 3);
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 50); // Should be fast
     }
 
     #[test]
@@ -610,7 +610,7 @@ mod tests {
 
         assert_eq!(result.clip_limit, 3.0);
         assert_eq!(result.tile_size, (8, 8));
-        assert!(result.processing_time_ms >= 0);
+        assert!(result.processing_time_ms < 200); // Should be reasonably fast
         assert_eq!(result.image.width(), 100);
         assert_eq!(result.image.height(), 100);
     }
@@ -719,9 +719,7 @@ mod tests {
         assert_eq!(enhanced.height(), 4);
 
         // Check that all pixels are valid (0-255 range)
-        for pixel in enhanced.pixels() {
-            assert!(pixel[0] <= 255);
-        }
+        // Note: u8 pixels are always in 0-255 range by definition
 
         // Check that the operation completed (tile is not identical to input)
         let mut different = false;

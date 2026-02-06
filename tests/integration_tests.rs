@@ -1089,6 +1089,8 @@ struct OcrTestResult {
     duration_ms: u64,
     /// Whether preprocessing was used
     preprocessing_used: bool,
+    /// OCR confidence score
+    confidence_score: f32,
 }
 
 /// Create a synthetic test image with a simple pattern that OCR can recognize
@@ -1167,7 +1169,7 @@ async fn run_ocr_test(
     let start_time = std::time::Instant::now();
 
     // Use the standard OCR pipeline with preprocessing (always enabled)
-    let extracted_text =
+    let (extracted_text, confidence) =
         extract_text_from_image(image_path, &config, &instance_manager, &circuit_breaker).await?;
 
     let duration_ms = start_time.elapsed().as_millis() as u64;
@@ -1181,6 +1183,7 @@ async fn run_ocr_test(
         accuracy,
         duration_ms,
         preprocessing_used: true, // Always true since preprocessing is integrated
+        confidence_score: confidence.overall_score,
     })
 }
 
@@ -1349,7 +1352,7 @@ async fn test_preprocessing_image_format_compatibility() {
 
     // Test OCR with preprocessing
     match extract_text_from_image(&image_path, &config, &instance_manager, &circuit_breaker).await {
-        Ok(extracted_text) => {
+        Ok((extracted_text, _confidence)) => {
             println!(
                 "    ✅ PNG format: OCR completed, extracted {} characters",
                 extracted_text.len()
@@ -1389,7 +1392,7 @@ async fn test_end_to_end_ocr_pipeline_integration() {
     let duration = start_time.elapsed();
 
     match result {
-        Ok(extracted_text) => {
+        Ok((extracted_text, _confidence)) => {
             println!(
                 "✅ OCR pipeline completed successfully in {}ms",
                 duration.as_millis()

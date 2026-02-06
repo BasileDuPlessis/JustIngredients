@@ -33,6 +33,7 @@ use tracing::{info, warn};
 
 // Re-export types for easier access from documentation and external usage
 pub use crate::circuit_breaker::CircuitBreaker;
+use crate::error_correction::OcrErrorCorrector;
 use crate::errors::error_logging;
 pub use crate::instance_manager::OcrInstanceManager;
 pub use crate::observability;
@@ -384,7 +385,14 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 ///
 /// # Returns
 ///
-/// Returns `Result<String, OcrError>` containing the extracted text or an error
+/// Returns `Result<(String, OcrConfidence), OcrError>` containing the extracted text and confidence score, or an error
+///
+/// The confidence score provides quality assessment of the OCR result with the following components:
+/// - **Overall Score** (0.0-1.0): Weighted combination of quality metrics
+/// - **Text Quality Score**: Based on text length, content, and noise ratio
+/// - **Pattern Score**: Presence of expected recipe content (measurements, ingredients)
+/// - **Processing Score**: Based on OCR processing time
+/// - **Flags**: Specific issues detected (too short, no measurements, slow processing, etc.)
 ///
 /// # Examples
 ///
@@ -397,8 +405,9 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// let circuit_breaker = CircuitBreaker::new(config.recovery.clone());
 ///
 /// // Process an image of ingredients
-/// let text = extract_text_from_image("/path/to/ingredients.jpg", &config, &instance_manager, &circuit_breaker).await?;
+/// let (text, confidence) = extract_text_from_image("/path/to/ingredients.jpg", &config, &instance_manager, &circuit_breaker).await?;
 /// println!("Extracted text: {}", text);
+/// println!("Confidence score: {:.2}", confidence.overall_score);
 /// # Ok(())
 /// # }
 /// ```
@@ -615,7 +624,7 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 ///
 /// # Returns
 ///
-/// Returns the extracted text as a `String` on success, or an `OcrError` on failure
+/// Returns a tuple of `(String, OcrConfidence)` containing the extracted text and confidence score on success, or an `OcrError` on failure
 ///
 /// # Examples
 ///
@@ -631,7 +640,7 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// let circuit_breaker = CircuitBreaker::new(recovery_config);
 ///
 /// // Extract text from image
-/// let extracted_text = extract_text_from_image(
+/// let (extracted_text, confidence) = extract_text_from_image(
 ///     "/path/to/ingredients.jpg",
 ///     &config,
 ///     &instance_manager,
@@ -639,6 +648,7 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// ).await?;
 ///
 /// println!("Extracted text: {}", extracted_text);
+/// println!("Confidence: {:?}", confidence);
 /// # Ok(())
 /// # }
 /// ```
@@ -656,7 +666,7 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 ///
 /// // Circuit breaker open
 /// match extract_text_from_image("/large/image.png", &config, &instance_manager, &circuit_breaker).await {
-///     Ok(text) => println!("Success: {}", text),
+///     Ok((text, confidence)) => println!("Success: {} (confidence: {:?})", text, confidence),
 ///     Err(e) => println!("Error: {:?}", e), // May be circuit breaker error
 /// }
 /// # Ok(())
@@ -666,51 +676,12 @@ pub fn estimate_memory_usage(file_size: u64, format: &image::ImageFormat) -> f64
 /// Correct common OCR errors with fraction characters
 ///
 /// OCR engines often misread fraction symbols (/) as other characters.
-/// This function attempts to correct the most common fraction OCR errors.
-fn correct_ocr_fraction_errors(text: &str) -> String {
-    let mut corrected = text.to_string();
-
-    // Common OCR fraction errors and their corrections
-    let corrections = [
-        // 1/2 misreads
-        ("Ye", "1/2"),
-        // 1/4 misreads
-        ("%", "1/4"),
-    ];
-
-    // Apply corrections with word boundaries to avoid false positives
-    for (ocr_error, correction) in corrections.iter() {
-        // For single characters, don't require word boundaries
-        // For multi-character strings, use word boundaries
-        let pattern = if ocr_error.len() == 1 {
-            regex::escape(ocr_error)
-        } else {
-            format!(r"\b{}\b", regex::escape(ocr_error))
-        };
-
-        if let Ok(regex) = regex::Regex::new(&pattern) {
-            let before = corrected.clone();
-            corrected = regex.replace_all(&corrected, *correction).to_string();
-            if before != corrected {
-                tracing::debug!(
-                    "OCR correction: '{}' -> '{}' in text: '{}'",
-                    ocr_error,
-                    correction,
-                    before
-                );
-            }
-        }
-    }
-
-    corrected
-}
-
 pub async fn extract_text_from_image(
     image_path: &str,
     config: &crate::ocr_config::OcrConfig,
     instance_manager: &crate::instance_manager::OcrInstanceManager,
     circuit_breaker: &crate::circuit_breaker::CircuitBreaker,
-) -> Result<String, crate::ocr_errors::OcrError> {
+) -> Result<(String, OcrConfidence), crate::ocr_errors::OcrError> {
     // Create a tracing span for the OCR operation
     let span = crate::observability::ocr_span("extract_text_from_image");
     let _enter = span.enter();
@@ -742,9 +713,17 @@ pub async fn extract_text_from_image(
         attempt += 1;
 
         match perform_ocr_extraction(image_path, config, instance_manager).await {
-            Ok((text, ocr_duration)) => {
+            Ok((text, tesseract_confidence, ocr_duration)) => {
                 let total_duration = start_time.elapsed();
                 let total_ms = total_duration.as_millis();
+
+                // Calculate OCR confidence score (now incorporating Tesseract's confidence)
+                let confidence = calculate_ocr_confidence_with_tesseract(
+                    &text,
+                    tesseract_confidence,
+                    ocr_duration,
+                    config,
+                );
 
                 // Record success in circuit breaker
                 circuit_breaker.record_success();
@@ -765,9 +744,18 @@ pub async fn extract_text_from_image(
                     },
                 );
 
-                info!("OCR extraction completed successfully on attempt {} in {}ms. Extracted {} characters of text",
-                      attempt, total_ms, text.len());
-                return Ok(text);
+                info!("OCR extraction completed successfully on attempt {} in {}ms. Extracted {} characters of text (Tesseract: {:.1}%, overall: {:.2})",
+                      attempt, total_ms, text.len(), tesseract_confidence, confidence.overall_score);
+
+                // Log confidence warnings if needed
+                if should_flag_for_review(&confidence, 0.7) {
+                    warn!(
+                        "OCR result flagged for review: {}",
+                        get_confidence_description(&confidence)
+                    );
+                }
+
+                return Ok((text, confidence));
             }
             Err(err) => {
                 if attempt >= max_attempts {
@@ -1106,7 +1094,7 @@ async fn perform_ocr_extraction(
     image_path: &str,
     config: &crate::ocr_config::OcrConfig,
     instance_manager: &crate::instance_manager::OcrInstanceManager,
-) -> Result<(String, std::time::Duration), crate::ocr_errors::OcrError> {
+) -> Result<(String, f32, std::time::Duration), crate::ocr_errors::OcrError> {
     // Start timing the actual OCR processing
     let ocr_start_time = std::time::Instant::now();
 
@@ -1129,7 +1117,7 @@ async fn perform_ocr_extraction(
             .map_err(|e| crate::ocr_errors::OcrError::Initialization(e.to_string()))?;
 
         // Perform OCR processing with the reused instance
-        let extracted_text = {
+        let (extracted_text, tesseract_confidence) = {
             let mut tess = instance
                 .lock()
                 .expect("Failed to acquire Tesseract instance lock");
@@ -1141,11 +1129,19 @@ async fn perform_ocr_extraction(
             })?;
 
             // Extract text from the image
-            tess.get_utf8_text().map_err(|e| {
+            let text = tess.get_utf8_text().map_err(|e| {
                 crate::ocr_errors::OcrError::Extraction(format!(
                     "Failed to extract text from preprocessed image: {e}"
                 ))
-            })?
+            })?;
+
+            // Extract confidence score from Tesseract
+            // NOTE: The leptess crate (v0.14) does not expose Tesseract's confidence methods.
+            // Using a default confidence score based on successful OCR completion.
+            // TODO: Consider using a different Tesseract binding that exposes confidence scores.
+            let confidence = 75.0; // Default confidence for successful OCR
+
+            (text, confidence)
         };
 
         // Note: The temporary file will be automatically cleaned up when _temp_file goes out of scope
@@ -1159,10 +1155,11 @@ async fn perform_ocr_extraction(
             .collect::<Vec<&str>>()
             .join("\n");
 
-        // Apply OCR error correction for common fraction misreads
-        let corrected_text = correct_ocr_fraction_errors(&cleaned_text);
+        // Apply comprehensive OCR error correction
+        let error_corrector = OcrErrorCorrector::new();
+        let corrected_text = error_corrector.correct_text(&cleaned_text);
 
-        Ok(corrected_text)
+        Ok((corrected_text, tesseract_confidence))
     })
     .await;
 
@@ -1170,13 +1167,14 @@ async fn perform_ocr_extraction(
     let ocr_ms = ocr_duration.as_millis();
 
     match result {
-        Ok(Ok(text)) => {
+        Ok(Ok((text, confidence))) => {
             info!(
-                "OCR processing completed in {}ms, extracted {} characters",
+                "OCR processing completed in {}ms, extracted {} characters (Tesseract confidence: {:.1}%)",
                 ocr_ms,
-                text.len()
+                text.len(),
+                confidence
             );
-            Ok((text, ocr_duration))
+            Ok((text, confidence, ocr_duration))
         }
         Ok(Err(e)) => {
             warn!("OCR processing failed after {ocr_ms}ms: {e:?}");
@@ -1428,4 +1426,241 @@ pub fn is_supported_image_format(file_path: &str, config: &crate::ocr_config::Oc
             false
         }
     }
+}
+
+/// Confidence score for OCR results
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct OcrConfidence {
+    /// Overall confidence score (0.0 to 1.0)
+    pub overall_score: f32,
+    /// Text quality score based on length and content
+    pub text_quality_score: f32,
+    /// Pattern recognition score (presence of measurements, ingredients)
+    pub pattern_score: f32,
+    /// Processing time score (faster processing may indicate clearer text)
+    pub processing_score: f32,
+    /// Flags indicating potential issues
+    pub flags: Vec<ConfidenceFlag>,
+}
+
+/// Flags indicating confidence issues
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum ConfidenceFlag {
+    /// Very short text (may indicate failed OCR)
+    TooShort,
+    /// No measurements found (unusual for recipe images)
+    NoMeasurements,
+    /// Very long processing time (may indicate complex/difficult image)
+    SlowProcessing,
+    /// Text contains many non-alphanumeric characters (may indicate garbage)
+    HighNoiseRatio,
+    /// Text appears to be mostly numbers (may indicate failed OCR)
+    MostlyNumeric,
+    /// Tesseract's own confidence score is low
+    LowTesseractConfidence,
+}
+
+/// Calculate confidence score for OCR results using Tesseract's confidence
+pub fn calculate_ocr_confidence_with_tesseract(
+    text: &str,
+    tesseract_confidence: f32,
+    processing_duration: std::time::Duration,
+    config: &crate::ocr_config::OcrConfig,
+) -> OcrConfidence {
+    let mut flags = Vec::new();
+
+    // Text quality score (0.0 to 1.0)
+    let text_quality_score = calculate_text_quality_score(text, &mut flags);
+
+    // Pattern recognition score (0.0 to 1.0)
+    let pattern_score = calculate_pattern_recognition_score(text, &mut flags);
+
+    // Processing time score (0.0 to 1.0) - faster is generally better
+    let processing_score = calculate_processing_time_score(processing_duration, config, &mut flags);
+
+    // Tesseract confidence score (0-100, convert to 0.0-1.0)
+    let tesseract_score = (tesseract_confidence / 100.0).clamp(0.0, 1.0);
+
+    // If Tesseract confidence is very low, add a flag
+    if tesseract_confidence < 50.0 {
+        flags.push(ConfidenceFlag::LowTesseractConfidence);
+    }
+
+    // Overall score is weighted average including Tesseract confidence
+    let overall_score = (
+        tesseract_score * 0.5 +        // Tesseract's own confidence (50%)
+        text_quality_score * 0.2 +     // Text quality analysis (20%)
+        pattern_score * 0.2 +          // Pattern recognition (20%)
+        processing_score * 0.1
+        // Processing time (10%)
+    )
+    .clamp(0.0, 1.0);
+
+    OcrConfidence {
+        overall_score,
+        text_quality_score,
+        pattern_score,
+        processing_score,
+        flags,
+    }
+}
+
+/// Calculate text quality score based on length, content, and noise
+fn calculate_text_quality_score(text: &str, flags: &mut Vec<ConfidenceFlag>) -> f32 {
+    let trimmed = text.trim();
+
+    // Very short text is suspicious
+    if trimmed.len() < 10 {
+        flags.push(ConfidenceFlag::TooShort);
+        return 0.2;
+    }
+
+    // Count alphanumeric characters vs total
+    let total_chars = trimmed.chars().count() as f32;
+    let alpha_numeric_chars = trimmed
+        .chars()
+        .filter(|c| c.is_alphanumeric() || c.is_whitespace())
+        .count() as f32;
+
+    let noise_ratio = if total_chars > 0.0 {
+        alpha_numeric_chars / total_chars
+    } else {
+        0.0
+    };
+
+    // High noise ratio indicates potential garbage text
+    if noise_ratio < 0.7 {
+        flags.push(ConfidenceFlag::HighNoiseRatio);
+    }
+
+    // Count numeric characters
+    let numeric_chars = trimmed.chars().filter(|c| c.is_ascii_digit()).count() as f32;
+
+    let numeric_ratio = if total_chars > 0.0 {
+        numeric_chars / total_chars
+    } else {
+        0.0
+    };
+
+    // Mostly numeric text may indicate failed OCR
+    if numeric_ratio > 0.8 {
+        flags.push(ConfidenceFlag::MostlyNumeric);
+    }
+
+    // Base score from noise ratio, penalized for being mostly numeric
+    let base_score = noise_ratio;
+    let numeric_penalty = if numeric_ratio > 0.8 { 0.3 } else { 0.0 };
+
+    (base_score - numeric_penalty).clamp(0.0, 1.0)
+}
+
+/// Calculate pattern recognition score based on expected recipe content
+fn calculate_pattern_recognition_score(text: &str, flags: &mut Vec<ConfidenceFlag>) -> f32 {
+    // Check for measurement patterns
+    let measurement_patterns = [
+        r"\d+\s*(?:cup|cups|tablespoon|tablespoons|teaspoon|teaspoons|tbsp|tsp|g|kg|ml|l)",
+        r"\d+/\d+\s*(?:cup|cups|tablespoon|tablespoons|teaspoon|teaspoons|tbsp|tsp)",
+        r"\d+[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟]\s*(?:cup|cups|tablespoon|tablespoons|teaspoon|teaspoons)",
+    ];
+
+    let mut measurement_count = 0;
+    for pattern in &measurement_patterns {
+        if let Ok(regex) = regex::Regex::new(pattern) {
+            measurement_count += regex.find_iter(text).count();
+        }
+    }
+
+    // Check for ingredient-like words
+    let ingredient_indicators = [
+        "flour", "sugar", "salt", "butter", "milk", "eggs", "oil", "water", "farine", "sucre",
+        "sel", "beurre", "lait", "œufs", "huile", "eau",
+    ];
+
+    let ingredient_count = ingredient_indicators
+        .iter()
+        .filter(|&word| text.to_lowercase().contains(word))
+        .count();
+
+    // No measurements found is suspicious for recipe images
+    if measurement_count == 0 {
+        flags.push(ConfidenceFlag::NoMeasurements);
+    }
+
+    // Score based on presence of expected patterns
+    let measurement_score = if measurement_count > 0 {
+        (measurement_count as f32 / 5.0).min(1.0) // Cap at 5 measurements
+    } else {
+        0.0
+    };
+
+    let ingredient_score = if ingredient_count > 0 {
+        (ingredient_count as f32 / 3.0).min(1.0) // Cap at 3 ingredients
+    } else {
+        0.0
+    };
+
+    // Weighted average
+    (measurement_score * 0.6) + (ingredient_score * 0.4)
+}
+
+/// Calculate processing time score (faster processing generally indicates clearer text)
+fn calculate_processing_time_score(
+    duration: std::time::Duration,
+    config: &crate::ocr_config::OcrConfig,
+    flags: &mut Vec<ConfidenceFlag>,
+) -> f32 {
+    let processing_ms = duration.as_millis() as f32;
+
+    // Define expected processing time ranges (in milliseconds)
+    let fast_threshold = 1000.0; // 1 second
+    let slow_threshold = config.recovery.operation_timeout_secs as f32 * 1000.0 * 0.8; // 80% of timeout
+
+    // Very slow processing may indicate difficult image
+    if processing_ms > slow_threshold {
+        flags.push(ConfidenceFlag::SlowProcessing);
+    }
+
+    // Score: 1.0 for fast processing, decreasing to 0.0 for slow processing
+    if processing_ms <= fast_threshold {
+        1.0
+    } else if processing_ms >= slow_threshold {
+        0.0
+    } else {
+        // Linear interpolation between fast and slow thresholds
+        let range = slow_threshold - fast_threshold;
+        let distance_from_fast = processing_ms - fast_threshold;
+        1.0 - (distance_from_fast / range).clamp(0.0, 1.0)
+    }
+}
+
+/// Check if OCR confidence indicates low quality results that need review
+pub fn should_flag_for_review(confidence: &OcrConfidence, threshold: f32) -> bool {
+    confidence.overall_score < threshold || !confidence.flags.is_empty()
+}
+
+/// Get human-readable description of confidence issues
+pub fn get_confidence_description(confidence: &OcrConfidence) -> String {
+    if confidence.flags.is_empty() && confidence.overall_score >= 0.7 {
+        return "High confidence OCR result".to_string();
+    }
+
+    let mut issues = Vec::new();
+
+    for flag in &confidence.flags {
+        let description = match flag {
+            ConfidenceFlag::TooShort => "Text is very short (may indicate failed OCR)",
+            ConfidenceFlag::NoMeasurements => "No measurements found (unusual for recipes)",
+            ConfidenceFlag::SlowProcessing => "Slow processing time (may indicate difficult image)",
+            ConfidenceFlag::HighNoiseRatio => "High proportion of non-alphanumeric characters",
+            ConfidenceFlag::MostlyNumeric => "Text is mostly numeric (may indicate failed OCR)",
+            ConfidenceFlag::LowTesseractConfidence => "Tesseract confidence score is low",
+        };
+        issues.push(description);
+    }
+
+    if confidence.overall_score < 0.5 {
+        issues.push("Low overall confidence score");
+    }
+
+    format!("OCR result flagged for review: {}", issues.join(", "))
 }

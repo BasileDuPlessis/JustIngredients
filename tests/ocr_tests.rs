@@ -8,10 +8,12 @@ mod tests {
     use just_ingredients::circuit_breaker::CircuitBreaker;
     use just_ingredients::instance_manager::OcrInstanceManager;
     use just_ingredients::ocr::{
-        calculate_retry_delay, estimate_memory_usage, is_supported_image_format,
-        validate_image_path, validate_image_with_format_limits,
+        calculate_retry_delay, estimate_memory_usage, extract_text_from_image,
+        is_supported_image_format, validate_image_path, validate_image_with_format_limits,
     };
-    use just_ingredients::ocr_config::{FormatSizeLimits, OcrConfig, RecoveryConfig};
+    use just_ingredients::ocr_config::{
+        FormatSizeLimits, ModelType, OcrConfig, PageSegMode, RecoveryConfig,
+    };
     use just_ingredients::ocr_errors::OcrError;
     use std::io::Write;
     use tempfile::NamedTempFile;
@@ -100,7 +102,7 @@ mod tests {
         assert!(std::sync::Arc::ptr_eq(&instance1, &instance2));
 
         // Remove instance
-        manager._remove_instance(&config.languages);
+        manager._remove_instance(&config.languages, ModelType::default());
         assert_eq!(manager._instance_count(), 0);
 
         // Clear all instances
@@ -421,5 +423,276 @@ mod tests {
         // Test unknown format (should use default factor of 3.0)
         let unknown_memory = estimate_memory_usage(file_size_1mb, &image::ImageFormat::WebP);
         assert_eq!(unknown_memory, 3.0); // 1MB * 3.0 = 3MB (default)
+    }
+
+    /// Test PSM mode enum values and string conversion
+    #[test]
+    fn test_psm_mode_enum_values() {
+        // Test all PSM mode variants
+        assert_eq!(PageSegMode::OsdOnly.as_str(), "0");
+        assert_eq!(PageSegMode::AutoOsd.as_str(), "1");
+        assert_eq!(PageSegMode::AutoNoOsd.as_str(), "2");
+        assert_eq!(PageSegMode::Auto.as_str(), "3");
+        assert_eq!(PageSegMode::SingleColumn.as_str(), "4");
+        assert_eq!(PageSegMode::SingleBlockVert.as_str(), "5");
+        assert_eq!(PageSegMode::SingleBlock.as_str(), "6");
+        assert_eq!(PageSegMode::SingleLine.as_str(), "7");
+        assert_eq!(PageSegMode::SingleWord.as_str(), "8");
+        assert_eq!(PageSegMode::WordInCircle.as_str(), "9");
+        assert_eq!(PageSegMode::SingleChar.as_str(), "10");
+        assert_eq!(PageSegMode::SparseText.as_str(), "11");
+        assert_eq!(PageSegMode::SparseTextOsd.as_str(), "12");
+        assert_eq!(PageSegMode::RawLine.as_str(), "13");
+    }
+
+    /// Test PSM mode configuration in OcrConfig
+    #[test]
+    fn test_psm_mode_config() {
+        // Test default PSM mode
+        let config = OcrConfig::default();
+        assert_eq!(config.psm_mode, PageSegMode::Auto);
+
+        // Test custom PSM mode configuration
+        let config_single_block = OcrConfig {
+            psm_mode: PageSegMode::SingleBlock,
+            ..Default::default()
+        };
+        assert_eq!(config_single_block.psm_mode, PageSegMode::SingleBlock);
+
+        let config_single_line = OcrConfig {
+            psm_mode: PageSegMode::SingleLine,
+            ..Default::default()
+        };
+        assert_eq!(config_single_line.psm_mode, PageSegMode::SingleLine);
+    }
+
+    /// Test PSM mode setting on OCR instances
+    #[test]
+    fn test_psm_mode_instance_setting() {
+        let manager = OcrInstanceManager::new();
+
+        // Test with different PSM modes
+        let psm_modes = vec![
+            PageSegMode::Auto,
+            PageSegMode::SingleBlock,
+            PageSegMode::SingleLine,
+            PageSegMode::AutoOsd,
+        ];
+
+        for psm_mode in psm_modes {
+            let config = OcrConfig {
+                psm_mode,
+                ..Default::default()
+            };
+
+            // Get instance with specific PSM mode
+            let _instance = manager.get_instance(&config).unwrap();
+
+            // Instance creation succeeded (unwrap would have panicked if it failed)
+        }
+    }
+
+    /// Test PSM mode performance comparison (mock test)
+    #[test]
+    fn test_psm_mode_performance_comparison() {
+        // This is a mock test that demonstrates how PSM mode performance
+        // would be tested. In a real scenario, this would use actual recipe images.
+
+        let manager = OcrInstanceManager::new();
+        let circuit_breaker = CircuitBreaker::new(RecoveryConfig::default());
+
+        // Create a mock image file for testing
+        let mut temp_file = NamedTempFile::new().unwrap();
+        // Create a minimal PNG with some text-like content
+        let png_header = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A];
+        temp_file.write_all(&png_header).unwrap();
+        // Add some minimal PNG data (this won't be a valid image but will pass format checks)
+        temp_file.write_all(&vec![0u8; 1000]).unwrap();
+        let temp_path = temp_file.path().to_string_lossy().to_string();
+
+        // Test PSM modes that are relevant for recipes
+        let test_modes = vec![
+            (PageSegMode::Auto, "Auto (PSM 3)"),
+            (PageSegMode::SingleBlock, "Single Block (PSM 6)"),
+            (PageSegMode::SingleLine, "Single Line (PSM 7)"),
+            (PageSegMode::SparseText, "Sparse Text (PSM 11)"),
+        ];
+
+        for (psm_mode, description) in test_modes {
+            let config = OcrConfig {
+                psm_mode,
+                ..Default::default()
+            };
+
+            // Measure time for OCR processing (this will fail due to invalid image,
+            // but we're testing that PSM mode configuration works)
+            let start = std::time::Instant::now();
+
+            let result = tokio::runtime::Runtime::new()
+                .unwrap()
+                .block_on(extract_text_from_image(
+                    &temp_path,
+                    &config,
+                    &manager,
+                    &circuit_breaker,
+                ));
+
+            let duration = start.elapsed();
+
+            // The operation should fail due to invalid image, but PSM mode should be configured
+            assert!(
+                result.is_err(),
+                "Expected error for invalid image with PSM {}",
+                description
+            );
+
+            // Verify reasonable processing time (should be quick even with invalid image)
+            // Allow more time since OCR initialization can be slow
+            assert!(
+                duration.as_millis() < 15000,
+                "PSM {} took too long: {:?}",
+                description,
+                duration
+            );
+        }
+    }
+
+    /// Test adaptive PSM selection logic (mock implementation)
+    #[test]
+    fn test_adaptive_psm_selection() {
+        // Test the logic for choosing PSM mode based on content type
+        // This is a mock test showing how adaptive selection would work
+
+        // Simulate different content types
+        let ingredient_list_content = "2 cups flour\n1 cup sugar\n3 eggs\n1 tsp vanilla";
+        let full_recipe_content = "Chocolate Chip Cookies\n\nIngredients:\n2 cups flour\n1 cup sugar\n3 eggs\n\nInstructions:\n1. Preheat oven to 350°F\n2. Mix ingredients\n3. Bake for 12 minutes";
+
+        // For ingredient lists (short, line-based), PSM 6 (SingleBlock) should be preferred
+        let ingredient_psm = if ingredient_list_content.lines().count() <= 10 {
+            PageSegMode::SingleBlock
+        } else {
+            PageSegMode::Auto
+        };
+        assert_eq!(ingredient_psm, PageSegMode::SingleBlock);
+
+        // For full recipes (longer, structured), PSM 3 (Auto) should be preferred
+        let recipe_psm = if full_recipe_content.lines().count() > 10 {
+            PageSegMode::Auto
+        } else {
+            PageSegMode::SingleBlock
+        };
+        assert_eq!(recipe_psm, PageSegMode::Auto);
+    }
+
+    /// Test PSM mode configuration validation
+    #[test]
+    fn test_psm_mode_config_validation() {
+        // Test that all PSM modes can be configured without issues
+        let all_modes = vec![
+            PageSegMode::OsdOnly,
+            PageSegMode::AutoOsd,
+            PageSegMode::AutoNoOsd,
+            PageSegMode::Auto,
+            PageSegMode::SingleColumn,
+            PageSegMode::SingleBlockVert,
+            PageSegMode::SingleBlock,
+            PageSegMode::SingleLine,
+            PageSegMode::SingleWord,
+            PageSegMode::WordInCircle,
+            PageSegMode::SingleChar,
+            PageSegMode::SparseText,
+            PageSegMode::SparseTextOsd,
+            PageSegMode::RawLine,
+        ];
+
+        for mode in all_modes {
+            let config = OcrConfig {
+                psm_mode: mode,
+                ..Default::default()
+            };
+
+            // Verify config is valid
+            assert_eq!(config.psm_mode, mode);
+
+            // Verify string conversion works
+            let mode_str = mode.as_str();
+            assert!(!mode_str.is_empty());
+            assert!(mode_str.chars().all(|c| c.is_ascii_digit()));
+        }
+    }
+
+    /// Test model type configuration and instance creation
+    #[test]
+    fn test_model_type_config() {
+        let manager = OcrInstanceManager::new();
+
+        // Test with Fast model (default)
+        let fast_config = OcrConfig {
+            model_type: ModelType::Fast,
+            ..Default::default()
+        };
+
+        let _fast_instance = manager.get_instance(&fast_config).unwrap();
+        // Instance creation succeeded (unwrap would have panicked if it failed)
+
+        // Test with Best model
+        let best_config = OcrConfig {
+            model_type: ModelType::Best,
+            ..Default::default()
+        };
+
+        let _best_instance = manager.get_instance(&best_config).unwrap();
+        // Instance creation succeeded (unwrap would have panicked if it failed)
+
+        // Verify that different model types create separate instances
+        // (they should have different keys in the instance map)
+        assert_eq!(manager._instance_count(), 2);
+    }
+
+    /// Test model type instance isolation
+    #[test]
+    fn test_model_type_instance_isolation() {
+        let manager = OcrInstanceManager::new();
+
+        // Create configs with same languages but different model types
+        let fast_config = OcrConfig {
+            languages: "eng".to_string(),
+            model_type: ModelType::Fast,
+            ..Default::default()
+        };
+
+        let best_config = OcrConfig {
+            languages: "eng".to_string(),
+            model_type: ModelType::Best,
+            ..Default::default()
+        };
+
+        // Get instances
+        let _fast_instance1 = manager.get_instance(&fast_config).unwrap();
+        let _best_instance1 = manager.get_instance(&best_config).unwrap();
+
+        // Should have 2 instances (different model types)
+        assert_eq!(manager._instance_count(), 2);
+
+        // Get same instances again (should reuse)
+        let _fast_instance2 = manager.get_instance(&fast_config).unwrap();
+        let _best_instance2 = manager.get_instance(&best_config).unwrap();
+
+        // Should still have only 2 instances
+        assert_eq!(manager._instance_count(), 2);
+    }
+
+    /// Test model type performance expectations
+    #[test]
+    fn test_model_type_performance_expectations() {
+        // Test that ModelType provides expected accuracy improvements
+        assert_eq!(ModelType::Fast.expected_accuracy_improvement(), 0.0);
+        assert_eq!(ModelType::Best.expected_accuracy_improvement(), 0.05);
+
+        // Test that Best model is expected to be more accurate than Fast
+        assert!(
+            ModelType::Best.expected_accuracy_improvement()
+                > ModelType::Fast.expected_accuracy_improvement()
+        );
     }
 }

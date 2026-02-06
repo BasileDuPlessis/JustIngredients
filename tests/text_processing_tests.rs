@@ -744,6 +744,45 @@ mod tests {
     }
 
     #[test]
+    fn test_mixed_number_quantities() {
+        let detector = create_detector();
+
+        // Test mixed number quantities (digit + Unicode fraction)
+        assert!(detector.has_measurements("1½ cups flour"));
+        assert!(detector.has_measurements("2¼ teaspoons salt"));
+        assert!(detector.has_measurements("3¾ kg sugar"));
+
+        // Test extraction
+        let matches = detector.extract_ingredient_measurements("1½ cups flour\n2¼ teaspoons salt");
+
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].quantity, "1½");
+        assert_eq!(matches[0].measurement, Some("cups".to_string()));
+        assert_eq!(matches[0].ingredient_name, "flour");
+
+        assert_eq!(matches[1].quantity, "2¼");
+        assert_eq!(matches[1].measurement, Some("teaspoons".to_string()));
+        assert_eq!(matches[1].ingredient_name, "salt");
+    }
+
+    #[test]
+    fn test_fraction_corrections() {
+        let detector = create_detector();
+
+        // Test common OCR corrections for fractions
+        let matches = detector.extract_ingredient_measurements("l/2 cup flour\nO/4 teaspoon salt");
+
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0].quantity, "1/2"); // 'l' corrected to '1'
+        assert_eq!(matches[0].measurement, Some("cup".to_string()));
+        assert_eq!(matches[0].ingredient_name, "flour");
+
+        assert_eq!(matches[1].quantity, "0/4"); // 'O' corrected to '0'
+        assert_eq!(matches[1].measurement, Some("teaspoon".to_string()));
+        assert_eq!(matches[1].ingredient_name, "salt");
+    }
+
+    #[test]
     fn test_get_unique_units() {
         let detector = create_detector();
 

@@ -184,7 +184,26 @@ pub async fn download_and_process_image(
         )
         .await
         {
-            Ok(extracted_text) => {
+            Ok((extracted_text, confidence)) => {
+                // Log confidence information
+                info!(
+                    user_id = %chat_id,
+                    confidence_score = confidence.overall_score,
+                    flags = ?confidence.flags,
+                    "OCR extraction completed with confidence score"
+                );
+
+                // Check if OCR result should be flagged for review
+                if crate::ocr::should_flag_for_review(&confidence, 0.7) {
+                    warn!(
+                        user_id = %chat_id,
+                        confidence_score = confidence.overall_score,
+                        flags = ?confidence.flags,
+                        "OCR result flagged for review: {}",
+                        crate::ocr::get_confidence_description(&confidence)
+                    );
+                }
+
                 if extracted_text.is_empty() {
                     warn!(user_id = %chat_id, "OCR extraction returned empty text");
                     bot.edit_message_text(chat_id, success_message_id, t_lang(localization, "error-no-text-found", language_code))

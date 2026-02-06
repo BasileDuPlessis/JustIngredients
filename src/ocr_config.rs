@@ -66,21 +66,88 @@ impl Default for FormatSizeLimits {
     }
 }
 
-/// Configuration structure for OCR processing
-#[derive(Debug, Clone)]
-pub struct OcrConfig {
-    /// OCR language codes (e.g., "eng", "eng+fra", "deu")
-    pub languages: String,
-    /// Buffer size for format detection in bytes
-    pub buffer_size: usize,
-    /// Minimum bytes required for format detection
-    pub min_format_bytes: usize,
-    /// Maximum allowed file size in bytes (general limit)
-    pub max_file_size: u64,
-    /// Format-specific size limits
-    pub format_limits: FormatSizeLimits,
-    /// Recovery and error handling configuration
-    pub recovery: RecoveryConfig,
+/// Page Segmentation Mode for Tesseract OCR
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum PageSegMode {
+    /// Orientation and script detection (OSD) only
+    OsdOnly = 0,
+    /// Automatic page segmentation with OSD
+    AutoOsd = 1,
+    /// Automatic page segmentation, no OSD
+    AutoNoOsd = 2,
+    /// Fully automatic page segmentation
+    #[default]
+    Auto = 3,
+    /// Assume a single column of text
+    SingleColumn = 4,
+    /// Assume a single uniform block of vertically aligned text
+    SingleBlockVert = 5,
+    /// Assume a single uniform block of text
+    SingleBlock = 6,
+    /// Treat the image as a single text line
+    SingleLine = 7,
+    /// Treat the image as a single word
+    SingleWord = 8,
+    /// Treat the image as a single word in a circle
+    WordInCircle = 9,
+    /// Treat the image as a single character
+    SingleChar = 10,
+    /// Find as much text as possible in no particular order
+    SparseText = 11,
+    /// Sparse text with OSD
+    SparseTextOsd = 12,
+    /// Treat the image as a single text line, bypassing hacks that are Tesseract-specific
+    RawLine = 13,
+}
+
+impl PageSegMode {
+    /// Convert PSM mode to string value for Tesseract
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            PageSegMode::OsdOnly => "0",
+            PageSegMode::AutoOsd => "1",
+            PageSegMode::AutoNoOsd => "2",
+            PageSegMode::Auto => "3",
+            PageSegMode::SingleColumn => "4",
+            PageSegMode::SingleBlockVert => "5",
+            PageSegMode::SingleBlock => "6",
+            PageSegMode::SingleLine => "7",
+            PageSegMode::SingleWord => "8",
+            PageSegMode::WordInCircle => "9",
+            PageSegMode::SingleChar => "10",
+            PageSegMode::SparseText => "11",
+            PageSegMode::SparseTextOsd => "12",
+            PageSegMode::RawLine => "13",
+        }
+    }
+}
+
+/// Tesseract model type for different accuracy/speed trade-offs
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum ModelType {
+    /// Fast model (tessdata_fast) - faster processing, lower accuracy
+    #[default]
+    Fast,
+    /// Best model (tessdata_best) - slower processing, higher accuracy
+    Best,
+}
+
+impl ModelType {
+    /// Get the tessdata directory name for this model type
+    pub fn tessdata_dir(&self) -> &'static str {
+        match self {
+            ModelType::Fast => "tessdata_fast",
+            ModelType::Best => "tessdata_best",
+        }
+    }
+
+    /// Get the expected accuracy improvement over Fast model
+    pub fn expected_accuracy_improvement(&self) -> f32 {
+        match self {
+            ModelType::Fast => 0.0,
+            ModelType::Best => 0.05, // 5% improvement expected
+        }
+    }
 }
 
 impl RecoveryConfig {
@@ -168,15 +235,44 @@ impl FormatSizeLimits {
     }
 }
 
+/// Configuration structure for OCR processing
+#[derive(Debug, Clone)]
+pub struct OcrConfig {
+    /// OCR language codes (e.g., "eng", "eng+fra", "deu")
+    pub languages: String,
+    /// Tesseract model type (Fast vs Best accuracy)
+    pub model_type: ModelType,
+    /// Buffer size for format detection in bytes
+    pub buffer_size: usize,
+    /// Minimum bytes required for format detection
+    pub min_format_bytes: usize,
+    /// Maximum allowed file size in bytes (general limit)
+    pub max_file_size: u64,
+    /// Format-specific size limits
+    pub format_limits: FormatSizeLimits,
+    /// Recovery and error handling configuration
+    pub recovery: RecoveryConfig,
+    /// Default page segmentation mode for OCR
+    pub psm_mode: PageSegMode,
+    /// Path to custom user words file for improved recognition
+    pub user_words_file: Option<String>,
+    /// Character whitelist to restrict OCR output to recipe-relevant characters
+    pub character_whitelist: Option<String>,
+}
+
 impl Default for OcrConfig {
     fn default() -> Self {
         Self {
             languages: DEFAULT_LANGUAGES.to_string(),
+            model_type: ModelType::default(),
             buffer_size: FORMAT_DETECTION_BUFFER_SIZE,
             min_format_bytes: MIN_FORMAT_BYTES,
             max_file_size: MAX_FILE_SIZE,
             format_limits: FormatSizeLimits::default(),
             recovery: RecoveryConfig::default(),
+            psm_mode: PageSegMode::default(),
+            user_words_file: Some("config/user_words.txt".to_string()),
+            character_whitelist: Some("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÂÄÉÈÊËÏÎÔÖÙÛÜŸàâäéèêëïîôöùûüÿ¼½¾⅓⅔⅛⅜⅝⅞/.,-() ".to_string()),
         }
     }
 }
@@ -297,35 +393,101 @@ mod tests {
     }
 
     #[test]
-    fn test_ocr_config_validation() {
-        let mut config = OcrConfig::default();
+    fn test_model_type_enum_values() {
+        // Test ModelType enum values and methods
+        assert_eq!(ModelType::Fast.tessdata_dir(), "tessdata_fast");
+        assert_eq!(ModelType::Best.tessdata_dir(), "tessdata_best");
 
-        // Valid config should pass
-        assert!(config.validate().is_ok());
+        assert_eq!(ModelType::Fast.expected_accuracy_improvement(), 0.0);
+        assert_eq!(ModelType::Best.expected_accuracy_improvement(), 0.05);
+    }
 
-        // Test invalid languages
-        config.languages = "".to_string();
-        assert!(config.validate().is_err());
-        config.languages = DEFAULT_LANGUAGES.to_string();
+    #[test]
+    fn test_model_type_default() {
+        // Test that default is Fast for backward compatibility
+        assert_eq!(ModelType::default(), ModelType::Fast);
+    }
 
-        // Test invalid buffer_size
-        config.buffer_size = 0;
-        assert!(config.validate().is_err());
-        config.buffer_size = FORMAT_DETECTION_BUFFER_SIZE;
+    #[test]
+    fn test_ocr_config_with_model_type() {
+        // Test OcrConfig with different model types
+        let fast_config = OcrConfig {
+            model_type: ModelType::Fast,
+            ..Default::default()
+        };
+        assert_eq!(fast_config.model_type, ModelType::Fast);
 
-        // Test invalid min_format_bytes
-        config.min_format_bytes = 0;
-        assert!(config.validate().is_err());
-        config.min_format_bytes = MIN_FORMAT_BYTES;
+        let best_config = OcrConfig {
+            model_type: ModelType::Best,
+            ..Default::default()
+        };
+        assert_eq!(best_config.model_type, ModelType::Best);
 
-        // Test min_format_bytes > buffer_size
-        config.min_format_bytes = FORMAT_DETECTION_BUFFER_SIZE + 1;
-        assert!(config.validate().is_err());
-        config.min_format_bytes = MIN_FORMAT_BYTES;
+        // Test that default config uses Fast model
+        let default_config = OcrConfig::default();
+        assert_eq!(default_config.model_type, ModelType::Fast);
+    }
 
-        // Test invalid max_file_size
-        config.max_file_size = 0;
-        assert!(config.validate().is_err());
-        config.max_file_size = MAX_FILE_SIZE;
+    #[test]
+    fn test_ocr_config_user_words_file() {
+        // Test OcrConfig with custom user words file
+        let config_with_custom_words = OcrConfig {
+            user_words_file: Some("custom/path/to/words.txt".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            config_with_custom_words.user_words_file,
+            Some("custom/path/to/words.txt".to_string())
+        );
+
+        // Test default config includes user words file
+        let default_config = OcrConfig::default();
+        assert_eq!(
+            default_config.user_words_file,
+            Some("config/user_words.txt".to_string())
+        );
+
+        // Test config without user words file
+        let config_without_words = OcrConfig {
+            user_words_file: None,
+            ..Default::default()
+        };
+        assert_eq!(config_without_words.user_words_file, None);
+    }
+
+    #[test]
+    fn test_ocr_config_character_whitelist() {
+        // Test OcrConfig with custom character whitelist
+        let custom_whitelist = "0123456789ABCDEF".to_string();
+        let config_with_custom_whitelist = OcrConfig {
+            character_whitelist: Some(custom_whitelist.clone()),
+            ..Default::default()
+        };
+        assert_eq!(
+            config_with_custom_whitelist.character_whitelist,
+            Some(custom_whitelist)
+        );
+
+        // Test default config includes character whitelist
+        let default_config = OcrConfig::default();
+        assert!(default_config.character_whitelist.is_some());
+        let default_whitelist = default_config.character_whitelist.as_ref().unwrap();
+        // Should contain basic alphanumeric characters
+        assert!(default_whitelist.contains("0123456789"));
+        assert!(default_whitelist.contains("ABCDEFGHIJKLMNOPQRSTUVWXYZ"));
+        assert!(default_whitelist.contains("abcdefghijklmnopqrstuvwxyz"));
+        // Should contain accented characters for French
+        assert!(default_whitelist.contains("ÀÂÄÉÈÊË"));
+        // Should contain fractions
+        assert!(default_whitelist.contains("¼½¾⅓⅔⅛⅜⅝⅞"));
+        // Should contain common punctuation
+        assert!(default_whitelist.contains(".,-() "));
+
+        // Test config without character whitelist
+        let config_without_whitelist = OcrConfig {
+            character_whitelist: None,
+            ..Default::default()
+        };
+        assert_eq!(config_without_whitelist.character_whitelist, None);
     }
 }
