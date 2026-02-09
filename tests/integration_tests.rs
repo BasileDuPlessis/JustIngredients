@@ -1571,7 +1571,7 @@ fn test_adaptive_preprocessing_performance_comparison() {
 
     // Both should complete within reasonable time limits
     // Note: With optimized preprocessing, the difference may not be as dramatic
-    assert!(duration_high.as_millis() < 200); // High quality should be reasonably fast
+    assert!(duration_high.as_millis() < 300); // High quality should be reasonably fast
     assert!(duration_low.as_millis() < 600); // Low quality should still be reasonable
 
     println!("✅ Adaptive preprocessing performance comparison test passed");

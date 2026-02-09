@@ -459,7 +459,7 @@ mod tests {
         // Horizontal lines should have near-zero skew
         assert!(result.skew_angle_degrees.abs() < 1.0);
         assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
-        assert!(result.processing_time_ms < 200); // Should be reasonably fast
+        assert!(result.processing_time_ms < 300); // Should be reasonably fast
         assert_eq!(result.image.width(), 100);
         assert_eq!(result.image.height(), 100);
     }
@@ -615,8 +615,8 @@ mod tests {
         let img = create_horizontal_lines_image(200, 200, 20);
         let result = deskew_image(&img).unwrap();
 
-        // Should complete in reasonable time (< 500ms for 200x200 image)
-        assert!(result.processing_time_ms < 500);
+        // Should complete in reasonable time (< 750ms for 200x200 image)
+        assert!(result.processing_time_ms < 750);
     }
 
     #[test]

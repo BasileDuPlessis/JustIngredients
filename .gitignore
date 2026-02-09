@@ -30,5 +30,13 @@ Cargo.lock
 # Training data (generated files)
 training_data/
 
+# Temporary files
+tmp/
+
+# Tesseract training artifacts
+*.unicharset
+shapetable
+unicharset
+
 # Scripts directory
 ignore_this_directory

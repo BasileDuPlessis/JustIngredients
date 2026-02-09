@@ -36,6 +36,15 @@ hyper = "1.0" # HTTP implementation
 hyper-util = { version = "0.1.17", features = ["tokio"] } # Hyper utilities
 tokio-util = { version = "0.7", features = ["io"] } # Tokio utilities
 
+# Training data generation dependencies
+rusttype = "0.9" # Font loading and rendering
+imageproc = "0.25" # Image processing utilities
+ab_glyph = "0.2" # Alternative font rendering
+
 [[example]]
 name = "recipe_parser"
 path = "examples/recipe_parser.rs"
+
+[[bin]]
+name = "generate_training_data"
+path = "src/bin/generate_training_data.rs"
