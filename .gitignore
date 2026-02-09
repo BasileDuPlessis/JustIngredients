@@ -27,5 +27,8 @@ Cargo.lock
 # Database files
 *.db
 
+# Training data (generated files)
+training_data/
+
 # Scripts directory
 ignore_this_directory
