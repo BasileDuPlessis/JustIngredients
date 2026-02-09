@@ -457,6 +457,7 @@ impl FuzzyMatcher {
         for i in 0..=len1 {
             matrix[i][0] = i;
         }
+        #[allow(clippy::needless_range_loop)]
         for j in 0..=len2 {
             matrix[0][j] = j;
         }
