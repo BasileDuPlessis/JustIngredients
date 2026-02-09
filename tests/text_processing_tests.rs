@@ -1413,7 +1413,7 @@ mod tests {
         );
 
         // Verify accuracy by checking each ingredient
-        let expected_ingredients = vec![
+        let expected_ingredients = [
             (
                 "2 1/2",
                 Some("cups".to_string()),
