@@ -1,7 +1,7 @@
 use just_ingredients::text_processing::MeasurementDetector;
 
 fn main() {
-    let detector = MeasurementDetector::new().unwrap();
+    let detector = MeasurementDetector::new().expect("MeasurementDetector should initialize successfully");
     let text = "8 tablespoons unsalted butter, cold and\ncubed (See note.)";
     
     println!("Input text:");

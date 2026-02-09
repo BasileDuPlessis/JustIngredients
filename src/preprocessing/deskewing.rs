@@ -454,7 +454,7 @@ mod tests {
     #[test]
     fn test_deskew_image_horizontal_lines() {
         let img = create_horizontal_lines_image(100, 100, 10);
-        let result = deskew_image(&img).unwrap();
+        let result = deskew_image(&img).expect("deskew_image should succeed with valid image");
 
         // Horizontal lines should have near-zero skew
         assert!(result.skew_angle_degrees.abs() < 1.0);
@@ -467,7 +467,7 @@ mod tests {
     #[test]
     fn test_deskew_image_vertical_lines() {
         let img = create_vertical_lines_image(100, 100, 10);
-        let result = deskew_image(&img).unwrap();
+        let result = deskew_image(&img).expect("deskew_image should succeed with valid image");
 
         // Vertical lines should have near-zero skew (they're already "horizontal" in projection)
         assert!(result.skew_angle_degrees.abs() < 1.0);
@@ -478,7 +478,7 @@ mod tests {
     #[test]
     fn test_deskew_image_uniform() {
         let img = create_uniform_image(100, 100, 128);
-        let result = deskew_image(&img).unwrap();
+        let result = deskew_image(&img).expect("deskew_image should succeed with valid image");
 
         // Uniform image should have zero skew (no rotation applied)
         assert_eq!(result.skew_angle_degrees, 0.0);
@@ -489,7 +489,7 @@ mod tests {
     #[test]
     fn test_deskew_image_small_skew_threshold() {
         let img = create_horizontal_lines_image(100, 100, 10);
-        let result = deskew_image(&img).unwrap();
+        let result = deskew_image(&img).expect("deskew_image should succeed with valid image");
 
         // If skew is very small, image should be returned unchanged
         if result.skew_angle_degrees.abs() < 0.5 {
@@ -502,7 +502,8 @@ mod tests {
     #[test]
     fn test_detect_skew_angle_horizontal_lines() {
         let img = create_horizontal_lines_image(100, 100, 10).to_luma8();
-        let angle = detect_skew_angle(&img).unwrap();
+        let angle =
+            detect_skew_angle(&img).expect("detect_skew_angle should succeed with valid image");
 
         // Should detect near-zero angle for horizontal lines
         assert!(angle.abs() < 2.0); // Allow some tolerance
@@ -511,7 +512,8 @@ mod tests {
     #[test]
     fn test_detect_skew_angle_uniform() {
         let img = create_uniform_image(100, 100, 128).to_luma8();
-        let angle = detect_skew_angle(&img).unwrap();
+        let angle =
+            detect_skew_angle(&img).expect("detect_skew_angle should succeed with valid image");
 
         // Uniform image should return zero angle
         assert_eq!(angle, 0.0);
@@ -543,7 +545,8 @@ mod tests {
     #[test]
     fn test_apply_rotation_correction_small_angle() {
         let img = create_horizontal_lines_image(50, 50, 10);
-        let rotated = apply_rotation_correction(&img, 1.0).unwrap();
+        let rotated = apply_rotation_correction(&img, 1.0)
+            .expect("apply_rotation_correction should succeed with valid parameters");
 
         // Should return a valid image
         assert!(rotated.width() > 0);
@@ -553,7 +556,8 @@ mod tests {
     #[test]
     fn test_apply_rotation_correction_zero_angle() {
         let img = create_horizontal_lines_image(50, 50, 10);
-        let rotated = apply_rotation_correction(&img, 0.0).unwrap();
+        let rotated = apply_rotation_correction(&img, 0.0)
+            .expect("apply_rotation_correction should succeed with valid parameters");
 
         // Zero rotation should preserve dimensions approximately
         assert!(rotated.width() >= 50);
@@ -588,7 +592,8 @@ mod tests {
     #[test]
     fn test_apply_otsu_threshold_local() {
         let img = create_horizontal_lines_image(50, 50, 10).to_luma8();
-        let binary = apply_otsu_threshold_local(&img).unwrap();
+        let binary = apply_otsu_threshold_local(&img)
+            .expect("apply_otsu_threshold_local should succeed with valid image");
 
         // Should return binary image same size
         assert_eq!(binary.width(), 50);
@@ -603,7 +608,8 @@ mod tests {
     #[test]
     fn test_apply_otsu_threshold_local_uniform() {
         let img = create_uniform_image(50, 50, 128).to_luma8();
-        let binary = apply_otsu_threshold_local(&img).unwrap();
+        let binary = apply_otsu_threshold_local(&img)
+            .expect("apply_otsu_threshold_local should succeed with valid image");
 
         // Uniform image should threshold consistently
         assert_eq!(binary.width(), 50);
@@ -613,7 +619,7 @@ mod tests {
     #[test]
     fn test_deskew_image_performance() {
         let img = create_horizontal_lines_image(200, 200, 20);
-        let result = deskew_image(&img).unwrap();
+        let result = deskew_image(&img).expect("deskew_image should succeed with valid image");
 
         // Should complete in reasonable time (< 750ms for 200x200 image)
         assert!(result.processing_time_ms < 750);
@@ -632,7 +638,8 @@ mod tests {
             }
         }
         let dynamic_img = DynamicImage::ImageRgb8(img);
-        let result = deskew_image(&dynamic_img).unwrap();
+        let result =
+            deskew_image(&dynamic_img).expect("deskew_image should succeed with valid RGB image");
 
         // Should preserve RGB format
         match result.image {

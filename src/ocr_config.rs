@@ -471,7 +471,10 @@ mod tests {
         // Test default config includes character whitelist
         let default_config = OcrConfig::default();
         assert!(default_config.character_whitelist.is_some());
-        let default_whitelist = default_config.character_whitelist.as_ref().unwrap();
+        let default_whitelist = default_config
+            .character_whitelist
+            .as_ref()
+            .expect("character_whitelist is Some as asserted above");
         // Should contain basic alphanumeric characters
         assert!(default_whitelist.contains("0123456789"));
         assert!(default_whitelist.contains("ABCDEFGHIJKLMNOPQRSTUVWXYZ"));

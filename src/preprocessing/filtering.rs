@@ -430,7 +430,7 @@ mod tests {
     #[test]
     fn test_reduce_noise_basic() {
         let img = create_test_image(100, 100);
-        let result = reduce_noise(&img, 1.0).unwrap();
+        let result = reduce_noise(&img, 1.0).expect("reduce_noise should succeed with valid sigma");
 
         // Check that result has expected properties
         assert!(result.sigma == 1.0);
@@ -459,7 +459,8 @@ mod tests {
         // Test various valid sigma values
         let sigmas = [0.5, 1.0, 1.5, 2.0];
         for &sigma in &sigmas {
-            let result = reduce_noise(&img, sigma).unwrap();
+            let result = reduce_noise(&img, sigma)
+                .expect("reduce_noise should succeed with valid sigma values");
             assert_eq!(result.sigma, sigma);
             assert!(result.processing_time_ms < 100); // Should be fast
         }
@@ -468,7 +469,8 @@ mod tests {
     #[test]
     fn test_reduce_noise_preserves_image_format() {
         let rgb_img = create_test_image(50, 50);
-        let result = reduce_noise(&rgb_img, 1.0).unwrap();
+        let result =
+            reduce_noise(&rgb_img, 1.0).expect("reduce_noise should succeed with RGB image");
 
         // Should preserve RGB format
         match result.image {
@@ -480,7 +482,8 @@ mod tests {
     #[test]
     fn test_reduce_noise_performance() {
         let img = create_test_image(200, 200);
-        let result = reduce_noise(&img, 1.2).unwrap();
+        let result = reduce_noise(&img, 1.2)
+            .expect("reduce_noise should succeed with performance test image");
 
         // Should complete in reasonable time (< 100ms for 200x200 image)
         assert!(result.processing_time_ms < 100);
@@ -489,7 +492,8 @@ mod tests {
     #[test]
     fn test_apply_morphological_operation_erosion() {
         let img = create_test_image(50, 50);
-        let result = apply_morphological_operation(&img, MorphologicalOperation::Erosion).unwrap();
+        let result = apply_morphological_operation(&img, MorphologicalOperation::Erosion)
+            .expect("apply_morphological_operation should succeed with erosion");
 
         assert_eq!(result.operation, MorphologicalOperation::Erosion);
         assert_eq!(result.kernel_size, 3);
@@ -499,7 +503,8 @@ mod tests {
     #[test]
     fn test_apply_morphological_operation_dilation() {
         let img = create_test_image(50, 50);
-        let result = apply_morphological_operation(&img, MorphologicalOperation::Dilation).unwrap();
+        let result = apply_morphological_operation(&img, MorphologicalOperation::Dilation)
+            .expect("apply_morphological_operation should succeed with dilation");
 
         assert_eq!(result.operation, MorphologicalOperation::Dilation);
         assert_eq!(result.kernel_size, 3);
@@ -509,7 +514,8 @@ mod tests {
     #[test]
     fn test_apply_morphological_operation_opening() {
         let img = create_test_image(50, 50);
-        let result = apply_morphological_operation(&img, MorphologicalOperation::Opening).unwrap();
+        let result = apply_morphological_operation(&img, MorphologicalOperation::Opening)
+            .expect("apply_morphological_operation should succeed with opening");
 
         assert_eq!(result.operation, MorphologicalOperation::Opening);
         assert_eq!(result.kernel_size, 3);
@@ -519,7 +525,8 @@ mod tests {
     #[test]
     fn test_apply_morphological_operation_closing() {
         let img = create_test_image(50, 50);
-        let result = apply_morphological_operation(&img, MorphologicalOperation::Closing).unwrap();
+        let result = apply_morphological_operation(&img, MorphologicalOperation::Closing)
+            .expect("apply_morphological_operation should succeed with closing");
 
         assert_eq!(result.operation, MorphologicalOperation::Closing);
         assert_eq!(result.kernel_size, 3);
@@ -586,7 +593,8 @@ mod tests {
         ];
 
         for operation in operations {
-            let result = apply_morphological_operation(&img, operation).unwrap();
+            let result = apply_morphological_operation(&img, operation)
+                .expect("apply_morphological_operation should succeed with all operations");
             // Should complete in reasonable time (< 50ms for 100x100 image)
             assert!(result.processing_time_ms < 50);
         }
@@ -595,8 +603,8 @@ mod tests {
     #[test]
     fn test_morphological_operations_preserve_image_format() {
         let rgb_img = create_test_image(50, 50);
-        let result =
-            apply_morphological_operation(&rgb_img, MorphologicalOperation::Opening).unwrap();
+        let result = apply_morphological_operation(&rgb_img, MorphologicalOperation::Opening)
+            .expect("apply_morphological_operation should succeed with RGB image");
 
         // Should convert to grayscale for processing but return DynamicImage
         assert!(result.image.width() == 50);
@@ -606,7 +614,8 @@ mod tests {
     #[test]
     fn test_apply_clahe_basic() {
         let img = create_test_image(100, 100);
-        let result = apply_clahe(&img, 3.0, (8, 8)).unwrap();
+        let result = apply_clahe(&img, 3.0, (8, 8))
+            .expect("apply_clahe should succeed with valid parameters");
 
         assert_eq!(result.clip_limit, 3.0);
         assert_eq!(result.tile_size, (8, 8));
@@ -638,7 +647,8 @@ mod tests {
         let tile_sizes = [(4, 4), (8, 8), (16, 16), (32, 32)];
 
         for &tile_size in &tile_sizes {
-            let result = apply_clahe(&img, 2.0, tile_size).unwrap();
+            let result = apply_clahe(&img, 2.0, tile_size)
+                .expect("apply_clahe should succeed with different tile sizes");
             assert_eq!(result.tile_size, tile_size);
             assert_eq!(result.image.width(), 64);
             assert_eq!(result.image.height(), 64);
@@ -652,7 +662,8 @@ mod tests {
         let clip_limits = [1.0, 2.0, 3.0, 4.0, 5.0];
 
         for &clip_limit in &clip_limits {
-            let result = apply_clahe(&img, clip_limit, (8, 8)).unwrap();
+            let result = apply_clahe(&img, clip_limit, (8, 8))
+                .expect("apply_clahe should succeed with different clip limits");
             assert_eq!(result.clip_limit, clip_limit);
         }
     }
@@ -660,7 +671,8 @@ mod tests {
     #[test]
     fn test_apply_clahe_performance() {
         let img = create_test_image(200, 200);
-        let result = apply_clahe(&img, 3.0, (8, 8)).unwrap();
+        let result = apply_clahe(&img, 3.0, (8, 8))
+            .expect("apply_clahe should succeed with performance test image");
 
         // Should complete in reasonable time (< 200ms for 200x200 image)
         assert!(result.processing_time_ms < 200);
@@ -669,7 +681,8 @@ mod tests {
     #[test]
     fn test_apply_clahe_preserves_image_format() {
         let rgb_img = create_test_image(50, 50);
-        let result = apply_clahe(&rgb_img, 3.0, (8, 8)).unwrap();
+        let result =
+            apply_clahe(&rgb_img, 3.0, (8, 8)).expect("apply_clahe should succeed with RGB image");
 
         // Should return grayscale image
         match result.image {

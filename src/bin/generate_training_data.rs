@@ -100,8 +100,13 @@ impl TrainingDataGenerator {
         all_units.extend(&self.units.measurement_units.us_units);
         all_units.extend(&self.units.measurement_units.french_units);
 
-        let unit = all_units.choose(&mut self.rng).unwrap();
-        let ingredient = self.ingredients.choose(&mut self.rng).unwrap();
+        let unit = all_units
+            .choose(&mut self.rng)
+            .expect("should have units to choose from");
+        let ingredient = self
+            .ingredients
+            .choose(&mut self.rng)
+            .expect("should have ingredients to choose from");
 
         format!("{} {} {}", quantity, unit, ingredient)
     }
@@ -191,8 +196,12 @@ fn generate_box_file(image_path: &Path, _text_content: &str, box_path: &Path) ->
 
     let output = Command::new("tesseract")
         .args([
-            image_path.to_str().unwrap(),
-            output_base.to_str().unwrap(),
+            image_path
+                .to_str()
+                .expect("image path should be valid UTF-8"),
+            output_base
+                .to_str()
+                .expect("output base path should be valid UTF-8"),
             "-l",
             "eng",
             "--psm",
@@ -269,7 +278,8 @@ mod tests {
 
     #[test]
     fn test_ingredient_generation() {
-        let mut generator = TrainingDataGenerator::new().unwrap();
+        let mut generator = TrainingDataGenerator::new()
+            .expect("TrainingDataGenerator should initialize successfully");
         let ingredient = generator.generate_ingredient();
 
         // Should contain quantity, unit, and ingredient
@@ -291,7 +301,8 @@ mod tests {
 
     #[test]
     fn test_recipe_generation() {
-        let mut generator = TrainingDataGenerator::new().unwrap();
+        let mut generator = TrainingDataGenerator::new()
+            .expect("TrainingDataGenerator should initialize successfully");
         let recipe = generator.generate_recipe(5);
 
         assert_eq!(recipe.len(), 5);
@@ -331,7 +342,8 @@ mod tests {
 
     #[test]
     fn test_quantity_generation() {
-        let mut generator = TrainingDataGenerator::new().unwrap();
+        let mut generator = TrainingDataGenerator::new()
+            .expect("TrainingDataGenerator should initialize successfully");
 
         // Generate many quantities to test variety
         let mut quantities = std::collections::HashSet::new();

@@ -250,7 +250,8 @@ mod tests {
     #[test]
     fn test_assess_image_quality_uniform_dark() {
         let img = create_uniform_image(100, 100, 0); // All black
-        let result = assess_image_quality(&img).unwrap();
+        let result = assess_image_quality(&img)
+            .expect("assess_image_quality should succeed with valid image");
 
         assert_eq!(result.quality, ImageQuality::Low);
         assert_eq!(result.contrast_ratio, 0.0);
@@ -262,7 +263,8 @@ mod tests {
     #[test]
     fn test_assess_image_quality_uniform_bright() {
         let img = create_uniform_image(100, 100, 255); // All white
-        let result = assess_image_quality(&img).unwrap();
+        let result = assess_image_quality(&img)
+            .expect("assess_image_quality should succeed with valid image");
 
         assert_eq!(result.quality, ImageQuality::Low);
         assert_eq!(result.contrast_ratio, 0.0);
@@ -274,7 +276,8 @@ mod tests {
     #[test]
     fn test_assess_image_quality_uniform_medium() {
         let img = create_uniform_image(100, 100, 128); // Medium gray
-        let result = assess_image_quality(&img).unwrap();
+        let result = assess_image_quality(&img)
+            .expect("assess_image_quality should succeed with valid image");
 
         assert_eq!(result.quality, ImageQuality::Low);
         assert_eq!(result.contrast_ratio, 0.0);
@@ -287,7 +290,8 @@ mod tests {
     #[test]
     fn test_assess_image_quality_gradient() {
         let img = create_gradient_image(100, 100);
-        let result = assess_image_quality(&img).unwrap();
+        let result = assess_image_quality(&img)
+            .expect("assess_image_quality should succeed with valid image");
 
         // Gradient should have good contrast
         assert!(result.contrast_ratio > 0.5);
@@ -389,7 +393,8 @@ mod tests {
     #[test]
     fn test_assess_image_quality_performance() {
         let img = create_gradient_image(200, 200);
-        let result = assess_image_quality(&img).unwrap();
+        let result = assess_image_quality(&img)
+            .expect("assess_image_quality should succeed with valid image");
 
         // Should complete in reasonable time (< 100ms for 200x200 image)
         assert!(result.processing_time_ms < 100);

@@ -1119,7 +1119,10 @@ impl MeasurementDetector {
         }
 
         // Check if the text ends with punctuation that indicates completion
-        let last_char = trimmed.chars().last().unwrap();
+        let last_char = trimmed
+            .chars()
+            .last()
+            .expect("trimmed is not empty after is_empty check");
 
         // Complete endings: period, closing parenthesis, closing bracket, closing brace
         // Also consider comma as complete (next ingredient separator)

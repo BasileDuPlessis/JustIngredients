@@ -57,7 +57,7 @@ impl ImageScaler {
     /// ```
     /// use just_ingredients::preprocessing::ImageScaler;
     ///
-    /// let scaler = ImageScaler::with_target_height(30).unwrap();
+    /// let scaler = ImageScaler::with_target_height(30).expect("30 is within valid range");
     /// assert_eq!(scaler.target_char_height(), 30);
     /// ```
     ///
@@ -396,7 +396,7 @@ mod tests {
 
     #[test]
     fn test_with_valid_target_height() {
-        let scaler = ImageScaler::with_target_height(25).unwrap();
+        let scaler = ImageScaler::with_target_height(25).expect("25 is within valid range");
         assert_eq!(scaler.target_char_height(), 25);
     }
 
@@ -426,7 +426,7 @@ mod tests {
         let result = scaler.scale(&img);
         assert!(result.is_ok());
 
-        let scaled = result.unwrap();
+        let scaled = result.expect("result is Ok as asserted above");
         let (scaled_width, scaled_height) = scaled.dimensions();
 
         // Scaled image should have different dimensions (scaled for target height)
@@ -476,7 +476,7 @@ mod tests {
         let result = scaler.scale_for_ocr(&img);
         assert!(result.is_ok());
 
-        let scaled_result = result.unwrap();
+        let scaled_result = result.expect("result is Ok as asserted above");
 
         // Check that dimensions changed appropriately
         assert!(scaled_result.new_dimensions.0 > 0);
@@ -525,7 +525,9 @@ mod tests {
         let scaler = ImageScaler::new();
         let img = create_test_image(100, 50);
 
-        let result = scaler.scale_for_ocr(&img).unwrap();
+        let result = scaler
+            .scale_for_ocr(&img)
+            .expect("scale_for_ocr should succeed with valid input");
 
         // Check that all fields are populated correctly
         assert_eq!(result.original_dimensions, (100, 50));

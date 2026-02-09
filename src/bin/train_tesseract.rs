@@ -27,7 +27,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Process each box file
     for box_file in &box_files {
-        let stem = box_file.file_stem().unwrap().to_str().unwrap();
+        let stem = box_file
+            .file_stem()
+            .expect("box file should have a stem")
+            .to_str()
+            .expect("stem should be valid UTF-8");
         let tif_file = box_file.with_extension("tif");
 
         if !tif_file.exists() {

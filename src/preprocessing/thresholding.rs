@@ -193,7 +193,8 @@ mod tests {
         }
 
         let dynamic_img = DynamicImage::ImageLuma8(img);
-        let result = apply_otsu_threshold(&dynamic_img).unwrap();
+        let result = apply_otsu_threshold(&dynamic_img)
+            .expect("apply_otsu_threshold should succeed with valid grayscale image");
 
         // Check that we got a valid threshold
         assert!(result.threshold > 0 && result.threshold < 255);
@@ -217,7 +218,8 @@ mod tests {
         }
 
         let dynamic_img = DynamicImage::ImageLuma8(img);
-        let _result = apply_otsu_threshold(&dynamic_img).unwrap();
+        let _result = apply_otsu_threshold(&dynamic_img)
+            .expect("apply_otsu_threshold should succeed with uniform grayscale image");
 
         // For uniform images, Otsu should still produce a valid threshold
         // (threshold is u8, so it's always <= 255)
@@ -233,7 +235,8 @@ mod tests {
         histogram[225] = 5000; // Light class at intensity 225
 
         let total_pixels = 10000.0;
-        let threshold = find_otsu_threshold(&histogram, total_pixels).unwrap();
+        let threshold = find_otsu_threshold(&histogram, total_pixels)
+            .expect("find_otsu_threshold should succeed with valid histogram");
 
         // Threshold should be somewhere between the two classes
         assert!((25..=225).contains(&threshold));
@@ -248,7 +251,8 @@ mod tests {
         }
 
         let total_pixels = 5000.0;
-        let _threshold = find_otsu_threshold(&histogram, total_pixels).unwrap();
+        let _threshold = find_otsu_threshold(&histogram, total_pixels)
+            .expect("find_otsu_threshold should succeed with single class histogram");
 
         // Should still return a valid threshold
         // (threshold is u8, so it's always <= 255)
