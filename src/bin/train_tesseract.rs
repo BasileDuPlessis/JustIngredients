@@ -82,9 +82,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Shape clustering
     let shapetable_path = format!("{}/shapetable", output_dir);
     let mut cmd = Command::new("shapeclustering");
-    cmd.arg("-F").arg(format!("{}/font_properties", training_dir))
-       .arg("-U").arg(&unicharset_path)
-       .arg("-O").arg(&shapetable_path);
+    cmd.arg("-F")
+        .arg(format!("{}/font_properties", training_dir))
+        .arg("-U")
+        .arg(&unicharset_path)
+        .arg("-O")
+        .arg(&shapetable_path);
     for tr_file in &tr_files {
         cmd.arg(tr_file);
     }
@@ -98,9 +101,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // MF training
     let mut cmd = Command::new("mftraining");
-    cmd.arg("-F").arg(format!("{}/font_properties", training_dir))
-       .arg("-U").arg(&unicharset_path)
-       .arg("-O").arg(format!("{}.unicharset", lang_name));
+    cmd.arg("-F")
+        .arg(format!("{}/font_properties", training_dir))
+        .arg("-U")
+        .arg(&unicharset_path)
+        .arg("-O")
+        .arg(format!("{}.unicharset", lang_name));
     for tr_file in &tr_files {
         cmd.arg(tr_file);
     }

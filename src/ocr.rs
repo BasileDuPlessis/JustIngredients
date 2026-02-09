@@ -1039,12 +1039,43 @@ async fn apply_image_preprocessing(
     let preprocessing_start = std::time::Instant::now();
 
     // Load the original image
-    let img = image::open(image_path).map_err(|e| {
-        crate::ocr_errors::OcrError::ImageLoad(format!(
-            "Failed to load image for preprocessing: {}",
-            e
-        ))
-    })?;
+    let img = match image::open(image_path) {
+        Ok(img) => img,
+        Err(e) => {
+            // If image loading fails, fall back to using the original image without preprocessing
+            warn!(
+                "Image preprocessing failed to load image '{}': {}. Using original image for OCR.",
+                image_path, e
+            );
+
+            // Create a temporary file that points to the original image
+            let temp_file = NamedTempFile::new().map_err(|e| {
+                crate::ocr_errors::OcrError::Extraction(format!(
+                    "Failed to create temporary file for fallback: {}",
+                    e
+                ))
+            })?;
+
+            // Copy the original file to the temp location
+            std::fs::copy(image_path, temp_file.path()).map_err(|e| {
+                crate::ocr_errors::OcrError::Extraction(format!(
+                    "Failed to copy original image for fallback: {}",
+                    e
+                ))
+            })?;
+
+            let temp_path = temp_file.path().to_string_lossy().to_string();
+            let preprocessing_duration = preprocessing_start.elapsed();
+
+            info!(
+                target: "ocr_preprocessing",
+                "Using original image (preprocessing failed): fallback took {:.2}ms",
+                preprocessing_duration.as_millis()
+            );
+
+            return Ok((temp_file, temp_path, preprocessing_duration));
+        }
+    };
 
     // Assess image quality to determine preprocessing strategy
     let quality_result =

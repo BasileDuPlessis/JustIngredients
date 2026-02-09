@@ -1734,3 +1734,66 @@ fn create_low_quality_test_image(width: u32, height: u32) -> image::DynamicImage
 
     image::DynamicImage::ImageLuma8(img)
 }
+
+/// Test preprocessing fallback behavior when image loading fails
+#[tokio::test]
+async fn test_preprocessing_fallback_on_image_load_failure() {
+    println!("🛡️  Testing preprocessing fallback behavior...");
+
+    // Use the real problematic image that has ICC profile issues
+    let image_path = "docs/IMG_20260117_184425_459.jpg";
+
+    // Skip test if the image file doesn't exist
+    if !std::path::Path::new(image_path).exists() {
+        println!("    ⚠️  Skipping test: problematic image file not found");
+        return;
+    }
+
+    let config = OcrConfig::default();
+    let instance_manager = OcrInstanceManager::new();
+    let circuit_breaker = CircuitBreaker::new(config.recovery.clone());
+
+    // Test that OCR still works even when preprocessing fails
+    let start_time = std::time::Instant::now();
+    let result =
+        extract_text_from_image(image_path, &config, &instance_manager, &circuit_breaker).await;
+    let duration = start_time.elapsed();
+
+    match result {
+        Ok((extracted_text, confidence)) => {
+            println!(
+                "✅ Preprocessing fallback test passed in {}ms",
+                duration.as_millis()
+            );
+            println!("    📝 Extracted {} characters", extracted_text.len());
+            println!("    🎯 Confidence score: {:.3}", confidence.overall_score);
+
+            // Verify we got some text (the image should contain readable ingredients)
+            assert!(
+                !extracted_text.is_empty(),
+                "Should extract some text from the image"
+            );
+            assert!(
+                extracted_text.len() > 10,
+                "Should extract meaningful amount of text"
+            );
+
+            // Verify confidence is reasonable
+            assert!(
+                confidence.overall_score > 0.0,
+                "Confidence should be positive"
+            );
+            assert!(
+                confidence.overall_score <= 1.0,
+                "Confidence should not exceed 1.0"
+            );
+
+            println!("    ✅ Preprocessing fallback successfully handled image loading failure");
+        }
+        Err(e) => {
+            panic!("❌ Preprocessing fallback test failed: {}. The fallback mechanism should ensure OCR still works.", e);
+        }
+    }
+
+    println!("✅ Preprocessing fallback test completed successfully");
+}
