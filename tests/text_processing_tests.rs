@@ -744,6 +744,26 @@ mod tests {
     }
 
     #[test]
+    fn test_additional_unicode_fractions() {
+        let detector = create_detector();
+
+        // Test additional Unicode fraction characters added to user_words.txt
+        assert!(detector.has_measurements("⅕ cup flour")); // Unicode ⅕ character
+        assert!(detector.has_measurements("⅖ teaspoon salt")); // Unicode ⅖ character
+        assert!(detector.has_measurements("⅗ kg sugar")); // Unicode ⅗ character
+        assert!(detector.has_measurements("⅘ liter milk")); // Unicode ⅘ character
+        assert!(detector.has_measurements("⅙ gram butter")); // Unicode ⅙ character
+        assert!(detector.has_measurements("⅚ ounce cheese")); // Unicode ⅚ character
+
+        // Test extraction for one of them
+        let matches = detector.extract_ingredient_measurements("⅕ cup flour");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0].quantity, "⅕");
+        assert_eq!(matches[0].measurement, Some("cup".to_string()));
+        assert_eq!(matches[0].ingredient_name, "flour");
+    }
+
+    #[test]
     fn test_mixed_number_quantities() {
         let detector = create_detector();
 
