@@ -758,7 +758,7 @@ mod tests {
         // Test extraction for one of them
         let matches = detector.extract_ingredient_measurements("⅕ cup flour");
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].quantity, "⅕");
+        assert_eq!(matches[0].quantity, "1/5");
         assert_eq!(matches[0].measurement, Some("cup".to_string()));
         assert_eq!(matches[0].ingredient_name, "flour");
     }
@@ -776,11 +776,11 @@ mod tests {
         let matches = detector.extract_ingredient_measurements("1½ cups flour\n2¼ teaspoons salt");
 
         assert_eq!(matches.len(), 2);
-        assert_eq!(matches[0].quantity, "1½");
+        assert_eq!(matches[0].quantity, "1 1/2");
         assert_eq!(matches[0].measurement, Some("cups".to_string()));
         assert_eq!(matches[0].ingredient_name, "flour");
 
-        assert_eq!(matches[1].quantity, "2¼");
+        assert_eq!(matches[1].quantity, "2 1/4");
         assert_eq!(matches[1].measurement, Some("teaspoons".to_string()));
         assert_eq!(matches[1].ingredient_name, "salt");
     }
@@ -800,6 +800,40 @@ mod tests {
         assert_eq!(matches[1].quantity, "0/4"); // 'O' corrected to '0'
         assert_eq!(matches[1].measurement, Some("teaspoon".to_string()));
         assert_eq!(matches[1].ingredient_name, "salt");
+    }
+
+    #[test]
+    fn test_unicode_fraction_normalization() {
+        let detector = create_detector();
+
+        // Test Unicode fraction normalization to ASCII
+        let test_cases = vec![
+            ("¼ cup flour", "1/4"),
+            ("½ cup sugar", "1/2"),
+            ("¾ cup milk", "3/4"),
+            ("⅓ cup butter", "1/3"),
+            ("⅔ cup oil", "2/3"),
+            ("⅕ cup salt", "1/5"),
+            ("⅖ cup pepper", "2/5"),
+            ("⅗ cup cinnamon", "3/5"),
+            ("⅘ cup vanilla", "4/5"),
+            ("⅙ cup baking powder", "1/6"),
+            ("⅚ cup baking soda", "5/6"),
+            ("⅛ cup flour", "1/8"),
+            ("⅜ cup sugar", "3/8"),
+            ("⅝ cup milk", "5/8"),
+            ("⅞ cup butter", "7/8"),
+            // Mixed numbers
+            ("1½ cups flour", "1 1/2"),
+            ("2¼ cups sugar", "2 1/4"),
+            ("3¾ cups milk", "3 3/4"),
+        ];
+
+        for (input, expected_quantity) in test_cases {
+            let matches = detector.extract_ingredient_measurements(input);
+            assert_eq!(matches.len(), 1, "Failed for input: {}", input);
+            assert_eq!(matches[0].quantity, expected_quantity, "Failed for input: {}", input);
+        }
     }
 
     #[test]

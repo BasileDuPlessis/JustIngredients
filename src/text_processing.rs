@@ -1472,6 +1472,37 @@ impl MeasurementDetector {
     fn post_process_quantity(&self, quantity: &str) -> String {
         let mut corrected = quantity.to_string();
 
+        // First, normalize Unicode fractions to ASCII equivalents
+        let unicode_fractions = [
+            ("¼", "1/4"),
+            ("½", "1/2"),
+            ("¾", "3/4"),
+            ("⅓", "1/3"),
+            ("⅔", "2/3"),
+            ("⅕", "1/5"),
+            ("⅖", "2/5"),
+            ("⅗", "3/5"),
+            ("⅘", "4/5"),
+            ("⅙", "1/6"),
+            ("⅚", "5/6"),
+            ("⅛", "1/8"),
+            ("⅜", "3/8"),
+            ("⅝", "5/8"),
+            ("⅞", "7/8"),
+            ("⅟", "1/"),
+        ];
+
+        // Handle mixed numbers (digit + Unicode fraction) specially
+        // Replace Unicode fraction in mixed numbers with space + ASCII fraction
+        for (unicode, ascii) in &unicode_fractions {
+            // For mixed numbers like "1½", replace with "1 1/2"
+            if corrected.contains(unicode) && corrected.chars().next().unwrap_or(' ').is_ascii_digit() {
+                corrected = corrected.replace(unicode, &format!(" {}", ascii));
+            } else {
+                corrected = corrected.replace(unicode, ascii);
+            }
+        }
+
         // Common OCR corrections for fractions
         let corrections = [
             // Letter 'l' mistaken for '1' in fractions
