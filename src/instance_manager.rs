@@ -144,6 +144,16 @@ impl OcrInstanceManager {
             );
         }
 
+        // Set custom user patterns file if configured
+        if let Some(user_patterns_path) = &config.user_patterns_file {
+            tess.set_variable(leptess::Variable::UserPatternsFile, user_patterns_path)
+                .map_err(|e| anyhow::anyhow!("Failed to set user patterns file: {}", e))?;
+            info!(
+                "Configured Tesseract with custom user patterns file: {}",
+                user_patterns_path
+            );
+        }
+
         // Set character whitelist if configured
         if let Some(whitelist) = &config.character_whitelist {
             tess.set_variable(leptess::Variable::TesseditCharWhitelist, whitelist)

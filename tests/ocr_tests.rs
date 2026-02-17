@@ -110,6 +110,29 @@ mod tests {
         assert_eq!(manager._instance_count(), 0);
     }
 
+    /// Test instance manager with user patterns file configured
+    #[test]
+    fn test_instance_manager_with_user_patterns() {
+        let manager = OcrInstanceManager::new();
+
+        // Create config with user patterns file
+        let config = OcrConfig {
+            user_patterns_file: Some("config/user_patterns.txt".to_string()),
+            ..Default::default()
+        };
+
+        // Get instance (should configure with user patterns)
+        let instance = manager.get_instance(&config).unwrap();
+        assert_eq!(manager._instance_count(), 1);
+
+        // Verify instance is created successfully
+        assert!(instance.lock().is_ok());
+
+        // Clean up
+        manager._clear_all_instances();
+        assert_eq!(manager._instance_count(), 0);
+    }
+
     /// Test image path validation with valid inputs
     #[test]
     fn test_validate_image_path_valid() {
