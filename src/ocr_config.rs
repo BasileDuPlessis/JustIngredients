@@ -256,6 +256,8 @@ pub struct OcrConfig {
     pub psm_mode: PageSegMode,
     /// Path to custom user words file for improved recognition
     pub user_words_file: Option<String>,
+    /// Path to custom user patterns file for improved recognition
+    pub user_patterns_file: Option<String>,
     /// Character whitelist to restrict OCR output to recipe-relevant characters
     pub character_whitelist: Option<String>,
 }
@@ -272,7 +274,8 @@ impl Default for OcrConfig {
             recovery: RecoveryConfig::default(),
             psm_mode: PageSegMode::default(),
             user_words_file: Some("config/user_words.txt".to_string()),
-            character_whitelist: Some("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÂÄÉÈÊËÏÎÔÖÙÛÜŸàâäéèêëïîôöùûüÿ¼½¾⅓⅔⅛⅜⅝⅞/.,-() ".to_string()),
+            user_patterns_file: Some("config/user_patterns.txt".to_string()),
+            character_whitelist: Some("0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyzÀÂÄÉÈÊËÏÎÔÖÙÛÜŸàâäéèêëïîôöùûüÿ¼½¾⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞/.,-() ".to_string()),
         }
     }
 }
@@ -456,6 +459,33 @@ mod tests {
     }
 
     #[test]
+    fn test_ocr_config_user_patterns_file() {
+        // Test OcrConfig with custom user patterns file
+        let config_with_custom_patterns = OcrConfig {
+            user_patterns_file: Some("custom/path/to/patterns.txt".to_string()),
+            ..Default::default()
+        };
+        assert_eq!(
+            config_with_custom_patterns.user_patterns_file,
+            Some("custom/path/to/patterns.txt".to_string())
+        );
+
+        // Test default config includes user patterns file
+        let default_config = OcrConfig::default();
+        assert_eq!(
+            default_config.user_patterns_file,
+            Some("config/user_patterns.txt".to_string())
+        );
+
+        // Test config without user patterns file
+        let config_without_patterns = OcrConfig {
+            user_patterns_file: None,
+            ..Default::default()
+        };
+        assert_eq!(config_without_patterns.user_patterns_file, None);
+    }
+
+    #[test]
     fn test_ocr_config_character_whitelist() {
         // Test OcrConfig with custom character whitelist
         let custom_whitelist = "0123456789ABCDEF".to_string();
@@ -482,7 +512,7 @@ mod tests {
         // Should contain accented characters for French
         assert!(default_whitelist.contains("ÀÂÄÉÈÊË"));
         // Should contain fractions
-        assert!(default_whitelist.contains("¼½¾⅓⅔⅛⅜⅝⅞"));
+        assert!(default_whitelist.contains("¼½¾⅓⅔⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞"));
         // Should contain common punctuation
         assert!(default_whitelist.contains(".,-() "));
 

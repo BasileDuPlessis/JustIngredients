@@ -1,0 +1,36 @@
+# Custom Pattern List for Recipe OCR
+# Contains common character sequences and patterns
+# to improve Tesseract recognition accuracy on recipe images
+
+# Measurement unit patterns
+cup
+cups
+teaspoon
+teaspoons
+tablespoon
+tablespoons
+gram
+grams
+kilogram
+kilograms
+liter
+liters
+milliliter
+milliliters
+pound
+pounds
+ounce
+ounces
+pint
+pints
+quart
+quarts
+
+# Common recipe sequences
+of flour
+of sugar
+of salt
+of butter
+of milk
+of water
+of oil
