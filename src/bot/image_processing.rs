@@ -17,8 +17,14 @@ use crate::text_processing::{MeasurementDetector, MeasurementMatch};
 // Import OCR types
 use crate::circuit_breaker::CircuitBreaker;
 use crate::instance_manager::OcrInstanceManager;
+use crate::ocr::{
+    extract_hocr_from_image, map_measurement_to_bbox, parse_hocr_to_lines, perform_constrained_ocr,
+};
 use crate::ocr_config::OcrConfig;
 use crate::ocr_errors::OcrError;
+use crate::preprocessing::{
+    crop_measurement_region, preprocess_measurement_region, CroppedImageResult,
+};
 
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
@@ -216,9 +222,15 @@ pub async fn download_and_process_image(
                         "OCR extraction completed successfully"
                     );
 
-                    // Process the extracted text to find ingredients with measurements
-                    let ingredients =
-                        process_ingredients_and_extract_matches(&extracted_text, language_code);
+                    // Process the extracted text to find ingredients with measurements and automated recovery
+                    let ingredients = process_ingredients_with_recovery(
+                        &extracted_text,
+                        temp_file_guard.path(),
+                        &OCR_CONFIG,
+                        &OCR_INSTANCE_MANAGER,
+                        &CIRCUIT_BREAKER,
+                        language_code,
+                    ).await;
 
                     if ingredients.is_empty() {
                         // No ingredients found, edit the success message
@@ -342,6 +354,240 @@ pub async fn download_and_process_image(
     .await;
 
     result
+}
+
+/// Attempts automated recovery of anomalous quantity measurements using targeted re-OCR
+///
+/// This function implements the complete automated recovery pipeline:
+/// 1. Extract HOCR from the original image to get spatial data
+/// 2. Map the anomalous measurement to its bounding box
+/// 3. Crop the image around the measurement region
+/// 4. Apply targeted preprocessing for quantity recognition
+/// 5. Run constrained OCR optimized for numbers and fractions
+/// 6. Update the measurement match if recovery succeeds
+async fn attempt_automated_quantity_recovery(
+    image_path: &str,
+    measurement_match: &mut MeasurementMatch,
+    ocr_config: &OcrConfig,
+    instance_manager: &OcrInstanceManager,
+    circuit_breaker: &CircuitBreaker,
+) -> Result<bool, OcrError> {
+    info!(
+        line_number = measurement_match.line_number,
+        ingredient = %measurement_match.ingredient_name,
+        "Attempting automated quantity recovery for anomalous measurement"
+    );
+
+    // Step 1: Extract HOCR from the original image
+    let hocr_text =
+        extract_hocr_from_image(image_path, ocr_config, instance_manager, circuit_breaker).await?;
+
+    // Step 2: Parse HOCR to get line bounding boxes
+    let hocr_lines = parse_hocr_to_lines(&hocr_text)?;
+
+    // Step 3: Map the measurement to its bounding box
+    let bbox = map_measurement_to_bbox(measurement_match, &hocr_lines).ok_or_else(|| {
+        OcrError::Extraction(format!(
+            "Could not map measurement to bounding box for line {}",
+            measurement_match.line_number
+        ))
+    })?;
+
+    // Step 4: Load the original image for cropping
+    let _original_image = image::open(image_path)
+        .map_err(|e| OcrError::Validation(format!("Failed to load image for cropping: {}", e)))?;
+
+    // Step 5: Crop the measurement region
+    let CroppedImageResult {
+        image: cropped_image,
+        ..
+    } = crop_measurement_region(image_path, &bbox)
+        .map_err(|e| OcrError::Extraction(format!("Failed to crop measurement region: {}", e)))?;
+
+    // Step 6: Apply targeted preprocessing
+    let preprocessed_image = preprocess_measurement_region(&cropped_image).map_err(|e| {
+        OcrError::Extraction(format!("Failed to preprocess measurement region: {}", e))
+    })?;
+
+    // Step 7: Run constrained OCR
+    let constrained_result =
+        perform_constrained_ocr(&preprocessed_image.image, instance_manager, ocr_config).await?;
+
+    // Step 8: Validate and update the measurement if recovery succeeded
+    if is_valid_recovered_quantity(&constrained_result.text) {
+        info!(
+            original_quantity = %measurement_match.quantity,
+            recovered_quantity = %constrained_result.text,
+            confidence = constrained_result.confidence,
+            "Automated quantity recovery succeeded"
+        );
+
+        // Update the measurement match with recovered quantity
+        measurement_match.quantity = constrained_result.text.clone();
+        measurement_match.requires_quantity_confirmation = false;
+
+        Ok(true) // Recovery succeeded
+    } else {
+        debug!(
+            recovered_text = %constrained_result.text,
+            confidence = constrained_result.confidence,
+            "Automated quantity recovery produced invalid result, keeping original anomaly"
+        );
+        Ok(false) // Recovery failed, keep original anomaly
+    }
+}
+
+/// Validates if a recovered quantity string is acceptable for automated use
+pub fn is_valid_recovered_quantity(text: &str) -> bool {
+    let text = text.trim();
+
+    // Must not be empty
+    if text.is_empty() {
+        return false;
+    }
+
+    // Must contain at least one digit
+    if !text.chars().any(|c| c.is_ascii_digit()) {
+        return false;
+    }
+
+    // Must not contain letters (except in valid contexts like "1st", "2nd")
+    let has_letters = text.chars().any(|c| c.is_ascii_alphabetic());
+    if has_letters {
+        // Allow ordinal numbers like "1st", "2nd", "3rd" but not other letters
+        let valid_ordinals = ["1st", "2nd", "3rd"];
+        if !valid_ordinals.contains(&text) {
+            return false;
+        }
+    }
+
+    // Must be a reasonable length (1-10 characters for quantities)
+    if text.len() > 10 {
+        return false;
+    }
+
+    // Must be parseable as a valid number or fraction, or be a valid ordinal
+    let is_valid_ordinal = ["1st", "2nd", "3rd"].contains(&text);
+    if text.parse::<f64>().is_err() && !is_valid_fraction(text) && !is_valid_ordinal {
+        return false;
+    }
+
+    true
+}
+
+/// Checks if a string represents a valid fraction (like "1/2", "3/4", etc.)
+pub fn is_valid_fraction(text: &str) -> bool {
+    if let Some(slash_pos) = text.find('/') {
+        let numerator = &text[..slash_pos];
+        let denominator = &text[slash_pos + 1..];
+
+        // Both parts must be numeric and denominator must not be zero
+        numerator.parse::<u32>().is_ok() && denominator.parse::<u32>().is_ok() && denominator != "0"
+    } else {
+        false
+    }
+}
+
+/// Process extracted text and return measurement matches with automated quantity recovery
+pub async fn process_ingredients_with_recovery(
+    extracted_text: &str,
+    image_path: &str,
+    ocr_config: &OcrConfig,
+    instance_manager: &OcrInstanceManager,
+    circuit_breaker: &CircuitBreaker,
+    _language_code: Option<&str>,
+) -> Vec<MeasurementMatch> {
+    debug!(
+        text_length = extracted_text.len(),
+        "Processing extracted text for ingredients with automated recovery"
+    );
+
+    // Create measurement detector with default configuration
+    let detector = match MeasurementDetector::new() {
+        Ok(detector) => detector,
+        Err(e) => {
+            error_logging::log_internal_error(
+                &e,
+                "MeasurementDetector",
+                "create_measurement_detector",
+                None,
+            );
+            return Vec::new();
+        }
+    };
+
+    // Find all measurements in the text
+    let mut matches = detector.extract_ingredient_measurements(extracted_text);
+    info!(
+        matches_found = matches.len(),
+        "Initial measurement detection completed"
+    );
+
+    // Count anomalies before recovery
+    let anomalies_before = matches
+        .iter()
+        .filter(|m| m.requires_quantity_confirmation)
+        .count();
+
+    if anomalies_before > 0 {
+        info!(
+            anomalies = anomalies_before,
+            "Detected anomalous measurements, attempting automated recovery"
+        );
+
+        // Attempt automated recovery for each anomalous measurement
+        for measurement_match in &mut matches {
+            if measurement_match.requires_quantity_confirmation {
+                match attempt_automated_quantity_recovery(
+                    image_path,
+                    measurement_match,
+                    ocr_config,
+                    instance_manager,
+                    circuit_breaker,
+                )
+                .await
+                {
+                    Ok(recovered) => {
+                        if recovered {
+                            info!(
+                                ingredient = %measurement_match.ingredient_name,
+                                "Successfully recovered quantity automatically"
+                            );
+                        } else {
+                            debug!(
+                                ingredient = %measurement_match.ingredient_name,
+                                "Automated recovery failed, keeping anomaly for manual confirmation"
+                            );
+                        }
+                    }
+                    Err(e) => {
+                        warn!(
+                            ingredient = %measurement_match.ingredient_name,
+                            error = %e,
+                            "Automated recovery encountered error, keeping anomaly for manual confirmation"
+                        );
+                    }
+                }
+            }
+        }
+
+        // Count anomalies after recovery
+        let anomalies_after = matches
+            .iter()
+            .filter(|m| m.requires_quantity_confirmation)
+            .count();
+        let recovered_count = anomalies_before - anomalies_after;
+
+        info!(
+            recovered = recovered_count,
+            remaining_anomalies = anomalies_after,
+            "Automated quantity recovery completed"
+        );
+    } else {
+        debug!("No anomalous measurements detected, skipping automated recovery");
+    }
+
+    matches
 }
 
 /// Process extracted text and return measurement matches

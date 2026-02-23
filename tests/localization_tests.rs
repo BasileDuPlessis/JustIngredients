@@ -246,4 +246,31 @@ mod tests {
         assert!(french_singular.contains("1"));
         assert!(french_plural.contains("5"));
     }
+
+    #[test]
+    fn test_quantity_correction_prompt_localization() {
+        let manager = setup_localization();
+
+        let mut args = HashMap::new();
+        args.insert("ingredient", "flour");
+
+        // Test English
+        let english_message =
+            manager.get_message_in_language("quantity-correction-prompt", "en", Some(&args));
+        assert!(!english_message.is_empty());
+        assert!(english_message.contains("flour"));
+        assert!(english_message.contains("couldn't read"));
+        assert!(english_message.contains("quantity"));
+
+        // Test French
+        let french_message =
+            manager.get_message_in_language("quantity-correction-prompt", "fr", Some(&args));
+        assert!(!french_message.is_empty());
+        assert!(french_message.contains("flour"));
+        assert!(french_message.contains("n'avons pas"));
+        assert!(french_message.contains("quantité"));
+
+        // Ensure English and French are different
+        assert_ne!(english_message, french_message);
+    }
 }

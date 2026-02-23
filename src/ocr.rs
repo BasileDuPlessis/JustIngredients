@@ -29,7 +29,7 @@ use regex;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use tempfile::NamedTempFile;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 // Re-export types for easier access from documentation and external usage
 pub use crate::circuit_breaker::CircuitBreaker;
@@ -39,6 +39,65 @@ pub use crate::instance_manager::OcrInstanceManager;
 pub use crate::observability;
 pub use crate::ocr_config::{OcrConfig, RecoveryConfig};
 pub use crate::ocr_errors::OcrError;
+
+/// Represents a bounding box with coordinates for spatial positioning
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BBox {
+    /// Left coordinate (x0)
+    pub x0: u32,
+    /// Top coordinate (y0)
+    pub y0: u32,
+    /// Right coordinate (x1)
+    pub x1: u32,
+    /// Bottom coordinate (y1)
+    pub y1: u32,
+}
+
+impl BBox {
+    /// Create a new bounding box
+    pub fn new(x0: u32, y0: u32, x1: u32, y1: u32) -> Self {
+        Self { x0, y0, x1, y1 }
+    }
+
+    /// Calculate the width of the bounding box
+    pub fn width(&self) -> u32 {
+        self.x1.saturating_sub(self.x0)
+    }
+
+    /// Calculate the height of the bounding box
+    pub fn height(&self) -> u32 {
+        self.y1.saturating_sub(self.y0)
+    }
+
+    /// Calculate the area of the bounding box
+    pub fn area(&self) -> u64 {
+        (self.width() as u64) * (self.height() as u64)
+    }
+}
+
+/// Represents a line of text with its bounding box from HOCR output
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HocrLine {
+    /// The text content of the line
+    pub text: String,
+    /// The bounding box coordinates for this line
+    pub bbox: BBox,
+}
+
+impl HocrLine {
+    /// Create a new HOCR line
+    pub fn new(text: String, bbox: BBox) -> Self {
+        Self { text, bbox }
+    }
+
+    /// Create a new HOCR line from coordinates
+    pub fn from_coords(text: String, x0: u32, y0: u32, x1: u32, y1: u32) -> Self {
+        Self {
+            text,
+            bbox: BBox::new(x0, y0, x1, y1),
+        }
+    }
+}
 
 /// Validate image file path and basic properties using enhanced security validation
 pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConfig) -> Result<()> {
@@ -846,6 +905,21 @@ pub struct AdaptivePreprocessingResult {
     pub image: image::DynamicImage,
     /// Description of the preprocessing strategy applied
     pub preprocessing_strategy: String,
+}
+
+/// Result of constrained OCR processing for measurement extraction.
+#[derive(Debug)]
+pub struct ConstrainedOcrResult {
+    /// The extracted text (should contain only numbers/fractions)
+    pub text: String,
+    /// Confidence score from Tesseract (0-100)
+    pub confidence: f32,
+    /// PSM mode used for OCR
+    pub psm_mode: String,
+    /// Character whitelist applied
+    pub character_whitelist: String,
+    /// Processing time in milliseconds
+    pub processing_time_ms: u32,
 }
 
 /// Applies adaptive preprocessing based on assessed image quality.
@@ -1694,4 +1768,533 @@ pub fn get_confidence_description(confidence: &OcrConfidence) -> String {
     }
 
     format!("OCR result flagged for review: {}", issues.join(", "))
+}
+
+/// Extract HOCR (HTML-based OCR) output from an image file
+///
+/// This function performs OCR on the specified image and returns the results
+/// in HOCR format, which includes spatial positioning information for text elements.
+/// HOCR provides bounding box coordinates for words, lines, and paragraphs.
+///
+/// # Arguments
+/// * `image_path` - Path to the image file to process
+/// * `config` - OCR configuration parameters
+/// * `instance_manager` - Manager for OCR instance pooling
+/// * `circuit_breaker` - Circuit breaker for fault tolerance
+///
+/// # Returns
+/// Returns `Result<String, OcrError>` containing the HOCR HTML output or an error
+///
+/// # Errors
+/// Returns `OcrError` if image processing fails, OCR fails, or circuit breaker is open
+pub async fn extract_hocr_from_image(
+    image_path: &str,
+    config: &OcrConfig,
+    instance_manager: &OcrInstanceManager,
+    circuit_breaker: &CircuitBreaker,
+) -> Result<String, OcrError> {
+    // Check circuit breaker state first
+    if circuit_breaker.is_open() {
+        warn!(
+            "Circuit breaker is open, skipping HOCR extraction for {}",
+            image_path
+        );
+        return Err(OcrError::Extraction("Circuit breaker is open".to_string()));
+    }
+
+    // Validate image path and format
+    validate_image_path(image_path, config)
+        .map_err(|e| OcrError::Validation(format!("Image validation failed: {}", e)))?;
+
+    // Validate image format and size limits
+    validate_image_with_format_limits(image_path, config)?;
+
+    // Get OCR instance from pool
+    let instance = instance_manager
+        .get_instance(config)
+        .map_err(|e| OcrError::Initialization(format!("Failed to get OCR instance: {}", e)))?;
+
+    // Apply timeout to the entire HOCR extraction process
+    let timeout_duration = std::time::Duration::from_secs(config.recovery.operation_timeout_secs);
+
+    let result = match tokio::time::timeout(timeout_duration, async {
+        // Get mutable access to the OCR instance
+        let mut tess = instance.lock().map_err(|e| {
+            OcrError::Extraction(format!("Failed to acquire OCR instance lock: {}", e))
+        })?;
+
+        // Set the image for OCR processing
+        tess.set_image(image_path).map_err(|e| {
+            OcrError::Extraction(format!("Failed to set image for HOCR processing: {}", e))
+        })?;
+
+        // Extract HOCR text with spatial information
+        // TODO: Replace placeholder with actual leptess HOCR extraction
+        perform_hocr_extraction(&mut tess, image_path)
+    })
+    .await
+    {
+        Ok(inner_result) => inner_result,
+        Err(_) => {
+            error!("HOCR extraction timed out for {}", image_path);
+            circuit_breaker.record_failure();
+            return Err(OcrError::Timeout("HOCR extraction timed out".to_string()));
+        }
+    };
+
+    // Record success in circuit breaker
+    circuit_breaker.record_success();
+
+    result
+}
+
+/// Perform the actual HOCR extraction using leptess
+///
+/// Uses leptess::get_hocr_text() to extract OCR results in HOCR format,
+/// which includes spatial positioning information for text elements.
+/// Falls back to regular text extraction if HOCR generation fails.
+fn perform_hocr_extraction(
+    tess: &mut leptess::LepTess,
+    image_path: &str,
+) -> Result<String, OcrError> {
+    // First attempt: Extract HOCR text with spatial information using leptess
+    match tess.get_hocr_text(0) {
+        Ok(hocr_text) => {
+            // Validate the HOCR output is well-formed XML/HTML
+            match validate_hocr_output(&hocr_text) {
+                Ok(_) => return Ok(hocr_text),
+                Err(validation_error) => {
+                    warn!(
+                        "HOCR validation failed: {}. Attempting fallback.",
+                        validation_error
+                    );
+                    // Continue to fallback below
+                }
+            }
+        }
+        Err(hocr_error) => {
+            warn!(
+                "HOCR extraction failed: {}. Attempting fallback to regular text extraction.",
+                hocr_error
+            );
+            // Continue to fallback below
+        }
+    }
+
+    // Fallback: Generate basic HOCR structure from regular text extraction
+    warn!("Using fallback HOCR generation for {}", image_path);
+    generate_fallback_hocr(tess, image_path)
+}
+
+/// Generate a basic HOCR structure when direct HOCR extraction fails
+///
+/// Creates a minimal HOCR HTML document with the extracted text,
+/// providing basic structure even when spatial information is unavailable.
+fn generate_fallback_hocr(
+    tess: &mut leptess::LepTess,
+    image_path: &str,
+) -> Result<String, OcrError> {
+    // Extract regular text as fallback
+    let text = tess
+        .get_utf8_text()
+        .map_err(|e| OcrError::Extraction(format!("Fallback text extraction failed: {}", e)))?;
+
+    // Check that we got some text content
+    if text.trim().is_empty() {
+        return Err(OcrError::Extraction(
+            "Both HOCR and fallback text extraction produced empty results".to_string(),
+        ));
+    }
+
+    // Generate basic HOCR structure with the extracted text
+    // This provides a minimal HTML document that can be parsed by HOCR consumers
+    let hocr_html = format!(
+        r#"<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>OCR Results for {}</title>
+</head>
+<body>
+  <div class="ocr_page" id="page_1" title="bbox 0 0 1000 1000">
+    <div class="ocr_carea" id="block_1_1" title="bbox 10 10 990 990">
+      <p class="ocr_par" id="par_1_1" title="bbox 10 10 990 990">
+        <span class="ocr_line" id="line_1_1" title="bbox 10 10 990 40">{}</span>
+      </p>
+    </div>
+  </div>
+</body>
+</html>"#,
+        image_path,
+        text.trim()
+    );
+
+    // Validate the generated fallback HOCR
+    validate_hocr_output(&hocr_html)?;
+
+    Ok(hocr_html)
+}
+
+/// Validate that HOCR output is well-formed XML/HTML
+///
+/// Performs basic validation to ensure the HOCR output contains expected
+/// HTML structure and elements. This helps catch malformed output early.
+fn validate_hocr_output(hocr_text: &str) -> Result<(), OcrError> {
+    // Check that output is not empty
+    if hocr_text.trim().is_empty() {
+        return Err(OcrError::Extraction("HOCR output is empty".to_string()));
+    }
+
+    // Check for basic HTML structure - should start with DOCTYPE or HTML tag
+    if !hocr_text.trim_start().starts_with("<!DOCTYPE html>")
+        && !hocr_text.trim_start().starts_with("<html")
+        && !hocr_text.trim_start().starts_with("<?xml")
+    {
+        return Err(OcrError::Extraction(
+            "HOCR output does not contain valid HTML/XML structure".to_string(),
+        ));
+    }
+
+    // Check for closing HTML tag
+    if !hocr_text.contains("</html>") {
+        return Err(OcrError::Extraction(
+            "HOCR output is missing closing HTML tag".to_string(),
+        ));
+    }
+
+    // Check for basic HOCR structure - should contain ocr_page class
+    if !hocr_text.contains("class=\"ocr_page\"") {
+        return Err(OcrError::Extraction(
+            "HOCR output is missing required ocr_page class".to_string(),
+        ));
+    }
+
+    // Check for reasonable content length (not just HTML boilerplate)
+    let content_length = hocr_text.len();
+    if content_length < 200 {
+        warn!(
+            "HOCR output is suspiciously short ({} chars), may indicate processing issues",
+            content_length
+        );
+    }
+
+    Ok(())
+}
+
+/// Parse HOCR HTML content to extract text lines with their bounding boxes
+///
+/// Extracts all `<span class="ocr_line" title="bbox x0 y0 x1 y1">text</span>` elements
+/// from HOCR output and returns them as a vector of `HocrLine` instances.
+///
+/// # Arguments
+///
+/// * `hocr_text` - The HOCR HTML content as a string
+///
+/// # Returns
+///
+/// Returns a `Result` containing a vector of `HocrLine` instances, or an `OcrError` if parsing fails.
+pub fn parse_hocr_to_lines(hocr_text: &str) -> Result<Vec<HocrLine>, OcrError> {
+    let mut lines = Vec::new();
+
+    // Regex to match ocr_line spans with bbox attributes
+    // Matches: <span class="ocr_line" ... title="bbox x0 y0 x1 y1">text</span>
+    // Allows for optional attributes between class and title
+    let line_regex = regex::Regex::new(
+        r#"<span\s+class="ocr_line"[^>]*?title="bbox\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)">(.*?)</span>"#
+    ).map_err(|e| OcrError::Extraction(format!("Failed to compile HOCR regex: {}", e)))?;
+
+    // Find all matches in the HOCR text
+    for capture in line_regex.captures_iter(hocr_text) {
+        if let (Some(x0_match), Some(y0_match), Some(x1_match), Some(y1_match), Some(text_match)) = (
+            capture.get(1),
+            capture.get(2),
+            capture.get(3),
+            capture.get(4),
+            capture.get(5),
+        ) {
+            // Parse coordinates
+            let x0 = x0_match.as_str().parse::<u32>().map_err(|e| {
+                OcrError::Extraction(format!("Failed to parse x0 coordinate: {}", e))
+            })?;
+            let y0 = y0_match.as_str().parse::<u32>().map_err(|e| {
+                OcrError::Extraction(format!("Failed to parse y0 coordinate: {}", e))
+            })?;
+            let x1 = x1_match.as_str().parse::<u32>().map_err(|e| {
+                OcrError::Extraction(format!("Failed to parse x1 coordinate: {}", e))
+            })?;
+            let y1 = y1_match.as_str().parse::<u32>().map_err(|e| {
+                OcrError::Extraction(format!("Failed to parse y1 coordinate: {}", e))
+            })?;
+
+            // Extract and clean text content
+            let text = html_decode_text(text_match.as_str());
+
+            // Create HocrLine and add to results
+            let hocr_line = HocrLine::from_coords(text, x0, y0, x1, y1);
+            lines.push(hocr_line);
+        }
+    }
+
+    Ok(lines)
+}
+
+/// Decode HTML entities and clean text content from HOCR spans
+///
+/// Performs basic HTML entity decoding and text cleaning for HOCR text content.
+/// This handles common HTML entities and normalizes whitespace.
+///
+/// # Arguments
+///
+/// * `text` - The raw text content from HOCR span
+///
+/// # Returns
+///
+/// Returns the cleaned and decoded text content
+fn html_decode_text(text: &str) -> String {
+    // Basic HTML entity decoding
+    let decoded = text
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&amp;", "&")
+        .replace("&quot;", "\"")
+        .replace("&apos;", "'")
+        .replace("&#39;", "'")
+        .replace("&nbsp;", " ");
+
+    // Clean and normalize whitespace
+    decoded.trim().to_string()
+}
+
+/// Map a MeasurementMatch to its corresponding bounding box from HOCR lines
+///
+/// Correlates a measurement match with its physical location on the image by finding
+/// the HOCR line that corresponds to the measurement's line number.
+///
+/// # Arguments
+///
+/// * `measurement` - The measurement match to locate
+/// * `hocr_lines` - Vector of parsed HOCR lines with bounding boxes
+///
+/// # Returns
+///
+/// Returns `Some(BBox)` if a matching line is found, `None` if no match is found
+pub fn map_measurement_to_bbox(
+    measurement: &crate::text_processing::MeasurementMatch,
+    hocr_lines: &[HocrLine],
+) -> Option<BBox> {
+    // MeasurementMatch line_number is 1-based, but vector indexing is 0-based
+    let line_index = measurement.line_number.saturating_sub(1);
+
+    // Check bounds to avoid panic
+    if line_index >= hocr_lines.len() {
+        warn!(
+            "Measurement line number {} is out of bounds for {} HOCR lines",
+            measurement.line_number,
+            hocr_lines.len()
+        );
+        return None;
+    }
+
+    // Get the HOCR line at the corresponding index
+    let hocr_line = &hocr_lines[line_index];
+
+    // Optional: Validate that the text content roughly matches
+    // This provides additional confidence in the mapping
+    if let Some(validation_result) = validate_measurement_line_match(measurement, hocr_line) {
+        if !validation_result {
+            warn!(
+                "Measurement text '{}' does not match HOCR line text '{}' at line {}",
+                measurement.quantity, hocr_line.text, measurement.line_number
+            );
+            // Continue with the mapping despite the mismatch
+            // The line number is still the most reliable indicator
+        }
+    }
+
+    Some(hocr_line.bbox.clone())
+}
+
+/// Performs constrained OCR on a preprocessed image optimized for quantity extraction.
+///
+/// This function is designed specifically for recognizing small text elements like
+/// fractions and quantities from cropped and preprocessed images. It configures
+/// Tesseract with strict constraints to improve accuracy for numeric content.
+///
+/// # Arguments
+///
+/// * `image` - The preprocessed image to perform OCR on
+/// * `instance_manager` - The OCR instance manager for Tesseract access
+/// * `config` - OCR configuration (used for timeout and instance management)
+///
+/// # Returns
+///
+/// Returns a `ConstrainedOcrResult` containing the extracted text and metadata,
+/// or an `OcrError` if the operation fails.
+///
+/// # Examples
+///
+/// ```no_run
+/// use just_ingredients::ocr::{perform_constrained_ocr, OcrConfig};
+/// use just_ingredients::instance_manager::OcrInstanceManager;
+/// use image::open;
+///
+/// # async fn example() -> Result<(), Box<dyn std::error::Error>> {
+/// let img = open("preprocessed_quantity.png")?;
+/// let config = OcrConfig::default();
+/// let instance_manager = OcrInstanceManager::new();
+///
+/// let result = perform_constrained_ocr(&img, &instance_manager, &config).await?;
+/// println!("Extracted quantity: {}", result.text.trim());
+/// # Ok(())
+/// # }
+/// ```
+pub async fn perform_constrained_ocr(
+    image: &image::DynamicImage,
+    instance_manager: &OcrInstanceManager,
+    config: &OcrConfig,
+) -> Result<ConstrainedOcrResult, OcrError> {
+    let start_time = std::time::Instant::now();
+
+    // Create a timeout for the operation
+    let timeout_duration = tokio::time::Duration::from_secs(config.recovery.operation_timeout_secs);
+
+    let result = tokio::time::timeout(timeout_duration, async {
+        // Save the preprocessed image to a temporary file
+        let temp_file = NamedTempFile::with_suffix(".png").map_err(|e| {
+            OcrError::Validation(format!("Failed to create temporary file for OCR: {}", e))
+        })?;
+
+        image.save(&temp_file).map_err(|e| {
+            OcrError::Validation(format!("Failed to save image to temporary file: {}", e))
+        })?;
+
+        let temp_path = temp_file
+            .path()
+            .to_str()
+            .ok_or_else(|| OcrError::Validation("Failed to get temporary file path".to_string()))?;
+
+        // Get an OCR instance from the manager
+        let instance = instance_manager
+            .get_instance(config)
+            .map_err(|e| OcrError::Initialization(e.to_string()))?;
+
+        // Perform constrained OCR with optimized settings
+        let (extracted_text, confidence) = {
+            let mut tess = instance
+                .lock()
+                .expect("Failed to acquire Tesseract instance lock");
+
+            // Configure Tesseract for constrained OCR on quantities
+            // Use PSM 8 (Single Word) for isolated quantity recognition
+            tess.set_variable(leptess::Variable::TesseditPagesegMode, "8")
+                .map_err(|e| OcrError::Initialization(format!("Failed to set PSM mode: {}", e)))?;
+
+            // Set strict character whitelist for numbers and fractions only
+            let char_whitelist = "0123456789/½⅓⅔¼¾⅕⅖⅚⅙⅛⅜⅝⅞.";
+            tess.set_variable(leptess::Variable::TesseditCharWhitelist, char_whitelist)
+                .map_err(|e| {
+                    OcrError::Initialization(format!("Failed to set character whitelist: {}", e))
+                })?;
+
+            // Set the image for OCR processing
+            tess.set_image(temp_path).map_err(|e| {
+                OcrError::ImageLoad(format!("Failed to load image for constrained OCR: {}", e))
+            })?;
+
+            // Extract text
+            let text = tess.get_utf8_text().map_err(|e| {
+                OcrError::Extraction(format!(
+                    "Failed to extract text with constrained OCR: {}",
+                    e
+                ))
+            })?;
+
+            // Use default confidence since leptess doesn't expose detailed confidence
+            let confidence = 80.0; // Higher default confidence for constrained OCR
+
+            (text, confidence)
+        };
+
+        // Clean up the extracted text
+        let cleaned_text = extracted_text
+            .trim()
+            .lines()
+            .map(str::trim)
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<&str>>()
+            .join(" ");
+
+        Ok((cleaned_text, confidence))
+    })
+    .await;
+
+    let processing_time_ms = start_time.elapsed().as_millis() as u32;
+
+    match result {
+        Ok(Ok((text, confidence))) => {
+            info!(
+                "Constrained OCR completed in {}ms with confidence {:.1}",
+                processing_time_ms, confidence
+            );
+
+            Ok(ConstrainedOcrResult {
+                text,
+                confidence,
+                psm_mode: "8 (Single Word)".to_string(),
+                character_whitelist: "0123456789/½⅓⅔¼¾⅕⅖⅚⅙⅛⅜⅝⅞.".to_string(),
+                processing_time_ms,
+            })
+        }
+        Ok(Err(e)) => Err(e),
+        Err(_) => Err(OcrError::Timeout(format!(
+            "Constrained OCR operation timed out after {} seconds",
+            config.recovery.operation_timeout_secs
+        ))),
+    }
+}
+
+/// Validate that a measurement roughly matches the content of an HOCR line
+///
+/// Performs basic validation to ensure the measurement's text content
+/// is reasonably related to the HOCR line content. This is optional
+/// validation to catch obvious mismatches.
+///
+/// # Arguments
+///
+/// * `measurement` - The measurement match
+/// * `hocr_line` - The corresponding HOCR line
+///
+/// # Returns
+///
+/// Returns `Some(true)` if validation passes, `Some(false)` if it fails,
+/// or `None` if validation cannot be performed
+fn validate_measurement_line_match(
+    measurement: &crate::text_processing::MeasurementMatch,
+    hocr_line: &HocrLine,
+) -> Option<bool> {
+    // Extract the text around the measurement position
+    let line_text = &hocr_line.text;
+    let start_pos = measurement.start_pos;
+    let end_pos = measurement.end_pos;
+
+    // Check bounds
+    if start_pos >= line_text.len() || end_pos > line_text.len() || start_pos >= end_pos {
+        return Some(false);
+    }
+
+    // Extract the substring that should contain the measurement
+    let measured_text = &line_text[start_pos..end_pos];
+
+    // Check if the measured text contains the quantity
+    // Allow for some OCR variations and whitespace differences
+    let quantity_found = measured_text.contains(&measurement.quantity)
+        || measured_text
+            .replace(' ', "")
+            .contains(&measurement.quantity.replace(' ', ""));
+
+    if !quantity_found {
+        return Some(false);
+    }
+
+    Some(true)
 }

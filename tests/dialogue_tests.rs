@@ -30,6 +30,7 @@ async fn test_dialogue_state_serialization() -> Result<()> {
         line_number: 0,
         start_pos: 0,
         end_pos: 6,
+        requires_quantity_confirmation: false,
     }];
 
     let state = RecipeDialogueState::WaitingForRecipeName {
@@ -78,6 +79,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             line_number: 0,
             start_pos: 0,
             end_pos: 6,
+            requires_quantity_confirmation: false,
         },
         MeasurementMatch {
             quantity: "3".to_string(),
@@ -86,6 +88,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             line_number: 1,
             start_pos: 8,
             end_pos: 9,
+            requires_quantity_confirmation: false,
         },
     ];
 
@@ -322,6 +325,7 @@ fn test_dialogue_state_transitions_with_original_message_id() {
             line_number: 0,
             start_pos: 0,
             end_pos: 6,
+            requires_quantity_confirmation: false,
         },
         MeasurementMatch {
             quantity: "3".to_string(),
@@ -330,6 +334,7 @@ fn test_dialogue_state_transitions_with_original_message_id() {
             line_number: 1,
             start_pos: 8,
             end_pos: 9,
+            requires_quantity_confirmation: false,
         },
     ];
 
@@ -442,6 +447,7 @@ fn test_review_to_editing_ingredient_transition() {
         line_number: 0,
         start_pos: 0,
         end_pos: 6,
+        requires_quantity_confirmation: false,
     }];
 
     // Simulate transition to editing (what happens when user clicks edit button)
@@ -501,6 +507,7 @@ fn test_saved_ingredients_to_editing_transition() {
         line_number: 0,
         start_pos: 0,
         end_pos: 6,
+        requires_quantity_confirmation: false,
     }];
 
     // Simulate transition to editing single ingredient (what happens when user clicks edit button)
@@ -536,4 +543,66 @@ fn test_saved_ingredients_to_editing_transition() {
     }
 
     println!("✅ Saved ingredients to editing transition test passed");
+}
+
+/// Test AwaitingQuantityCorrection dialogue state
+#[tokio::test]
+async fn test_awaiting_quantity_correction_state() -> Result<()> {
+    let ingredients = vec![
+        MeasurementMatch {
+            quantity: "0".to_string(),
+            measurement: Some("cups".to_string()),
+            ingredient_name: "flour".to_string(),
+            line_number: 0,
+            start_pos: 0,
+            end_pos: 6,
+            requires_quantity_confirmation: true,
+        },
+        MeasurementMatch {
+            quantity: "3".to_string(),
+            measurement: None,
+            ingredient_name: "eggs".to_string(),
+            line_number: 1,
+            start_pos: 8,
+            end_pos: 9,
+            requires_quantity_confirmation: false,
+        },
+    ];
+
+    let correction_state = RecipeDialogueState::AwaitingQuantityCorrection {
+        recipe_name: "Test Recipe".to_string(),
+        ingredients: ingredients.clone(),
+        ingredient_index: 0,
+        language_code: Some("en".to_string()),
+        message_id: Some(456),
+        extracted_text: "Test OCR text".to_string(),
+        recipe_name_from_caption: Some("Caption Recipe".to_string()),
+    };
+
+    // Test state structure
+    match correction_state {
+        RecipeDialogueState::AwaitingQuantityCorrection {
+            recipe_name,
+            ingredients: state_ingredients,
+            ingredient_index,
+            language_code,
+            message_id,
+            extracted_text,
+            recipe_name_from_caption,
+        } => {
+            assert_eq!(recipe_name, "Test Recipe");
+            assert_eq!(state_ingredients.len(), 2);
+            assert_eq!(state_ingredients[0].ingredient_name, "flour");
+            assert!(state_ingredients[0].requires_quantity_confirmation);
+            assert_eq!(ingredient_index, 0);
+            assert_eq!(language_code, Some("en".to_string()));
+            assert_eq!(message_id, Some(456));
+            assert_eq!(extracted_text, "Test OCR text");
+            assert_eq!(recipe_name_from_caption, Some("Caption Recipe".to_string()));
+        }
+        _ => panic!("Expected AwaitingQuantityCorrection state"),
+    }
+
+    println!("✅ AwaitingQuantityCorrection state test passed");
+    Ok(())
 }

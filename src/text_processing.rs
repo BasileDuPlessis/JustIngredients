@@ -34,6 +34,8 @@ pub struct MeasurementMatch {
     pub start_pos: usize,
     /// The ending character position in the line
     pub end_pos: usize,
+    /// Whether this measurement requires user confirmation (e.g., missing or absurd quantity)
+    pub requires_quantity_confirmation: bool,
 }
 
 /// Configuration options for measurement detection
@@ -911,13 +913,23 @@ impl MeasurementDetector {
                 // TODO: Task 7c - Update position tracking for multi-line ingredients
                 // When extract_multi_line_ingredient() combines multiple lines,
                 // we need to adjust current_pos and line_number accordingly
+
+                // ANOMALY DETECTION: Check if quantity needs user confirmation
+                let requires_confirmation = self.is_quantity_anomalous(&final_quantity);
+                let confirmed_quantity = if requires_confirmation {
+                    "0"
+                } else {
+                    &final_quantity
+                };
+
                 matches.push(MeasurementMatch {
-                    quantity: final_quantity,
+                    quantity: confirmed_quantity.to_string(),
                     measurement: final_measurement,
                     ingredient_name,
                     line_number,
                     start_pos: current_pos + full_match.start(),
                     end_pos: current_pos + match_end_pos,
+                    requires_quantity_confirmation: requires_confirmation,
                 });
             }
 
@@ -1496,7 +1508,9 @@ impl MeasurementDetector {
         // Replace Unicode fraction in mixed numbers with space + ASCII fraction
         for (unicode, ascii) in &unicode_fractions {
             // For mixed numbers like "1½", replace with "1 1/2"
-            if corrected.contains(unicode) && corrected.chars().next().unwrap_or(' ').is_ascii_digit() {
+            if corrected.contains(unicode)
+                && corrected.chars().next().unwrap_or(' ').is_ascii_digit()
+            {
                 corrected = corrected.replace(unicode, &format!(" {}", ascii));
             } else {
                 corrected = corrected.replace(unicode, ascii);
@@ -1550,6 +1564,105 @@ impl MeasurementDetector {
         }
 
         corrected
+    }
+
+    /// Detect if a quantity requires user confirmation due to anomalies
+    ///
+    /// # Arguments
+    ///
+    /// * `quantity` - The processed quantity string
+    ///
+    /// # Returns
+    ///
+    /// Returns true if the quantity appears anomalous and needs user confirmation
+    fn is_quantity_anomalous(&self, quantity: &str) -> bool {
+        // Empty or whitespace-only quantities
+        if quantity.trim().is_empty() {
+            debug!("Quantity anomaly detected: empty quantity");
+            return true;
+        }
+
+        // Quantities that are just "0" (indicates previous processing failure)
+        if quantity == "0" {
+            debug!("Quantity anomaly detected: zero quantity");
+            return true;
+        }
+
+        // Check for suspicious character combinations (letters mixed with numbers)
+        // This catches OCR errors like "l/2", "I/Z", "O/4", etc.
+        let has_letters = quantity.chars().any(|c| c.is_ascii_alphabetic());
+        let has_digits = quantity.chars().any(|c| c.is_ascii_digit());
+        let has_fraction = quantity.contains('/');
+
+        if has_letters && (has_digits || has_fraction) {
+            // Allow common abbreviations like "1st", "2nd", but flag suspicious mixes
+            let suspicious_patterns = ["l/", "I/", "O/", "Z/", "/l", "/I", "/O", "/Z"];
+            if suspicious_patterns
+                .iter()
+                .any(|pattern| quantity.contains(pattern))
+            {
+                debug!(
+                    "Quantity anomaly detected: suspicious letter-number mix in '{}'",
+                    quantity
+                );
+                return true;
+            }
+        }
+
+        // Check for unrealistically large numbers (likely OCR errors)
+        if let Ok(num) = quantity.parse::<f64>() {
+            // Flag numbers larger than 1000 for most cooking contexts
+            // (except for very small units like grams where 1000+ is reasonable)
+            if num > 1000.0 {
+                debug!(
+                    "Quantity anomaly detected: unrealistically large number '{}'",
+                    quantity
+                );
+                return true;
+            }
+        }
+
+        // Check for malformed fractions
+        if has_fraction {
+            // Handle mixed numbers like "2 1/4" by splitting on space first
+            let fraction_part = if quantity.contains(' ') {
+                // For mixed numbers, take the part after the last space
+                quantity.split(' ').next_back().unwrap_or(quantity)
+            } else {
+                quantity
+            };
+
+            let parts: Vec<&str> = fraction_part.split('/').collect();
+            if parts.len() != 2 {
+                debug!(
+                    "Quantity anomaly detected: malformed fraction '{}'",
+                    quantity
+                );
+                return true;
+            }
+
+            // Check if numerator and denominator are numeric
+            if parts[0].parse::<u32>().is_err() || parts[1].parse::<u32>().is_err() {
+                debug!(
+                    "Quantity anomaly detected: non-numeric fraction parts in '{}'",
+                    quantity
+                );
+                return true;
+            }
+
+            // Check for zero denominator
+            if let Ok(denom) = parts[1].parse::<u32>() {
+                if denom == 0 {
+                    debug!(
+                        "Quantity anomaly detected: zero denominator in '{}'",
+                        quantity
+                    );
+                    return true;
+                }
+            }
+        }
+
+        false
     }
 
     /// Get all unique measurement units found in the text

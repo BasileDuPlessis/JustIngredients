@@ -939,7 +939,50 @@ pub async fn handle_ingredient_review_input(
 
     match input.as_str() {
         "confirm" | "ok" | "yes" | "save" => {
-            // User confirmed, save ingredients to database
+            // Check if any ingredient requires quantity confirmation
+            if let Some((index, ingredient)) = ingredients
+                .iter()
+                .enumerate()
+                .find(|(_, ing)| ing.requires_quantity_confirmation)
+            {
+                // Found an ingredient that needs quantity confirmation
+                // Transition to AwaitingQuantityCorrection state
+                let correction_state = RecipeDialogueState::AwaitingQuantityCorrection {
+                    recipe_name: recipe_name.clone(),
+                    ingredients: ingredients.clone(),
+                    ingredient_index: index,
+                    language_code: handler_ctx.language_code.map(|s| s.to_string()),
+                    message_id: None, // Will be set when we send the prompt
+                    extracted_text: extracted_text.clone(),
+                    recipe_name_from_caption: None, // Not applicable here
+                };
+
+                dialogue.update(correction_state).await?;
+
+                // Send the quantity correction prompt
+                let prompt_message = t_args_lang(
+                    handler_ctx.localization,
+                    "quantity-correction-prompt",
+                    &[("ingredient", &ingredient.ingredient_name)],
+                    handler_ctx.language_code,
+                );
+
+                let sent_message = bot.send_message(msg.chat.id, prompt_message).await?;
+                let message_id = sent_message.id.0 as i32;
+
+                // Update the state with the message ID
+                if let Some(RecipeDialogueState::AwaitingQuantityCorrection {
+                    message_id: ref mut state_message_id,
+                    ..
+                }) = dialogue.get().await?
+                {
+                    *state_message_id = Some(message_id);
+                }
+
+                return Ok(());
+            }
+
+            // No ingredients require confirmation, proceed with saving
             if let Err(e) = save_ingredients_to_database(
                 &_pool,
                 msg.chat.id.0,
@@ -1452,6 +1495,169 @@ async fn return_to_saved_ingredients_review(
             message_id,
         })
         .await?;
+
+    Ok(())
+}
+
+/// Parameters for quantity correction input handling
+#[derive(Debug)]
+pub struct QuantityCorrectionInputParams<'a> {
+    pub pool: Arc<PgPool>,
+    pub quantity_input: &'a str,
+    pub recipe_name: String,
+    pub ingredients: Vec<MeasurementMatch>,
+    pub ingredient_index: usize,
+    pub ctx: &'a HandlerContext<'a>,
+    pub extracted_text: String,
+    pub recipe_name_from_caption: Option<String>,
+}
+
+/// Handle quantity correction input during dialogue
+pub async fn handle_quantity_correction_input(
+    ctx: DialogueContext<'_>,
+    params: QuantityCorrectionInputParams<'_>,
+) -> Result<()> {
+    let DialogueContext {
+        bot,
+        msg,
+        dialogue,
+        localization: _,
+    } = ctx;
+    let QuantityCorrectionInputParams {
+        pool,
+        quantity_input,
+        recipe_name,
+        mut ingredients,
+        ingredient_index,
+        ctx: handler_ctx,
+        extracted_text,
+        recipe_name_from_caption,
+    } = params;
+
+    let input = quantity_input.trim();
+
+    // Check for cancellation commands
+    if is_cancellation_command(&input.to_lowercase()) {
+        // User cancelled, end dialogue without saving
+        bot.send_message(
+            msg.chat.id,
+            t_lang(
+                handler_ctx.localization,
+                "review-cancelled",
+                handler_ctx.language_code,
+            ),
+        )
+        .await?;
+        dialogue.exit().await?;
+        return Ok(());
+    }
+
+    // Parse the quantity input
+    match crate::validation::parse_quantity(input) {
+        Some(parsed_quantity) => {
+            // Valid quantity - update the ingredient
+            if let Some(ingredient) = ingredients.get_mut(ingredient_index) {
+                ingredient.quantity = parsed_quantity.to_string();
+                ingredient.requires_quantity_confirmation = false;
+            }
+
+            // Check if there are more ingredients that need confirmation
+            if let Some((next_index, next_ingredient)) = ingredients
+                .iter()
+                .enumerate()
+                .find(|(i, ing)| *i > ingredient_index && ing.requires_quantity_confirmation)
+            {
+                // Found another ingredient that needs confirmation
+                let correction_state = RecipeDialogueState::AwaitingQuantityCorrection {
+                    recipe_name: recipe_name.clone(),
+                    ingredients: ingredients.clone(),
+                    ingredient_index: next_index,
+                    language_code: handler_ctx.language_code.map(|s| s.to_string()),
+                    message_id: None, // Will be set when we send the prompt
+                    extracted_text: extracted_text.clone(),
+                    recipe_name_from_caption: recipe_name_from_caption.clone(),
+                };
+
+                dialogue.update(correction_state).await?;
+
+                // Send the next quantity correction prompt
+                let prompt_message = t_args_lang(
+                    handler_ctx.localization,
+                    "quantity-correction-prompt",
+                    &[("ingredient", &next_ingredient.ingredient_name)],
+                    handler_ctx.language_code,
+                );
+
+                let sent_message = bot.send_message(msg.chat.id, prompt_message).await?;
+                let new_message_id = sent_message.id.0 as i32;
+
+                // Update the state with the message ID
+                if let Some(RecipeDialogueState::AwaitingQuantityCorrection {
+                    message_id: ref mut state_message_id,
+                    ..
+                }) = dialogue.get().await?
+                {
+                    *state_message_id = Some(new_message_id);
+                }
+            } else {
+                // No more ingredients need confirmation, proceed with saving
+                if let Err(e) = save_ingredients_to_database(
+                    &pool,
+                    msg.chat.id.0,
+                    &extracted_text,
+                    &ingredients,
+                    &recipe_name,
+                    handler_ctx.language_code,
+                )
+                .await
+                {
+                    error_logging::log_recipe_error(
+                        &e,
+                        "save_ingredients_to_database",
+                        msg.chat.id.0,
+                        Some(&recipe_name),
+                        Some(ingredients.len()),
+                    );
+                    bot.send_message(
+                        msg.chat.id,
+                        t_lang(
+                            handler_ctx.localization,
+                            "error-processing-failed",
+                            handler_ctx.language_code,
+                        ),
+                    )
+                    .await?;
+                } else {
+                    // Success! Send confirmation message
+                    let success_message = t_args_lang(
+                        handler_ctx.localization,
+                        "recipe-complete",
+                        &[
+                            ("recipe_name", recipe_name.as_str()),
+                            ("ingredient_count", &ingredients.len().to_string()),
+                        ],
+                        handler_ctx.language_code,
+                    );
+                    bot.send_message(msg.chat.id, success_message).await?;
+                }
+
+                // End the dialogue
+                dialogue.exit().await?;
+            }
+        }
+        None => {
+            // Invalid quantity - send error message
+            bot.send_message(
+                msg.chat.id,
+                t_lang(
+                    handler_ctx.localization,
+                    "edit-invalid-quantity",
+                    handler_ctx.language_code,
+                ),
+            )
+            .await?;
+        }
+    }
 
     Ok(())
 }

@@ -28,5 +28,8 @@ pub mod validation;
 // Re-export types for easier access
 pub use config::AppConfig;
 pub use deduplication::{RequestDeduplicator, RequestId, SharedDeduplicator};
-pub use ocr::{ConfidenceFlag, OcrConfidence};
+pub use ocr::{
+    map_measurement_to_bbox, parse_hocr_to_lines, perform_constrained_ocr, BBox, ConfidenceFlag,
+    ConstrainedOcrResult, HocrLine, OcrConfidence,
+};
 pub use text_processing::{MeasurementConfig, MeasurementDetector, MeasurementMatch};

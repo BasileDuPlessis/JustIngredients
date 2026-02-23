@@ -9,9 +9,11 @@ This document outlines the step-by-step implementation plan for the OCR Quantity
 - ✅ Task 1.4: Interactive Fallback Flow (Dialogue State & Localization) - COMPLETED
 - ✅ Task 1.5: Interactive Fallback Flow (Handlers) - COMPLETED
 
-**CURRENT STATUS: Phase 3 (Targeted Preprocessing & Re-OCR) - 50% Complete**
+**CURRENT STATUS: Phase 3 (Targeted Preprocessing & Re-OCR) - 100% Complete**
 - ✅ Task 3.1: Image Cropping Logic - COMPLETED
 - ✅ Task 3.2: Targeted Preprocessing Pipeline - COMPLETED
+- ✅ Task 3.3: Constrained OCR Pass - COMPLETED
+- ✅ Task 3.4: Integration & Orchestration - COMPLETED
 
 **CRITICAL REQUIREMENT FOR EVERY TASK:**
 After completing the code for each task, the following quality checks MUST be executed and pass before moving to the next task:
@@ -200,15 +202,23 @@ After completing the code for each task, the following quality checks MUST be ex
   - ✅ Exported function and types in module system
 - **Quality Gate**: Write tests verifying the output image format and dimensions. Run `fmt`, `clippy`, `test`.
 
-### Task 3.3: Constrained OCR Pass
+### Task 3.3: Constrained OCR Pass ✅ COMPLETED
 - **Goal**: Run Tesseract optimized strictly for numbers and fractions.
 - **Action**: 
   - Implement a function in `src/ocr.rs` to run OCR on the preprocessed cropped image.
   - Configure Tesseract with `PSM 8` (Single Word) or `PSM 7` (Single Line).
   - Apply a strict character whitelist: `0123456789/½⅓⅔¼¾⅕⅖⅚⅙⅛⅜⅝⅞. `
+- **Implementation Details**:
+  - ✅ Added `ConstrainedOcrResult` struct to `src/ocr.rs` with text, confidence, PSM mode, whitelist, and processing time
+  - ✅ Implemented `perform_constrained_ocr()` async function taking DynamicImage and returning optimized OCR results
+  - ✅ Configured Tesseract with PSM 8 (Single Word) for isolated quantity recognition
+  - ✅ Applied strict character whitelist containing only numbers, fractions, and decimal points
+  - ✅ Added proper error handling and timeout protection matching existing OCR patterns
+  - ✅ Comprehensive test coverage including structure validation and Tesseract availability handling
+  - ✅ Exported function and result type in module system
 - **Quality Gate**: Write tests using a sample cropped fraction image to verify accurate extraction. Run `fmt`, `clippy`, `test`.
 
-### Task 3.4: Integration & Orchestration
+### Task 3.4: Integration & Orchestration ✅ COMPLETED
 - **Goal**: Tie the automated recovery pipeline together.
 - **Action**: 
   - Update the main OCR pipeline:
@@ -217,4 +227,13 @@ After completing the code for each task, the following quality checks MUST be ex
     3. If anomalies exist, extract HOCR, map to BBox, crop, preprocess, and run constrained OCR.
     4. If constrained OCR yields a valid quantity, update the `MeasurementMatch` and set `requires_quantity_confirmation = false`.
     5. If it still fails, leave `requires_quantity_confirmation = true` (falling back to Phase 1 UI).
+- **Implementation Details**:
+  - ✅ Added `attempt_automated_quantity_recovery()` async function implementing complete recovery pipeline
+  - ✅ Created `process_ingredients_with_recovery()` async function that integrates anomaly detection with automated recovery
+  - ✅ Updated `download_and_process_image()` to use the new recovery-enabled processing function
+  - ✅ Added validation functions `is_valid_recovered_quantity()` and `is_valid_fraction()` for recovered text
+  - ✅ Implemented proper error handling and logging throughout the recovery pipeline
+  - ✅ Added comprehensive integration with existing OCR components (HOCR, cropping, preprocessing, constrained OCR)
+  - ✅ Maintained backward compatibility - measurements that can't be recovered automatically still require manual confirmation
+  - ✅ Added detailed logging and metrics for recovery success/failure tracking
 - **Quality Gate**: Write comprehensive end-to-end integration tests simulating both successful automated recovery and fallback to UI. Run `fmt`, `clippy`, `test`.

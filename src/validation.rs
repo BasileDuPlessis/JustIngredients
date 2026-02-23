@@ -369,6 +369,7 @@ fn parse_without_measurement_detector(trimmed: &str) -> Result<MeasurementMatch,
         line_number: 0,
         start_pos: 0,
         end_pos: trimmed.len(),
+        requires_quantity_confirmation: false,
     })
 }
 
@@ -402,6 +403,7 @@ fn parse_with_quantity(
         line_number: 0,
         start_pos: 0,
         end_pos: trimmed.len(),
+        requires_quantity_confirmation: false,
     })
 }
 
@@ -478,6 +480,7 @@ mod tests {
             line_number: 0,
             start_pos: 0,
             end_pos: 10,
+            requires_quantity_confirmation: false,
         };
 
         // Valid ranges
@@ -510,6 +513,7 @@ mod tests {
             line_number: 0,
             start_pos,
             end_pos: 10,
+            requires_quantity_confirmation: false,
         };
 
         // Should add negative sign

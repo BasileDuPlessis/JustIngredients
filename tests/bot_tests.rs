@@ -408,6 +408,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                requires_quantity_confirmation: false,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -416,6 +417,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                requires_quantity_confirmation: false,
             },
             MeasurementMatch {
                 quantity: "1".to_string(),
@@ -424,6 +426,7 @@ mod tests {
                 line_number: 2,
                 start_pos: 15,
                 end_pos: 21,
+                requires_quantity_confirmation: false,
             },
         ];
 
@@ -483,6 +486,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                requires_quantity_confirmation: false,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -491,6 +495,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                requires_quantity_confirmation: false,
             },
         ];
 
@@ -581,6 +586,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                requires_quantity_confirmation: false,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -589,6 +595,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                requires_quantity_confirmation: false,
             },
         ];
 
@@ -668,6 +675,7 @@ mod tests {
             line_number: 0,
             start_pos: 0,
             end_pos: 50,
+            requires_quantity_confirmation: false,
         }];
 
         let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"), &manager);
@@ -697,6 +705,7 @@ mod tests {
             line_number: 0,
             start_pos: 0,
             end_pos: 6,
+            requires_quantity_confirmation: false,
         }];
 
         let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"), &manager);
@@ -747,6 +756,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                requires_quantity_confirmation: false,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -755,6 +765,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                requires_quantity_confirmation: false,
             },
             MeasurementMatch {
                 quantity: "1".to_string(),
@@ -763,6 +774,7 @@ mod tests {
                 line_number: 2,
                 start_pos: 15,
                 end_pos: 21,
+                requires_quantity_confirmation: false,
             },
         ];
 
@@ -812,6 +824,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                requires_quantity_confirmation: false,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -820,16 +833,28 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                requires_quantity_confirmation: false,
+            },
+            MeasurementMatch {
+                quantity: "0".to_string(),
+                measurement: Some("cups".to_string()),
+                ingredient_name: "sugar".to_string(),
+                line_number: 2,
+                start_pos: 10,
+                end_pos: 16,
+                requires_quantity_confirmation: true,
             },
         ];
 
         let formatted = format_ingredients_list(&ingredients, Some("en"), &manager);
 
-        // Should contain both ingredients
+        // Should contain all ingredients
         assert!(formatted.contains("flour"));
         assert!(formatted.contains("eggs"));
+        assert!(formatted.contains("sugar"));
         assert!(formatted.contains("2 cups"));
         assert!(formatted.contains("3"));
+        assert!(formatted.contains("⚠️ 0 cups"));
 
         // Should be formatted as a list
         assert!(formatted.contains("\n") || formatted.contains("•"));
@@ -1433,6 +1458,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 6,
+                requires_quantity_confirmation: false,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -1441,6 +1467,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 8,
                 end_pos: 9,
+                requires_quantity_confirmation: false,
             },
         ];
 

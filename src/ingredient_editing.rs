@@ -15,9 +15,10 @@ pub fn ingredients_to_measurement_matches(ingredients: &[Ingredient]) -> Vec<Mea
             quantity: ing.quantity.map_or("1".to_string(), |q| q.to_string()),
             measurement: ing.unit.clone(),
             ingredient_name: ing.name.clone(),
-            line_number: i,          // Use array index as line number
-            start_pos: 0,            // Not meaningful for database data
-            end_pos: ing.name.len(), // Use name length as approximation
+            line_number: i, // Use array index as line number
+            start_pos: 0,   // Not meaningful for database data
+            end_pos: ing.name.len(),
+            requires_quantity_confirmation: false, // Use name length as approximation
         })
         .collect()
 }
@@ -144,6 +145,7 @@ mod tests {
                 line_number: 0,
                 start_pos: 0,
                 end_pos: 5,
+                requires_quantity_confirmation: false,
             },
             MeasurementMatch {
                 quantity: "1".to_string(),
@@ -152,6 +154,7 @@ mod tests {
                 line_number: 1,
                 start_pos: 0,
                 end_pos: 6,
+                requires_quantity_confirmation: false,
             },
         ];
 

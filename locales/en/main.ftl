@@ -113,6 +113,7 @@ edit-too-long = Ingredient text is too long (maximum 200 characters). Please ent
 edit-no-ingredient-name = Please specify an ingredient name (e.g., "2 cups flour" not just "2 cups").
 edit-ingredient-name-too-long = Ingredient name is too long (maximum 100 characters). Please use a shorter name.
 edit-invalid-quantity = Invalid quantity. Please use a positive number (e.g., "2.5 cups flour").
+quantity-correction-prompt = We couldn't read the exact amount for {$ingredient}. Please type the quantity:
 error-invalid-edit = [INGREDIENT_EDIT] Invalid ingredient index for editing.
 review-help = Please reply with "confirm" to save these ingredients, or "cancel" to discard them.
 

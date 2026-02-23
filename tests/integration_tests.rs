@@ -801,6 +801,7 @@ fn test_multi_line_ingredients_ui_display_formatting() {
             line_number: 1,
             start_pos: 0,
             end_pos: 20,
+            requires_quantity_confirmation: false,
         },
         just_ingredients::MeasurementMatch {
             quantity: "1".to_string(),
@@ -809,6 +810,7 @@ fn test_multi_line_ingredients_ui_display_formatting() {
             line_number: 3,
             start_pos: 0,
             end_pos: 15,
+            requires_quantity_confirmation: false,
         },
         just_ingredients::MeasurementMatch {
             quantity: "3/4".to_string(),
@@ -817,6 +819,7 @@ fn test_multi_line_ingredients_ui_display_formatting() {
             line_number: 6,
             start_pos: 0,
             end_pos: 28,
+            requires_quantity_confirmation: false,
         },
         just_ingredients::MeasurementMatch {
             quantity: "1".to_string(),
@@ -825,6 +828,7 @@ fn test_multi_line_ingredients_ui_display_formatting() {
             line_number: 10,
             start_pos: 0,
             end_pos: 18,
+            requires_quantity_confirmation: false,
         },
     ];
 
@@ -865,6 +869,7 @@ fn test_dialogue_flow_integrity_with_multi_line_ingredients() {
             line_number: 1,
             start_pos: 0,
             end_pos: 25,
+            requires_quantity_confirmation: false,
         },
         just_ingredients::MeasurementMatch {
             quantity: "1".to_string(),
@@ -873,6 +878,7 @@ fn test_dialogue_flow_integrity_with_multi_line_ingredients() {
             line_number: 3,
             start_pos: 0,
             end_pos: 5,
+            requires_quantity_confirmation: false,
         },
     ];
 
@@ -1875,7 +1881,15 @@ async fn test_ocr_processing_with_unicode_fractions() {
         source_text
     );
 
-    println!("📊 Found {} measurements in {}:", final_measurements.len(), if used_expected { "expected text" } else { "OCR text" });
+    println!(
+        "📊 Found {} measurements in {}:",
+        final_measurements.len(),
+        if used_expected {
+            "expected text"
+        } else {
+            "OCR text"
+        }
+    );
     for measurement in &final_measurements {
         println!(
             "  - {} {} {}",
@@ -1899,15 +1913,27 @@ async fn test_ocr_processing_with_unicode_fractions() {
     let mut found_patterns = 0;
     for (exp_qty, exp_unit, exp_ing) in &expected_patterns {
         let found = final_measurements.iter().any(|m| {
-            m.quantity == *exp_qty &&
-            m.measurement == exp_unit.as_ref().map(|s| s.to_string()) &&
-            m.ingredient_name.to_lowercase().contains(&exp_ing.to_lowercase())
+            m.quantity == *exp_qty
+                && m.measurement == exp_unit.as_ref().map(|s| s.to_string())
+                && m.ingredient_name
+                    .to_lowercase()
+                    .contains(&exp_ing.to_lowercase())
         });
         if found {
             found_patterns += 1;
-            println!("✅ Found expected: {} {} {}", exp_qty, exp_unit.unwrap_or(""), exp_ing);
+            println!(
+                "✅ Found expected: {} {} {}",
+                exp_qty,
+                exp_unit.unwrap_or(""),
+                exp_ing
+            );
         } else {
-            println!("❌ Missing expected: {} {} {}", exp_qty, exp_unit.unwrap_or(""), exp_ing);
+            println!(
+                "❌ Missing expected: {} {} {}",
+                exp_qty,
+                exp_unit.unwrap_or(""),
+                exp_ing
+            );
         }
     }
 
@@ -1915,9 +1941,14 @@ async fn test_ocr_processing_with_unicode_fractions() {
     // Note: The test image may have poor OCR accuracy, so we check that the pipeline works
     // rather than requiring perfect extraction
     if found_patterns < 3 {
-        println!("⚠️  Only found {} expected measurements. OCR accuracy on this image is limited.", found_patterns);
+        println!(
+            "⚠️  Only found {} expected measurements. OCR accuracy on this image is limited.",
+            found_patterns
+        );
         println!("    This may be due to image quality, font style, or lighting conditions.");
-        println!("    The text processing pipeline is working, but OCR extraction needs improvement.");
+        println!(
+            "    The text processing pipeline is working, but OCR extraction needs improvement."
+        );
     }
 
     // At minimum, should find at least 1 measurement to validate the pipeline
@@ -1949,4 +1980,49 @@ async fn test_ocr_processing_with_unicode_fractions() {
     // The test passes if OCR succeeded and measurements were extracted
     // (even if no fractions are found, the integration test validates the pipeline)
     println!("✅ OCR processing with Unicode fractions integration test passed");
+}
+
+#[cfg(test)]
+mod automated_recovery_integration_tests {
+    use just_ingredients::bot::image_processing::{is_valid_fraction, is_valid_recovered_quantity};
+
+    #[test]
+    fn test_is_valid_recovered_quantity() {
+        // Valid quantities
+        assert!(is_valid_recovered_quantity("1"));
+        assert!(is_valid_recovered_quantity("1/2"));
+        assert!(is_valid_recovered_quantity("3.5"));
+        assert!(is_valid_recovered_quantity("100"));
+        assert!(is_valid_recovered_quantity("1st")); // Ordinal numbers allowed
+
+        // Invalid quantities
+        assert!(!is_valid_recovered_quantity("")); // Empty
+        assert!(!is_valid_recovered_quantity("abc")); // No digits
+        assert!(!is_valid_recovered_quantity("1 cup")); // Contains letters (not ordinal)
+        assert!(!is_valid_recovered_quantity("1/0")); // Invalid fraction
+        assert!(!is_valid_recovered_quantity("1/")); // Incomplete fraction
+        assert!(!is_valid_recovered_quantity("very_long_quantity_string")); // Too long
+    }
+
+    #[test]
+    fn test_is_valid_fraction() {
+        // Valid fractions
+        assert!(is_valid_fraction("1/2"));
+        assert!(is_valid_fraction("3/4"));
+        assert!(is_valid_fraction("10/3"));
+
+        // Invalid fractions
+        assert!(!is_valid_fraction("1/0")); // Zero denominator
+        assert!(!is_valid_fraction("1/")); // Missing denominator
+        assert!(!is_valid_fraction("/2")); // Missing numerator
+        assert!(!is_valid_fraction("1")); // Not a fraction
+        assert!(!is_valid_fraction("1/2/3")); // Multiple slashes
+        assert!(!is_valid_fraction("a/b")); // Non-numeric
+    }
+
+    // Note: End-to-end automated recovery tests would require actual image files
+    // and OCR processing, which is complex to set up in unit tests.
+    // These validation tests ensure the recovery logic works correctly.
+    // Full integration testing would be done through manual testing or
+    // separate integration test suites with test images.
 }

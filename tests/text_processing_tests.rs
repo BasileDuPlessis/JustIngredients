@@ -832,7 +832,11 @@ mod tests {
         for (input, expected_quantity) in test_cases {
             let matches = detector.extract_ingredient_measurements(input);
             assert_eq!(matches.len(), 1, "Failed for input: {}", input);
-            assert_eq!(matches[0].quantity, expected_quantity, "Failed for input: {}", input);
+            assert_eq!(
+                matches[0].quantity, expected_quantity,
+                "Failed for input: {}",
+                input
+            );
         }
     }
 

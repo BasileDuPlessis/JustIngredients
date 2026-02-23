@@ -126,6 +126,9 @@ impl OcrErrorCorrector {
             ("Vz", "1/3"), // Common 1/3 misread
             ("V4", "1/4"), // Alternative 1/4 misread
             ("V2", "1/2"), // Alternative 1/2 misread
+            ("CU)", "1/2"), // 1/2 misread as CU)
+            ("CLP", "1/4"), // 1/4 misread as CLP
+            ("Y", "1/4"),   // 1/4 misread as Y
             ("l/2", "1/2"),
             ("l/3", "1/3"),
             ("l/4", "1/4"),
@@ -406,6 +409,10 @@ impl OcrErrorCorrector {
             (r"\bflour\b", "flour"),
             (r"\bsuger\b", "sugar"),
             (r"\bsalt\b", "salt"),
+            // French OCR corrections
+            (r"cld'eau", "cl d'eau"),
+            (r"tieéde", "tiède"),
+            (r"clde", "cl de"),
         ];
 
         for (pattern, replacement) in context_corrections {

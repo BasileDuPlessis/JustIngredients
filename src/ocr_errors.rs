@@ -59,3 +59,9 @@ impl From<anyhow::Error> for OcrError {
         OcrError::Extraction(err.to_string())
     }
 }
+
+impl From<crate::preprocessing::types::PreprocessingError> for OcrError {
+    fn from(err: crate::preprocessing::types::PreprocessingError) -> Self {
+        OcrError::Extraction(format!("Preprocessing error: {}", err))
+    }
+}

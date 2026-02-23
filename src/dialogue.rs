@@ -70,6 +70,15 @@ pub enum RecipeDialogueState {
         language_code: Option<String>,
         message_id: Option<i32>,
     },
+    AwaitingQuantityCorrection {
+        recipe_name: String,
+        ingredients: Vec<MeasurementMatch>,
+        ingredient_index: usize,
+        language_code: Option<String>,
+        message_id: Option<i32>,
+        extracted_text: String,
+        recipe_name_from_caption: Option<String>,
+    },
 }
 
 /// Type alias for our recipe dialogue

@@ -40,6 +40,13 @@ pub fn format_ingredients_list(
                 ingredient.quantity.clone()
             };
 
+            // Add warning emoji for quantities that need confirmation
+            let measurement_display = if ingredient.requires_quantity_confirmation {
+                format!("⚠️ {}", measurement_display)
+            } else {
+                measurement_display
+            };
+
             result.push_str(&format!(
                 "{}. **{}** → {}\n",
                 i + 1,
@@ -79,6 +86,13 @@ pub fn create_ingredient_review_keyboard(
                     format!("{} {}", ingredient.quantity, unit)
                 } else {
                     ingredient.quantity.clone()
+                };
+
+                // Add warning emoji for quantities that need confirmation
+                let measurement_display = if ingredient.requires_quantity_confirmation {
+                    format!("⚠️ {}", measurement_display)
+                } else {
+                    measurement_display
                 };
 
                 let display_text = format!("{} → {}", measurement_display, ingredient_display);

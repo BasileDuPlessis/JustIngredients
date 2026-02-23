@@ -103,6 +103,7 @@ edit-too-long = Le texte d'ingrédient est trop long (maximum 200 caractères). 
 edit-no-ingredient-name = Veuillez spécifier un nom d'ingrédient (par ex. "2 tasses de farine" et non pas seulement "2 tasses").
 edit-ingredient-name-too-long = Le nom d'ingrédient est trop long (maximum 100 caractères). Veuillez utiliser un nom plus court.
 edit-invalid-quantity = Quantité invalide. Veuillez utiliser un nombre positif (par ex. "2,5 tasses de farine").
+quantity-correction-prompt = Nous n'avons pas pu lire la quantité exacte pour {$ingredient}. Veuillez taper la quantité :
 error-invalid-edit = [INGREDIENT_EDIT] Index d'ingrédient invalide pour l'édition.
 confirm = Confirmer
 cancel = Annuler

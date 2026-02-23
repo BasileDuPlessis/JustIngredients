@@ -26,9 +26,10 @@ use super::media_handlers::{handle_document_message, handle_photo_message};
 // Import dialogue manager functions
 use super::dialogue_manager::{
     handle_add_ingredient_input, handle_ingredient_edit_input, handle_ingredient_review_input,
-    handle_recipe_name_after_confirm_input, handle_recipe_name_input, handle_recipe_rename_input,
-    handle_saved_ingredient_edit_input, AddIngredientInputParams, DialogueContext,
-    IngredientEditInputParams, IngredientReviewInputParams, RecipeNameAfterConfirmInputParams,
+    handle_quantity_correction_input, handle_recipe_name_after_confirm_input,
+    handle_recipe_name_input, handle_recipe_rename_input, handle_saved_ingredient_edit_input,
+    AddIngredientInputParams, DialogueContext, IngredientEditInputParams,
+    IngredientReviewInputParams, QuantityCorrectionInputParams, RecipeNameAfterConfirmInputParams,
     RecipeNameInputParams, RecipeRenameInputParams, SavedIngredientEditInputParams,
 };
 
@@ -310,6 +311,43 @@ async fn handle_text_message(
                 )
                 .await?;
                 return Ok(());
+            }
+            Some(RecipeDialogueState::AwaitingQuantityCorrection {
+                recipe_name,
+                ingredients,
+                ingredient_index,
+                language_code: dialogue_lang_code,
+                extracted_text,
+                recipe_name_from_caption,
+                ..
+            }) => {
+                // Use dialogue language code if available, otherwise fall back to message language
+                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+
+                // Handle quantity correction input
+                return handle_quantity_correction_input(
+                    DialogueContext {
+                        bot,
+                        msg,
+                        dialogue,
+                        localization,
+                    },
+                    QuantityCorrectionInputParams {
+                        pool,
+                        quantity_input: text,
+                        recipe_name,
+                        ingredients,
+                        ingredient_index,
+                        ctx: &HandlerContext {
+                            bot,
+                            localization,
+                            language_code: effective_language_code,
+                        },
+                        extracted_text,
+                        recipe_name_from_caption,
+                    },
+                )
+                .await;
             }
             Some(RecipeDialogueState::Start) | None => {
                 // Continue with normal command handling
