@@ -145,7 +145,7 @@ mod tests {
             Err(e) => panic!("Failed to create temp file: {:?}", e),
         };
         match DynamicImage::ImageRgb8(img).save(&temp_file) {
-            Ok(_) => {},
+            Ok(_) => {}
             Err(e) => panic!("Failed to save image: {:?}", e),
         };
         temp_file

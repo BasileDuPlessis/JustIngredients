@@ -121,11 +121,11 @@ impl OcrErrorCorrector {
     fn initialize_character_corrections(&mut self) {
         let corrections = [
             // Fraction-specific corrections (more targeted)
-            ("Ye", "1/2"), // Common 1/2 misread
-            ("%", "1/4"),  // Common 1/4 misread
-            ("Vz", "1/3"), // Common 1/3 misread
-            ("V4", "1/4"), // Alternative 1/4 misread
-            ("V2", "1/2"), // Alternative 1/2 misread
+            ("Ye", "1/2"),  // Common 1/2 misread
+            ("%", "1/4"),   // Common 1/4 misread
+            ("Vz", "1/3"),  // Common 1/3 misread
+            ("V4", "1/4"),  // Alternative 1/4 misread
+            ("V2", "1/2"),  // Alternative 1/2 misread
             ("CU)", "1/2"), // 1/2 misread as CU)
             ("CLP", "1/4"), // 1/4 misread as CLP
             ("Y", "1/4"),   // 1/4 misread as Y
@@ -311,7 +311,8 @@ impl OcrErrorCorrector {
 
         for (from, to) in sorted_corrections {
             // Use word boundaries only if the pattern consists entirely of word characters
-            let pattern = if from.chars().all(|c| c.is_alphanumeric() || c == '_') && from.len() > 1 {
+            let pattern = if from.chars().all(|c| c.is_alphanumeric() || c == '_') && from.len() > 1
+            {
                 format!(r"\b{}\b", regex::escape(from))
             } else {
                 regex::escape(from)

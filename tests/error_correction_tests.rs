@@ -21,10 +21,22 @@ mod tests {
         assert_eq!(corrector.correct_text("% cup sugar"), "1/4 cup sugar");
         assert_eq!(corrector.correct_text("Vz cup milk"), "1/3 cup milk");
         assert_eq!(corrector.correct_text("CU) cup butter"), "1/2 cup butter");
-        assert_eq!(corrector.correct_text("CLP cup granulated sugar"), "1/4 cup granulated sugar");
-        assert_eq!(corrector.correct_text("Y cup brown sugar"), "1/4 cup brown sugar");
-        assert_eq!(corrector.correct_text("5 cld'eau tieéde"), "5 cl d'eau tiède");
-        assert_eq!(corrector.correct_text("25 clde lait tiède"), "25 cl de lait tiède");
+        assert_eq!(
+            corrector.correct_text("CLP cup granulated sugar"),
+            "1/4 cup granulated sugar"
+        );
+        assert_eq!(
+            corrector.correct_text("Y cup brown sugar"),
+            "1/4 cup brown sugar"
+        );
+        assert_eq!(
+            corrector.correct_text("5 cld'eau tieéde"),
+            "5 cl d'eau tiède"
+        );
+        assert_eq!(
+            corrector.correct_text("25 clde lait tiède"),
+            "25 cl de lait tiède"
+        );
 
         // Test common character confusions
         assert_eq!(corrector.correct_text("fl0ur"), "fl0ur"); // Should not correct single characters in words
