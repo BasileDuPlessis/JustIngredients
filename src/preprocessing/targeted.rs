@@ -187,7 +187,10 @@ mod tests {
     fn test_preprocess_measurement_region_success() {
         let test_img = create_test_image(40, 20); // Small cropped region
 
-        let result = preprocess_measurement_region(&test_img).unwrap();
+        let result = match preprocess_measurement_region(&test_img) {
+            Ok(r) => r,
+            Err(e) => panic!("preprocess_measurement_region failed: {:?}", e),
+        };
 
         // Verify upscaling occurred (2.5x factor)
         assert_eq!(result.scale_factor, 2.5);
@@ -212,7 +215,10 @@ mod tests {
     fn test_preprocess_measurement_region_dimensions() {
         let test_img = create_test_image(30, 15);
 
-        let result = preprocess_measurement_region(&test_img).unwrap();
+        let result = match preprocess_measurement_region(&test_img) {
+            Ok(r) => r,
+            Err(e) => panic!("preprocess_measurement_region failed: {:?}", e),
+        };
 
         // Check that dimensions increased (approximately 2.5x scaling)
         assert!(result.final_dimensions.0 > result.original_dimensions.0);

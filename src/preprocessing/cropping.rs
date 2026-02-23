@@ -140,8 +140,14 @@ mod tests {
             }
         }
 
-        let temp_file = NamedTempFile::with_suffix(".png").unwrap();
-        DynamicImage::ImageRgb8(img).save(&temp_file).unwrap();
+        let temp_file = match NamedTempFile::with_suffix(".png") {
+            Ok(f) => f,
+            Err(e) => panic!("Failed to create temp file: {:?}", e),
+        };
+        match DynamicImage::ImageRgb8(img).save(&temp_file) {
+            Ok(_) => {},
+            Err(e) => panic!("Failed to save image: {:?}", e),
+        };
         temp_file
     }
 
@@ -150,7 +156,14 @@ mod tests {
         let temp_img = create_test_image(100, 50);
         let bbox = BBox::new(20, 10, 80, 40);
 
-        let result = crop_measurement_region(temp_img.path().to_str().unwrap(), &bbox).unwrap();
+        let path_str = match temp_img.path().to_str() {
+            Some(s) => s,
+            None => panic!("Temp file path is not valid UTF-8"),
+        };
+        let result = match crop_measurement_region(path_str, &bbox) {
+            Ok(r) => r,
+            Err(e) => panic!("crop_measurement_region failed: {:?}", e),
+        };
 
         // Verify the cropped image was created
         assert!(result.image.width() > 0);
@@ -172,7 +185,14 @@ mod tests {
         let temp_img = create_test_image(100, 50);
         let bbox = BBox::new(0, 0, 30, 20); // BBox at top-left edge
 
-        let result = crop_measurement_region(temp_img.path().to_str().unwrap(), &bbox).unwrap();
+        let path_str = match temp_img.path().to_str() {
+            Some(s) => s,
+            None => panic!("Temp file path is not valid UTF-8"),
+        };
+        let result = match crop_measurement_region(path_str, &bbox) {
+            Ok(r) => r,
+            Err(e) => panic!("crop_measurement_region failed: {:?}", e),
+        };
 
         // Should not go negative and should be clamped to image bounds
         assert_eq!(result.cropped_region.x0, 0);
