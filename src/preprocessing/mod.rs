@@ -9,8 +9,10 @@
 //! - `filtering`: Noise reduction and morphological operations
 //! - `quality`: Image quality assessment for adaptive preprocessing
 //! - `deskewing`: Text rotation detection and correction
+//! - `cropping`: Image cropping for targeted OCR regions
 //! - `types`: Shared types and error definitions
 
+pub mod cropping;
 pub mod deskewing;
 pub mod filtering;
 pub mod quality;
@@ -20,12 +22,13 @@ pub mod types;
 
 // Re-export commonly used types and functions for convenience
 pub use types::{
-    ClaheImageResult, DenoisedImageResult, DeskewResult, ImageQuality, ImageQualityResult,
-    MorphologicalImageResult, MorphologicalOperation, PreprocessingError, ScaledImageResult,
-    ThresholdedImageResult,
+    ClaheImageResult, CroppedImageResult, DenoisedImageResult, DeskewResult, ImageQuality,
+    ImageQualityResult, MorphologicalImageResult, MorphologicalOperation, PreprocessingError,
+    ScaledImageResult, ThresholdedImageResult,
 };
 
 // Re-export main functions from sub-modules
+pub use cropping::crop_measurement_region;
 pub use deskewing::deskew_image;
 pub use filtering::{apply_clahe, apply_morphological_operation, reduce_noise};
 pub use quality::assess_image_quality;

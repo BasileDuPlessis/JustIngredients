@@ -154,3 +154,16 @@ pub struct ClaheImageResult {
     /// Processing time in milliseconds
     pub processing_time_ms: u32,
 }
+
+/// Result of image cropping operation.
+#[derive(Debug, Clone)]
+pub struct CroppedImageResult {
+    /// The cropped image
+    pub image: DynamicImage,
+    /// Original bounding box coordinates
+    pub original_bbox: crate::ocr::BBox,
+    /// Cropped region coordinates relative to original image
+    pub cropped_region: crate::ocr::BBox,
+    /// Processing time in milliseconds
+    pub processing_time_ms: u32,
+}
