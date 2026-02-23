@@ -73,6 +73,39 @@ These are automatically combined into complete ingredient names: "all-purpose fl
    cargo run
    ```
 
+## Development
+
+### Quality Assurance
+
+This project enforces strict code quality standards to prevent CI failures and maintain reliability:
+
+#### Pre-Push Hook
+A Git pre-push hook automatically runs quality checks before any push:
+
+- ✅ **Unwrap Check**: `./scripts/check-unwraps.sh` - Detects prohibited `.unwrap()` calls
+- ✅ **Test Suite**: `cargo test` - Runs all 135+ unit, integration, and doc tests
+- ✅ **Linting**: `cargo clippy --all-targets --all-features -- -D warnings` - Strict clippy checks
+
+**Setup:** The hook is automatically installed in `.git/hooks/pre-push` and will block pushes if any check fails.
+
+**Manual Checks:**
+```bash
+# Check for unwrap violations
+./scripts/check-unwraps.sh
+
+# Run tests
+cargo test
+
+# Run linting
+cargo clippy --all-targets --all-features -- -D warnings
+```
+
+#### Code Quality Rules
+- 🚫 **No `.unwrap()`**: All error handling uses `?`, `match`, or explicit error propagation
+- 🚫 **No panicking methods**: Avoid `panic!()`, `unreachable!()`, etc.
+- ✅ **Clippy clean**: All warnings treated as errors
+- ✅ **Test coverage**: All functionality must be tested
+
 ## Deployment
 
 ### Automated Deployment with GitHub Actions
