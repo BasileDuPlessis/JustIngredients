@@ -9,8 +9,9 @@ This document outlines the step-by-step implementation plan for the OCR Quantity
 - ✅ Task 1.4: Interactive Fallback Flow (Dialogue State & Localization) - COMPLETED
 - ✅ Task 1.5: Interactive Fallback Flow (Handlers) - COMPLETED
 
-**CURRENT STATUS: Phase 3 (Targeted Preprocessing & Re-OCR) - 25% Complete**
+**CURRENT STATUS: Phase 3 (Targeted Preprocessing & Re-OCR) - 50% Complete**
 - ✅ Task 3.1: Image Cropping Logic - COMPLETED
+- ✅ Task 3.2: Targeted Preprocessing Pipeline - COMPLETED
 
 **CRITICAL REQUIREMENT FOR EVERY TASK:**
 After completing the code for each task, the following quality checks MUST be executed and pass before moving to the next task:
@@ -186,10 +187,17 @@ After completing the code for each task, the following quality checks MUST be ex
   - ✅ Exported function and types in module system
 - **Quality Gate**: Write tests using a dummy image to verify the cropped dimensions are correct. Run `fmt`, `clippy`, `test`.
 
-### Task 3.2: Targeted Preprocessing Pipeline
+### Task 3.2: Targeted Preprocessing Pipeline ✅ COMPLETED
 - **Goal**: Enhance the cropped zone specifically for small fraction recognition.
 - **Action**: 
   - Implement a specialized preprocessing function for the cropped zone: upscale (2x/3x), convert to grayscale, and apply aggressive binarization (Otsu/adaptive thresholding).
+- **Implementation Details**:
+  - ✅ Added `TargetedPreprocessingResult` struct to `src/preprocessing/types.rs` with image, dimensions, scale factor, threshold, and processing time
+  - ✅ Created `src/preprocessing/targeted.rs` module with `preprocess_measurement_region()` function
+  - ✅ Implemented 2.5x upscaling using high-quality Catmull-Rom interpolation
+  - ✅ Added custom Otsu thresholding algorithm for optimal binarization
+  - ✅ Comprehensive test coverage including dimension verification, Otsu calculation, and edge cases
+  - ✅ Exported function and types in module system
 - **Quality Gate**: Write tests verifying the output image format and dimensions. Run `fmt`, `clippy`, `test`.
 
 ### Task 3.3: Constrained OCR Pass

@@ -167,3 +167,20 @@ pub struct CroppedImageResult {
     /// Processing time in milliseconds
     pub processing_time_ms: u32,
 }
+
+/// Result of targeted preprocessing operation for measurement regions.
+#[derive(Debug, Clone)]
+pub struct TargetedPreprocessingResult {
+    /// The preprocessed image ready for OCR
+    pub image: DynamicImage,
+    /// Original image dimensions before preprocessing
+    pub original_dimensions: (u32, u32),
+    /// Final image dimensions after preprocessing
+    pub final_dimensions: (u32, u32),
+    /// Scale factor applied during upscaling
+    pub scale_factor: f32,
+    /// Threshold value used for binarization
+    pub threshold: u8,
+    /// Processing time in milliseconds
+    pub processing_time_ms: u32,
+}
