@@ -100,6 +100,7 @@ pub fn validate_basic_input(input: &str) -> Result<(), &'static str> {
 ///     line_number: 0,
 ///     start_pos: 0,
 ///     end_pos: 10,
+///     requires_quantity_confirmation: false,
 /// };
 ///
 /// assert!(validate_measurement_match(&valid_match, "temp: 2 cups flour").is_ok());
@@ -141,6 +142,7 @@ pub fn validate_measurement_match(
 ///     line_number: 0,
 ///     start_pos: 7, // Position of "2" in "-2 "
 ///     end_pos: 10,
+///     requires_quantity_confirmation: false,
 /// };
 ///
 /// adjust_quantity_for_negative(&mut match_with_negative, "temp: -2 cups flour");
@@ -187,6 +189,7 @@ pub fn adjust_quantity_for_negative(measurement_match: &mut MeasurementMatch, te
 ///     line_number: 0,
 ///     start_pos: 0,
 ///     end_pos: 10,
+///     requires_quantity_confirmation: false,
 /// };
 ///
 /// assert!(validate_quantity_range(&valid_match).is_ok());
@@ -198,6 +201,7 @@ pub fn adjust_quantity_for_negative(measurement_match: &mut MeasurementMatch, te
 ///     line_number: 0,
 ///     start_pos: 0,
 ///     end_pos: 10,
+///     requires_quantity_confirmation: false,
 /// };
 ///
 /// assert_eq!(validate_quantity_range(&invalid_match), Err("edit-invalid-quantity"));

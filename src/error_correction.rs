@@ -305,12 +305,16 @@ impl OcrErrorCorrector {
     fn apply_character_corrections(&self, text: &str) -> String {
         let mut corrected = text.to_string();
 
-        for (from, to) in &self.character_corrections {
-            // Use word boundaries for multi-character corrections to avoid false positives
-            let pattern = if from.len() == 1 {
-                regex::escape(from)
-            } else {
+        // Sort corrections by length descending to handle longer patterns first
+        let mut sorted_corrections: Vec<_> = self.character_corrections.iter().collect();
+        sorted_corrections.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+
+        for (from, to) in sorted_corrections {
+            // Use word boundaries only if the pattern consists entirely of word characters
+            let pattern = if from.chars().all(|c| c.is_alphanumeric() || c == '_') && from.len() > 1 {
                 format!(r"\b{}\b", regex::escape(from))
+            } else {
+                regex::escape(from)
             };
 
             if let Ok(regex) = Regex::new(&pattern) {
