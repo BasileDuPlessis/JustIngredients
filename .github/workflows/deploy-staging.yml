@@ -26,8 +26,26 @@ jobs:
     - name: Clean up any existing staging resources
       run: |
         echo "Cleaning up any existing staging resources..."
+        
+        # Stop any running machines first
+        echo "Stopping any running machines..."
+        fly machines list --app just-ingredients-staging --json | jq -r '.[].id' | while read machine_id; do
+          echo "Stopping machine $machine_id..."
+          fly machines stop $machine_id --app just-ingredients-staging || true
+        done || true
+        
+        # Wait a bit for machines to stop
+        echo "Waiting for machines to stop..."
+        sleep 10
+        
+        # Destroy apps
         fly apps destroy just-ingredients-staging --yes || true
         fly apps destroy just-ingredients-staging-db --yes || true
+        
+        # Additional cleanup for any orphaned resources
+        echo "Checking for any remaining resources..."
+        fly machines list --app just-ingredients-staging 2>/dev/null || echo "No machines found"
+        
         echo "Cleanup completed"
 
     - name: Create staging app
@@ -70,11 +88,21 @@ jobs:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
 
     - name: Deploy to staging
+      id: deploy
       uses: superfly/flyctl-actions@master
       with:
         args: deploy --config deploy/fly-staging.toml --remote-only --app just-ingredients-staging
       env:
         FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+
+    - name: Retry deployment on failure
+      if: steps.deploy.outcome == 'failure'
+      uses: superfly/flyctl-actions@master
+      with:
+        args: deploy --config deploy/fly-staging.toml --remote-only --app just-ingredients-staging
+      env:
+        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      continue-on-error: true
 
     - name: Verify database creation
       run: |
