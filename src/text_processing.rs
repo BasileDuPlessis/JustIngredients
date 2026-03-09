@@ -419,6 +419,55 @@ lazy_static! {
         .expect("Default measurement pattern should be valid");
 }
 
+/// Strip leading bullet points from ingredient lines
+///
+/// This function removes common bullet characters and their trailing whitespace from the
+/// beginning of lines, which is common in OCR output from recipe images. This allows
+/// the measurement detection regex to properly match ingredients that start with bullets.
+///
+/// # Arguments
+/// * `line` - The input line that may contain leading bullet points
+///
+/// # Returns
+/// A slice of the input line with leading bullets and whitespace removed
+pub fn strip_leading_bullets(line: &str) -> &str {
+    let trimmed = line.trim_start();
+
+    // Check if the trimmed line starts with a bullet character
+    if let Some(first_char) = trimmed.chars().next() {
+        // Common bullet characters found in OCR output
+        let bullet_chars = ['-', '*', '•', '◦', '▪', '▫', '►', '▸'];
+
+        if bullet_chars.contains(&first_char) {
+            // Find the bullet and any whitespace immediately following it
+            let mut chars = trimmed.chars();
+            chars.next(); // Skip the bullet character
+
+            // Skip any whitespace after the bullet
+            let mut whitespace_count = 0;
+            for ch in chars.clone() {
+                if ch.is_whitespace() {
+                    whitespace_count += 1;
+                } else {
+                    break;
+                }
+            }
+
+            // Return the line starting after the bullet and its trailing whitespace
+            let skip_chars = 1 + whitespace_count; // 1 for bullet, plus whitespace
+            if skip_chars < trimmed.len() {
+                return &trimmed[trimmed.char_indices().nth(skip_chars).unwrap().0..];
+            } else {
+                // Line was only bullet and whitespace, return empty
+                return "";
+            }
+        }
+    }
+
+    // No bullet found, return the fully trimmed line (both leading and trailing)
+    line.trim()
+}
+
 /// Measurement detector using regex patterns for English and French units
 pub struct MeasurementDetector {
     /// Compiled regex pattern for detecting measurements
