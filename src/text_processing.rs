@@ -753,15 +753,21 @@ impl MeasurementDetector {
 
         while line_index < all_lines.len() {
             let line_number = line_index;
-            let line = all_lines[line_index];
-            trace!("Processing line {}: '{}'", line_number, line);
+            let original_line = all_lines[line_index];
+            
+            // Apply bullet stripping preprocessing for regex matching
+            let processed_line = strip_leading_bullets(original_line);
+            let bullet_offset = original_line.len() - processed_line.len();
+            
+            trace!("Processing line {}: '{}' -> '{}' (offset: {})", 
+                   line_number, original_line, processed_line, bullet_offset);
 
             // Track how many lines are consumed by this measurement (for multi-line ingredients)
             let mut lines_consumed = 1; // Default to 1 line consumed
 
-            // CAPTURE LOOP: Find all measurement patterns in current line
+            // CAPTURE LOOP: Find all measurement patterns in processed line
             // This inner loop handles multiple measurements per line (rare but possible)
-            'capture_loop: for capture in self.pattern.captures_iter(line) {
+            'capture_loop: for capture in self.pattern.captures_iter(processed_line) {
                 let full_match = capture
                     .get(0)
                     .expect("Full match should always be available in regex capture");
@@ -786,7 +792,7 @@ impl MeasurementDetector {
                     .get(0)
                     .expect("Full match should always be available in regex capture")
                     .end();
-                let remaining_text = &line[match_end..];
+                let remaining_text = &processed_line[match_end..];
                 let trimmed_remaining = remaining_text.trim_start();
 
                 // Skip if no measurement unit and no ingredient text after the match
@@ -810,7 +816,7 @@ impl MeasurementDetector {
                     .get(0)
                     .expect("Full match should always be available in regex capture")
                     .end();
-                let remaining_text = &line[match_end..];
+                let remaining_text = &processed_line[match_end..];
                 let trimmed_remaining = remaining_text.trim_start();
 
                 // For measurements at end of line, allow empty ingredients
@@ -976,8 +982,8 @@ impl MeasurementDetector {
                     measurement: final_measurement,
                     ingredient_name,
                     line_number,
-                    start_pos: current_pos + full_match.start(),
-                    end_pos: current_pos + match_end_pos,
+                    start_pos: current_pos + bullet_offset + full_match.start(),
+                    end_pos: current_pos + bullet_offset + match_end_pos,
                     requires_quantity_confirmation: requires_confirmation,
                 });
             }
@@ -1293,7 +1299,9 @@ impl MeasurementDetector {
             }
 
             // Termination condition 3: New measurement line
-            if self.is_measurement_line(current_line) {
+            // Apply the same bullet preprocessing as in the main extraction loop
+            let processed_current_line = strip_leading_bullets(current_line);
+            if self.is_measurement_line(&processed_current_line) {
                 break;
             }
 

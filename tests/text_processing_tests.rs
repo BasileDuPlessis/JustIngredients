@@ -1573,4 +1573,41 @@ mod tests {
         assert_eq!(strip_leading_bullets("Use - 2 cups flour"), "Use - 2 cups flour");
         assert_eq!(strip_leading_bullets("Item * 500g butter"), "Item * 500g butter");
     }
+
+    #[test]
+    fn test_extract_ingredient_measurements_with_bullets() {
+        let detector = create_detector();
+
+        // Test that bullet-prefixed lines are now properly detected
+        let text_with_bullets = "- 2 cups flour\n* 1 tbsp sugar\n• 500g butter\n2 cups milk";
+
+        let matches = detector.extract_ingredient_measurements(text_with_bullets);
+
+        // Should find 4 measurements (including the bullet-prefixed ones)
+        assert_eq!(matches.len(), 4);
+
+        // Check first bullet line: "- 2 cups flour"
+        assert_eq!(matches[0].quantity, "2");
+        assert_eq!(matches[0].measurement, Some("cups".to_string()));
+        assert_eq!(matches[0].ingredient_name, "flour");
+        assert_eq!(matches[0].line_number, 0);
+
+        // Check second bullet line: "* 1 tbsp sugar"
+        assert_eq!(matches[1].quantity, "1");
+        assert_eq!(matches[1].measurement, Some("tbsp".to_string()));
+        assert_eq!(matches[1].ingredient_name, "sugar");
+        assert_eq!(matches[1].line_number, 1);
+
+        // Check third bullet line: "• 500g butter"
+        assert_eq!(matches[2].quantity, "500");
+        assert_eq!(matches[2].measurement, Some("g".to_string()));
+        assert_eq!(matches[2].ingredient_name, "butter");
+        assert_eq!(matches[2].line_number, 2);
+
+        // Check fourth line (no bullet): "2 cups milk"
+        assert_eq!(matches[3].quantity, "2");
+        assert_eq!(matches[3].measurement, Some("cups".to_string()));
+        assert_eq!(matches[3].ingredient_name, "milk");
+        assert_eq!(matches[3].line_number, 3);
+    }
 }
