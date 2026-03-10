@@ -31,6 +31,10 @@ use std::io::{BufReader, Read};
 use tempfile::NamedTempFile;
 use tracing::{error, info, warn};
 
+// Submodules
+mod retry;
+mod types;
+
 // Re-export types for easier access from documentation and external usage
 pub use crate::circuit_breaker::CircuitBreaker;
 use crate::error_correction::OcrErrorCorrector;
@@ -40,64 +44,11 @@ pub use crate::observability;
 pub use crate::ocr_config::{OcrConfig, RecoveryConfig};
 pub use crate::ocr_errors::OcrError;
 
-/// Represents a bounding box with coordinates for spatial positioning
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct BBox {
-    /// Left coordinate (x0)
-    pub x0: u32,
-    /// Top coordinate (y0)
-    pub y0: u32,
-    /// Right coordinate (x1)
-    pub x1: u32,
-    /// Bottom coordinate (y1)
-    pub y1: u32,
-}
+// Re-export types from submodule
+pub use self::types::*;
 
-impl BBox {
-    /// Create a new bounding box
-    pub fn new(x0: u32, y0: u32, x1: u32, y1: u32) -> Self {
-        Self { x0, y0, x1, y1 }
-    }
-
-    /// Calculate the width of the bounding box
-    pub fn width(&self) -> u32 {
-        self.x1.saturating_sub(self.x0)
-    }
-
-    /// Calculate the height of the bounding box
-    pub fn height(&self) -> u32 {
-        self.y1.saturating_sub(self.y0)
-    }
-
-    /// Calculate the area of the bounding box
-    pub fn area(&self) -> u64 {
-        (self.width() as u64) * (self.height() as u64)
-    }
-}
-
-/// Represents a line of text with its bounding box from HOCR output
-#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub struct HocrLine {
-    /// The text content of the line
-    pub text: String,
-    /// The bounding box coordinates for this line
-    pub bbox: BBox,
-}
-
-impl HocrLine {
-    /// Create a new HOCR line
-    pub fn new(text: String, bbox: BBox) -> Self {
-        Self { text, bbox }
-    }
-
-    /// Create a new HOCR line from coordinates
-    pub fn from_coords(text: String, x0: u32, y0: u32, x1: u32, y1: u32) -> Self {
-        Self {
-            text,
-            bbox: BBox::new(x0, y0, x1, y1),
-        }
-    }
-}
+// Re-export retry utilities from submodule
+pub use self::retry::*;
 
 /// Validate image file path and basic properties using enhanced security validation
 pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConfig) -> Result<()> {
@@ -898,30 +849,6 @@ pub async fn extract_text_from_image(
 /// - `ExtractionError` - OCR processing failed
 /// - `TimeoutError` - Operation exceeded configured timeout
 ///
-/// Result of adaptive image preprocessing.
-#[derive(Debug)]
-pub struct AdaptivePreprocessingResult {
-    /// The final preprocessed image
-    pub image: image::DynamicImage,
-    /// Description of the preprocessing strategy applied
-    pub preprocessing_strategy: String,
-}
-
-/// Result of constrained OCR processing for measurement extraction.
-#[derive(Debug)]
-pub struct ConstrainedOcrResult {
-    /// The extracted text (should contain only numbers/fractions)
-    pub text: String,
-    /// Confidence score from Tesseract (0-100)
-    pub confidence: f32,
-    /// PSM mode used for OCR
-    pub psm_mode: String,
-    /// Character whitelist applied
-    pub character_whitelist: String,
-    /// Processing time in milliseconds
-    pub processing_time_ms: u32,
-}
-
 /// Applies adaptive preprocessing based on assessed image quality.
 ///
 /// This function selects an appropriate preprocessing pipeline based on image quality:
@@ -1296,129 +1223,6 @@ async fn perform_ocr_extraction(
             )))
         }
     }
-}
-
-/// Calculate retry delay with exponential backoff
-///
-/// Implements exponential backoff with jitter to prevent thundering herd problems.
-/// Delay increases exponentially with each retry attempt, with random jitter added
-/// to distribute retry attempts over time.
-///
-/// ## Algorithm Overview
-///
-/// The function calculates retry delays using this formula:
-/// ```text
-/// delay = min(base_delay * (2^(attempt-1)), max_delay)
-/// jitter = random(0, delay/4)
-/// final_delay = delay + jitter
-/// ```
-///
-/// ## Exponential Backoff Logic
-///
-/// - **Base Delay**: Starting delay for first retry (typically 1000ms)
-/// - **Exponential Growth**: Delay doubles with each retry attempt
-/// - **Maximum Cap**: Prevents excessively long delays
-/// - **Jitter Addition**: Random component prevents synchronized retries
-///
-/// ## Delay Progression Examples
-///
-/// | Attempt | Base Delay | Exponential | Jitter Range | Final Delay Range |
-/// |---------|------------|-------------|--------------|-------------------|
-/// | 1       | 1000ms     | 1000ms      | 0-250ms      | 1000-1250ms      |
-/// | 2       | 1000ms     | 2000ms      | 0-500ms      | 2000-2500ms      |
-/// | 3       | 1000ms     | 4000ms      | 0-1000ms     | 4000-5000ms      |
-/// | 4       | 1000ms     | 8000ms      | 0-2000ms     | 8000-10000ms     |
-/// | 5+      | 1000ms     | 10000ms*    | 0-2500ms     | 10000-12500ms    |
-///
-/// *Capped at max_retry_delay_ms
-///
-/// ## Jitter Implementation
-///
-/// Jitter is calculated as a random value between 0 and delay/4:
-/// - **Purpose**: Distribute retry attempts over time
-/// - **Range**: 0 to 25% of the base delay
-/// - **Randomness**: Uses `rand::random()` for uniform distribution
-/// - **Thread Safety**: Each call generates independent random values
-///
-/// ## Configuration Parameters
-///
-/// - `base_retry_delay_ms`: Base delay for first retry (default: 1000ms)
-/// - `max_retry_delay_ms`: Maximum delay cap (default: 10000ms)
-/// - `attempt`: Current retry attempt number (1-based)
-///
-/// ## Benefits
-///
-/// - **Load Distribution**: Prevents server overload during failures
-/// - **Thundering Herd Prevention**: Jitter distributes retry attempts
-/// - **Configurable**: Adjustable for different environments
-/// - **Predictable**: Exponential growth with known bounds
-/// - **Resource Protection**: Gives failing services time to recover
-///
-/// ## Usage in Retry Logic
-///
-/// ```rust
-/// use just_ingredients::ocr_config::RecoveryConfig;
-/// use just_ingredients::ocr::calculate_retry_delay;
-///
-/// let config = RecoveryConfig::default();
-/// // Simulate retry logic
-/// let mut results = Vec::new();
-/// for attempt in 1..=3 {
-///     let delay = calculate_retry_delay(attempt, &config);
-///     results.push(delay);
-///     // In real code: tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
-/// }
-/// // Results will be different due to jitter, but within expected ranges
-/// assert!(results[0] >= 1000 && results[0] <= 1250); // ~1000ms + jitter
-/// assert!(results[1] >= 2000 && results[1] <= 2500); // ~2000ms + jitter
-/// assert!(results[2] >= 4000 && results[2] <= 5000); // ~4000ms + jitter
-/// ```
-///
-/// ## Performance Considerations
-///
-/// - **Computation**: Minimal CPU overhead (bit operations + random generation)
-/// - **Memory**: No allocations, uses only primitive types
-/// - **Thread Safety**: Safe for concurrent use
-/// - **Predictability**: Deterministic exponential growth with random jitter
-///
-/// # Arguments
-///
-/// * `attempt` - Current retry attempt number (1-based, first retry = 1)
-/// * `recovery` - Recovery configuration with delay settings
-///
-/// # Returns
-///
-/// Returns delay in milliseconds before next retry attempt
-///
-/// # Examples
-///
-/// ```rust
-/// use just_ingredients::ocr::{calculate_retry_delay, RecoveryConfig};
-///
-/// let config = RecoveryConfig::default();
-/// // First retry: ~1000-1250ms (1000ms + jitter)
-/// let delay1 = calculate_retry_delay(1, &config);
-/// // Second retry: ~2000-2500ms (2000ms + jitter)
-/// let delay2 = calculate_retry_delay(2, &config);
-/// // Third retry: ~4000-5000ms (4000ms + jitter)
-/// let delay3 = calculate_retry_delay(3, &config);
-/// ```
-/// - **Capped**: Prevents excessively long delays
-pub fn calculate_retry_delay(attempt: u32, recovery: &crate::ocr_config::RecoveryConfig) -> u64 {
-    // Calculate exponential backoff with minimal precision loss
-    // For retry delays, precision loss is acceptable as delays are typically small
-    #[allow(clippy::cast_precision_loss)]
-    let base_delay = recovery.base_retry_delay_ms as f64;
-
-    #[allow(clippy::cast_precision_loss)]
-    let exponential_delay = base_delay * (2.0_f64).powf((attempt - 1) as f64);
-
-    #[allow(clippy::cast_precision_loss)]
-    let delay = exponential_delay.min(recovery.max_retry_delay_ms as f64) as u64;
-
-    // Add some jitter to prevent thundering herd
-    let jitter = (rand::random::<u64>() % (delay / 4)) as u64;
-    delay + jitter
 }
 
 /// Validate if an image file is supported for OCR processing using `image::guess_format`
