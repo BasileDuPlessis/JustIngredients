@@ -19,17 +19,19 @@ The OCR processing fails to correctly match ingredients that start with dash cha
   - Preserve whitespace after bullets for proper parsing
   - Add unit tests for bullet stripping logic
 
-- [ ] **Task 1.2**: Integrate preprocessing into `extract_ingredient_measurements()`
+- [x] **Task 1.2**: Integrate preprocessing into `extract_ingredient_measurements()`
   - Modify the main processing loop to call preprocessing on each line
   - Ensure line numbers and positions are correctly maintained
   - Add logging for preprocessed lines
   - **IMPORTANT**: Account for existing line merging behavior - bot already merges lines when next line doesn't start with a quantity, which may prevent dash-prefixed lines from being processed individually
 
 ### Phase 2: Enhanced Pattern Matching
-- [ ] **Task 2.1**: Update regex pattern to be more flexible with leading content
-  - Consider making the pattern match quantities anywhere in the line
-  - Or ensure preprocessing handles all edge cases
-  - Test with various bullet point formats
+- [x] **Task 2.1**: Update regex pattern to be more flexible with leading content
+  - Added `.*?` at the beginning of regex pattern to allow quantities anywhere in the line
+  - Updated position calculations to use quantity capture group start position
+  - Updated `is_measurement_line()` to check quantity position instead of full match
+  - Added comprehensive test `test_quantities_anywhere_in_line()` to verify functionality
+  - All existing tests still pass
 
 - [ ] **Task 2.2**: Handle multi-character bullet patterns
   - Support patterns like `--`, `**`, `• `, etc.
@@ -46,12 +48,12 @@ The OCR processing fails to correctly match ingredients that start with dash cha
   - Verify ingredients are correctly parsed
   - Compare before/after results
 
-- [ ] **Task 3.3**: Add regression tests
+- [x] **Task 3.3**: Add regression tests
   - Ensure existing functionality still works
   - Test with other test images to prevent breaking changes
 
 ### Phase 4: Edge Cases and Polish
-- [ ] **Task 4.1**: Handle false positives
+- [x] **Task 4.1**: Handle false positives
   - Avoid stripping dashes that are part of ingredient names (e.g., "low-sodium")
   - Only strip leading bullets at line start
 

@@ -2026,3 +2026,293 @@ mod automated_recovery_integration_tests {
     // Full integration testing would be done through manual testing or
     // separate integration test suites with test images.
 }
+
+/// Integration test for dash-prefixed ingredient extraction using recipe_with_dashes.png
+/// This test verifies that the OCR pipeline correctly processes images with dash-prefixed ingredients
+#[tokio::test]
+async fn test_dash_prefixed_ingredients_integration() {
+    println!("🧪 Testing dash-prefixed ingredient extraction from recipe_with_dashes.png...");
+
+    // Path to the test image
+    let image_path = "test_images/recipe_with_dashes.png";
+
+    // Verify the test image exists
+    assert!(
+        std::path::Path::new(image_path).exists(),
+        "Test image recipe_with_dashes.png not found at {}",
+        image_path
+    );
+
+    // Set up OCR components
+    let config = OcrConfig::default();
+    let instance_manager = OcrInstanceManager::new();
+    let circuit_breaker = CircuitBreaker::new(config.recovery.clone());
+
+    // Extract text from the image
+    let (extracted_text, confidence) =
+        extract_text_from_image(image_path, &config, &instance_manager, &circuit_breaker)
+            .await
+            .expect("Failed to extract text from recipe_with_dashes.png");
+
+    println!(
+        "📄 Extracted OCR text ({} chars, confidence: {:.2}):",
+        extracted_text.len(),
+        confidence.overall_score
+    );
+    println!("---\n{}\n---", extracted_text);
+
+    // Create measurement detector
+    let detector = MeasurementDetector::new().expect("Failed to create measurement detector");
+
+    // Extract ingredients from the OCR text
+    let ingredients = detector.extract_ingredient_measurements(&extracted_text);
+
+    println!("🍳 Found {} ingredients:", ingredients.len());
+    for (i, ingredient) in ingredients.iter().enumerate() {
+        println!(
+            "  {}. {} {} {}",
+            i + 1,
+            ingredient.quantity,
+            ingredient.measurement.as_deref().unwrap_or(""),
+            ingredient.ingredient_name
+        );
+    }
+
+    // Verify that ingredients were found
+    assert!(
+        !ingredients.is_empty(),
+        "No ingredients found in recipe_with_dashes.png"
+    );
+
+    // Verify OCR confidence is reasonable (not completely failed)
+    assert!(
+        confidence.overall_score > 0.0,
+        "OCR confidence too low: {:.2}",
+        confidence.overall_score
+    );
+
+    // Verify that we have some ingredients with measurements (basic functionality test)
+    let ingredients_with_measurements = ingredients
+        .iter()
+        .filter(|ing| ing.measurement.is_some())
+        .count();
+    assert!(
+        ingredients_with_measurements > 0,
+        "No ingredients with measurements found"
+    );
+
+    // Verify that we have some quantity-only ingredients (common in recipes)
+    let quantity_only_ingredients = ingredients
+        .iter()
+        .filter(|ing| ing.measurement.is_none())
+        .count();
+    assert!(
+        quantity_only_ingredients > 0,
+        "No quantity-only ingredients found"
+    );
+
+    println!(
+        "✅ Successfully extracted {} ingredients from recipe_with_dashes.png",
+        ingredients.len()
+    );
+    println!(
+        "   - {} ingredients with measurements",
+        ingredients_with_measurements
+    );
+    println!(
+        "   - {} quantity-only ingredients",
+        quantity_only_ingredients
+    );
+}
+
+#[tokio::test]
+async fn test_merged_quantity_ingredient_integration() {
+    println!("🧪 Testing merged quantity ingredient extraction from recipe_merged_qty_ing.jpg...");
+
+    // Path to the test image
+    let image_path = "test_images/recipe_merged_qty_ing.jpg";
+
+    // Verify the test image exists
+    assert!(
+        std::path::Path::new(image_path).exists(),
+        "Test image recipe_merged_qty_ing.jpg not found at {}",
+        image_path
+    );
+
+    // Set up OCR components
+    let config = OcrConfig::default();
+    let instance_manager = OcrInstanceManager::new();
+    let circuit_breaker = CircuitBreaker::new(config.recovery.clone());
+
+    // Extract text from the image
+    let (extracted_text, confidence) =
+        extract_text_from_image(image_path, &config, &instance_manager, &circuit_breaker)
+            .await
+            .expect("Failed to extract text from recipe_merged_qty_ing.jpg");
+
+    println!(
+        "📄 Extracted OCR text ({} chars, confidence: {:.2}):",
+        extracted_text.len(),
+        confidence.overall_score
+    );
+    println!("---\n{}\n---", extracted_text);
+
+    // Create measurement detector
+    let detector = MeasurementDetector::new().expect("Failed to create measurement detector");
+
+    // Extract ingredients from the OCR text
+    let ingredients = detector.extract_ingredient_measurements(&extracted_text);
+
+    println!("🍳 Found {} ingredients:", ingredients.len());
+    for (i, ingredient) in ingredients.iter().enumerate() {
+        println!(
+            "  {}. {} {} {}",
+            i + 1,
+            ingredient.quantity,
+            ingredient.measurement.as_deref().unwrap_or(""),
+            ingredient.ingredient_name
+        );
+    }
+
+    // Verify that ingredients were found
+    assert!(
+        !ingredients.is_empty(),
+        "No ingredients found in recipe_merged_qty_ing.jpg"
+    );
+
+    // Verify OCR confidence is reasonable (not completely failed)
+    assert!(
+        confidence.overall_score > 0.0,
+        "OCR confidence too low: {:.2}",
+        confidence.overall_score
+    );
+
+    // Verify that we have some ingredients with measurements (basic functionality test)
+    let ingredients_with_measurements = ingredients
+        .iter()
+        .filter(|ing| ing.measurement.is_some())
+        .count();
+    assert!(
+        ingredients_with_measurements > 0,
+        "No ingredients with measurements found"
+    );
+
+    // Verify that we have some quantity-only ingredients (common in recipes)
+    let quantity_only_ingredients = ingredients
+        .iter()
+        .filter(|ing| ing.measurement.is_none())
+        .count();
+    assert!(
+        quantity_only_ingredients > 0,
+        "No quantity-only ingredients found"
+    );
+
+    println!(
+        "✅ Successfully extracted {} ingredients from recipe_merged_qty_ing.jpg",
+        ingredients.len()
+    );
+    println!(
+        "   - {} ingredients with measurements",
+        ingredients_with_measurements
+    );
+    println!(
+        "   - {} quantity-only ingredients",
+        quantity_only_ingredients
+    );
+}
+
+#[tokio::test]
+async fn test_fraction_quantities_integration() {
+    println!("🧪 Testing fraction quantity extraction from recipe_with_fraction.jpg...");
+
+    // Path to the test image
+    let image_path = "test_images/recipe_with_fraction.jpg";
+
+    // Verify the test image exists
+    assert!(
+        std::path::Path::new(image_path).exists(),
+        "Test image recipe_with_fraction.jpg not found at {}",
+        image_path
+    );
+
+    // Set up OCR components
+    let config = OcrConfig::default();
+    let instance_manager = OcrInstanceManager::new();
+    let circuit_breaker = CircuitBreaker::new(config.recovery.clone());
+
+    // Extract text from the image
+    let (extracted_text, confidence) =
+        extract_text_from_image(image_path, &config, &instance_manager, &circuit_breaker)
+            .await
+            .expect("Failed to extract text from recipe_with_fraction.jpg");
+
+    println!(
+        "📄 Extracted OCR text ({} chars, confidence: {:.2}):",
+        extracted_text.len(),
+        confidence.overall_score
+    );
+    println!("---\n{}\n---", extracted_text);
+
+    // Create measurement detector
+    let detector = MeasurementDetector::new().expect("Failed to create measurement detector");
+
+    // Extract ingredients from the OCR text
+    let ingredients = detector.extract_ingredient_measurements(&extracted_text);
+
+    println!("🍳 Found {} ingredients:", ingredients.len());
+    for (i, ingredient) in ingredients.iter().enumerate() {
+        println!(
+            "  {}. {} {} {}",
+            i + 1,
+            ingredient.quantity,
+            ingredient.measurement.as_deref().unwrap_or(""),
+            ingredient.ingredient_name
+        );
+    }
+
+    // Verify that ingredients were found
+    assert!(
+        !ingredients.is_empty(),
+        "No ingredients found in recipe_with_fraction.jpg"
+    );
+
+    // Verify OCR confidence is reasonable (not completely failed)
+    assert!(
+        confidence.overall_score > 0.0,
+        "OCR confidence too low: {:.2}",
+        confidence.overall_score
+    );
+
+    // Verify that we have some ingredients with measurements (basic functionality test)
+    let ingredients_with_measurements = ingredients
+        .iter()
+        .filter(|ing| ing.measurement.is_some())
+        .count();
+    assert!(
+        ingredients_with_measurements > 0,
+        "No ingredients with measurements found"
+    );
+
+    // Verify that we have some quantity-only ingredients (common in recipes)
+    let quantity_only_ingredients = ingredients
+        .iter()
+        .filter(|ing| ing.measurement.is_none())
+        .count();
+    assert!(
+        quantity_only_ingredients > 0,
+        "No quantity-only ingredients found"
+    );
+
+    println!(
+        "✅ Successfully extracted {} ingredients from recipe_with_fraction.jpg",
+        ingredients.len()
+    );
+    println!(
+        "   - {} ingredients with measurements",
+        ingredients_with_measurements
+    );
+    println!(
+        "   - {} quantity-only ingredients",
+        quantity_only_ingredients
+    );
+}

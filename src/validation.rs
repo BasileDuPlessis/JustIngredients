@@ -10,12 +10,11 @@
 //! - Basic input constraints
 
 use crate::text_processing::MeasurementMatch;
-use lazy_static::lazy_static;
 use regex::Regex;
 
-lazy_static! {
-    static ref QUANTITY_PATTERN: Regex =
-        Regex::new(r"^(-?\d+(?:\.\d+)?(?:\s*\d+/\d+)?)").expect("Invalid quantity regex pattern");
+fn get_quantity_pattern() -> Result<&'static Regex, regex::Error> {
+    static PATTERN: std::sync::OnceLock<Result<Regex, regex::Error>> = std::sync::OnceLock::new();
+    PATTERN.get_or_init(|| Regex::new(r"^(-?\d+(?:\.\d+)?(?:\s*\d+/\d+)?)")).as_ref().map_err(|e| e.clone())
 }
 
 /// Validates a recipe name input
@@ -355,7 +354,8 @@ pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, &'sta
 /// Parse ingredient when no measurement detector match is found
 fn parse_without_measurement_detector(trimmed: &str) -> Result<MeasurementMatch, &'static str> {
     // Try to extract a simple quantity pattern
-    if let Some(captures) = QUANTITY_PATTERN.captures(trimmed) {
+    let pattern = get_quantity_pattern().map_err(|_| "invalid-quantity-regex")?;
+    if let Some(captures) = pattern.captures(trimmed) {
         if let Some(quantity_match) = captures.get(1) {
             return parse_with_quantity(trimmed, quantity_match);
         }

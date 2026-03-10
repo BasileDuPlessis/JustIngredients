@@ -407,8 +407,9 @@ fn build_measurement_regex_pattern() -> String {
 
     // Build the complete regex pattern with named capture groups
     // Unified pattern: measurement is optional, ingredient extracted from text after match
+    // Added .*? at the beginning to allow quantities anywhere in the line (not just at the start)
     format!(
-        r"(?i)(?P<quantity>\d+\s+\d+/\d+|\d+[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟]|[lO\d]+/\d+|\d*\.?\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})(?:\s|$))?\s*",
+        r"(?i).*?(?P<quantity>\d+\s+\d+/\d+|\d+[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟]|[lO\d]+/\d+|\d*\.?\d+|[½⅓⅔¼¾⅕⅖⅗⅘⅙⅚⅛⅜⅝⅞⅟])(?:\s*(?P<measurement>{})(?:\s|$))?\s*",
         units_pattern
     )
 }
@@ -421,29 +422,27 @@ lazy_static! {
 
 /// Strip leading bullet points from ingredient lines
 ///
-/// This function removes common bullet characters and their trailing whitespace from the
+/// This function removes dash characters (-) and their trailing whitespace from the
 /// beginning of lines, which is common in OCR output from recipe images. This allows
-/// the measurement detection regex to properly match ingredients that start with bullets.
+/// the measurement detection regex to properly match ingredients that start with dashes.
 ///
 /// # Arguments
-/// * `line` - The input line that may contain leading bullet points
+/// * `line` - The input line that may contain leading dash characters
 ///
 /// # Returns
-/// A slice of the input line with leading bullets and whitespace removed
+/// A slice of the input line with leading dashes and whitespace removed
 pub fn strip_leading_bullets(line: &str) -> &str {
     let trimmed = line.trim_start();
 
-    // Check if the trimmed line starts with a bullet character
+    // Check if the trimmed line starts with a dash character
     if let Some(first_char) = trimmed.chars().next() {
-        // Common bullet characters found in OCR output
-        let bullet_chars = ['-', '*', '•', '◦', '▪', '▫', '►', '▸'];
-
-        if bullet_chars.contains(&first_char) {
-            // Find the bullet and any whitespace immediately following it
+        // Only handle dash characters for list items
+        if first_char == '-' {
+            // Find the dash and any whitespace immediately following it
             let mut chars = trimmed.chars();
-            chars.next(); // Skip the bullet character
+            chars.next(); // Skip the dash character
 
-            // Skip any whitespace after the bullet
+            // Skip any whitespace after the dash
             let mut whitespace_count = 0;
             for ch in chars.clone() {
                 if ch.is_whitespace() {
@@ -453,18 +452,39 @@ pub fn strip_leading_bullets(line: &str) -> &str {
                 }
             }
 
-            // Return the line starting after the bullet and its trailing whitespace
-            let skip_chars = 1 + whitespace_count; // 1 for bullet, plus whitespace
-            if skip_chars < trimmed.len() {
-                return &trimmed[trimmed.char_indices().nth(skip_chars).unwrap().0..];
+            // Get the text after the dash and whitespace
+            let skip_chars = 1 + whitespace_count; // 1 for dash, plus whitespace
+            let char_count = trimmed.chars().count();
+            if skip_chars < char_count {
+                if let Some((byte_pos, _)) = trimmed.char_indices().nth(skip_chars) {
+                    let remaining_text = &trimmed[byte_pos..];
+
+                    // Only strip the dash if the remaining text starts with a quantity
+                    // This avoids false positives for ingredient names that might start with dashes
+                    use regex::Regex;
+                    lazy_static! {
+                        static ref QUANTITY_START_PATTERN: Regex =
+                            Regex::new(r"^\d").expect("Invalid quantity start regex pattern");
+                    }
+
+                    if QUANTITY_START_PATTERN.is_match(remaining_text) {
+                        return remaining_text;
+                    } else {
+                        // Doesn't start with a quantity, don't strip the dash
+                        return line.trim();
+                    }
+                } else {
+                    // Should not happen, but fallback
+                    return line.trim();
+                }
             } else {
-                // Line was only bullet and whitespace, return empty
+                // Line was only dash and whitespace, return empty
                 return "";
             }
         }
     }
 
-    // No bullet found, return the fully trimmed line (both leading and trailing)
+    // No dash found, return the fully trimmed line (both leading and trailing)
     line.trim()
 }
 
@@ -754,13 +774,18 @@ impl MeasurementDetector {
         while line_index < all_lines.len() {
             let line_number = line_index;
             let original_line = all_lines[line_index];
-            
+
             // Apply bullet stripping preprocessing for regex matching
             let processed_line = strip_leading_bullets(original_line);
             let bullet_offset = original_line.len() - processed_line.len();
-            
-            trace!("Processing line {}: '{}' -> '{}' (offset: {})", 
-                   line_number, original_line, processed_line, bullet_offset);
+
+            trace!(
+                "Processing line {}: '{}' -> '{}' (offset: {})",
+                line_number,
+                original_line,
+                processed_line,
+                bullet_offset
+            );
 
             // Track how many lines are consumed by this measurement (for multi-line ingredients)
             let mut lines_consumed = 1; // Default to 1 line consumed
@@ -982,7 +1007,12 @@ impl MeasurementDetector {
                     measurement: final_measurement,
                     ingredient_name,
                     line_number,
-                    start_pos: current_pos + bullet_offset + full_match.start(),
+                    start_pos: current_pos
+                        + bullet_offset
+                        + capture.name("quantity").map(|m| m.start()).unwrap_or_else(|| {
+                            tracing::error!("Quantity group missing from regex match");
+                            0
+                        }),
                     end_pos: current_pos + bullet_offset + match_end_pos,
                     requires_quantity_confirmation: requires_confirmation,
                 });
@@ -1144,11 +1174,11 @@ impl MeasurementDetector {
     /// ```
     pub fn is_measurement_line(&self, line: &str) -> bool {
         // Check if the line starts with a measurement pattern
-        // We look for captures at the beginning of the line (start position 0)
+        // We look for captures where the quantity appears at the beginning of the line
         if let Some(capture) = self.pattern.captures(line) {
-            if let Some(full_match) = capture.get(0) {
-                // The measurement must start at the beginning of the line
-                return full_match.start() == 0;
+            if let Some(quantity_match) = capture.name("quantity") {
+                // The quantity must start at the beginning of the line
+                return quantity_match.start() == 0;
             }
         }
         false
@@ -1301,7 +1331,7 @@ impl MeasurementDetector {
             // Termination condition 3: New measurement line
             // Apply the same bullet preprocessing as in the main extraction loop
             let processed_current_line = strip_leading_bullets(current_line);
-            if self.is_measurement_line(&processed_current_line) {
+            if self.is_measurement_line(processed_current_line) {
                 break;
             }
 

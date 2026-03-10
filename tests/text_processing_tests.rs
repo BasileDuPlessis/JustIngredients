@@ -1,6 +1,8 @@
 #[cfg(test)]
 mod tests {
-    use just_ingredients::text_processing::{MeasurementConfig, MeasurementDetector, strip_leading_bullets};
+    use just_ingredients::text_processing::{
+        strip_leading_bullets, MeasurementConfig, MeasurementDetector,
+    };
 
     fn create_detector() -> MeasurementDetector {
         MeasurementDetector::new().unwrap()
@@ -69,6 +71,42 @@ mod tests {
         assert_eq!(matches[1].line_number, 0);
         assert_eq!(matches[1].start_pos, 22); // "with 1" -> starts after "with "
         assert_eq!(matches[1].end_pos, 34); // "1 tbsp sugar" ends at position 34
+    }
+
+    #[test]
+    fn test_quantities_anywhere_in_line() {
+        let detector = create_detector();
+
+        // Test that quantities can be found anywhere in the line, not just at the beginning
+        let test_cases = vec![
+            ("Add 2 cups flour", ("2", Some("cups"), "flour")),
+            ("Mix in 1 tbsp sugar", ("1", Some("tbsp"), "sugar")),
+            ("The recipe calls for 6 eggs", ("6", None, "eggs")),
+            (
+                "You will need about 1/2 cup milk",
+                ("1/2", Some("cup"), "milk"),
+            ),
+            (
+                "Preheat oven, then add 2 lb potatoes",
+                ("2", Some("lb"), "potatoes"),
+            ),
+        ];
+
+        for (text, (expected_quantity, expected_measurement, expected_ingredient)) in test_cases {
+            let matches = detector.extract_ingredient_measurements(text);
+            assert!(!matches.is_empty(), "Should find measurements in: {}", text);
+
+            // Find the match with the expected quantity
+            let matching_match = matches
+                .iter()
+                .find(|m| m.quantity == expected_quantity)
+                .unwrap();
+            assert_eq!(
+                matching_match.measurement,
+                expected_measurement.map(|s| s.to_string())
+            );
+            assert_eq!(matching_match.ingredient_name, expected_ingredient);
+        }
     }
 
     #[test]
@@ -1538,67 +1576,68 @@ mod tests {
         assert_eq!(strip_leading_bullets("- 2 cups flour"), "2 cups flour");
         assert_eq!(strip_leading_bullets("-1 cup sugar"), "1 cup sugar");
 
-        // Test asterisk stripping
-        assert_eq!(strip_leading_bullets("* 500g butter"), "500g butter");
-        assert_eq!(strip_leading_bullets("*1 kg tomatoes"), "1 kg tomatoes");
-
-        // Test bullet point stripping
-        assert_eq!(strip_leading_bullets("• 250 ml milk"), "250 ml milk");
-        assert_eq!(strip_leading_bullets("◦ 3 eggs"), "3 eggs");
-        assert_eq!(strip_leading_bullets("▪ 100g cheese"), "100g cheese");
-        assert_eq!(strip_leading_bullets("▫ 2 tbsp oil"), "2 tbsp oil");
-        assert_eq!(strip_leading_bullets("► 1 tsp salt"), "1 tsp salt");
-        assert_eq!(strip_leading_bullets("▸ 5 cloves garlic"), "5 cloves garlic");
-
-        // Test multiple whitespace after bullet
+        // Test multiple whitespace after dash
         assert_eq!(strip_leading_bullets("-   2 cups flour"), "2 cups flour");
-        assert_eq!(strip_leading_bullets("*  500g butter"), "500g butter");
 
-        // Test no bullet (should return trimmed line)
+        // Test no dash (should return trimmed line)
         assert_eq!(strip_leading_bullets("  2 cups flour"), "2 cups flour");
         assert_eq!(strip_leading_bullets("2 cups flour"), "2 cups flour");
         assert_eq!(strip_leading_bullets("  2 cups flour  "), "2 cups flour");
 
-        // Test lines that are only bullets/whitespace
+        // Test lines that are only dashes/whitespace
         assert_eq!(strip_leading_bullets("-"), "");
         assert_eq!(strip_leading_bullets("-   "), "");
-        assert_eq!(strip_leading_bullets("*"), "");
-        assert_eq!(strip_leading_bullets("   "), "");
 
         // Test empty and whitespace-only lines
         assert_eq!(strip_leading_bullets(""), "");
         assert_eq!(strip_leading_bullets("   "), "");
 
-        // Test lines with bullet not at start (should not strip)
-        assert_eq!(strip_leading_bullets("Use - 2 cups flour"), "Use - 2 cups flour");
-        assert_eq!(strip_leading_bullets("Item * 500g butter"), "Item * 500g butter");
+        // Test lines with dash not at start (should not strip)
+        assert_eq!(
+            strip_leading_bullets("Use - 2 cups flour"),
+            "Use - 2 cups flour"
+        );
+
+        // Test false positives: dash at start but not followed by quantity
+        assert_eq!(strip_leading_bullets("-sodium salt"), "-sodium salt");
+        assert_eq!(
+            strip_leading_bullets("- low-sodium butter"),
+            "- low-sodium butter"
+        );
+        assert_eq!(strip_leading_bullets("-organic eggs"), "-organic eggs");
+
+        // Test other bullet characters (should not be stripped)
+        assert_eq!(strip_leading_bullets("* 500g butter"), "* 500g butter");
+        assert_eq!(strip_leading_bullets("• 250 ml milk"), "• 250 ml milk");
+        assert_eq!(strip_leading_bullets("◦ 3 eggs"), "◦ 3 eggs");
     }
 
     #[test]
     fn test_extract_ingredient_measurements_with_bullets() {
         let detector = create_detector();
 
-        // Test that bullet-prefixed lines are now properly detected
-        let text_with_bullets = "- 2 cups flour\n* 1 tbsp sugar\n• 500g butter\n2 cups milk";
+        // Test that dash-prefixed lines are now properly detected
+        // Only dash characters (-) are handled as list markers
+        let text_with_bullets = "- 2 cups flour\n- 1 tbsp sugar\n- 500g butter\n2 cups milk";
 
         let matches = detector.extract_ingredient_measurements(text_with_bullets);
 
-        // Should find 4 measurements (including the bullet-prefixed ones)
+        // Should find 4 measurements (all dash-prefixed lines plus the regular line)
         assert_eq!(matches.len(), 4);
 
-        // Check first bullet line: "- 2 cups flour"
+        // Check first line (dash-prefixed): "- 2 cups flour"
         assert_eq!(matches[0].quantity, "2");
         assert_eq!(matches[0].measurement, Some("cups".to_string()));
         assert_eq!(matches[0].ingredient_name, "flour");
         assert_eq!(matches[0].line_number, 0);
 
-        // Check second bullet line: "* 1 tbsp sugar"
+        // Check second line (dash-prefixed): "- 1 tbsp sugar"
         assert_eq!(matches[1].quantity, "1");
         assert_eq!(matches[1].measurement, Some("tbsp".to_string()));
         assert_eq!(matches[1].ingredient_name, "sugar");
         assert_eq!(matches[1].line_number, 1);
 
-        // Check third bullet line: "• 500g butter"
+        // Check third line (dash-prefixed): "- 500g butter"
         assert_eq!(matches[2].quantity, "500");
         assert_eq!(matches[2].measurement, Some("g".to_string()));
         assert_eq!(matches[2].ingredient_name, "butter");
