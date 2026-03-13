@@ -12,7 +12,7 @@ specs/
 ├── database-design.md          # Feature: Data persistence
 ├── deployment.md               # Feature: Infrastructure
 └── tasks/                      # Task specifications
-    ├── ocr-refactor-strategy.md    # Current OCR modularization
+    ├── ocr-refactor-strategy.md    # Completed OCR modularization
     └── ...                         # Future task specs
 ```
 
@@ -51,7 +51,7 @@ specs/
 - [Deployment](deployment.md) - Infrastructure and production operations
 
 ### Task Specifications
-- [OCR Refactor Strategy](tasks/ocr-refactor-strategy.md) - Current modularization work (Tasks 3-4 completed)
+- [OCR Refactor Strategy](tasks/ocr-refactor-strategy.md) - Completed modularization (all tasks done)
 
 ## Spec Types
 
