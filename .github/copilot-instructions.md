@@ -23,7 +23,7 @@
 - [Telegram Bot] `specs/telegram-bot.md` - User interface and conversation management
 - [Database Design] `specs/database-design.md` - Data persistence and full-text search
 - [Deployment] `specs/deployment.md` - Infrastructure and production operations
-- [OCR Refactor Strategy] `specs/tasks/ocr-refactor-strategy.md` - Current modularization work (Tasks 3-4 completed)
+- [OCR Refactor Strategy] `specs/tasks/ocr-refactor-strategy.md` - Completed modularization (all tasks done)
 
 ## Project Overview
 Telegram bot that extracts ingredients from recipe images using OCR, stores in PostgreSQL with full-text search.
@@ -49,7 +49,7 @@ Telegram bot that extracts ingredients from recipe images using OCR, stores in P
 ### Core Modules
 - `main.rs` - App entry point with bot dispatcher
 - `bot.rs` - Telegram message handling and dialogue management
-- `ocr.rs` - OCR processing (currently being refactored into submodules)
+- `ocr.rs` - OCR processing facade and submodules
 - `db.rs` - PostgreSQL operations with FTS
 - `text_processing.rs` - Ingredient parsing and measurement detection
 

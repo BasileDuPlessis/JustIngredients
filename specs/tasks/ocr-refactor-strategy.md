@@ -86,7 +86,7 @@ Success criteria:
 
 **Baseline Metrics:**
 - **LOC**: 2300 lines (initial)
-- **Current LOC**: 584 lines (after Tasks 3-8, -1716 lines total)
+- **Final LOC**: 549 lines (after Tasks 3-10, -1751 lines total, 24% of original)
 - **Public symbols**: 28 (20 functions + 8 types)
 
 ### Task 2 (1h): Create module skeletons without moving logic
@@ -207,7 +207,7 @@ Success criteria:
 - All 135 tests pass, preprocessing behavior preserved exactly
 - Quality assessment, adaptive strategies, and temp file handling maintained
 
-### Task 9 (1h): Extract core extraction orchestration
+### Task 9 (1h): ✅ COMPLETED - Extract core extraction orchestration
 Work:
 - Move `perform_ocr_extraction` and main extraction orchestration internals into `extraction.rs`.
 - Keep `extract_text_from_image` as public facade in `mod.rs` or re-exported API.
@@ -217,7 +217,16 @@ Success criteria:
 - Circuit breaker + metrics flow unchanged.
 - Integration tests pass (`cargo test --test integration_tests` and `cargo test --test observability_integration_tests`).
 
-### Task 10 (1h): Final cleanup and quality gate
+**Implementation Notes:**
+- Created `src/ocr/extraction.rs` with complete extraction functionality
+- Moved `perform_ocr_extraction` and `perform_constrained_ocr` functions
+- Added `mod extraction;` and `pub use self::extraction::*;` to `src/ocr.rs`
+- Reduced `src/ocr.rs` from 584 to 549 lines (-35 lines)
+- All 135 tests pass, integration tests pass (26/26), observability tests pass (9/9)
+- Circuit breaker and metrics flow preserved exactly
+- Public API remains stable with `extract_text_from_image` as facade
+
+### Task 10 (1h): ✅ COMPLETED - Final cleanup and quality gate
 Work:
 - Reduce `src/ocr.rs` to facade/re-exports + minimal docs.
 - Remove dead code/imports.
@@ -228,6 +237,13 @@ Success criteria:
 - `cargo clippy --all-targets --all-features -- -D warnings` passes.
 - `cargo test` passes.
 - `src/ocr.rs` is significantly smaller (target: <= 25-35% of original LOC).
+
+**Implementation Notes:**
+- Removed unused `anyhow::Result` import from `src/ocr.rs`
+- `src/ocr.rs` reduced to 549 lines (24% of original 2300 lines, meets target)
+- All quality gates pass: formatting ✅, linting ✅, 135 tests ✅
+- OCR module now properly modularized with clear facade pattern
+- Public API remains stable, all functionality preserved
 
 ## Recommended execution order
 1. Task 1
