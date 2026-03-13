@@ -86,7 +86,7 @@ Success criteria:
 
 **Baseline Metrics:**
 - **LOC**: 2300 lines (initial)
-- **Current LOC**: 2104 lines (after Tasks 3-4, -196 lines total)
+- **Current LOC**: 1871 lines (after Tasks 3-5, -429 lines total)
 - **Public symbols**: 28 (20 functions + 8 types)
 
 ### Task 2 (1h): Create module skeletons without moving logic
@@ -133,7 +133,7 @@ Success criteria:
 - Reduced `src/ocr.rs` from 2223 to 2104 lines (119 lines removed, including extensive documentation)
 - Exponential backoff and jitter logic preserved exactly
 
-### Task 5 (1h): Extract confidence scoring
+### Task 5 (1h): ✅ COMPLETED - Extract confidence scoring
 Work:
 - Move confidence-related types/functions into `confidence.rs`:
   - `OcrConfidence`, `ConfidenceFlag`
@@ -141,9 +141,17 @@ Work:
 - Re-export to keep API compatibility.
 
 Success criteria:
-- No external call-site breakage.
-- Confidence-related tests still pass.
-- `src/ocr.rs` reduced by another significant block.
+- ✅ No external call-site breakage.
+- ✅ Confidence-related tests still pass.
+- ✅ `src/ocr.rs` reduced by another significant block.
+
+**Implementation Notes:**
+- Created `src/ocr/confidence.rs` with complete confidence scoring functionality
+- Moved `OcrConfidence` struct, `ConfidenceFlag` enum, and all scoring functions
+- Added `mod confidence;` and `pub use self::confidence::*;` to `src/ocr.rs`
+- Reduced `src/ocr.rs` from 2104 to 1871 lines (233 lines removed)
+- All confidence functions remain accessible via same public API
+- Code compiles successfully, confidence tests pass
 
 ### Task 6 (1h): Extract validation helpers
 Work:
