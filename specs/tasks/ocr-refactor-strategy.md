@@ -86,7 +86,7 @@ Success criteria:
 
 **Baseline Metrics:**
 - **LOC**: 2300 lines (initial)
-- **Current LOC**: 960 lines (after Tasks 3-7, -1340 lines total)
+- **Current LOC**: 584 lines (after Tasks 3-8, -1716 lines total)
 - **Public symbols**: 28 (20 functions + 8 types)
 
 ### Task 2 (1h): Create module skeletons without moving logic
@@ -189,7 +189,7 @@ Success criteria:
 - Reduced `src/ocr.rs` from 1539 to 960 lines (579 lines removed)
 - All 135 tests pass, HOCR functions remain accessible via same public API
 
-### Task 8 (1h): Extract preprocessing pipeline
+### Task 8 (1h): ✅ COMPLETED - Extract preprocessing pipeline
 Work:
 - Move adaptive preprocessing and temp-file image preparation into `preprocessing_pipeline.rs`.
 - Keep same timeout and error-mapping behavior.
@@ -198,6 +198,14 @@ Success criteria:
 - OCR extraction still uses preprocessed images exactly as before.
 - `cargo test` passes.
 - Preprocessing logs remain present.
+
+**Implementation Notes:**
+- Created `src/ocr/preprocessing_pipeline.rs` with complete preprocessing functionality
+- Moved `apply_adaptive_preprocessing` and `apply_image_preprocessing` functions
+- Added `mod preprocessing_pipeline;` and `pub use self::preprocessing_pipeline::*;` to `src/ocr.rs`
+- Reduced `src/ocr.rs` from 960 to 584 lines (-376 lines)
+- All 135 tests pass, preprocessing behavior preserved exactly
+- Quality assessment, adaptive strategies, and temp file handling maintained
 
 ### Task 9 (1h): Extract core extraction orchestration
 Work:
