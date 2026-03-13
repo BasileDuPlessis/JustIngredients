@@ -86,7 +86,7 @@ Success criteria:
 
 **Baseline Metrics:**
 - **LOC**: 2300 lines (initial)
-- **Current LOC**: 1871 lines (after Tasks 3-5, -429 lines total)
+- **Current LOC**: 1539 lines (after Tasks 3-6, -761 lines total)
 - **Public symbols**: 28 (20 functions + 8 types)
 
 ### Task 2 (1h): Create module skeletons without moving logic
@@ -153,15 +153,23 @@ Success criteria:
 - All confidence functions remain accessible via same public API
 - Code compiles successfully, confidence tests pass
 
-### Task 6 (1h): Extract validation helpers
+### Task 6 (1h): ✅ COMPLETED - Extract validation helpers
 Work:
 - Move image/path/format validation and memory estimation into `validation.rs`.
 - Keep error strings and thresholds unchanged.
 
 Success criteria:
-- Validation behavior unchanged in tests.
-- Functions remain reachable via existing public API.
-- `cargo test` passes.
+- ✅ Validation behavior unchanged in tests.
+- ✅ Functions remain reachable via existing public API.
+- ✅ `cargo test` passes.
+
+**Implementation Notes:**
+- Created `src/ocr/validation.rs` with complete validation functionality
+- Moved `validate_image_path`, `validate_image_with_format_limits`, `estimate_memory_usage`, `is_supported_image_format`
+- Added `mod validation;` and `pub use self::validation::*;` to `src/ocr.rs`
+- Cleaned up unused imports (`std::fs::File`, `BufReader`, `Read`)
+- Reduced `src/ocr.rs` from 1871 to 1539 lines (332 lines removed)
+- All 135 tests pass, validation functions remain accessible via same API
 
 ### Task 7 (1h): Extract HOCR helpers
 Work:
