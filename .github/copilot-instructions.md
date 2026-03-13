@@ -13,17 +13,17 @@
 ### Spec Maintenance Requirements
 - **Feature Specs**: Version only for major architecture changes (e.g., `feature-v2.0.md`)
 - **Task Specs**: Update in-place for progress tracking (no versioning)
-- **Store Location**: `/specs/` for features, `/specs/tasks/` for implementation tasks
+- **Store Location**: `specs/` for features, `specs/tasks/` for implementation tasks
 - **Update When**: Architecture changes, new requirements, completed milestones, significant decisions
 - **Don't Update For**: Minor implementation details or routine bug fixes
 - **Version History**: Document changes within feature spec documents for major updates
 
 ### Current Active Specs
-- [OCR Processing](/specs/ocr-processing.md) - Text extraction and ingredient parsing
-- [Telegram Bot](/specs/telegram-bot.md) - User interface and conversation management
-- [Database Design](/specs/database-design.md) - Data persistence and full-text search
-- [Deployment](/specs/deployment.md) - Infrastructure and production operations
-- [OCR Refactor Strategy](/specs/tasks/ocr-refactor-strategy.md) - Current modularization work (Tasks 3-4 completed)
+- [OCR Processing](specs/ocr-processing.md) - Text extraction and ingredient parsing
+- [Telegram Bot](specs/telegram-bot.md) - User interface and conversation management
+- [Database Design](specs/database-design.md) - Data persistence and full-text search
+- [Deployment](specs/deployment.md) - Infrastructure and production operations
+- [OCR Refactor Strategy](specs/tasks/ocr-refactor-strategy.md) - Current modularization work (Tasks 3-4 completed)
 
 ## Project Overview
 Telegram bot that extracts ingredients from recipe images using OCR, stores in PostgreSQL with full-text search.
