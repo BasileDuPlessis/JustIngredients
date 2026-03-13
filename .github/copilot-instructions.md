@@ -19,11 +19,11 @@
 - **Version History**: Document changes within feature spec documents for major updates
 
 ### Current Active Specs
-- [OCR Processing](specs/ocr-processing.md) - Text extraction and ingredient parsing
-- [Telegram Bot](specs/telegram-bot.md) - User interface and conversation management
-- [Database Design](specs/database-design.md) - Data persistence and full-text search
-- [Deployment](specs/deployment.md) - Infrastructure and production operations
-- [OCR Refactor Strategy](specs/tasks/ocr-refactor-strategy.md) - Current modularization work (Tasks 3-4 completed)
+- [OCR Processing](`specs/ocr-processing.md`) - Text extraction and ingredient parsing
+- [Telegram Bot](`specs/telegram-bot.md`) - User interface and conversation management
+- [Database Design](`specs/database-design.md`) - Data persistence and full-text search
+- [Deployment](`specs/deployment.md`) - Infrastructure and production operations
+- [OCR Refactor Strategy](`specs/tasks/ocr-refactor-strategy.md`) - Current modularization work (Tasks 3-4 completed)
 
 ## Project Overview
 Telegram bot that extracts ingredients from recipe images using OCR, stores in PostgreSQL with full-text search.
