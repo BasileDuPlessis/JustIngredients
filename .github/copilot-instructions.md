@@ -11,10 +11,12 @@
 - **Quality Gates**: Code must pass all tests, linting, and formatting
 
 ### Spec Maintenance Requirements
-- **Version Specs**: Store in `/specs/` directory with semantic versioning (e.g., `spec-name-v1.0.md`)
+- **Feature Specs**: Version only for major architecture changes (e.g., `feature-v2.0.md`)
+- **Task Specs**: Update in-place for progress tracking (no versioning)
+- **Store Location**: `/specs/` for features, `/specs/tasks/` for implementation tasks
 - **Update When**: Architecture changes, new requirements, completed milestones, significant decisions
 - **Don't Update For**: Minor implementation details or routine bug fixes
-- **Version History**: Document changes and lessons learned in spec headers
+- **Version History**: Document changes within feature spec documents for major updates
 
 ### Current Active Specs
 - [OCR Processing](/specs/ocr-processing.md) - Text extraction and ingredient parsing

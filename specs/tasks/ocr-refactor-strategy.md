@@ -1,9 +1,5 @@
 # OCR Module Size Reduction Strategy
 
-## Version History
-- **v1.1** (2026-03-13): Completed Tasks 3 and 4. Added progress tracking and implementation notes.
-- **v1.0** (2026-03-13): Initial refactor strategy specification.
-
 ## Goal
 Reduce the size and complexity of `src/ocr.rs` by splitting responsibilities into focused modules, while preserving behavior and test coverage.
 
