@@ -3,10 +3,10 @@
 //! This module provides comprehensive image validation functionality including
 //! path validation, format detection, size limits, and memory usage estimation.
 
+use anyhow::Result;
 use std::fs::File;
 use std::io::{BufReader, Read};
 use tracing::info;
-use anyhow::Result;
 
 /// Validate image file path and basic properties using enhanced security validation
 pub fn validate_image_path(image_path: &str, config: &crate::ocr_config::OcrConfig) -> Result<()> {

@@ -86,7 +86,7 @@ Success criteria:
 
 **Baseline Metrics:**
 - **LOC**: 2300 lines (initial)
-- **Current LOC**: 1539 lines (after Tasks 3-6, -761 lines total)
+- **Current LOC**: 960 lines (after Tasks 3-7, -1340 lines total)
 - **Public symbols**: 28 (20 functions + 8 types)
 
 ### Task 2 (1h): Create module skeletons without moving logic
@@ -171,7 +171,7 @@ Success criteria:
 - Reduced `src/ocr.rs` from 1871 to 1539 lines (332 lines removed)
 - All 135 tests pass, validation functions remain accessible via same API
 
-### Task 7 (1h): Extract HOCR helpers
+### Task 7 (1h): ✅ COMPLETED - Extract HOCR helpers
 Work:
 - Move HOCR extraction and parsing flow into `hocr.rs`:
   - extraction entry point and fallback generation
@@ -181,6 +181,13 @@ Success criteria:
 - HOCR tests continue to pass.
 - No behavioral change in fallback path.
 - Facade exports stay backward-compatible.
+
+**Implementation Notes:**
+- Created `src/ocr/hocr.rs` with complete HOCR functionality
+- Moved `extract_hocr_from_image`, `perform_hocr_extraction`, `generate_fallback_hocr`, `validate_hocr_output`, `parse_hocr_to_lines`, `html_decode_text`, `map_measurement_to_bbox`, `validate_measurement_line_match`
+- Added `mod hocr;` and `pub use self::hocr::*;` to `src/ocr.rs`
+- Reduced `src/ocr.rs` from 1539 to 960 lines (579 lines removed)
+- All 135 tests pass, HOCR functions remain accessible via same public API
 
 ### Task 8 (1h): Extract preprocessing pipeline
 Work:
