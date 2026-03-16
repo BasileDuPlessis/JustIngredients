@@ -233,6 +233,31 @@ where
 mod tests {
     use super::*;
     use crate::localization::LocalizationManager;
+    use std::fmt;
+
+    #[derive(Debug)]
+    enum TestError {
+        LocalizationManagerCreation(anyhow::Error),
+        UnexpectedButtonType(String),
+    }
+
+    impl fmt::Display for TestError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                TestError::LocalizationManagerCreation(e) => write!(f, "Failed to create localization manager: {}", e),
+                TestError::UnexpectedButtonType(msg) => write!(f, "Unexpected button type: {}", msg),
+            }
+        }
+    }
+
+    impl std::error::Error for TestError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            match self {
+                TestError::LocalizationManagerCreation(e) => Some(e.as_ref()),
+                TestError::UnexpectedButtonType(_) => None,
+            }
+        }
+    }
 
     #[tokio::test]
     async fn test_truncate_text() {
@@ -248,11 +273,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_create_localized_button() {
-        let localization = match LocalizationManager::new() {
-            Ok(manager) => Arc::new(manager),
-            Err(e) => panic!("Failed to create localization manager: {}", e),
-        };
+    async fn test_create_localized_button() -> Result<(), TestError> {
+        let localization = Arc::new(LocalizationManager::new()
+            .map_err(TestError::LocalizationManagerCreation)?);
 
         let button = create_localized_button(
             &localization,
@@ -266,16 +289,15 @@ mod tests {
             teloxide::types::InlineKeyboardButtonKind::CallbackData(data) => {
                 assert_eq!(data, "test_callback");
             }
-            _ => panic!("Expected callback button"),
+            _ => return Err(TestError::UnexpectedButtonType("Expected callback button".to_string())),
         }
+        Ok(())
     }
 
     #[tokio::test]
-    async fn test_create_confirmation_dialog() {
-        let localization = match LocalizationManager::new() {
-            Ok(manager) => Arc::new(manager),
-            Err(e) => panic!("Failed to create localization manager: {}", e),
-        };
+    async fn test_create_confirmation_dialog() -> Result<(), TestError> {
+        let localization = Arc::new(LocalizationManager::new()
+            .map_err(TestError::LocalizationManagerCreation)?);
 
         let keyboard = create_confirmation_dialog(
             &localization,
@@ -289,5 +311,6 @@ mod tests {
         assert_eq!(buttons.len(), 2); // Two rows
         assert_eq!(buttons[0].len(), 2); // Two buttons in first row (confirm/cancel)
         assert_eq!(buttons[1].len(), 1); // One button in second row (back)
+        Ok(())
     }
 }
