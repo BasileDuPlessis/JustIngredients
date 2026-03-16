@@ -165,6 +165,31 @@ fn calculate_otsu_threshold(histogram: &[u32; 256], total_pixels: f64) -> u8 {
 mod tests {
     use super::*;
     use image::{Rgb, RgbImage};
+    use std::fmt;
+
+    #[derive(Debug)]
+    enum TestError {
+        PreprocessingFailed(PreprocessingError),
+        UnexpectedImageFormat(String),
+    }
+
+    impl fmt::Display for TestError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                TestError::PreprocessingFailed(e) => write!(f, "Preprocessing failed: {:?}", e),
+                TestError::UnexpectedImageFormat(msg) => write!(f, "Unexpected image format: {}", msg),
+            }
+        }
+    }
+
+    impl std::error::Error for TestError {
+        fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+            match self {
+                TestError::PreprocessingFailed(e) => Some(e),
+                TestError::UnexpectedImageFormat(_) => None,
+            }
+        }
+    }
 
     fn create_test_image(width: u32, height: u32) -> DynamicImage {
         let mut img = RgbImage::new(width, height);
@@ -184,13 +209,11 @@ mod tests {
     }
 
     #[test]
-    fn test_preprocess_measurement_region_success() {
+    fn test_preprocess_measurement_region_success() -> Result<(), TestError> {
         let test_img = create_test_image(40, 20); // Small cropped region
 
-        let result = match preprocess_measurement_region(&test_img) {
-            Ok(r) => r,
-            Err(e) => panic!("preprocess_measurement_region failed: {:?}", e),
-        };
+        let result = preprocess_measurement_region(&test_img)
+            .map_err(TestError::PreprocessingFailed)?;
 
         // Verify upscaling occurred (2.5x factor)
         assert_eq!(result.scale_factor, 2.5);
@@ -207,18 +230,17 @@ mod tests {
         // Verify output is grayscale/binary
         match &result.image {
             DynamicImage::ImageLuma8(_) => {} // Expected binary image
-            _ => panic!("Expected grayscale image"),
+            _ => return Err(TestError::UnexpectedImageFormat("Expected grayscale image".to_string())),
         }
+        Ok(())
     }
 
     #[test]
-    fn test_preprocess_measurement_region_dimensions() {
+    fn test_preprocess_measurement_region_dimensions() -> Result<(), TestError> {
         let test_img = create_test_image(30, 15);
 
-        let result = match preprocess_measurement_region(&test_img) {
-            Ok(r) => r,
-            Err(e) => panic!("preprocess_measurement_region failed: {:?}", e),
-        };
+        let result = preprocess_measurement_region(&test_img)
+            .map_err(TestError::PreprocessingFailed)?;
 
         // Check that dimensions increased (approximately 2.5x scaling)
         assert!(result.final_dimensions.0 > result.original_dimensions.0);
@@ -226,6 +248,7 @@ mod tests {
 
         // Verify scale factor
         assert_eq!(result.scale_factor, 2.5);
+        Ok(())
     }
 
     #[test]

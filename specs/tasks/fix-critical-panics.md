@@ -24,7 +24,7 @@ Replace all `panic!()` calls in production code with proper error handling using
 - Update callers to handle errors
 - Run tests
 
-### Task 3: Fix preprocessing/targeted.rs panics
+### Task 3: Fix preprocessing/targeted.rs panics [DONE]
 - Replace 3 panic calls in targeted.rs (lines 192, 210, 220)
 - Convert functions to return `Result`
 - Update callers
