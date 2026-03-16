@@ -123,9 +123,27 @@ fn calculate_measurement_crop_region(bbox: &BBox) -> BBox {
 mod tests {
     use super::*;
     use image::{DynamicImage, Rgb, RgbImage};
+    use std::fmt;
     use tempfile::NamedTempFile;
 
-    fn create_test_image(width: u32, height: u32) -> NamedTempFile {
+    #[derive(Debug)]
+    enum TestError {
+        TempFileCreation(std::io::Error),
+        ImageSave(image::ImageError),
+    }
+
+    impl fmt::Display for TestError {
+        fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+            match self {
+                TestError::TempFileCreation(e) => write!(f, "Failed to create temp file: {}", e),
+                TestError::ImageSave(e) => write!(f, "Failed to save image: {}", e),
+            }
+        }
+    }
+
+    impl std::error::Error for TestError {}
+
+    fn create_test_image(width: u32, height: u32) -> Result<NamedTempFile, TestError> {
         let mut img = RgbImage::new(width, height);
         // Fill with white
         for pixel in img.pixels_mut() {
@@ -140,24 +158,35 @@ mod tests {
             }
         }
 
-        let temp_file = NamedTempFile::with_suffix(".png").expect("Failed to create temp file");
+        let temp_file = NamedTempFile::with_suffix(".png").map_err(TestError::TempFileCreation)?;
         DynamicImage::ImageRgb8(img)
             .save(&temp_file)
-            .expect("Failed to save image");
-        temp_file
+            .map_err(TestError::ImageSave)?;
+        Ok(temp_file)
     }
 
     #[test]
     fn test_crop_measurement_region_success() {
-        let temp_img = create_test_image(100, 50);
+        let temp_img = match create_test_image(100, 50) {
+            Ok(img) => img,
+            Err(e) => {
+                panic!("Test setup failed: {}", e);
+            }
+        };
         let bbox = BBox::new(20, 10, 80, 40);
 
-        let path_str = temp_img
-            .path()
-            .to_str()
-            .expect("Temp file path should be valid UTF-8");
-        let result = crop_measurement_region(path_str, &bbox)
-            .expect("crop_measurement_region should succeed");
+        let path_str = match temp_img.path().to_str() {
+            Some(s) => s,
+            None => {
+                panic!("Temp file path is not valid UTF-8");
+            }
+        };
+        let result = match crop_measurement_region(path_str, &bbox) {
+            Ok(r) => r,
+            Err(e) => {
+                panic!("crop_measurement_region failed: {:?}", e);
+            }
+        };
 
         // Verify the cropped image was created
         assert!(result.image.width() > 0);
@@ -176,15 +205,26 @@ mod tests {
 
     #[test]
     fn test_crop_measurement_region_bbox_at_edge() {
-        let temp_img = create_test_image(100, 50);
+        let temp_img = match create_test_image(100, 50) {
+            Ok(img) => img,
+            Err(e) => {
+                panic!("Test setup failed: {}", e);
+            }
+        };
         let bbox = BBox::new(0, 0, 30, 20); // BBox at top-left edge
 
-        let path_str = temp_img
-            .path()
-            .to_str()
-            .expect("Temp file path should be valid UTF-8");
-        let result = crop_measurement_region(path_str, &bbox)
-            .expect("crop_measurement_region should succeed");
+        let path_str = match temp_img.path().to_str() {
+            Some(s) => s,
+            None => {
+                panic!("Temp file path is not valid UTF-8");
+            }
+        };
+        let result = match crop_measurement_region(path_str, &bbox) {
+            Ok(r) => r,
+            Err(e) => {
+                panic!("crop_measurement_region failed: {:?}", e);
+            }
+        };
 
         // Should not go negative and should be clamped to image bounds
         assert_eq!(result.cropped_region.x0, 0);
