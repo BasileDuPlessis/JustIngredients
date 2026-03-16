@@ -9,6 +9,7 @@
 //! - Quantity ranges
 //! - Basic input constraints
 
+use crate::errors::AppError;
 use crate::text_processing::MeasurementMatch;
 use lazy_static::lazy_static;
 use regex::Regex;
@@ -25,25 +26,25 @@ lazy_static! {
 ///
 /// # Returns
 /// * `Ok(&str)` - The trimmed recipe name if valid
-/// * `Err(&str)` - Error type: "empty" or "too_long"
+/// * `Err(AppError::Validation)` - Error message
 ///
 /// # Examples
 /// ```
 /// use just_ingredients::validation::validate_recipe_name;
 ///
 /// assert!(validate_recipe_name("My Recipe").is_ok());
-/// assert_eq!(validate_recipe_name(""), Err("empty"));
-/// assert_eq!(validate_recipe_name(&"a".repeat(256)), Err("too_long"));
+/// assert_eq!(validate_recipe_name("").unwrap_err(), just_ingredients::errors::AppError::Validation("empty".to_string()));
+/// assert_eq!(validate_recipe_name(&"a".repeat(256)).unwrap_err(), just_ingredients::errors::AppError::Validation("too_long".to_string()));
 /// ```
-pub fn validate_recipe_name(name: &str) -> Result<&str, &'static str> {
+pub fn validate_recipe_name(name: &str) -> Result<&str, AppError> {
     let trimmed = name.trim();
 
     if trimmed.is_empty() {
-        return Err("empty");
+        return Err(AppError::Validation("empty".to_string()));
     }
 
     if trimmed.len() > 255 {
-        return Err("too_long");
+        return Err(AppError::Validation("too_long".to_string()));
     }
 
     Ok(trimmed)
@@ -56,23 +57,23 @@ pub fn validate_recipe_name(name: &str) -> Result<&str, &'static str> {
 ///
 /// # Returns
 /// * `Ok(())` - Input is valid
-/// * `Err(&str)` - Error type: "edit-empty" or "edit-too-long"
+/// * `Err(AppError::Validation)` - Error message
 ///
 /// # Examples
 /// ```
 /// use just_ingredients::validation::validate_basic_input;
 ///
 /// assert!(validate_basic_input("valid input").is_ok());
-/// assert_eq!(validate_basic_input(""), Err("edit-empty"));
-/// assert_eq!(validate_basic_input(&"a".repeat(201)), Err("edit-too-long"));
+/// assert_eq!(validate_basic_input("").unwrap_err(), just_ingredients::errors::AppError::Validation("edit-empty".to_string()));
+/// assert_eq!(validate_basic_input(&"a".repeat(201)).unwrap_err(), just_ingredients::errors::AppError::Validation("edit-too-long".to_string()));
 /// ```
-pub fn validate_basic_input(input: &str) -> Result<(), &'static str> {
+pub fn validate_basic_input(input: &str) -> Result<(), AppError> {
     if input.is_empty() {
-        return Err("edit-empty");
+        return Err(AppError::Validation("edit-empty".to_string()));
     }
 
     if input.len() > 200 {
-        return Err("edit-too-long");
+        return Err(AppError::Validation("edit-too-long".to_string()));
     }
 
     Ok(())
@@ -86,7 +87,7 @@ pub fn validate_basic_input(input: &str) -> Result<(), &'static str> {
 ///
 /// # Returns
 /// * `Ok(())` - Measurement match is valid
-/// * `Err(&str)` - Error type indicating validation failure
+/// * `Err(AppError::Validation)` - Error message
 ///
 /// # Examples
 /// ```
@@ -108,17 +109,19 @@ pub fn validate_basic_input(input: &str) -> Result<(), &'static str> {
 pub fn validate_measurement_match(
     measurement_match: &MeasurementMatch,
     _temp_text: &str,
-) -> Result<(), &'static str> {
+) -> Result<(), AppError> {
     let ingredient_name = measurement_match.ingredient_name.trim();
 
     // With the unified regex pattern, ingredient is always captured by the regex
     // No need to extract from text after measurement
     if ingredient_name.is_empty() {
-        return Err("edit-no-ingredient-name");
+        return Err(AppError::Validation("edit-no-ingredient-name".to_string()));
     }
 
     if ingredient_name.len() > 100 {
-        return Err("edit-ingredient-name-too-long");
+        return Err(AppError::Validation(
+            "edit-ingredient-name-too-long".to_string(),
+        ));
     }
 
     Ok(())
@@ -175,7 +178,7 @@ pub fn adjust_quantity_for_negative(measurement_match: &mut MeasurementMatch, te
 ///
 /// # Returns
 /// * `Ok(())` - Quantity is within valid range
-/// * `Err(&str)` - Error type: "edit-invalid-quantity"
+/// * `Err(AppError::Validation)` - Error message
 ///
 /// # Examples
 /// ```
@@ -204,12 +207,12 @@ pub fn adjust_quantity_for_negative(measurement_match: &mut MeasurementMatch, te
 ///     requires_quantity_confirmation: false,
 /// };
 ///
-/// assert_eq!(validate_quantity_range(&invalid_match), Err("edit-invalid-quantity"));
+/// assert_eq!(validate_quantity_range(&invalid_match).unwrap_err(), just_ingredients::errors::AppError::Validation("edit-invalid-quantity".to_string()));
 /// ```
-pub fn validate_quantity_range(measurement_match: &MeasurementMatch) -> Result<(), &'static str> {
+pub fn validate_quantity_range(measurement_match: &MeasurementMatch) -> Result<(), AppError> {
     if let Some(qty) = parse_quantity(&measurement_match.quantity) {
         if qty <= 0.0 || qty > 10000.0 {
-            return Err("edit-invalid-quantity");
+            return Err(AppError::Validation("edit-invalid-quantity".to_string()));
         }
     }
     Ok(())
@@ -297,12 +300,12 @@ pub fn parse_quantity(quantity_str: &str) -> Option<f64> {
 ///
 /// ## Error Conditions
 ///
-/// - `"edit-empty"`: Input is empty or whitespace-only
-/// - `"edit-too-long"`: Input exceeds 200 characters
-/// - `"edit-no-ingredient-name"`: No ingredient name found after quantity
-/// - `"edit-ingredient-name-too-long"`: Ingredient name exceeds 100 characters
-/// - `"edit-invalid-quantity"`: Quantity is ≤ 0 or > 10,000
-/// - `"error-processing-failed"`: Measurement detector initialization failed
+/// - `AppError::Validation("edit-empty")`: Input is empty or whitespace-only
+/// - `AppError::Validation("edit-too-long")`: Input exceeds 200 characters
+/// - `AppError::Validation("edit-no-ingredient-name")`: No ingredient name found after quantity
+/// - `AppError::Validation("edit-ingredient-name-too-long")`: Ingredient name exceeds 100 characters
+/// - `AppError::Validation("edit-invalid-quantity")`: Quantity is ≤ 0 or > 10,000
+/// - `AppError::Ocr`: Measurement detector initialization failed
 ///
 /// ## Thread Safety
 ///
@@ -322,13 +325,13 @@ pub fn parse_quantity(quantity_str: &str) -> Option<f64> {
 /// # Returns
 ///
 /// Returns a `MeasurementMatch` containing parsed quantity, measurement, and ingredient name,
-/// or an error string key for localization
+/// or an `AppError` for localization
 ///
 /// # Examples
 ///
 /// Note: This function is used internally by the dialogue system.
 /// For usage examples, see the dialogue handling functions in the bot module.
-pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, &'static str> {
+pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, AppError> {
     use crate::text_processing::MeasurementDetector;
 
     let trimmed = input.trim();
@@ -337,7 +340,8 @@ pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, &'sta
     validate_basic_input(trimmed)?;
 
     // Try to extract measurement using the detector
-    let detector = MeasurementDetector::new().map_err(|_| "error-processing-failed")?;
+    let detector = MeasurementDetector::new()
+        .map_err(|e| AppError::Ocr(format!("Failed to create measurement detector: {}", e)))?;
     let temp_text = format!("temp: {}", trimmed);
     let matches = detector.extract_ingredient_measurements(&temp_text);
 
@@ -353,7 +357,7 @@ pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, &'sta
 }
 
 /// Parse ingredient when no measurement detector match is found
-fn parse_without_measurement_detector(trimmed: &str) -> Result<MeasurementMatch, &'static str> {
+fn parse_without_measurement_detector(trimmed: &str) -> Result<MeasurementMatch, AppError> {
     // Try to extract a simple quantity pattern
     if let Some(captures) = QUANTITY_PATTERN.captures(trimmed) {
         if let Some(quantity_match) = captures.get(1) {
@@ -363,7 +367,9 @@ fn parse_without_measurement_detector(trimmed: &str) -> Result<MeasurementMatch,
 
     // No quantity found, treat the whole input as ingredient name
     if trimmed.len() > 100 {
-        return Err("edit-ingredient-name-too-long");
+        return Err(AppError::Validation(
+            "edit-ingredient-name-too-long".to_string(),
+        ));
     }
 
     Ok(MeasurementMatch {
@@ -381,21 +387,23 @@ fn parse_without_measurement_detector(trimmed: &str) -> Result<MeasurementMatch,
 fn parse_with_quantity(
     trimmed: &str,
     quantity_match: regex::Match,
-) -> Result<MeasurementMatch, &'static str> {
+) -> Result<MeasurementMatch, AppError> {
     let quantity = quantity_match.as_str().trim().to_string();
     let remaining = trimmed[quantity_match.end()..].trim().to_string();
 
     // Validate quantity
     if let Some(qty) = parse_quantity(&quantity) {
         if qty <= 0.0 || qty > 10000.0 {
-            return Err("edit-invalid-quantity");
+            return Err(AppError::Validation("edit-invalid-quantity".to_string()));
         }
     }
 
     let ingredient_name = if remaining.is_empty() {
-        return Err("edit-no-ingredient-name");
+        return Err(AppError::Validation("edit-no-ingredient-name".to_string()));
     } else if remaining.len() > 100 {
-        return Err("edit-ingredient-name-too-long");
+        return Err(AppError::Validation(
+            "edit-ingredient-name-too-long".to_string(),
+        ));
     } else {
         remaining
     };
@@ -422,16 +430,25 @@ mod tests {
         assert!(validate_recipe_name("  Recipe  ").is_ok());
         match validate_recipe_name("  Recipe  ") {
             Ok(name) => assert_eq!(name, "Recipe"),
-            Err(e) => panic!("Expected valid recipe name, got error: {}", e),
+            Err(_) => unreachable!("Expected valid recipe name"),
         }
 
         // Empty names
-        assert_eq!(validate_recipe_name(""), Err("empty"));
-        assert_eq!(validate_recipe_name("   "), Err("empty"));
+        assert_eq!(
+            validate_recipe_name(""),
+            Err(AppError::Validation("empty".to_string()))
+        );
+        assert_eq!(
+            validate_recipe_name("   "),
+            Err(AppError::Validation("empty".to_string()))
+        );
 
         // Too long names
         let long_name = "a".repeat(256);
-        assert_eq!(validate_recipe_name(&long_name), Err("too_long"));
+        assert_eq!(
+            validate_recipe_name(&long_name),
+            Err(AppError::Validation("too_long".to_string()))
+        );
     }
 
     #[test]
@@ -441,11 +458,17 @@ mod tests {
         assert!(validate_basic_input("a").is_ok());
 
         // Empty input
-        assert_eq!(validate_basic_input(""), Err("edit-empty"));
+        assert_eq!(
+            validate_basic_input(""),
+            Err(AppError::Validation("edit-empty".to_string()))
+        );
 
         // Too long input
         let long_input = "a".repeat(201);
-        assert_eq!(validate_basic_input(&long_input), Err("edit-too-long"));
+        assert_eq!(
+            validate_basic_input(&long_input),
+            Err(AppError::Validation("edit-too-long".to_string()))
+        );
     }
 
     #[test]
@@ -496,15 +519,15 @@ mod tests {
         // Invalid ranges
         assert_eq!(
             validate_quantity_range(&create_match("0")),
-            Err("edit-invalid-quantity")
+            Err(AppError::Validation("edit-invalid-quantity".to_string()))
         );
         assert_eq!(
             validate_quantity_range(&create_match("-1")),
-            Err("edit-invalid-quantity")
+            Err(AppError::Validation("edit-invalid-quantity".to_string()))
         );
         assert_eq!(
             validate_quantity_range(&create_match("10001")),
-            Err("edit-invalid-quantity")
+            Err(AppError::Validation("edit-invalid-quantity".to_string()))
         );
     }
 
@@ -557,7 +580,7 @@ mod tests {
         println!("\nTesting MeasurementDetector directly");
         let detector = match MeasurementDetector::new() {
             Ok(d) => d,
-            Err(e) => panic!("Failed to create MeasurementDetector: {}", e),
+            Err(_) => unreachable!("Failed to create MeasurementDetector"),
         };
         let temp_text = format!("temp: {}", "2 cups flour");
         println!("Input text: '{}'", temp_text);

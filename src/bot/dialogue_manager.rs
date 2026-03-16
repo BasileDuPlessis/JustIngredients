@@ -1,5 +1,6 @@
 //! Dialogue Manager module for handling dialogue state transitions
 
+use crate::errors::AppError;
 use crate::localization::{t_args_lang, t_lang};
 use anyhow::Result;
 use sqlx::postgres::PgPool;
@@ -239,7 +240,7 @@ pub async fn handle_recipe_name_input(
                 })
                 .await?;
         }
-        Err("empty") => {
+        Err(AppError::Validation(error_msg)) if error_msg == "empty" => {
             bot.send_message(
                 msg.chat.id,
                 t_lang(
@@ -251,7 +252,7 @@ pub async fn handle_recipe_name_input(
             .await?;
             // Keep dialogue active, user can try again
         }
-        Err("too_long") => {
+        Err(AppError::Validation(error_msg)) if error_msg == "too_long" => {
             bot.send_message(
                 msg.chat.id,
                 t_lang(
@@ -338,12 +339,12 @@ pub async fn handle_recipe_name_after_confirm_input(
             })
             .await
         }
-        Err(error_type) => {
+        Err(error) => {
             handle_recipe_name_validation_error(
                 bot,
                 msg,
                 handler_ctx.localization,
-                error_type,
+                error,
                 handler_ctx.language_code,
             )
             .await
@@ -494,12 +495,15 @@ async fn handle_recipe_name_validation_error(
     bot: &Bot,
     msg: &Message,
     localization: &Arc<crate::localization::LocalizationManager>,
-    error_type: &str,
+    error: AppError,
     language_code: Option<&str>,
 ) -> Result<()> {
-    let error_message = match error_type {
-        "empty" => t_lang(localization, "recipe-name-invalid", language_code),
-        "too_long" => t_lang(localization, "recipe-name-too-long", language_code),
+    let error_message = match error {
+        AppError::Validation(msg) => match msg.as_str() {
+            "empty" => t_lang(localization, "recipe-name-invalid", language_code),
+            "too_long" => t_lang(localization, "recipe-name-too-long", language_code),
+            _ => t_lang(localization, "recipe-name-invalid", language_code),
+        },
         _ => t_lang(localization, "recipe-name-invalid", language_code),
     };
 
@@ -549,34 +553,36 @@ pub async fn handle_ingredient_edit_input(
     }
 
     // Parse and validate the user input
-    match parse_ingredient_from_text(edit_input) {
-        Ok(new_ingredient) => {
-            handle_edit_success(EditSuccessParams {
-                ctx: handler_ctx,
-                msg,
-                dialogue,
-                ingredients,
-                editing_index,
-                new_ingredient,
-                recipe_name,
-                message_id,
-                extracted_text,
-                user_input_message_id,
-                recipe_name_from_caption: recipe_name_from_caption.clone(),
-            })
-            .await
-        }
-        Err(error_msg) => {
-            handle_edit_error(
-                bot,
-                msg,
-                handler_ctx.localization,
-                error_msg,
-                handler_ctx.language_code,
-            )
-            .await
-        }
-    }
+    let parse_result = parse_ingredient_from_text(edit_input);
+    let result = if let Ok(new_ingredient) = parse_result {
+        handle_edit_success(EditSuccessParams {
+            ctx: handler_ctx,
+            msg,
+            dialogue,
+            ingredients,
+            editing_index,
+            new_ingredient,
+            recipe_name,
+            message_id,
+            extracted_text,
+            user_input_message_id,
+            recipe_name_from_caption: recipe_name_from_caption.clone(),
+        })
+        .await
+    } else if let Err(error) = parse_result {
+        handle_edit_error(
+            bot,
+            msg,
+            handler_ctx.localization,
+            error,
+            handler_ctx.language_code,
+        )
+        .await
+    } else {
+        unreachable!()
+    };
+    result?;
+    Ok(())
 }
 
 /// Handle recipe rename input during dialogue
@@ -672,7 +678,7 @@ pub async fn handle_recipe_rename_input(
                 }
             }
         }
-        Err("empty") => {
+        Err(AppError::Validation(error_msg)) if error_msg == "empty" => {
             bot.send_message(
                 msg.chat.id,
                 t_lang(
@@ -684,7 +690,7 @@ pub async fn handle_recipe_rename_input(
             .await?;
             // Keep dialogue active, user can try again
         }
-        Err("too_long") => {
+        Err(AppError::Validation(error_msg)) if error_msg == "too_long" => {
             bot.send_message(
                 msg.chat.id,
                 t_lang(
@@ -902,13 +908,18 @@ async fn handle_edit_error(
     bot: &Bot,
     msg: &Message,
     localization: &Arc<crate::localization::LocalizationManager>,
-    error_msg: &str,
+    error: AppError,
     language_code: Option<&str>,
 ) -> Result<()> {
     // Invalid input, ask user to try again
+    let error_msg = match error {
+        AppError::Validation(msg) => msg,
+        AppError::Ocr(_msg) => "error-processing-failed".to_string(),
+        _ => "edit-invalid-input".to_string(),
+    };
     let error_message = format!(
         "{}\n\n{}",
-        t_lang(localization, error_msg, language_code),
+        t_lang(localization, &error_msg, language_code),
         t_lang(localization, "edit-try-again", language_code)
     );
     bot.send_message(msg.chat.id, error_message).await?;
@@ -1266,23 +1277,15 @@ pub async fn handle_add_ingredient_input(
             })
             .await?;
         }
-        Err(error_msg) => {
-            // Invalid input, ask user to try again
-            let error_message = format!(
-                "{}\n\n{}",
-                t_lang(
-                    handler_ctx.localization,
-                    error_msg,
-                    handler_ctx.language_code
-                ),
-                t_lang(
-                    handler_ctx.localization,
-                    "edit-try-again",
-                    handler_ctx.language_code
-                )
-            );
-            bot.send_message(msg.chat.id, error_message).await?;
-            // Stay in adding state for user to try again
+        Err(error) => {
+            handle_edit_error(
+                bot,
+                msg,
+                handler_ctx.localization,
+                error,
+                handler_ctx.language_code,
+            )
+            .await?
         }
     }
 
@@ -1382,23 +1385,15 @@ pub async fn handle_saved_ingredient_edit_input(
                 .await?;
             }
         }
-        Err(error_msg) => {
-            // Invalid input, ask user to try again
-            let error_message = format!(
-                "{}\n\n{}",
-                t_lang(
-                    handler_ctx.localization,
-                    error_msg,
-                    handler_ctx.language_code
-                ),
-                t_lang(
-                    handler_ctx.localization,
-                    "edit-try-again",
-                    handler_ctx.language_code
-                )
-            );
-            bot.send_message(msg.chat.id, error_message).await?;
-            // Stay in editing state for user to try again
+        Err(error) => {
+            handle_edit_error(
+                bot,
+                msg,
+                handler_ctx.localization,
+                error,
+                handler_ctx.language_code,
+            )
+            .await?
         }
     }
 
