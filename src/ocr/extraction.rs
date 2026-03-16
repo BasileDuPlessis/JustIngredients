@@ -9,9 +9,72 @@ use tracing::{info, warn};
 
 use crate::error_correction::OcrErrorCorrector;
 use crate::instance_manager::OcrInstanceManager;
+use crate::observability::metrics::record_ocr_cleaning_metrics;
 use crate::ocr::types::ConstrainedOcrResult;
 use crate::ocr_config::OcrConfig;
 use crate::ocr_errors::OcrError;
+
+/// Clean OCR artifacts from extracted text
+///
+/// Removes leading dashes (-) and dots (.) from each line of OCR text.
+/// This improves ingredient parsing accuracy by removing common
+/// formatting artifacts from recipe images.
+///
+/// # Arguments
+/// * `text` - Raw OCR extracted text
+///
+/// # Returns
+/// * `(String, u32)` - Tuple of (cleaned text with artifacts removed, number of artifacts removed)
+///
+/// # Examples
+/// ```
+/// use just_ingredients::ocr::clean_ocr_artifacts;
+/// let raw = "- 2 cups flour\n• 1 tsp salt";
+/// let (clean, artifacts) = clean_ocr_artifacts(raw);
+/// assert_eq!(clean, "2 cups flour\n1 tsp salt");
+/// assert_eq!(artifacts, 2);
+/// ```
+pub fn clean_ocr_artifacts(text: &str) -> (String, u32) {
+    let mut artifacts_removed = 0;
+
+    let cleaned_lines: Vec<String> = text
+        .lines()
+        .map(|line| {
+            let original_line = line;
+            let mut cleaned = line.trim_start();
+
+            // Count and remove leading dashes
+            let dash_count = cleaned.chars().take_while(|&c| c == '-').count();
+            cleaned = cleaned.trim_start_matches('-');
+            artifacts_removed += dash_count as u32;
+
+            // Count and remove leading dots (including bullet points •)
+            let dot_count = cleaned
+                .chars()
+                .take_while(|&c| c == '.' || c == '•')
+                .count();
+            cleaned = cleaned.trim_start_matches('.');
+            cleaned = cleaned.trim_start_matches('•');
+            artifacts_removed += dot_count as u32;
+
+            // Trim any remaining leading whitespace
+            let final_cleaned = cleaned.trim_start();
+
+            // Log what was cleaned for debugging
+            if original_line != final_cleaned {
+                tracing::trace!(
+                    "Cleaned OCR artifact: '{}' -> '{}'",
+                    original_line,
+                    final_cleaned
+                );
+            }
+
+            final_cleaned.to_string()
+        })
+        .collect();
+
+    (cleaned_lines.join("\n"), artifacts_removed)
+}
 
 /// Helper function to perform OCR extraction with timeout
 ///
@@ -117,9 +180,38 @@ pub async fn perform_ocr_extraction(
             .collect::<Vec<&str>>()
             .join("\n");
 
+        // Remove OCR artifacts (leading dashes and dots) with metrics
+        let cleaning_start = std::time::Instant::now();
+        let (artifact_cleaned_text, artifacts_removed) = clean_ocr_artifacts(&cleaned_text);
+        let cleaning_duration = cleaning_start.elapsed();
+
+        // Record cleaning metrics
+        record_ocr_cleaning_metrics(
+            artifacts_removed,
+            cleaning_duration,
+            cleaned_text.len(),
+            artifact_cleaned_text.len(),
+        );
+
+        // Log cleaning effectiveness
+        if artifacts_removed > 0 {
+            info!(
+                "OCR cleaning removed {} artifacts in {:.2}ms (text length: {} -> {})",
+                artifacts_removed,
+                cleaning_duration.as_millis(),
+                cleaned_text.len(),
+                artifact_cleaned_text.len()
+            );
+        } else {
+            tracing::trace!(
+                "OCR cleaning completed in {:.2}ms (no artifacts found)",
+                cleaning_duration.as_millis()
+            );
+        }
+
         // Apply comprehensive OCR error correction
         let error_corrector = OcrErrorCorrector::new();
-        let corrected_text = error_corrector.correct_text(&cleaned_text);
+        let corrected_text = error_corrector.correct_text(&artifact_cleaned_text);
 
         Ok((corrected_text, tesseract_confidence))
     })
@@ -266,7 +358,18 @@ pub async fn perform_constrained_ocr(
             .collect::<Vec<&str>>()
             .join(" ");
 
-        Ok((cleaned_text, confidence))
+        // Remove OCR artifacts (leading dashes and dots)
+        let (artifact_cleaned_text, artifacts_removed) = clean_ocr_artifacts(&cleaned_text);
+
+        // Log cleaning for constrained OCR if artifacts were found
+        if artifacts_removed > 0 {
+            tracing::debug!(
+                "Constrained OCR cleaning removed {} artifacts",
+                artifacts_removed
+            );
+        }
+
+        Ok((artifact_cleaned_text, confidence))
     })
     .await;
 
@@ -292,5 +395,175 @@ pub async fn perform_constrained_ocr(
             "Constrained OCR operation timed out after {} seconds",
             config.recovery.operation_timeout_secs
         ))),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_clean_ocr_artifacts_leading_dash() {
+        let input = "- 2 cups flour";
+        let expected = "2 cups flour";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 1);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_leading_dot() {
+        let input = "• 1 tsp salt";
+        let expected = "1 tsp salt";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 1);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_regular_dot() {
+        let input = ". 500ml milk";
+        let expected = "500ml milk";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 1);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_mixed_artifacts() {
+        let input = "-. 3 eggs";
+        let expected = "3 eggs";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 2);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_multiple_artifacts_same_line() {
+        let input = "-- 2 tbsp oil";
+        let expected = "2 tbsp oil";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 2);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_preserve_internal_artifacts() {
+        let input = "100g sugar - for dusting";
+        let expected = "100g sugar - for dusting";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 0);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_preserve_internal_dots() {
+        let input = "1.5 kg potatoes";
+        let expected = "1.5 kg potatoes";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 0);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_multiple_lines() {
+        let input = "- 2 cups flour\n• 1 tsp salt\n- 3 eggs";
+        let expected = "2 cups flour\n1 tsp salt\n3 eggs";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 3);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_empty_lines() {
+        let input = "- 2 cups flour\n\n• 1 tsp salt";
+        let expected = "2 cups flour\n\n1 tsp salt";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 2);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_whitespace_handling() {
+        let input = "  - 2 cups flour";
+        let expected = "2 cups flour";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 1);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_only_artifacts() {
+        let input = "-";
+        let expected = "";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 1);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_only_whitespace() {
+        let input = "   ";
+        let expected = "";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 0);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_empty_input() {
+        let input = "";
+        let expected = "";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 0);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_no_artifacts() {
+        let input = "2 cups flour\n1 tsp salt\n3 eggs";
+        let expected = "2 cups flour\n1 tsp salt\n3 eggs";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 0);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_complex_recipe() {
+        let input = "- 2 cups all-purpose flour\n• 1 teaspoon salt\n- 3 large eggs\n• 1 cup milk\n- 100g butter - softened";
+        let expected = "2 cups all-purpose flour\n1 teaspoon salt\n3 large eggs\n1 cup milk\n100g butter - softened";
+        let (result, artifacts) = clean_ocr_artifacts(input);
+        assert_eq!(result, expected);
+        assert_eq!(artifacts, 5);
+    }
+
+    #[test]
+    fn test_clean_ocr_artifacts_performance() {
+        // Test with a larger recipe text to measure performance
+        let input = "- 2 cups all-purpose flour\n• 1 teaspoon salt\n- 3 large eggs\n• 1 cup milk\n- 100g butter - softened\n• 2 tbsp sugar\n- 1 tsp vanilla extract\n• 500ml water\n- Some chopped nuts\n• Fresh berries for topping"
+            .repeat(10); // Make it larger for performance testing
+
+        let start = std::time::Instant::now();
+        let (result, artifacts) = clean_ocr_artifacts(&input);
+        let duration = start.elapsed();
+
+        // Verify the result is correct (should have removed all leading artifacts)
+        assert!(!result.contains("\n- "));
+        assert!(!result.contains("\n• "));
+        assert!(!result.contains("\n. "));
+
+        // Performance check: should be well under 1ms for reasonable input
+        assert!(
+            duration.as_millis() < 1,
+            "Performance test failed: took {}ms",
+            duration.as_millis()
+        );
+
+        // Should have removed artifacts (10 repetitions * 10 artifacts per repetition, minus any edge cases)
+        assert!(
+            artifacts > 80,
+            "Expected to remove many artifacts, but only removed {}",
+            artifacts
+        );
     }
 }

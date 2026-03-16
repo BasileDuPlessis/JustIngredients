@@ -457,6 +457,31 @@ pub fn record_ocr_performance_metrics(params: OcrPerformanceMetricsParams) {
     metrics::histogram!("ocr_efficiency_ratio").record(efficiency);
 }
 
+/// Record OCR text cleaning metrics
+pub fn record_ocr_cleaning_metrics(
+    artifacts_removed: u32,
+    cleaning_duration: std::time::Duration,
+    text_length_before: usize,
+    text_length_after: usize,
+) {
+    // Count artifacts removed
+    metrics::counter!("ocr_artifacts_removed_total").increment(artifacts_removed as u64);
+
+    // Record cleaning performance
+    metrics::histogram!("ocr_cleaning_duration_seconds").record(cleaning_duration.as_secs_f64());
+
+    // Record text length changes
+    metrics::histogram!("ocr_text_length_before_cleaning").record(text_length_before as f64);
+    metrics::histogram!("ocr_text_length_after_cleaning").record(text_length_after as f64);
+
+    // Calculate and record compression ratio (text reduction percentage)
+    if text_length_before > 0 {
+        let reduction_ratio =
+            (text_length_before - text_length_after) as f64 / text_length_before as f64;
+        metrics::histogram!("ocr_cleaning_reduction_ratio").record(reduction_ratio);
+    }
+}
+
 /// Record database operation metrics
 pub fn record_db_metrics(operation: &str, duration: std::time::Duration) {
     let operation = operation.to_string();

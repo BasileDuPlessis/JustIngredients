@@ -19,7 +19,7 @@
 - **Version History**: Document changes within feature spec documents for major updates
 
 ### Current Active Specs
-- [OCR Processing] `specs/ocr-processing.md` - Text extraction and ingredient parsing
+- [OCR Processing] `specs/ocr-processing.md` - Text extraction and ingredient parsing (includes text cleaning)
 - [Telegram Bot] `specs/telegram-bot.md` - User interface and conversation management
 - [Database Design] `specs/database-design.md` - Data persistence and full-text search
 - [Deployment] `specs/deployment.md` - Infrastructure and production operations
@@ -33,7 +33,7 @@ Telegram bot that extracts ingredients from recipe images using OCR, stores in P
 ## Critical Quality Standards
 
 ### ⚠️ ZERO TOLERANCE POLICIES
-- **All 135 tests must pass** - Run `cargo test` after every change
+- **All tests must pass** - Run both `cargo test` AND `cargo test --doc` after every change
 - **No `.unwrap()` or panics** - Use proper error handling with `?` operator
 - **All code must format** - Run `cargo fmt --all -- --check`
 - **Zero clippy warnings** - Run `cargo clippy --all-targets --all-features -- -D warnings`

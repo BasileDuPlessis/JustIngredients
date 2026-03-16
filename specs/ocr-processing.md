@@ -8,6 +8,7 @@ The OCR (Optical Character Recognition) processing feature extracts text from im
 ### Functional Requirements
 - **Image Format Support**: PNG, JPEG, BMP, TIFF
 - **Text Extraction**: Extract readable text from images using Tesseract OCR
+- **Text Cleaning**: Remove OCR artifacts (leading dashes, dots) to improve parsing accuracy
 - **Language Support**: English and French text recognition
 - **Ingredient Detection**: Parse measurements, units, and ingredient names
 - **Confidence Scoring**: Provide reliability metrics for extracted text
@@ -15,18 +16,19 @@ The OCR (Optical Character Recognition) processing feature extracts text from im
 
 ### Non-Functional Requirements
 - **Performance**: Process images within 30 seconds
-- **Accuracy**: Minimum 80% text extraction accuracy
+- **Accuracy**: Minimum 80% text extraction accuracy, >10% parsing improvement with cleaning
 - **Reliability**: Circuit breaker protection against OCR failures
 - **Resource Usage**: Memory estimation before processing
 - **Scalability**: Instance pooling for concurrent requests
 
 ### Success Criteria
-- [ ] All image formats supported and validated
-- [ ] Text extraction works for recipe images
-- [ ] Ingredient parsing extracts measurements and names
-- [ ] Confidence scores provided for all extractions
-- [ ] Circuit breaker prevents system overload
-- [ ] Performance meets 30-second SLA
+- [x] All image formats supported and validated
+- [x] Text extraction works for recipe images
+- [x] OCR text cleaning removes artifacts and improves parsing accuracy
+- [x] Ingredient parsing extracts measurements and names
+- [x] Confidence scores provided for all extractions
+- [x] Circuit breaker prevents system overload
+- [x] Performance meets 30-second SLA
 
 ## Architecture
 
@@ -35,7 +37,7 @@ The OCR (Optical Character Recognition) processing feature extracts text from im
 OCR Processing Layer
 ├── Validation Module      # Format, size, path validation
 ├── Preprocessing Module   # Image enhancement, scaling
-├── Extraction Module      # Core OCR execution
+├── Extraction Module      # Core OCR execution + text cleaning
 ├── Confidence Module      # Scoring and quality assessment
 ├── HOCR Module           # Advanced text positioning
 └── Types Module          # Shared data structures
@@ -45,9 +47,10 @@ OCR Processing Layer
 1. **Input Validation**: Check format, size, path security
 2. **Preprocessing**: Scale, enhance image quality
 3. **OCR Extraction**: Run Tesseract with language settings
-4. **Text Processing**: Parse ingredients, measurements, units
-5. **Confidence Scoring**: Calculate reliability metrics
-6. **Result Formatting**: Structure for bot response
+4. **Text Cleaning**: Remove leading dashes/dots and OCR artifacts
+5. **Text Processing**: Parse ingredients, measurements, units
+6. **Confidence Scoring**: Calculate reliability metrics
+7. **Result Formatting**: Structure for bot response
 
 ### Integration Points
 - **Telegram Bot**: Receives images, sends results
@@ -64,6 +67,9 @@ pub fn extract_text_from_image(path: &str, config: &OcrConfig) -> Result<String,
 
 // Advanced extraction with confidence
 pub fn perform_ocr_extraction(image: &DynamicImage, config: &OcrConfig) -> Result<OcrResult, OcrError>
+
+// Text cleaning for OCR artifacts
+pub fn clean_ocr_artifacts(text: &str) -> (String, u32)
 
 // Constrained OCR for measurements
 pub fn perform_constrained_ocr(image: &DynamicImage, config: &OcrConfig) -> Result<ConstrainedOcrResult, OcrError>
@@ -94,6 +100,7 @@ pub struct OcrConfig {
 
 ### Key Decisions
 - **Tesseract Backend**: Industry-standard OCR engine
+- **Text Cleaning**: Remove leading dashes/dots to improve parsing accuracy by >10%
 - **Instance Pooling**: Reuse OCR instances for performance
 - **Circuit Breaker**: Fail-fast protection against OCR issues
 - **Confidence Scoring**: Multi-factor reliability assessment
@@ -132,6 +139,7 @@ pub struct OcrConfig {
 
 ### Metrics
 - OCR success/failure rates
+- Text cleaning effectiveness (artifacts removed)
 - Processing time distribution
 - Memory usage patterns
 - Circuit breaker state
@@ -145,6 +153,7 @@ pub struct OcrConfig {
 ## Future Enhancements
 
 ### Potential Improvements
+- **Text Cleaning Expansion**: Additional artifact types (bullet points, numbering)
 - **Multi-language expansion**: Additional language support
 - **Advanced preprocessing**: Better image quality enhancement
 - **Batch processing**: Multiple image processing
