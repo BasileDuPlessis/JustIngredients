@@ -18,7 +18,7 @@ Replace all `panic!()` calls in production code with proper error handling using
 - Propagate errors properly using `Result`
 - Run tests to validate
 
-### Task 2: Fix preprocessing/cropping.rs panics
+### Task 2: Fix preprocessing/cropping.rs panics [DONE]
 - Replace 6 panic calls in cropping.rs (lines 145, 149, 161, 165, 190, 194)
 - Convert functions to return `Result`
 - Update callers to handle errors

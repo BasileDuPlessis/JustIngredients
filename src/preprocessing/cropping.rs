@@ -140,14 +140,10 @@ mod tests {
             }
         }
 
-        let temp_file = match NamedTempFile::with_suffix(".png") {
-            Ok(f) => f,
-            Err(e) => panic!("Failed to create temp file: {:?}", e),
-        };
-        match DynamicImage::ImageRgb8(img).save(&temp_file) {
-            Ok(_) => {}
-            Err(e) => panic!("Failed to save image: {:?}", e),
-        };
+        let temp_file = NamedTempFile::with_suffix(".png").expect("Failed to create temp file");
+        DynamicImage::ImageRgb8(img)
+            .save(&temp_file)
+            .expect("Failed to save image");
         temp_file
     }
 
@@ -156,14 +152,12 @@ mod tests {
         let temp_img = create_test_image(100, 50);
         let bbox = BBox::new(20, 10, 80, 40);
 
-        let path_str = match temp_img.path().to_str() {
-            Some(s) => s,
-            None => panic!("Temp file path is not valid UTF-8"),
-        };
-        let result = match crop_measurement_region(path_str, &bbox) {
-            Ok(r) => r,
-            Err(e) => panic!("crop_measurement_region failed: {:?}", e),
-        };
+        let path_str = temp_img
+            .path()
+            .to_str()
+            .expect("Temp file path should be valid UTF-8");
+        let result = crop_measurement_region(path_str, &bbox)
+            .expect("crop_measurement_region should succeed");
 
         // Verify the cropped image was created
         assert!(result.image.width() > 0);
@@ -185,14 +179,12 @@ mod tests {
         let temp_img = create_test_image(100, 50);
         let bbox = BBox::new(0, 0, 30, 20); // BBox at top-left edge
 
-        let path_str = match temp_img.path().to_str() {
-            Some(s) => s,
-            None => panic!("Temp file path is not valid UTF-8"),
-        };
-        let result = match crop_measurement_region(path_str, &bbox) {
-            Ok(r) => r,
-            Err(e) => panic!("crop_measurement_region failed: {:?}", e),
-        };
+        let path_str = temp_img
+            .path()
+            .to_str()
+            .expect("Temp file path should be valid UTF-8");
+        let result = crop_measurement_region(path_str, &bbox)
+            .expect("crop_measurement_region should succeed");
 
         // Should not go negative and should be clamped to image bounds
         assert_eq!(result.cropped_region.x0, 0);
