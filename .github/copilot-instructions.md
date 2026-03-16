@@ -34,7 +34,10 @@ Telegram bot that extracts ingredients from recipe images using OCR, stores in P
 
 ### ⚠️ ZERO TOLERANCE POLICIES
 - **All tests must pass** - Run both `cargo test` AND `cargo test --doc` after every change
-- **No `.unwrap()` or panics** - Use proper error handling with `?` operator
+- **No `.unwrap()`, `.expect()`, or `panic!`** - Use proper error handling with `?` operator and Result types
+- **Specific Error Types** - Use domain-specific error enums instead of generic `String` or `Box<dyn std::error::Error>`
+- **Result Propagation** - Functions return `Result<T, E>` with meaningful error types, never panic
+- **Test Error Handling** - Test functions return `Result<(), TestError>` and use `?` for error propagation
 - **All code must format** - Run `cargo fmt --all -- --check`
 - **Zero clippy warnings** - Run `cargo clippy --all-targets --all-features -- -D warnings`
 
@@ -58,6 +61,16 @@ Telegram bot that extracts ingredients from recipe images using OCR, stores in P
 - **Instance Pooling**: Reuses Tesseract instances for performance
 - **Parameter Structs**: Functions >6 params use dedicated structs
 - **Async Everywhere**: Tokio runtime with timeouts
+- **Error Handling**: Domain-specific error enums with `std::error::Error` implementation
+- **Result Propagation**: Use `?` operator for clean error handling, avoid unwrap/expect/panic
+
+### Error Handling Best Practices
+- **Never use `unwrap()`, `expect()`, or `panic!`** in production code
+- **Create specific error enums** for each module (e.g., `TestError`, `PreprocessingError`)
+- **Implement `std::error::Error`** with proper `Display` and `source()` methods
+- **Test functions return `Result<(), TestError>`** to avoid panics in test code
+- **Use `?` operator** for error propagation instead of manual match statements
+- **Convert `Option` to `Result`** using `ok_or()` or `ok_or_else()` with meaningful errors
 
 ## Environment Setup
 ```bash
