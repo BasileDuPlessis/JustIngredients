@@ -662,7 +662,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         // Show the updated recipe details
         let recipe_name = recipe
             .recipe_name
-            .unwrap_or_else(|| "Unnamed Recipe".to_string());
+            .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
         let recipe_message = format!(
             "📝 **{}**\n\n{}",
             recipe_name,
@@ -761,7 +761,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
 
         let recipe_name = recipe
             .recipe_name
-            .unwrap_or_else(|| "Unnamed Recipe".to_string());
+            .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
         let recipe_message = format!(
             "📝 **{}**\n\n{}",
             recipe_name,
@@ -847,7 +847,7 @@ async fn handle_cancel_saved_ingredients_button(
         // Create the recipe details message
         let recipe_name = recipe
             .recipe_name
-            .unwrap_or_else(|| "Unnamed Recipe".to_string());
+            .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
         let recipe_message = format!(
             "📝 **{}**\n\n{}",
             recipe_name,

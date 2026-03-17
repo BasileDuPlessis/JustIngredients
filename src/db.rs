@@ -16,7 +16,7 @@ pub use crate::observability;
 pub struct User {
     pub id: i64,
     pub telegram_id: i64,
-    pub language_code: String,
+    pub language_code: std::sync::Arc<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -26,8 +26,8 @@ pub struct User {
 pub struct Recipe {
     pub id: i64,
     pub telegram_id: i64,
-    pub content: String,
-    pub recipe_name: Option<String>,
+    pub content: std::sync::Arc<String>,
+    pub recipe_name: Option<std::sync::Arc<String>>,
     pub created_at: DateTime<Utc>,
 }
 
@@ -105,7 +105,7 @@ pub async fn read_recipe(pool: &PgPool, recipe_id: i64) -> Result<Option<Recipe>
             let recipe = Recipe {
                 id: row.get(0),
                 telegram_id: row.get(1),
-                content: row.get(2),
+                content: std::sync::Arc::new(row.get(2)),
                 recipe_name: None, // For backward compatibility, existing entries have no recipe name
                 created_at: row.get(3),
             };
@@ -212,7 +212,7 @@ pub async fn get_or_create_user(
             let user = User {
                 id: row.get(0),
                 telegram_id: row.get(1),
-                language_code: row.get(2),
+                language_code: std::sync::Arc::new(row.get(2)),
                 created_at: row.get(3),
                 updated_at: row.get(4),
             };
@@ -259,7 +259,7 @@ pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<
             let user = User {
                 id: row.get(0),
                 telegram_id: row.get(1),
-                language_code: row.get(2),
+                language_code: std::sync::Arc::new(row.get(2)),
                 created_at: row.get(3),
                 updated_at: row.get(4),
             };
@@ -290,7 +290,7 @@ pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>>
             let user = User {
                 id: row.get(0),
                 telegram_id: row.get(1),
-                language_code: row.get(2),
+                language_code: std::sync::Arc::new(row.get(2)),
                 created_at: row.get(3),
                 updated_at: row.get(4),
             };
@@ -750,8 +750,8 @@ pub async fn read_recipe_with_name(pool: &PgPool, recipe_id: i64) -> Result<Opti
             let recipe = Recipe {
                 id: row.get(0),
                 telegram_id: row.get(1),
-                content: row.get(2),
-                recipe_name: row.get(3),
+                content: std::sync::Arc::new(row.get(2)),
+                recipe_name: row.get::<Option<String>, _>(3).map(|s| std::sync::Arc::new(s)),
                 created_at: row.get(4),
             };
             debug!(recipe_id = %recipe_id, "Recipe with recipe found");
@@ -780,8 +780,8 @@ pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Res
         .map(|row| Recipe {
             id: row.get(0),
             telegram_id: row.get(1),
-            content: row.get(2),
-            recipe_name: row.get(3),
+            content: std::sync::Arc::new(row.get(2)),
+            recipe_name: row.get::<Option<String>, _>(3).map(|s| std::sync::Arc::new(s)),
             created_at: row.get(4),
         })
         .collect();
@@ -816,8 +816,8 @@ pub async fn get_recipes_by_name(
         .map(|row| Recipe {
             id: row.get(0),
             telegram_id: row.get(1),
-            content: row.get(2),
-            recipe_name: row.get(3),
+            content: std::sync::Arc::new(row.get(2)),
+            recipe_name: row.get::<Option<String>, _>(3).map(|s| std::sync::Arc::new(s)),
             created_at: row.get(4),
         })
         .collect();

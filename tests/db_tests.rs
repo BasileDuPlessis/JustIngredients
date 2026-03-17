@@ -55,12 +55,12 @@ async fn test_user_operations() -> Result<()> {
 async fn test_user_operations_impl(pool: &PgPool) -> Result<()> {
     let user = get_or_create_user(pool, 12345, Some("fr")).await?;
     assert_eq!(user.telegram_id, 12345);
-    assert_eq!(user.language_code, "fr");
+    assert_eq!(user.language_code, std::sync::Arc::new("fr".to_string()));
 
     // Test getting existing user
     let user2 = get_or_create_user(pool, 12345, Some("en")).await?;
     assert_eq!(user2.id, user.id); // Should return same user
-    assert_eq!(user2.language_code, "fr"); // Should keep original language
+    assert_eq!(user2.language_code, std::sync::Arc::new("fr".to_string())); // Should keep original language
 
     // Test get_user_by_telegram_id
     let found_user = get_user_by_telegram_id(pool, 12345).await?;
@@ -87,7 +87,7 @@ async fn test_recipe_operations_impl(pool: &PgPool) -> Result<()> {
     assert!(recipe.is_some());
     let recipe = recipe.unwrap();
     assert_eq!(recipe.telegram_id, 12345);
-    assert_eq!(recipe.content, "Test OCR content");
+    assert_eq!(recipe.content, std::sync::Arc::new("Test OCR content".to_string()));
 
     // Update recipe
     let updated = update_recipe(pool, recipe_id, "Updated content").await?;
