@@ -37,7 +37,7 @@ Reduce excessive cloning in hot paths, particularly in text processing and cachi
 - Optimize eviction logic cloning (lines ~468, ~492)
 - Evaluate if cache values can be returned as references
 
-#### Task 2.3: Optimize cache statistics collection
+#### Task 2.3: Optimize cache statistics collection [DONE]
 - Review stats cloning in get() method (line ~225)
 - Optimize stats calculation and return patterns
 - Consider lazy stats computation where appropriate

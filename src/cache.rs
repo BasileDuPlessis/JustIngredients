@@ -108,8 +108,37 @@ pub struct CacheStats {
     pub hits: u64,
     /// Number of misses
     pub misses: u64,
-    /// Hit rate (hits / (hits + misses))
+    /// Hit rate (hits / (hits + misses)) - maintained incrementally for performance
     pub hit_rate: f64,
+    /// Cached total requests to avoid recalculation
+    total_requests: u64,
+}
+
+impl CacheStats {
+    /// Update hit rate incrementally when hits or misses change
+    fn update_hit_rate(&mut self) {
+        let new_total = self.hits + self.misses;
+        if new_total != self.total_requests {
+            self.total_requests = new_total;
+            if new_total > 0 {
+                self.hit_rate = self.hits as f64 / new_total as f64;
+            } else {
+                self.hit_rate = 0.0;
+            }
+        }
+    }
+
+    /// Record a cache hit
+    pub fn record_hit(&mut self) {
+        self.hits += 1;
+        self.update_hit_rate();
+    }
+
+    /// Record a cache miss
+    pub fn record_miss(&mut self) {
+        self.misses += 1;
+        self.update_hit_rate();
+    }
 }
 
 /// Thread-safe in-memory cache implementation
@@ -181,16 +210,16 @@ where
 
         match data.get(key) {
             Some(entry) if !entry.is_expired() => {
-                stats.hits += 1;
+                stats.record_hit();
                 Some(entry.value.clone())
             }
             Some(_) => {
                 // Entry exists but is expired
-                stats.misses += 1;
+                stats.record_miss();
                 None
             }
             None => {
-                stats.misses += 1;
+                stats.record_miss();
                 None
             }
         }
@@ -231,11 +260,7 @@ where
         };
 
         stats.entries = data.len();
-
-        let total_requests = stats.hits + stats.misses;
-        if total_requests > 0 {
-            stats.hit_rate = stats.hits as f64 / total_requests as f64;
-        }
+        // hit_rate is now maintained incrementally, no need to recalculate
 
         stats
     }
