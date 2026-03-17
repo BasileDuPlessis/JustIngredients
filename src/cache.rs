@@ -264,17 +264,25 @@ where
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct OcrCacheKey {
     /// Hash of the image content
-    pub image_hash: String,
+    pub image_hash: Arc<String>,
     /// OCR configuration hash (to invalidate when config changes)
-    pub config_hash: String,
+    pub config_hash: Arc<String>,
 }
 
 impl OcrCacheKey {
     /// Create a new OCR cache key
     pub fn new(image_hash: String, config_hash: String) -> Self {
         Self {
-            image_hash,
-            config_hash,
+            image_hash: Arc::new(image_hash),
+            config_hash: Arc::new(config_hash),
+        }
+    }
+
+    /// Create a new OCR cache key from string references
+    pub fn from_refs(image_hash: &str, config_hash: &str) -> Self {
+        Self {
+            image_hash: Arc::new(image_hash.to_string()),
+            config_hash: Arc::new(config_hash.to_string()),
         }
     }
 }
@@ -338,17 +346,25 @@ impl OcrResultCache {
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DbCacheKey {
     /// Query type identifier
-    pub query_type: String,
+    pub query_type: Arc<String>,
     /// Query parameters hash
-    pub params_hash: String,
+    pub params_hash: Arc<String>,
 }
 
 impl DbCacheKey {
     /// Create a new database cache key
     pub fn new(query_type: impl Into<String>, params_hash: impl Into<String>) -> Self {
         Self {
-            query_type: query_type.into(),
-            params_hash: params_hash.into(),
+            query_type: Arc::new(query_type.into()),
+            params_hash: Arc::new(params_hash.into()),
+        }
+    }
+
+    /// Create a new database cache key from string references
+    pub fn from_refs(query_type: &str, params_hash: &str) -> Self {
+        Self {
+            query_type: Arc::new(query_type.to_string()),
+            params_hash: Arc::new(params_hash.to_string()),
         }
     }
 }

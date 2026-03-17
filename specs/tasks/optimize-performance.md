@@ -19,10 +19,33 @@ Reduce excessive cloning in hot paths, particularly in text processing and cachi
 - Run performance tests
 
 ### Task 2: Review caching logic for cloning
-- Analyze cache operations for unnecessary clones
-- Optimize data structures to minimize copying
-- Consider using Rc/Arc for shared data
-- Run benchmarks
+- **Task 2.1**: Optimize cache key cloning (OcrCacheKey, DbCacheKey)
+- **Task 2.2**: Optimize cache value cloning and storage
+- **Task 2.3**: Optimize cache statistics collection
+- **Task 2.4**: Review CacheManager operations for cloning efficiency
+- Run benchmarks after each subtask
+
+#### Task 2.1: Optimize cache key cloning [DONE]
+- Review OcrCacheKey and DbCacheKey usage patterns
+- Consider using references instead of owned strings where possible
+- Optimize key generation to avoid unnecessary allocations
+- Update callers to use references when safe
+
+#### Task 2.2: Optimize cache value cloning and storage
+- Analyze cache value return patterns (lines ~185, ~559)
+- Consider using Arc/Rc for large cache values
+- Optimize eviction logic cloning (lines ~468, ~492)
+- Evaluate if cache values can be returned as references
+
+#### Task 2.3: Optimize cache statistics collection
+- Review stats cloning in get() method (line ~225)
+- Optimize stats calculation and return patterns
+- Consider lazy stats computation where appropriate
+
+#### Task 2.4: Review CacheManager operations for cloning efficiency
+- Analyze CacheManager usage in db.rs and other modules
+- Optimize user/recipe data cloning in cache operations
+- Review cache manager initialization and configuration
 
 ### Task 3: Profile and measure improvements
 - Add performance benchmarks if missing
