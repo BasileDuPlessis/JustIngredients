@@ -11,7 +11,7 @@ Reduce excessive cloning in hot paths, particularly in text processing and cachi
 
 ## Micro-Tasks (1-hour each)
 
-### Task 1: Optimize text_processing.rs cloning
+### Task 1: Optimize text_processing.rs cloning [DONE]
 - Review `DEFAULT_REGEX.clone()` usage (line ~446)
 - Review `chars.clone()` in processing loops (line ~794)
 - Replace with references or Arc where appropriate

@@ -140,8 +140,8 @@ async fn test_ocr_processing_with_circuit_breaker_integration() {
 
     // Test 2: Simulate additional failures to trigger circuit breaker
     // Record one more failure manually to reach threshold
-    circuit_breaker.record_failure();
-    assert!(circuit_breaker.is_open()); // Now it should be open (2 >= 2)
+    circuit_breaker.record_failure().unwrap();
+    assert!(circuit_breaker.is_open().unwrap()); // Now it should be open (2 >= 2)
 
     // Test 3: When circuit breaker is open, operations should fail fast
     let result2 = ocr::extract_text_from_image(
@@ -155,7 +155,7 @@ async fn test_ocr_processing_with_circuit_breaker_integration() {
 
     // Test 4: Wait for circuit breaker to reset
     tokio::time::sleep(Duration::from_secs(2)).await;
-    assert!(!circuit_breaker.is_open());
+    assert!(!circuit_breaker.is_open().unwrap());
 
     // Test 5: After reset, operations should work again (may still fail due to invalid image)
     let _result3 = ocr::extract_text_from_image(

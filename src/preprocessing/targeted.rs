@@ -177,7 +177,9 @@ mod tests {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
                 TestError::PreprocessingFailed(e) => write!(f, "Preprocessing failed: {:?}", e),
-                TestError::UnexpectedImageFormat(msg) => write!(f, "Unexpected image format: {}", msg),
+                TestError::UnexpectedImageFormat(msg) => {
+                    write!(f, "Unexpected image format: {}", msg)
+                }
             }
         }
     }
@@ -212,8 +214,8 @@ mod tests {
     fn test_preprocess_measurement_region_success() -> Result<(), TestError> {
         let test_img = create_test_image(40, 20); // Small cropped region
 
-        let result = preprocess_measurement_region(&test_img)
-            .map_err(TestError::PreprocessingFailed)?;
+        let result =
+            preprocess_measurement_region(&test_img).map_err(TestError::PreprocessingFailed)?;
 
         // Verify upscaling occurred (2.5x factor)
         assert_eq!(result.scale_factor, 2.5);
@@ -230,7 +232,11 @@ mod tests {
         // Verify output is grayscale/binary
         match &result.image {
             DynamicImage::ImageLuma8(_) => {} // Expected binary image
-            _ => return Err(TestError::UnexpectedImageFormat("Expected grayscale image".to_string())),
+            _ => {
+                return Err(TestError::UnexpectedImageFormat(
+                    "Expected grayscale image".to_string(),
+                ))
+            }
         }
         Ok(())
     }
@@ -239,8 +245,8 @@ mod tests {
     fn test_preprocess_measurement_region_dimensions() -> Result<(), TestError> {
         let test_img = create_test_image(30, 15);
 
-        let result = preprocess_measurement_region(&test_img)
-            .map_err(TestError::PreprocessingFailed)?;
+        let result =
+            preprocess_measurement_region(&test_img).map_err(TestError::PreprocessingFailed)?;
 
         // Check that dimensions increased (approximately 2.5x scaling)
         assert!(result.final_dimensions.0 > result.original_dimensions.0);

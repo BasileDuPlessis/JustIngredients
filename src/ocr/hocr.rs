@@ -34,7 +34,10 @@ pub async fn extract_hocr_from_image(
     circuit_breaker: &super::CircuitBreaker,
 ) -> Result<String, OcrError> {
     // Check circuit breaker state first
-    if circuit_breaker.is_open() {
+    let circuit_open = circuit_breaker
+        .is_open()
+        .map_err(|e| OcrError::Extraction(format!("Circuit breaker state check failed: {}", e)))?;
+    if circuit_open {
         warn!(
             "Circuit breaker is open, skipping HOCR extraction for {}",
             image_path
@@ -77,13 +80,17 @@ pub async fn extract_hocr_from_image(
         Ok(inner_result) => inner_result,
         Err(_) => {
             error!("HOCR extraction timed out for {}", image_path);
-            circuit_breaker.record_failure();
+            circuit_breaker.record_failure().map_err(|e| {
+                OcrError::Extraction(format!("Failed to record circuit breaker failure: {}", e))
+            })?;
             return Err(OcrError::Timeout("HOCR extraction timed out".to_string()));
         }
     };
 
     // Record success in circuit breaker
-    circuit_breaker.record_success();
+    circuit_breaker.record_success().map_err(|e| {
+        OcrError::Extraction(format!("Failed to record circuit breaker success: {}", e))
+    })?;
 
     result
 }

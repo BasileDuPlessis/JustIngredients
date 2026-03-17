@@ -162,20 +162,20 @@ fn test_error_handling_end_to_end_workflow() {
     let circuit_breaker = CircuitBreaker::new(config);
 
     // Initially circuit should not be open
-    assert!(!circuit_breaker.is_open());
+    assert!(!circuit_breaker.is_open().unwrap());
 
     // Simulate failures
-    circuit_breaker.record_failure();
-    assert!(!circuit_breaker.is_open()); // Not yet at threshold
+    circuit_breaker.record_failure().unwrap();
+    assert!(!circuit_breaker.is_open().unwrap()); // Not yet at threshold
 
-    circuit_breaker.record_failure();
-    assert!(circuit_breaker.is_open()); // Now open
+    circuit_breaker.record_failure().unwrap();
+    assert!(circuit_breaker.is_open().unwrap()); // Now open
 
     // Simulate waiting for reset
     std::thread::sleep(Duration::from_secs(2));
 
     // Circuit should reset and allow requests again
-    assert!(!circuit_breaker.is_open());
+    assert!(!circuit_breaker.is_open().unwrap());
 
     // Test OCR config validation
     let ocr_config = OcrConfig::default();

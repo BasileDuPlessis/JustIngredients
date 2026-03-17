@@ -438,7 +438,13 @@ pub async fn extract_text_from_image(
     let start_time = std::time::Instant::now();
 
     // Check circuit breaker before processing
-    if circuit_breaker.is_open() {
+    let circuit_open = circuit_breaker.is_open().map_err(|e| {
+        crate::ocr_errors::OcrError::Extraction(format!(
+            "Circuit breaker state check failed: {}",
+            e
+        ))
+    })?;
+    if circuit_open {
         warn!("Circuit breaker is open, rejecting OCR request for image: {image_path}");
         observability::update_circuit_breaker_state(true);
         return Err(crate::ocr_errors::OcrError::Extraction(
@@ -474,7 +480,12 @@ pub async fn extract_text_from_image(
                 );
 
                 // Record success in circuit breaker
-                circuit_breaker.record_success();
+                circuit_breaker.record_success().map_err(|e| {
+                    crate::ocr_errors::OcrError::Extraction(format!(
+                        "Failed to record circuit breaker success: {}",
+                        e
+                    ))
+                })?;
                 observability::update_circuit_breaker_state(false);
 
                 // Record OCR metrics with enhanced performance data
@@ -510,8 +521,14 @@ pub async fn extract_text_from_image(
                     let total_duration = start_time.elapsed();
 
                     // Record failure in circuit breaker
-                    circuit_breaker.record_failure();
-                    observability::update_circuit_breaker_state(circuit_breaker.is_open());
+                    circuit_breaker.record_failure().map_err(|e| {
+                        crate::ocr_errors::OcrError::Extraction(format!(
+                            "Failed to record circuit breaker failure: {}",
+                            e
+                        ))
+                    })?;
+                    let circuit_state = circuit_breaker.is_open().unwrap_or(true); // Default to open if we can't check
+                    observability::update_circuit_breaker_state(circuit_state);
 
                     // Record OCR metrics with enhanced performance data
                     let image_size = std::fs::metadata(image_path).map(|m| m.len()).unwrap_or(0);

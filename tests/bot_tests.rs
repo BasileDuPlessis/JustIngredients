@@ -41,7 +41,7 @@ mod tests {
         let circuit_breaker = CircuitBreaker::new(config);
 
         // Initially should not be open
-        assert!(!circuit_breaker.is_open());
+        assert!(!circuit_breaker.is_open().unwrap());
     }
 
     /// Test OCR instance manager initialization
@@ -50,7 +50,7 @@ mod tests {
         let manager = OcrInstanceManager::new();
 
         // Initially should be empty
-        assert_eq!(manager._instance_count(), 0);
+        assert_eq!(manager._instance_count().unwrap(), 0);
     }
 
     /// Test error message formatting
@@ -128,15 +128,15 @@ mod tests {
         let circuit_breaker = CircuitBreaker::new(config);
 
         // Initially closed
-        assert!(!circuit_breaker.is_open());
+        assert!(!circuit_breaker.is_open().unwrap());
 
         // Record one failure - still closed
-        circuit_breaker.record_failure();
-        assert!(!circuit_breaker.is_open());
+        circuit_breaker.record_failure().unwrap();
+        assert!(!circuit_breaker.is_open().unwrap());
 
         // Record second failure - now open
-        circuit_breaker.record_failure();
-        assert!(circuit_breaker.is_open());
+        circuit_breaker.record_failure().unwrap();
+        assert!(circuit_breaker.is_open().unwrap());
     }
 
     /// Test circuit breaker success recording
@@ -149,12 +149,12 @@ mod tests {
         let circuit_breaker = CircuitBreaker::new(config);
 
         // Record failure to open circuit
-        circuit_breaker.record_failure();
-        assert!(circuit_breaker.is_open());
+        circuit_breaker.record_failure().unwrap();
+        assert!(circuit_breaker.is_open().unwrap());
 
         // Record success to close circuit
-        circuit_breaker.record_success();
-        assert!(!circuit_breaker.is_open());
+        circuit_breaker.record_success().unwrap();
+        assert!(!circuit_breaker.is_open().unwrap());
     }
 
     /// Test OCR instance manager operations
@@ -163,11 +163,11 @@ mod tests {
         let manager = OcrInstanceManager::new();
 
         // Initially empty
-        assert_eq!(manager._instance_count(), 0);
+        assert_eq!(manager._instance_count().unwrap(), 0);
 
         // Test that we can create a new manager (basic functionality test)
         let new_manager = OcrInstanceManager::new();
-        assert_eq!(new_manager._instance_count(), 0);
+        assert_eq!(new_manager._instance_count().unwrap(), 0);
     }
 
     /// Test configuration cloning

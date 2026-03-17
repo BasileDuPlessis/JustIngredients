@@ -70,14 +70,14 @@ mod tests {
         let circuit_breaker = CircuitBreaker::new(config);
 
         // Initially closed
-        assert!(!circuit_breaker.is_open());
+        assert!(!circuit_breaker.is_open().unwrap());
 
         // Record failures
-        circuit_breaker.record_failure();
-        assert!(!circuit_breaker.is_open()); // Still closed (1 failure)
+        circuit_breaker.record_failure().unwrap();
+        assert!(!circuit_breaker.is_open().unwrap()); // Still closed (1 failure)
 
-        circuit_breaker.record_failure();
-        assert!(circuit_breaker.is_open()); // Now open (2 failures)
+        circuit_breaker.record_failure().unwrap();
+        assert!(circuit_breaker.is_open().unwrap()); // Now open (2 failures)
 
         // Note: In a real scenario, we'd wait for the reset timeout to transition to half-open
         // For this test, we just verify the failure recording works
@@ -89,29 +89,31 @@ mod tests {
         let manager = OcrInstanceManager::new();
 
         // Initially empty
-        assert_eq!(manager._instance_count(), 0);
+        assert_eq!(manager._instance_count().unwrap(), 0);
 
         // Create config
         let config = OcrConfig::default();
 
         // Get instance (creates new one)
         let instance1 = manager.get_instance(&config).unwrap();
-        assert_eq!(manager._instance_count(), 1);
+        assert_eq!(manager._instance_count().unwrap(), 1);
 
         // Get same instance again (reuses existing)
         let instance2 = manager.get_instance(&config).unwrap();
-        assert_eq!(manager._instance_count(), 1);
+        assert_eq!(manager._instance_count().unwrap(), 1);
 
         // Verify they're the same instance
         assert!(std::sync::Arc::ptr_eq(&instance1, &instance2));
 
         // Remove instance
-        manager._remove_instance(&config.languages, ModelType::default());
-        assert_eq!(manager._instance_count(), 0);
+        manager
+            ._remove_instance(&config.languages, ModelType::default())
+            .unwrap();
+        assert_eq!(manager._instance_count().unwrap(), 0);
 
         // Clear all instances
-        manager._clear_all_instances();
-        assert_eq!(manager._instance_count(), 0);
+        manager._clear_all_instances().unwrap();
+        assert_eq!(manager._instance_count().unwrap(), 0);
     }
 
     /// Test instance manager with user patterns file configured
@@ -127,14 +129,14 @@ mod tests {
 
         // Get instance (should configure with user patterns)
         let instance = manager.get_instance(&config).unwrap();
-        assert_eq!(manager._instance_count(), 1);
+        assert_eq!(manager._instance_count().unwrap(), 1);
 
         // Verify instance is created successfully
         assert!(instance.lock().is_ok());
 
         // Clean up
-        manager._clear_all_instances();
-        assert_eq!(manager._instance_count(), 0);
+        manager._clear_all_instances().unwrap();
+        assert_eq!(manager._instance_count().unwrap(), 0);
     }
 
     /// Test image path validation with valid inputs
@@ -320,7 +322,7 @@ mod tests {
         let circuit_breaker = CircuitBreaker::new(config.recovery.clone());
 
         // Initially circuit breaker should be closed
-        assert!(!circuit_breaker.is_open());
+        assert!(!circuit_breaker.is_open().unwrap());
 
         // Create a temporary file for testing
         let mut temp_file = NamedTempFile::new().unwrap();
@@ -638,7 +640,7 @@ mod tests {
 
         // Verify that different model types create separate instances
         // (they should have different keys in the instance map)
-        assert_eq!(manager._instance_count(), 2);
+        assert_eq!(manager._instance_count().unwrap(), 2);
     }
 
     /// Test model type instance isolation
@@ -664,14 +666,14 @@ mod tests {
         let _best_instance1 = manager.get_instance(&best_config).unwrap();
 
         // Should have 2 instances (different model types)
-        assert_eq!(manager._instance_count(), 2);
+        assert_eq!(manager._instance_count().unwrap(), 2);
 
         // Get same instances again (should reuse)
         let _fast_instance2 = manager.get_instance(&fast_config).unwrap();
         let _best_instance2 = manager.get_instance(&best_config).unwrap();
 
         // Should still have only 2 instances
-        assert_eq!(manager._instance_count(), 2);
+        assert_eq!(manager._instance_count().unwrap(), 2);
     }
 
     /// Test model type performance expectations
@@ -696,7 +698,7 @@ mod tests {
         let circuit_breaker = CircuitBreaker::new(config.recovery.clone());
 
         // Initially circuit breaker should be closed
-        assert!(!circuit_breaker.is_open());
+        assert!(!circuit_breaker.is_open().unwrap());
 
         // Create a temporary file for testing
         let mut temp_file = NamedTempFile::new().unwrap();

@@ -17,6 +17,7 @@ use regex::Regex;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fs;
+use std::sync::Arc;
 use tracing::{debug, info, trace, warn};
 
 /// Represents a detected measurement in text
@@ -415,14 +416,16 @@ fn build_measurement_regex_pattern() -> String {
 
 // Lazy static regex for default pattern to avoid recompilation
 lazy_static! {
-    static ref DEFAULT_REGEX: Regex = Regex::new(&build_measurement_regex_pattern())
-        .expect("Default measurement pattern should be valid");
+    static ref DEFAULT_REGEX: Arc<Regex> = Arc::new(
+        Regex::new(&build_measurement_regex_pattern())
+            .expect("Default measurement pattern should be valid")
+    );
 }
 
 /// Measurement detector using regex patterns for English and French units
 pub struct MeasurementDetector {
     /// Compiled regex pattern for detecting measurements
-    pattern: Regex,
+    pattern: Arc<Regex>,
     /// Configuration options
     config: MeasurementConfig,
 }
@@ -443,7 +446,7 @@ impl MeasurementDetector {
     pub fn new() -> Result<Self, regex::Error> {
         info!("Creating new MeasurementDetector with default configuration");
         Ok(Self {
-            pattern: DEFAULT_REGEX.clone(),
+            pattern: Arc::clone(&DEFAULT_REGEX),
             config: MeasurementConfig::default(),
         })
     }
@@ -480,7 +483,7 @@ impl MeasurementDetector {
     /// ```
     #[allow(dead_code)]
     pub fn with_pattern(pattern: &str) -> Result<Self, regex::Error> {
-        let pattern = Regex::new(pattern)?;
+        let pattern = Arc::new(Regex::new(pattern)?);
         Ok(Self {
             pattern,
             config: MeasurementConfig::default(),
@@ -518,10 +521,10 @@ impl MeasurementDetector {
 
         let pattern = if let Some(custom_pattern) = &config.custom_pattern {
             debug!("Using custom regex pattern: {}", custom_pattern);
-            Regex::new(custom_pattern)?
+            Arc::new(Regex::new(custom_pattern)?)
         } else {
             debug!("Using default regex pattern");
-            DEFAULT_REGEX.clone()
+            Arc::clone(&DEFAULT_REGEX)
         };
 
         info!("Creating MeasurementDetector with custom config: postprocessing={}, max_length={}, count_measurements={}",
@@ -791,17 +794,17 @@ impl MeasurementDetector {
                             in_word = false;
 
                             // Look ahead to see if this word is followed by a digit
-                            let mut temp_chars = chars.clone();
                             let mut found_digit_after_whitespace = false;
 
-                            // Skip whitespace
-                            for next_ch in temp_chars.by_ref() {
+                            // Skip whitespace using peek
+                            while let Some(&next_ch) = chars.peek() {
                                 if !next_ch.is_whitespace() {
                                     if next_ch.is_ascii_digit() {
                                         found_digit_after_whitespace = true;
                                     }
                                     break;
                                 }
+                                chars.next(); // Consume the whitespace
                             }
 
                             if found_digit_after_whitespace {

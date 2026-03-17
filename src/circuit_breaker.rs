@@ -9,6 +9,15 @@ use std::time::{Duration, Instant};
 
 use crate::ocr_config::RecoveryConfig;
 
+/// Errors that can occur in circuit breaker operations
+#[derive(Debug, thiserror::Error)]
+pub enum CircuitBreakerError {
+    #[error("Failed to acquire failure count lock")]
+    FailureCountLockError,
+    #[error("Failed to acquire last failure time lock")]
+    LastFailureTimeLockError,
+}
+
 /// Circuit breaker for OCR operations
 ///
 /// Implements the circuit breaker pattern to prevent cascading failures in OCR processing.
@@ -139,41 +148,41 @@ impl CircuitBreaker {
     ///
     /// # Returns
     ///
-    /// `true` if circuit is open and should block requests, `false` if closed
+    /// `Result<bool, CircuitBreakerError>` - `true` if circuit is open and should block requests, `false` if closed
     ///
     /// # Behavior
     ///
     /// - Returns `true` when failure count >= threshold and reset time hasn't elapsed
     /// - Automatically resets to closed state after reset timeout
     /// - Thread-safe using internal mutexes
-    pub fn is_open(&self) -> bool {
+    pub fn is_open(&self) -> Result<bool, CircuitBreakerError> {
         let failure_count = *self
             .failure_count
             .lock()
-            .expect("Failed to acquire failure count lock");
+            .map_err(|_| CircuitBreakerError::FailureCountLockError)?;
         let last_failure = *self
             .last_failure_time
             .lock()
-            .expect("Failed to acquire last failure time lock");
+            .map_err(|_| CircuitBreakerError::LastFailureTimeLockError)?;
 
         if failure_count >= self.config.circuit_breaker_threshold {
             if let Some(last_time) = last_failure {
                 let elapsed = last_time.elapsed();
                 if elapsed < Duration::from_secs(self.config.circuit_breaker_reset_secs) {
-                    return true; // Circuit is still open
+                    return Ok(true); // Circuit is still open
                 }
                 // Reset circuit breaker
                 *self
                     .failure_count
                     .lock()
-                    .expect("Failed to acquire failure count lock") = 0;
+                    .map_err(|_| CircuitBreakerError::FailureCountLockError)? = 0;
                 *self
                     .last_failure_time
                     .lock()
-                    .expect("Failed to acquire last failure time lock") = None;
+                    .map_err(|_| CircuitBreakerError::LastFailureTimeLockError)? = None;
             }
         }
-        false
+        Ok(false)
     }
 
     /// Record a failure to increment the failure counter
@@ -184,15 +193,20 @@ impl CircuitBreaker {
     /// # Thread Safety
     ///
     /// Uses internal mutex for thread-safe updates.
-    pub fn record_failure(&self) {
+    ///
+    /// # Returns
+    ///
+    /// `Result<(), CircuitBreakerError>` on success, or an error if mutex access fails
+    pub fn record_failure(&self) -> Result<(), CircuitBreakerError> {
         *self
             .failure_count
             .lock()
-            .expect("Failed to acquire failure count lock") += 1;
+            .map_err(|_| CircuitBreakerError::FailureCountLockError)? += 1;
         *self
             .last_failure_time
             .lock()
-            .expect("Failed to acquire last failure time lock") = Some(Instant::now());
+            .map_err(|_| CircuitBreakerError::LastFailureTimeLockError)? = Some(Instant::now());
+        Ok(())
     }
 
     /// Record a success to reset the failure counter
@@ -203,14 +217,19 @@ impl CircuitBreaker {
     /// # Thread Safety
     ///
     /// Uses internal mutex for thread-safe updates.
-    pub fn record_success(&self) {
+    ///
+    /// # Returns
+    ///
+    /// `Result<(), CircuitBreakerError>` on success, or an error if mutex access fails
+    pub fn record_success(&self) -> Result<(), CircuitBreakerError> {
         *self
             .failure_count
             .lock()
-            .expect("Failed to acquire failure count lock") = 0;
+            .map_err(|_| CircuitBreakerError::FailureCountLockError)? = 0;
         *self
             .last_failure_time
             .lock()
-            .expect("Failed to acquire last failure time lock") = None;
+            .map_err(|_| CircuitBreakerError::LastFailureTimeLockError)? = None;
+        Ok(())
     }
 }

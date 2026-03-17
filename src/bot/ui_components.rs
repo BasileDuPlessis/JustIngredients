@@ -244,8 +244,12 @@ mod tests {
     impl fmt::Display for TestError {
         fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
             match self {
-                TestError::LocalizationManagerCreation(e) => write!(f, "Failed to create localization manager: {}", e),
-                TestError::UnexpectedButtonType(msg) => write!(f, "Unexpected button type: {}", msg),
+                TestError::LocalizationManagerCreation(e) => {
+                    write!(f, "Failed to create localization manager: {}", e)
+                }
+                TestError::UnexpectedButtonType(msg) => {
+                    write!(f, "Unexpected button type: {}", msg)
+                }
             }
         }
     }
@@ -274,8 +278,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_localized_button() -> Result<(), TestError> {
-        let localization = Arc::new(LocalizationManager::new()
-            .map_err(TestError::LocalizationManagerCreation)?);
+        let localization =
+            Arc::new(LocalizationManager::new().map_err(TestError::LocalizationManagerCreation)?);
 
         let button = create_localized_button(
             &localization,
@@ -289,15 +293,19 @@ mod tests {
             teloxide::types::InlineKeyboardButtonKind::CallbackData(data) => {
                 assert_eq!(data, "test_callback");
             }
-            _ => return Err(TestError::UnexpectedButtonType("Expected callback button".to_string())),
+            _ => {
+                return Err(TestError::UnexpectedButtonType(
+                    "Expected callback button".to_string(),
+                ))
+            }
         }
         Ok(())
     }
 
     #[tokio::test]
     async fn test_create_confirmation_dialog() -> Result<(), TestError> {
-        let localization = Arc::new(LocalizationManager::new()
-            .map_err(TestError::LocalizationManagerCreation)?);
+        let localization =
+            Arc::new(LocalizationManager::new().map_err(TestError::LocalizationManagerCreation)?);
 
         let keyboard = create_confirmation_dialog(
             &localization,
