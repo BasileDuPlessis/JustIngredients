@@ -291,7 +291,7 @@ impl OcrCacheKey {
 #[derive(Debug, Clone)]
 pub struct OcrCacheValue {
     /// Extracted text
-    pub text: String,
+    pub text: Arc<String>,
     /// Processing time
     pub processing_time_ms: u64,
     /// Cached at timestamp
@@ -373,7 +373,7 @@ impl DbCacheKey {
 #[derive(Debug, Clone)]
 pub struct DbCacheValue {
     /// Query result data
-    pub data: Vec<u8>,
+    pub data: Arc<Vec<u8>>,
     /// Result size in bytes
     pub size_bytes: usize,
     /// Cached at timestamp
@@ -476,12 +476,12 @@ impl DbQueryCache {
             Ok(d) => d,
             Err(_) => return, // Skip eviction on lock error
         };
-        let mut entries_to_remove = Vec::new();
+        let mut keys_to_remove = Vec::new();
 
         // Find entries to evict (starting with expired ones, then oldest)
         for (key, entry) in data.iter() {
             if entry.is_expired() {
-                entries_to_remove.push(key.clone());
+                keys_to_remove.push(key.clone());
                 if let Ok(mut size) = self.current_size_bytes.write() {
                     *size = size.saturating_sub(entry.value.size_bytes);
                 }
@@ -505,7 +505,7 @@ impl DbQueryCache {
                 if freed_space >= space_needed {
                     break;
                 }
-                entries_to_remove.push(key.clone());
+                keys_to_remove.push(key.clone());
                 freed_space += entry.value.size_bytes;
                 if let Ok(mut size) = self.current_size_bytes.write() {
                     *size = size.saturating_sub(entry.value.size_bytes);
@@ -513,8 +513,8 @@ impl DbQueryCache {
             }
         }
 
-        let evicted_count = entries_to_remove.len();
-        for key in entries_to_remove {
+        let evicted_count = keys_to_remove.len();
+        for key in keys_to_remove {
             data.remove(&key);
         }
 
@@ -703,14 +703,14 @@ mod tests {
 
         let key1 = DbCacheKey::new("query1", "params1");
         let value1 = DbCacheValue {
-            data: vec![0; 60], // 60 bytes
+            data: Arc::new(vec![0; 60]), // 60 bytes
             size_bytes: 60,
             cached_at: Instant::now(),
         };
 
         let key2 = DbCacheKey::new("query2", "params2");
         let value2 = DbCacheValue {
-            data: vec![0; 50], // 50 bytes
+            data: Arc::new(vec![0; 50]), // 50 bytes
             size_bytes: 50,
             cached_at: Instant::now(),
         };
@@ -726,7 +726,7 @@ mod tests {
         // Insert third value that would exceed limit - should trigger eviction
         let key3 = DbCacheKey::new("query3", "params3");
         let value3 = DbCacheValue {
-            data: vec![0; 60], // 60 bytes
+            data: Arc::new(vec![0; 60]), // 60 bytes
             size_bytes: 60,
             cached_at: Instant::now(),
         };
