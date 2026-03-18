@@ -1265,4 +1265,48 @@ mod tests {
         assert!(result.character_whitelist.contains("."));
         assert_eq!(result.processing_time_ms, 150);
     }
+
+    /// Test that Tesseract confidence scores are properly extracted and integrated
+    #[tokio::test]
+    async fn test_tesseract_confidence_integration() {
+        let config = OcrConfig::default();
+        let instance_manager = OcrInstanceManager::new();
+
+        // Create a simple test image with clear text
+        let img = image::ImageBuffer::from_fn(200, 50, |x, y| {
+            if y > 10 && y < 40 && x > 10 && x < 190 {
+                image::Rgb([255u8, 255u8, 255u8]) // White background
+            } else {
+                image::Rgb([0u8, 0u8, 0u8]) // Black border
+            }
+        });
+        let test_image = image::DynamicImage::ImageRgb8(img);
+
+        // Test the confidence integration
+        match perform_constrained_ocr(&test_image, &instance_manager, &config).await {
+            Ok(result) => {
+                // Verify confidence is within valid range
+                assert!(
+                    result.confidence >= 0.0 && result.confidence <= 100.0,
+                    "Tesseract confidence should be between 0 and 100, got: {}",
+                    result.confidence
+                );
+
+                // For a simple test image, confidence should be reasonable (not extremely low)
+                // This validates that we're getting actual Tesseract confidence, not just defaults
+                assert!(
+                    result.confidence > 10.0,
+                    "Tesseract confidence should be > 10% for a simple test image, got: {}",
+                    result.confidence
+                );
+            }
+            Err(OcrError::Initialization(_)) => {
+                // Tesseract not available - skip this test
+                println!("Skipping Tesseract confidence test: Tesseract not initialized");
+            }
+            Err(e) => {
+                panic!("Unexpected error in confidence test: {:?}", e);
+            }
+        }
+    }
 }

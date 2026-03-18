@@ -98,10 +98,13 @@ pub async fn handle_recipes_command(
     pool: Arc<PgPool>,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
+    cache: Option<&std::sync::Mutex<crate::cache::CacheManager>>,
 ) -> Result<()> {
     debug!(user_id = %msg.chat.id, "Handling /recipes command");
 
     // Get paginated recipes for the user
+    // Note: For now, we don't cache recipe lists since they change frequently
+    // But we could cache user lookups if needed
     let (recipes, total_count) = get_user_recipes_paginated(&pool, msg.chat.id.0, 5, 0).await?;
 
     if recipes.is_empty() {

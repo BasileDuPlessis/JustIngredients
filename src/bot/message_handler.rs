@@ -364,7 +364,7 @@ async fn handle_text_message(
         }
         // Handle /recipes command
         else if text == "/recipes" {
-            return handle_recipes_command(bot, msg, pool, language_code, localization).await;
+            return handle_recipes_command(bot, msg, pool, language_code, localization, None).await;
         }
         // Handle regular text messages
         else {
@@ -574,10 +574,63 @@ pub async fn message_handler_with_cache(
     pool: Arc<PgPool>,
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
-    _cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
+    cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
     deduplicator: Option<&crate::deduplication::SharedDeduplicator>,
 ) -> Result<()> {
-    // For now, delegate to the original handler
-    // TODO: Integrate caching into specific operations
+    let span = crate::observability::telegram_span(
+        "message_handler_with_cache",
+        msg.from.as_ref().map(|u| u.id.0 as i64),
+    );
+    let _enter = span.enter();
+
+    // Check for duplicate requests if deduplicator is provided
+    if let Some(dedup) = deduplicator {
+        let request_id = crate::deduplication::RequestId::new(msg.chat.id, msg.id);
+        if dedup.is_duplicate(&request_id)? {
+            debug!(
+                "Ignoring duplicate request: chat_id={}, message_id={}",
+                msg.chat.id, msg.id
+            );
+            observability::record_telegram_duplicate_message();
+            return Ok(());
+        }
+    }
+
+    let start_time = std::time::Instant::now();
+    let message_type = if msg.text().is_some() {
+        "text"
+    } else if msg.photo().is_some() {
+        "photo"
+    } else if msg.document().is_some() {
+        "document"
+    } else {
+        "unsupported"
+    };
+
+    observability::record_telegram_message(message_type);
+
+    // Handle commands with caching support
+    if let Some(text) = msg.text() {
+        if text.starts_with("/recipes") {
+            debug!(user_id = %msg.chat.id, "Handling /recipes command with caching");
+            let language_code = msg
+                .from
+                .as_ref()
+                .and_then(|user| user.language_code.as_ref())
+                .map(|s| s.as_str());
+
+            return crate::bot::command_handlers::handle_recipes_command(
+                &bot,
+                &msg,
+                pool,
+                language_code,
+                &localization,
+                Some(&*cache),
+            )
+            .await;
+        }
+    }
+
+    // For other operations, delegate to the regular handler
     message_handler(bot, msg, pool, dialogue, localization, deduplicator).await
 }

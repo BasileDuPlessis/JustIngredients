@@ -74,7 +74,11 @@ pub async fn handle_recipe_selection(
 
             let message = format!(
                 "📖 **{}**\n\n📅 {}\n\n{}",
-                recipe.recipe_name.as_ref().map(|s| s.as_str()).unwrap_or("Unnamed Recipe"),
+                recipe
+                    .recipe_name
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or("Unnamed Recipe"),
                 recipe.created_at.format("%B %d, %Y at %H:%M"),
                 if ingredients.is_empty() {
                     t_lang(
@@ -163,7 +167,11 @@ pub async fn handle_recipe_instance_selection(
 
     let message = format!(
         "📖 **{}**\n\n📅 {}\n\n{}",
-        recipe.recipe_name.as_ref().map(|s| s.as_str()).unwrap_or("Unnamed Recipe"),
+        recipe
+            .recipe_name
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("Unnamed Recipe"),
         recipe.created_at.format("%B %d, %Y at %H:%M"),
         if ingredients.is_empty() {
             t_lang(
@@ -222,7 +230,11 @@ pub async fn handle_recipe_action(
         "rename" => {
             // Get current recipe details
             if let Ok(Some(recipe)) = crate::db::read_recipe_with_name(&pool, recipe_id).await {
-                let current_name = recipe.recipe_name.as_ref().map(|s| s.as_str()).unwrap_or("Unnamed Recipe");
+                let current_name = recipe
+                    .recipe_name
+                    .as_ref()
+                    .map(|s| s.as_str())
+                    .unwrap_or("Unnamed Recipe");
 
                 let message = format!(
                     "🏷️ **{}**\n\n{}: **{}**\n\n{}",
@@ -370,7 +382,11 @@ pub async fn handle_recipe_statistics(
     let user_stats = crate::db::get_user_recipe_statistics(&pool, chat_id.0).await?;
 
     // Format statistics message
-    let recipe_name = recipe.recipe_name.as_ref().map(|s| s.as_str()).unwrap_or("Unnamed Recipe");
+    let recipe_name = recipe
+        .recipe_name
+        .as_ref()
+        .map(|s| s.as_str())
+        .unwrap_or("Unnamed Recipe");
 
     let mut stats_message = format!(
         "📊 **{}: {}**\n\n",
@@ -744,7 +760,11 @@ async fn handle_edit_ingredients_callback(
     let edit_message = format!(
         "✏️ **{}: {}**\n\n{}\n\n{}",
         t_lang(localization, "editing-recipe", language_code.as_deref()),
-        recipe.recipe_name.as_ref().map(|s| s.as_str()).unwrap_or("Unnamed Recipe"),
+        recipe
+            .recipe_name
+            .as_ref()
+            .map(|s| s.as_str())
+            .unwrap_or("Unnamed Recipe"),
         t_lang(
             localization,
             "editing-instructions",

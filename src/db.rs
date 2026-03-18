@@ -751,7 +751,7 @@ pub async fn read_recipe_with_name(pool: &PgPool, recipe_id: i64) -> Result<Opti
                 id: row.get(0),
                 telegram_id: row.get(1),
                 content: std::sync::Arc::new(row.get(2)),
-                recipe_name: row.get::<Option<String>, _>(3).map(|s| std::sync::Arc::new(s)),
+                recipe_name: row.get::<Option<String>, _>(3).map(std::sync::Arc::new),
                 created_at: row.get(4),
             };
             debug!(recipe_id = %recipe_id, "Recipe with recipe found");
@@ -781,7 +781,7 @@ pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Res
             id: row.get(0),
             telegram_id: row.get(1),
             content: std::sync::Arc::new(row.get(2)),
-            recipe_name: row.get::<Option<String>, _>(3).map(|s| std::sync::Arc::new(s)),
+            recipe_name: row.get::<Option<String>, _>(3).map(std::sync::Arc::new),
             created_at: row.get(4),
         })
         .collect();
@@ -817,7 +817,7 @@ pub async fn get_recipes_by_name(
             id: row.get(0),
             telegram_id: row.get(1),
             content: std::sync::Arc::new(row.get(2)),
-            recipe_name: row.get::<Option<String>, _>(3).map(|s| std::sync::Arc::new(s)),
+            recipe_name: row.get::<Option<String>, _>(3).map(std::sync::Arc::new),
             created_at: row.get(4),
         })
         .collect();
@@ -832,6 +832,85 @@ pub async fn get_recipes_by_name(
 
     debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, count = recipes.len(), duration_ms = %duration.as_millis(), "Recipes by name retrieved successfully");
     Ok(recipes)
+}
+
+/// Get all recipes with a specific name for a user with caching
+pub async fn get_recipes_by_name_cached(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_name: &str,
+    cache: &std::sync::Mutex<crate::cache::CacheManager>,
+) -> Result<Vec<Recipe>> {
+    let cache_key = format!("recipes_by_name:{}:{}", telegram_id, recipe_name);
+
+    // Try cache first
+    {
+        let cache_manager = match cache.lock() {
+            Ok(manager) => manager,
+            Err(poisoned) => {
+                crate::observability::record_mutex_poisoning("cache_manager", "recipe_lookup");
+                poisoned.into_inner()
+            }
+        };
+        if let Some(recipes) = cache_manager.recipe_list_cache.get(&cache_key) {
+            debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, "Recipes found in cache");
+            return Ok(recipes);
+        }
+    }
+
+    // Cache miss - fetch from database
+    let recipes = get_recipes_by_name(pool, telegram_id, recipe_name).await?;
+
+    // Cache the result
+    {
+        let mut cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
+        cache_manager.recipe_list_cache.insert(
+            cache_key,
+            recipes.clone(),
+            std::time::Duration::from_secs(300),
+        ); // 5 minutes
+    }
+
+    Ok(recipes)
+}
+
+/// Get all ingredients for a specific recipe with caching
+pub async fn get_recipe_ingredients_cached(
+    pool: &PgPool,
+    recipe_id: i64,
+    cache: &std::sync::Mutex<crate::cache::CacheManager>,
+) -> Result<Vec<Ingredient>> {
+    let cache_key = format!("recipe_ingredients:{}", recipe_id);
+
+    // Try cache first
+    {
+        let cache_manager = match cache.lock() {
+            Ok(manager) => manager,
+            Err(poisoned) => {
+                crate::observability::record_mutex_poisoning("cache_manager", "ingredient_lookup");
+                poisoned.into_inner()
+            }
+        };
+        if let Some(ingredients) = cache_manager.ingredient_list_cache.get(&cache_key) {
+            debug!(recipe_id = %recipe_id, "Recipe ingredients found in cache");
+            return Ok(ingredients);
+        }
+    }
+
+    // Cache miss - fetch from database
+    let ingredients = get_recipe_ingredients(pool, recipe_id).await?;
+
+    // Cache the result
+    {
+        let mut cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
+        cache_manager.ingredient_list_cache.insert(
+            cache_key,
+            ingredients.clone(),
+            std::time::Duration::from_secs(300),
+        ); // 5 minutes
+    }
+
+    Ok(ingredients)
 }
 
 /// Check if a recipe name has duplicates for a user

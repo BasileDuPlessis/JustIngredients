@@ -913,9 +913,24 @@ impl MeasurementDetector {
                 // POSITION TRACKING: Calculate start/end positions within entire text
                 // current_pos tracks the cumulative position across all processed lines
                 // This ensures accurate character offsets for match reporting
-                // TODO: Task 7c - Update position tracking for multi-line ingredients
-                // When extract_multi_line_ingredient() combines multiple lines,
-                // we need to adjust current_pos and line_number accordingly
+                // For multi-line ingredients, the end position should be the end of the last consumed line
+                let adjusted_match_end_pos = if lines_consumed > 1 {
+                    // Calculate the end position as the end of the last consumed line
+                    let mut end_pos = current_pos;
+                    for i in 0..lines_consumed {
+                        let line_idx = line_index + i;
+                        if line_idx < all_lines.len() {
+                            end_pos += all_lines[line_idx].len();
+                            if i < lines_consumed - 1 {
+                                end_pos += 1; // +1 for newline between lines
+                            }
+                        }
+                    }
+                    end_pos
+                } else {
+                    // Single-line ingredient: use the original calculation
+                    current_pos + match_end_pos
+                };
 
                 // ANOMALY DETECTION: Check if quantity needs user confirmation
                 let requires_confirmation = self.is_quantity_anomalous(&final_quantity);
@@ -931,7 +946,7 @@ impl MeasurementDetector {
                     ingredient_name,
                     line_number,
                     start_pos: current_pos + full_match.start(),
-                    end_pos: current_pos + match_end_pos,
+                    end_pos: adjusted_match_end_pos,
                     requires_quantity_confirmation: requires_confirmation,
                 });
             }

@@ -171,14 +171,18 @@ where
     }
 
     /// Helper method to acquire read lock on data with proper error handling
-    fn read_data(&self) -> Result<std::sync::RwLockReadGuard<'_, HashMap<K, CacheEntry<V>>>, CacheError> {
+    fn read_data(
+        &self,
+    ) -> Result<std::sync::RwLockReadGuard<'_, HashMap<K, CacheEntry<V>>>, CacheError> {
         self.data
             .read()
             .map_err(|e| CacheError::ReadLockDataError(e.to_string()))
     }
 
     /// Helper method to acquire write lock on data with proper error handling
-    fn write_data(&self) -> Result<std::sync::RwLockWriteGuard<'_, HashMap<K, CacheEntry<V>>>, CacheError> {
+    fn write_data(
+        &self,
+    ) -> Result<std::sync::RwLockWriteGuard<'_, HashMap<K, CacheEntry<V>>>, CacheError> {
         self.data
             .write()
             .map_err(|e| CacheError::WriteLockDataError(e.to_string()))
@@ -561,6 +565,10 @@ pub struct CacheManager {
     pub user_cache: MemoryCache<i64, crate::db::User>,
     /// Recipe data cache
     pub recipe_cache: MemoryCache<i64, crate::db::Recipe>,
+    /// Recipe list cache (for queries returning Vec<Recipe>)
+    pub recipe_list_cache: MemoryCache<String, Vec<crate::db::Recipe>>,
+    /// Ingredient list cache (for queries returning Vec<Ingredient>)
+    pub ingredient_list_cache: MemoryCache<String, Vec<crate::db::Ingredient>>,
 }
 
 impl CacheManager {
@@ -571,6 +579,8 @@ impl CacheManager {
             db_cache: DbQueryCache::new(Duration::from_secs(300), 50 * 1024 * 1024), // 5 min, 50MB
             user_cache: MemoryCache::new(),
             recipe_cache: MemoryCache::new(),
+            recipe_list_cache: MemoryCache::new(),
+            ingredient_list_cache: MemoryCache::new(),
         }
     }
 
@@ -587,6 +597,8 @@ impl CacheManager {
             db_cache: DbQueryCache::new(db_ttl, db_max_size_bytes),
             user_cache: MemoryCache::new(),
             recipe_cache: MemoryCache::new(),
+            recipe_list_cache: MemoryCache::new(),
+            ingredient_list_cache: MemoryCache::new(),
         }
     }
 

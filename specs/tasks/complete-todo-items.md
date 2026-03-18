@@ -11,19 +11,19 @@ Implement the incomplete features marked with TODO comments throughout the codeb
 
 ## Micro-Tasks (1-hour each)
 
-### Task 1: Implement multi-line ingredient position tracking
+### Task 1: Implement multi-line ingredient position tracking [DONE]
 - Address TODO in text_processing.rs (line ~913)
 - Implement position tracking for multi-line ingredients
 - Update parsing logic
 - Add tests
 
-### Task 2: Integrate Tesseract confidence scores
+### Task 2: Integrate Tesseract confidence scores [DONE]
 - Address TODO in ocr/extraction.rs (line ~166)
 - Integrate confidence scores from Tesseract
 - Update extraction results
 - Add validation
 
-### Task 3: Implement caching integration in message handlers
+### Task 3: Implement caching integration in message handlers [DONE]
 - Address TODO in bot/message_handler.rs (line ~581)
 - Integrate caching for bot responses
 - Update callback handlers (line ~184)

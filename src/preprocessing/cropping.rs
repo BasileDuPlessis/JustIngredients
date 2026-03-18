@@ -184,10 +184,10 @@ mod tests {
             ))
         })?;
         let result = crop_measurement_region(path_str, &bbox).map_err(|e| {
-            TestError::TempFileCreation(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("crop_measurement_region failed: {:?}", e),
-            ))
+            TestError::TempFileCreation(std::io::Error::other(format!(
+                "crop_measurement_region failed: {:?}",
+                e
+            )))
         })?;
 
         // Verify the cropped image was created
@@ -218,10 +218,10 @@ mod tests {
             ))
         })?;
         let result = crop_measurement_region(path_str, &bbox).map_err(|e| {
-            TestError::TempFileCreation(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                format!("crop_measurement_region failed: {:?}", e),
-            ))
+            TestError::TempFileCreation(std::io::Error::other(format!(
+                "crop_measurement_region failed: {:?}",
+                e
+            )))
         })?;
 
         // Should not go negative and should be clamped to image bounds

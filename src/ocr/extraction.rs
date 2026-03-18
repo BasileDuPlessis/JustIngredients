@@ -161,10 +161,10 @@ pub async fn perform_ocr_extraction(
             })?;
 
             // Extract confidence score from Tesseract
-            // NOTE: The leptess crate (v0.14) does not expose Tesseract's confidence methods.
-            // Using a default confidence score based on successful OCR completion.
-            // TODO: Consider using a different Tesseract binding that exposes confidence scores.
-            let confidence = 75.0; // Default confidence for successful OCR
+            let confidence = match tess.mean_text_conf() {
+                conf if conf >= 0 => conf as f32,
+                _ => 75.0, // Default confidence when Tesseract returns invalid confidence
+            };
 
             (text, confidence)
         };

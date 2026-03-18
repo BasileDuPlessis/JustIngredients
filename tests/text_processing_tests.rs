@@ -195,18 +195,25 @@ mod tests {
         assert_eq!(matches[0].measurement, Some("cups".to_string()));
         assert_eq!(matches[0].ingredient_name, "old-fashioned rolled oats");
         assert_eq!(matches[0].line_number, 1); // Measurement found on line 1
+                                               // Position tracking: should span from "2" to end of "rolled oats"
+        assert_eq!(matches[0].start_pos, 8); // Position of "2" in text
+        assert_eq!(matches[0].end_pos, 40); // End of "rolled oats" line
 
         // Second match: "1 cup sugar" (single-line)
         assert_eq!(matches[1].quantity, "1");
         assert_eq!(matches[1].measurement, Some("cup".to_string()));
         assert_eq!(matches[1].ingredient_name, "sugar");
         assert_eq!(matches[1].line_number, 3); // Measurement found on line 3
+        assert_eq!(matches[1].start_pos, 41); // Position of "1" in text
+        assert_eq!(matches[1].end_pos, 52); // End of "1 cup sugar"
 
         // Third match: "3 eggs" (single-line, quantity-only)
         assert_eq!(matches[2].quantity, "3");
         assert_eq!(matches[2].measurement, None);
         assert_eq!(matches[2].ingredient_name, "eggs");
         assert_eq!(matches[2].line_number, 4); // Measurement found on line 4
+        assert_eq!(matches[2].start_pos, 53); // Position of "3" in text
+        assert_eq!(matches[2].end_pos, 59); // End of "3 eggs"
     }
 
     #[test]

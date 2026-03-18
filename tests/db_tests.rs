@@ -87,14 +87,20 @@ async fn test_recipe_operations_impl(pool: &PgPool) -> Result<()> {
     assert!(recipe.is_some());
     let recipe = recipe.unwrap();
     assert_eq!(recipe.telegram_id, 12345);
-    assert_eq!(recipe.content, std::sync::Arc::new("Test OCR content".to_string()));
+    assert_eq!(
+        recipe.content,
+        std::sync::Arc::new("Test OCR content".to_string())
+    );
 
     // Update recipe
     let updated = update_recipe(pool, recipe_id, "Updated content").await?;
     assert!(updated);
 
     let updated_recipe = read_recipe(pool, recipe_id).await?;
-    assert_eq!(updated_recipe.unwrap().content, "Updated content");
+    assert_eq!(
+        updated_recipe.unwrap().content,
+        std::sync::Arc::new("Updated content".to_string())
+    );
 
     // Delete recipe
     let deleted = delete_recipe(pool, recipe_id).await?;
@@ -270,14 +276,23 @@ async fn test_get_recipes_by_name_impl(pool: &PgPool) -> Result<()> {
     // Verify the recipes are returned in descending creation order (most recent first)
     assert_eq!(recipes[0].id, recipe2_id); // Second recipe created (most recent)
     assert_eq!(recipes[1].id, recipe1_id); // First recipe created
-    assert_eq!(recipes[0].recipe_name.as_ref().unwrap(), "Chocolate Cake");
-    assert_eq!(recipes[1].recipe_name.as_ref().unwrap(), "Chocolate Cake");
+    assert_eq!(
+        recipes[0].recipe_name.as_ref().unwrap().as_ref(),
+        "Chocolate Cake"
+    );
+    assert_eq!(
+        recipes[1].recipe_name.as_ref().unwrap().as_ref(),
+        "Chocolate Cake"
+    );
 
     // Test getting single recipe
     let recipes = get_recipes_by_name(pool, 12345, "Vanilla Pudding").await?;
     assert_eq!(recipes.len(), 1);
     assert_eq!(recipes[0].id, recipe3_id);
-    assert_eq!(recipes[0].recipe_name.as_ref().unwrap(), "Vanilla Pudding");
+    assert_eq!(
+        recipes[0].recipe_name.as_ref().unwrap().as_ref(),
+        "Vanilla Pudding"
+    );
 
     // Test getting recipes for different user
     let recipes = get_recipes_by_name(pool, 67890, "Chocolate Cake").await?;
