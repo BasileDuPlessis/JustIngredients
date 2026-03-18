@@ -72,7 +72,6 @@ pub async fn extract_hocr_from_image(
         })?;
 
         // Extract HOCR text with spatial information
-        // TODO: Replace placeholder with actual leptess HOCR extraction
         perform_hocr_extraction(&mut tess, image_path)
     })
     .await
