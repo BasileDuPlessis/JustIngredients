@@ -98,7 +98,7 @@ pub async fn handle_recipes_command(
     pool: Arc<PgPool>,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
-    cache: Option<&std::sync::Mutex<crate::cache::CacheManager>>,
+    _cache: Option<&std::sync::Mutex<crate::cache::CacheManager>>,
 ) -> Result<()> {
     debug!(user_id = %msg.chat.id, "Handling /recipes command");
 

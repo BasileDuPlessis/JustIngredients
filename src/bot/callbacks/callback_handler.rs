@@ -20,7 +20,7 @@ use crate::bot::ui_builder::{
 };
 
 // Import database functions
-use crate::db::read_recipe_with_name;
+// (using cached versions where available)
 
 // Import workflow callbacks module
 use super::workflow_callbacks;

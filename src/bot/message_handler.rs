@@ -632,5 +632,10 @@ pub async fn message_handler_with_cache(
     }
 
     // For other operations, delegate to the regular handler
-    message_handler(bot, msg, pool, dialogue, localization, deduplicator).await
+    message_handler(bot, msg, pool, dialogue, localization, deduplicator).await?;
+
+    let duration = start_time.elapsed();
+    observability::record_request_metrics("telegram_message_cached", 200, duration);
+
+    Ok(())
 }
