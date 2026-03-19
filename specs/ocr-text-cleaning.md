@@ -41,11 +41,12 @@ Should become:
 - **Extensibility**: Easy to add more cleaning patterns
 
 ### Success Criteria
-- [ ] Leading dashes removed from all lines
-- [ ] Leading dots removed from all lines
-- [ ] Ingredient parsing accuracy improved by >10%
-- [ ] No content accidentally removed
-- [ ] Performance impact < 1ms per operation
+- [x] Leading dashes removed from all lines
+- [x] Leading dots removed from all lines (including bullet points •)
+- [x] Ingredient parsing accuracy improved by >10%
+- [x] No content accidentally removed
+- [x] Performance impact < 1ms per operation
+- [x] Artifact count returned for observability metrics
 
 ## Architecture
 
@@ -102,24 +103,31 @@ fn clean_ocr_artifacts(text: &str) -> String {
 ```rust
 /// Clean OCR artifacts from extracted text
 ///
-/// Removes leading dashes (-) and dots (.) from each line of OCR text.
-/// This improves ingredient parsing accuracy by removing common
+/// Removes leading dashes (-), dots (.), and bullet points (•) from each line
+/// of OCR text. This improves ingredient parsing accuracy by removing common
 /// formatting artifacts from recipe images.
 ///
 /// # Arguments
 /// * `text` - Raw OCR extracted text
 ///
 /// # Returns
-/// * `String` - Cleaned text with artifacts removed
+/// * `(String, u32)` - Tuple of (cleaned text, number of artifacts removed)
 ///
 /// # Examples
 /// ```
+/// use just_ingredients::ocr::clean_ocr_artifacts;
 /// let raw = "- 2 cups flour\n• 1 tsp salt";
-/// let clean = clean_ocr_artifacts(raw);
+/// let (clean, artifacts) = clean_ocr_artifacts(raw);
 /// assert_eq!(clean, "2 cups flour\n1 tsp salt");
+/// assert_eq!(artifacts, 2);
 /// ```
-pub fn clean_ocr_artifacts(text: &str) -> String
+pub fn clean_ocr_artifacts(text: &str) -> (String, u32)
 ```
+
+### Integration Points
+- **OCR Extraction** (`src/ocr/extraction.rs`): Called after basic text cleaning, integrated at lines ~185 and ~362
+- **Metrics** (`src/observability/metrics.rs`): `record_ocr_cleaning_metrics()` tracks artifact counts per operation
+- **Testing**: Comprehensive unit tests cover all artifact patterns, edge cases, and multi-line scenarios
 
 ### Integration Points
 - **OCR Extraction**: Called after basic text cleaning
@@ -128,22 +136,22 @@ pub fn clean_ocr_artifacts(text: &str) -> String
 
 ## Implementation Plan
 
-### Phase 1: Core Implementation
-- [ ] Create `clean_ocr_artifacts()` function
-- [ ] Add comprehensive unit tests
-- [ ] Integrate into OCR extraction pipeline
-- [ ] Test with sample recipe images
+### Phase 1: Core Implementation ✅
+- [x] Create `clean_ocr_artifacts()` function
+- [x] Add comprehensive unit tests
+- [x] Integrate into OCR extraction pipeline
+- [x] Test with sample recipe images
 
-### Phase 2: Validation & Optimization
-- [ ] Performance benchmarking
-- [ ] Accuracy testing with real OCR data
-- [ ] Edge case validation
-- [ ] Documentation updates
+### Phase 2: Validation & Optimization ✅
+- [x] Performance benchmarking
+- [x] Accuracy testing with real OCR data
+- [x] Edge case validation
+- [x] Documentation updates
 
-### Phase 3: Monitoring & Maintenance
-- [ ] Add metrics for cleaning effectiveness
-- [ ] Monitor ingredient parsing improvements
-- [ ] Update tests as new artifacts discovered
+### Phase 3: Monitoring & Maintenance ✅
+- [x] Add metrics for cleaning effectiveness (`record_ocr_cleaning_metrics()`)
+- [x] Monitor ingredient parsing improvements
+- [x] Update tests as new artifacts discovered (bullet point • support added)
 
 ## Testing Strategy
 

@@ -22,25 +22,35 @@ The Telegram bot feature provides the user interface for the ingredient extracti
 - **Security**: Safe file handling and input validation
 
 ### Success Criteria
-- [ ] All message types handled appropriately
-- [ ] Image upload and processing works seamlessly
-- [ ] Conversation state maintained correctly
-- [ ] Commands respond with helpful information
-- [ ] Multi-language support functional
-- [ ] Error messages are user-friendly
+- [x] All message types handled appropriately
+- [x] Image upload and processing works seamlessly
+- [x] Conversation state maintained correctly
+- [x] Commands respond with helpful information
+- [x] Multi-language support functional
+- [x] Error messages are user-friendly
+- [x] Inline ingredient editing supported
+- [x] Interactive callback buttons for review and editing
 
 ## Architecture
 
 ### Component Design
 ```
-Telegram Bot Layer
-├── Message Handler       # Route incoming messages
-├── Image Processor       # Handle photo/document uploads
-├── Dialogue Manager      # Conversation state and flow
-├── Command Handler       # Bot commands (/start, /help)
-├── UI Builder           # Response formatting and keyboards
-├── Localization         # Multi-language support
-└── Callback Handler     # Interactive button responses
+Telegram Bot Layer (src/bot/)
+├── message_handler.rs      # Route incoming messages
+├── media_handlers.rs       # Handle photo/document uploads
+├── dialogue_manager.rs     # Conversation state and flow
+├── command_handlers.rs     # Bot commands (/start, /help, /list, /search, /delete)
+├── ui_builder.rs          # Response formatting and keyboards
+├── ui_components.rs       # Reusable UI component helpers
+├── image_processing.rs    # Image download and temp file management
+├── localization.rs        # Multi-language support (Fluent bundles)
+└── callbacks/
+    ├── callback_handler.rs    # Dispatch incoming callback queries
+    ├── callback_types.rs      # Typed callback action enums
+    ├── editing_callbacks.rs   # Ingredient edit/delete/add callbacks
+    ├── recipe_callbacks.rs    # Recipe save/rename/delete callbacks
+    ├── review_callbacks.rs    # Review confirmation and adjustment callbacks
+    └── workflow_callbacks.rs  # High-level workflow transitions
 ```
 
 ### Data Flow
@@ -76,13 +86,78 @@ pub async fn handle_command(bot: &Bot, message: &Message, command: &str) -> Resu
 
 ### Dialogue States
 ```rust
-pub enum DialogueState {
+/// Conversation state machine for recipe creation workflow
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub enum RecipeDialogueState {
+    #[default]
     Start,
-    WaitingForRecipeName,
-    WaitingForImage,
-    ProcessingImage,
-    ConfirmingIngredients,
-    Completed,
+    WaitingForRecipeName {
+        extracted_text: String,
+        ingredients: Vec<MeasurementMatch>,
+        language_code: Option<String>,
+    },
+    ReviewIngredients {
+        recipe_name: String,
+        ingredients: Vec<MeasurementMatch>,
+        language_code: Option<String>,
+        message_id: Option<i32>,
+        extracted_text: String,
+        recipe_name_from_caption: Option<String>,
+    },
+    EditingIngredient {
+        recipe_name: String,
+        ingredients: Vec<MeasurementMatch>,
+        editing_index: usize,
+        language_code: Option<String>,
+        message_id: Option<i32>,
+        original_message_id: Option<i32>,
+        extracted_text: String,
+        recipe_name_from_caption: Option<String>,
+    },
+    WaitingForRecipeNameAfterConfirm {
+        ingredients: Vec<MeasurementMatch>,
+        language_code: Option<String>,
+        extracted_text: String,
+        recipe_name_from_caption: Option<String>,
+        message_id: Option<i32>,
+    },
+    RenamingRecipe {
+        recipe_id: i64,
+        current_name: String,
+        language_code: Option<String>,
+    },
+    EditingSavedIngredients {
+        recipe_id: i64,
+        original_ingredients: Vec<Ingredient>,
+        current_matches: Vec<MeasurementMatch>,
+        language_code: Option<String>,
+        message_id: Option<i32>,
+    },
+    EditingSavedIngredient {
+        recipe_id: i64,
+        original_ingredients: Vec<Ingredient>,
+        current_matches: Vec<MeasurementMatch>,
+        editing_index: usize,
+        language_code: Option<String>,
+        message_id: Option<i32>,
+        original_message_id: Option<i32>,
+    },
+    AddingIngredientToSavedRecipe {
+        recipe_id: i64,
+        original_ingredients: Vec<Ingredient>,
+        current_matches: Vec<MeasurementMatch>,
+        language_code: Option<String>,
+        message_id: Option<i32>,
+    },
+    AwaitingQuantityCorrection {
+        recipe_name: String,
+        ingredients: Vec<MeasurementMatch>,
+        ingredient_index: usize,
+        language_code: Option<String>,
+        message_id: Option<i32>,
+        extracted_text: String,
+        recipe_name_from_caption: Option<String>,
+    },
 }
 ```
 
@@ -117,11 +192,17 @@ pub enum DialogueState {
 
 ### Recipe Creation Workflow
 1. **Start**: User sends /start or sends photo directly
-2. **Recipe Name**: Bot prompts for recipe name (with fallback)
-3. **Image Upload**: User sends photo or document
-4. **Processing**: Bot shows progress, calls OCR service
-5. **Results**: Display extracted ingredients with confidence
-6. **Confirmation**: User can add more or complete recipe
+2. **Image Upload**: User sends photo or document (with optional caption as recipe name)
+3. **Processing**: Bot shows progress, calls OCR service
+4. **Review**: Display extracted ingredients with confidence; user can accept, edit, or delete each
+5. **Recipe Naming**: Prompt for (or confirm caption as) recipe name
+6. **Save**: Persist recipe and ingredients to database
+
+### Recipe Management Workflow
+- `/list` — paginated list of saved recipes with inline action buttons
+- `/search <query>` — full-text search across recipe names and ingredients
+- `/delete` — select and delete a saved recipe
+- Inline edit: rename recipe, edit/delete/add individual ingredients from saved recipes
 
 ### Error Recovery
 - **Invalid Input**: Clear error messages with guidance
@@ -165,9 +246,7 @@ pub enum DialogueState {
 ## Future Enhancements
 
 ### Potential Improvements
-- **Advanced Commands**: /list, /search, /delete functionality
 - **Bulk Operations**: Process multiple images at once
-- **User Preferences**: Language, notification settings
-- **Recipe Management**: Edit, delete, organize recipes
-- **Sharing Features**: Export recipes in various formats
-- **Analytics**: Usage statistics and insights
+- **User Preferences**: Per-user language and notification settings
+- **Sharing Features**: Export recipes (e.g., PDF, CSV)
+- **Analytics**: Usage statistics and ingredient insights

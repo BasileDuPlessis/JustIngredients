@@ -36,11 +36,22 @@ The OCR (Optical Character Recognition) processing feature extracts text from im
 ```
 OCR Processing Layer
 ├── Validation Module      # Format, size, path validation
-├── Preprocessing Module   # Image enhancement, scaling
+├── Preprocessing Module   # Adaptive pipeline (quality-based strategy selection)
 ├── Extraction Module      # Core OCR execution + text cleaning
 ├── Confidence Module      # Scoring and quality assessment
 ├── HOCR Module           # Advanced text positioning
+├── Retry Module          # Exponential backoff with jitter
 └── Types Module          # Shared data structures
+
+Preprocessing Layer (src/preprocessing/)
+├── scaling.rs            # DPI scaling for OCR optimization
+├── filtering.rs          # Noise reduction (Gaussian blur)
+├── thresholding.rs       # Adaptive binarization
+├── deskewing.rs          # Rotation correction
+├── cropping.rs           # Border crop
+├── targeted.rs           # Region-specific preprocessing
+├── quality.rs            # Image quality assessment (High/Medium/Low)
+└── types.rs              # Shared preprocessing data structures
 ```
 
 ### Data Flow
@@ -62,13 +73,18 @@ OCR Processing Layer
 
 ### Public Functions
 ```rust
-// Main entry point
-pub fn extract_text_from_image(path: &str, config: &OcrConfig) -> Result<String, OcrError>
+// Main entry point (async, returns extracted text + confidence score)
+pub async fn extract_text_from_image(
+    path: &str,
+    config: &OcrConfig,
+    instance_manager: &OcrInstanceManager,
+    circuit_breaker: &CircuitBreaker,
+) -> Result<(String, f32), OcrError>
 
 // Advanced extraction with confidence
 pub fn perform_ocr_extraction(image: &DynamicImage, config: &OcrConfig) -> Result<OcrResult, OcrError>
 
-// Text cleaning for OCR artifacts
+// Text cleaning for OCR artifacts — returns (cleaned_text, artifacts_removed_count)
 pub fn clean_ocr_artifacts(text: &str) -> (String, u32)
 
 // Constrained OCR for measurements
@@ -76,6 +92,9 @@ pub fn perform_constrained_ocr(image: &DynamicImage, config: &OcrConfig) -> Resu
 
 // HOCR extraction for positioning
 pub fn extract_hocr_from_image(path: &str, config: &OcrConfig) -> Result<String, OcrError>
+
+// Retry with exponential backoff + jitter
+pub fn calculate_retry_delay(attempt: u32, base_ms: u64, max_ms: u64) -> Duration
 ```
 
 ### Error Handling
@@ -153,9 +172,7 @@ pub struct OcrConfig {
 ## Future Enhancements
 
 ### Potential Improvements
-- **Text Cleaning Expansion**: Additional artifact types (bullet points, numbering)
-- **Multi-language expansion**: Additional language support
-- **Advanced preprocessing**: Better image quality enhancement
-- **Batch processing**: Multiple image processing
-- **Real-time feedback**: Processing progress updates
-- **Model optimization**: Custom OCR model training
+- **Multi-language expansion**: Additional language support beyond EN/FR
+- **Batch processing**: Multiple image processing in a single request
+- **Real-time feedback**: Processing progress updates during long extraction
+- **Model optimization**: Custom OCR model training for recipe-specific text

@@ -21,24 +21,24 @@ The deployment and infrastructure feature manages the production deployment of t
 - **Observability**: Comprehensive monitoring and alerting
 
 ### Success Criteria
-- [ ] Application deploys successfully to Fly.io
-- [ ] All secrets properly managed and accessible
-- [ ] Monitoring dashboards functional
-- [ ] Health checks passing
-- [ ] Logs collected and searchable
-- [ ] Rollback procedures tested
+- [x] Application deploys successfully to Fly.io
+- [x] All secrets properly managed and accessible
+- [x] Monitoring dashboards functional (Prometheus + Grafana live)
+- [x] Health checks passing
+- [x] Logs collected and searchable
+- [x] Staging environment configured (`fly-staging.toml`)
 
 ## Architecture
 
 ### Deployment Components
 ```
 Production Infrastructure
-├── Application Container    # Dockerized Rust application
-├── Database Instance       # Managed PostgreSQL
-├── Monitoring Stack       # Prometheus + Grafana
+├── Application Container    # Dockerized Rust application (deploy/Dockerfile)
+├── Database Instance       # Managed PostgreSQL (Fly.io)
+├── Monitoring Stack        # Prometheus + Grafana (deploy/fly-monitoring.toml + fly-grafana.toml)
+├── Staging Environment     # deploy/fly-staging.toml
 ├── Load Balancer          # Fly.io edge network
-├── Secrets Management     # Fly.io secrets
-└── Logging System         # Centralized log aggregation
+└── Secrets Management     # Fly.io secrets (flyctl secrets set)
 ```
 
 ### Data Flow
@@ -124,24 +124,37 @@ GET /live
 
 ## Container Configuration
 
-### Dockerfile
+### Dockerfile (`deploy/Dockerfile`)
 ```dockerfile
-FROM rust:1.70-slim as builder
+# syntax=docker/dockerfile:1.6
+FROM rust:latest AS builder
 WORKDIR /app
-COPY . .
-RUN cargo build --release
+RUN apt-get install -y build-essential clang pkg-config libssl-dev \
+    libtesseract-dev libleptonica-dev tesseract-ocr-eng tesseract-ocr-fra
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+COPY config ./config
+COPY locales ./locales
+COPY .sqlx ./.sqlx
+RUN cargo build --release && strip --strip-unneeded target/release/just-ingredients
 
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y \
-    tesseract-ocr \
-    tesseract-ocr-eng \
-    tesseract-ocr-fra \
-    && rm -rf /var/lib/apt/lists/*
-
-COPY --from=builder /app/target/release/just-ingredients /usr/local/bin/
-EXPOSE 8080
+FROM ubuntu:latest AS runtime
+RUN apt-get install -y ca-certificates libssl3 tesseract-ocr \
+    tesseract-ocr-eng tesseract-ocr-fra liblept5 libtesseract5
+COPY --from=builder /app/target/release/just-ingredients /usr/local/bin/just-ingredients
+COPY config ./config
+ENV MEASUREMENT_UNITS_CONFIG_PATH=/app/config/measurement_units.json
+ENV RUST_LOG=info,sqlx=warn
 CMD ["just-ingredients"]
 ```
+
+### Fly.io Configuration Files
+| File | Purpose |
+|---|---|
+| `deploy/fly.toml` | Production deployment |
+| `deploy/fly-staging.toml` | Staging environment |
+| `deploy/fly-monitoring.toml` | Prometheus monitoring app |
+| `deploy/fly-grafana.toml` | Grafana dashboard app |
 
 ### Fly.io Configuration
 ```toml
