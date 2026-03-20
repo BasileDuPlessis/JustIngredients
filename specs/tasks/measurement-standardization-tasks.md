@@ -8,11 +8,29 @@ Standardize unit variants so inputs like `g`, `gr`, and `GR` are stored and proc
 - Out of scope: quantity conversion between units (e.g., g to kg), UI redesign, multilingual ingredient translation.
 
 ## Task 1: Define Canonical Unit Contract (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description:
   - Define canonical units and alias rules (example: `g`, `gr`, `gram`, `gramme`, `grammes` -> `g`).
   - Decide normalization policy: lowercase, trim spaces, remove trailing punctuation.
   - Document unknown-unit behavior (keep as-is or map to `None`).
+- Canonical Unit Mappings:
+  - Weight Units:
+    - `g` (aliases: `gr`, `gram`, `grams`, `gramme`, `grammes`)
+    - `kg` (aliases: `kilogram`, `kilograms`, `kilogramme`, `kilogrammes`)
+    - `mg`
+    - `lb` (aliases: `pound`, `pounds`)
+    - `oz` (aliases: `ounce`, `ounces`)
+  - Volume Units:
+    - `cup` (aliases: `cups`)
+    - `tsp` (aliases: `teaspoon`, `teaspoons`)
+    - `tbsp` (aliases: `tablespoon`, `tablespoons`)
+    - `pint` (aliases: `pints`)
+    - `quart` (aliases: `quarts`)
+    - `gallon` (aliases: `gallons`)
+    - `l` (aliases: `liter`, `liters`, `litre`, `litres`)
+    - `ml` (aliases: `milliliter`, `milliliters`, `millilitre`, `millilitres`, `cc`, `cl`, `dl`)
+  - Normalization Policy: lowercase, trim spaces, remove trailing punctuation (e.g., `g.` -> `g`).
+  - Unknown Unit Behavior: keep as-is (preserve user input).
 - How to validate:
   1. Open `config/measurement_units.json` and verify alias sets exist for key units (`g`, `kg`, `ml`, `l`, `tsp`, `tbsp`).
   2. Confirm a written canonical mapping list exists in the task PR/commit notes.
