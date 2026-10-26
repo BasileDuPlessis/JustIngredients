@@ -77,6 +77,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 | IMP-041 | Docker image built twice, pushed on PRs, no build cache, unused CI artifact | P2 | M | CI/CD |
 | IMP-042 | Deprecated Node 20 actions; smoke tests on Node 18 check health only | P3 | S | CI/CD |
 | IMP-043 | README describes a pipeline that does not exist | P3 | S | Docs |
+| IMP-044 | Dispatcher panics when Telegram is unreachable or the token is invalid at startup | P2 | S | Reliability |
 
 ## Verification of Earlier Findings
 | # | Earlier finding | Result | Item |
@@ -419,7 +420,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   2. Running `cargo test` twice locally gives the same result.
 
 ### IMP-014: `DATABASE_URL` logged at startup (latent); startup logs lost
-- [ ] Done
+- [x] Done
 - Priority: P1. Effort: S. Area: Security / Logging.
 - Related: LLM migration (Task 0.1).
 - Location: `src/main.rs:198` (`info!(database_url = %database_url, …)`), `src/main.rs:230`
@@ -908,3 +909,18 @@ they can be pulled into 1-hour micro-tasks without another review.
   auto-installed hook. None is true (production is manual and ungated, the hook is local).
 - Proposed fix: rewrite the section after Phase 0 of the migration, then again after Task 5.4.
 - Validation: README matches `.github/workflows/`.
+
+### IMP-044: Dispatcher panics when Telegram is unreachable or the token is invalid at startup
+- [ ] Done
+- Priority: P2. Effort: S. Area: Reliability.
+- Location: `src/main.rs` (dispatcher start), teloxide 0.17 `dispatching/dispatcher.rs:385`.
+- Problem: observed while validating the Docker image (Task 0.4): with an invalid token the polling
+  listener logs `Failed to get webhook info: Api(InvalidToken)` and the dispatcher panics
+  (`thread 'main' panicked at .../teloxide-0.17.0/src/dispatching/dispatcher.rs:385`). The same
+  happens if the Telegram API is unreachable at startup. The process dies with a panic instead of
+  a clear error, and with the `always` restart policy (Task 0.5) a revoked token restarts forever.
+- Proposed fix: call `bot.get_me()` before building the dispatcher, retry network errors with
+  backoff, and exit with a clear error (and an alert) on `InvalidToken`.
+- Validation: starting with an invalid token exits with a one-line error and no panic; starting with
+  the network down retries and then connects.
+

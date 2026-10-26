@@ -8,6 +8,7 @@ pub mod cache;
 pub mod circuit_breaker;
 pub mod config;
 pub mod db;
+pub mod db_connection;
 pub mod deduplication;
 pub mod dialogue;
 pub mod error_correction;

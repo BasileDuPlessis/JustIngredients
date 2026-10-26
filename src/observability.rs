@@ -70,14 +70,30 @@ pub async fn init_observability_with_health_checks_and_config(
     bot_token: Option<String>,
     config: &crate::config::AppConfig,
 ) -> anyhow::Result<()> {
-    // Validate configuration
+    init_logging(config)?;
+    start_observability_with_health_checks(db_pool, bot_token, config).await
+}
+
+/// Validate the configuration and install the tracing subscriber.
+///
+/// Call this first at startup so that everything logged afterwards (including database
+/// connection retries) is visible. It must run only once per process.
+pub fn init_logging(config: &crate::config::AppConfig) -> anyhow::Result<()> {
     config
         .validate()
         .map_err(|e| anyhow::anyhow!("Invalid observability configuration: {}", e))?;
 
-    // Initialize tracing first
-    init_tracing_with_config(&config.observability)?;
+    init_tracing_with_config(&config.observability)
+}
 
+/// Start metrics, OpenTelemetry and the health check server.
+///
+/// Expects [`init_logging`] to have been called already.
+pub async fn start_observability_with_health_checks(
+    db_pool: Option<std::sync::Arc<sqlx::PgPool>>,
+    bot_token: Option<String>,
+    config: &crate::config::AppConfig,
+) -> anyhow::Result<()> {
     // Initialize metrics
     let metrics_handle = metrics::init_metrics_with_config(&config.observability)?;
 

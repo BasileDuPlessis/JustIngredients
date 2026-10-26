@@ -147,7 +147,7 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: `docker build` locally, container starts and `/health/ready` returns 200.
 
 ### Task 0.5: Survive database restarts (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: root cause of the 2026-10-16 outage. `PgPool::connect` (`src/main.rs:201`)
   gives up after sqlx's 30 s default and the process exits with code 1; Fly retried while Postgres
   was still recovering, then left the machine stopped for 10 days. Connect with retry and
@@ -161,6 +161,8 @@ March 2026 image meanwhile (restarts reuse it).
 - Description: `DATABASE_URL` (with password) is logged at startup (`src/main.rs:198`); the
   Telegram file URL (contains the bot token) can appear in reqwest errors
   (`src/bot/image_processing.rs`). Fix both before introducing a third secret.
+- Progress: the `DATABASE_URL` part is done with Task 0.5 (logs show host/port/database only);
+  the bot token in the file download URL remains.
 - How to validate: unit test on the redaction helpers; startup logs on staging.
 
 ### Task 0.7: Dependency advisories (<= 1 hour)

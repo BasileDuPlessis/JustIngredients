@@ -1,12 +1,13 @@
 use anyhow::Result;
 use just_ingredients::bot;
 use just_ingredients::cache::CacheManager;
+use just_ingredients::config::AppConfig;
 use just_ingredients::db;
+use just_ingredients::db_connection::{self, ConnectRetryPolicy};
 use just_ingredients::deduplication;
 use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
 use just_ingredients::localization;
 use just_ingredients::observability;
-use sqlx::postgres::PgPool;
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
@@ -187,18 +188,24 @@ async fn main() -> Result<()> {
     // Validate environment variables early
     validate_environment_variables()?;
 
+    // Load configuration and start logging before anything else, so that startup
+    // messages (including database connection retries) are visible.
+    let app_config = AppConfig::from_env()?;
+    observability::init_logging(&app_config)?;
+
     // Get bot token from environment
     let bot_token = env::var("TELEGRAM_BOT_TOKEN")
         .map_err(|_| anyhow::anyhow!("TELEGRAM_BOT_TOKEN must be set"))?;
 
-    // Get database path from environment
-    let database_url =
-        env::var("DATABASE_URL").map_err(|_| anyhow::anyhow!("DATABASE_URL must be set"))?;
+    info!(
+        database = %db_connection::describe_database_target(&app_config.database.url),
+        "Initializing database connection"
+    );
 
-    info!(database_url = %database_url, "Initializing database connection");
-
-    // Create database connection pool
-    let pool = PgPool::connect(&database_url).await?;
+    // Create the connection pool, waiting for the database if it is restarting
+    let pool =
+        db_connection::connect_with_retry(&app_config.database, ConnectRetryPolicy::default())
+            .await?;
 
     // Initialize database schema
     db::init_database_schema(&pool).await?;
@@ -226,10 +233,11 @@ async fn main() -> Result<()> {
     // Validate HTTP client configuration
     validate_http_client_config()?;
 
-    // Initialize complete observability stack with health checks (metrics, tracing, logging)
-    observability::init_observability_with_health_checks(
+    // Start metrics, OpenTelemetry and the health check server (logging is already running)
+    observability::start_observability_with_health_checks(
         Some(Arc::clone(&shared_pool)),
         Some(bot_token.clone()),
+        &app_config,
     )
     .await?;
 

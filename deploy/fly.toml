@@ -15,6 +15,12 @@ primary_region = 'cdg'
   RUST_LOG = 'info,sqlx=warn'
   METRICS_BIND_ALL_INTERFACES = 'true'
 
+# Restart the bot whenever it exits. With the default policy Fly gave up after a few
+# failed restarts during a Postgres restart (2026-10-16) and left the bot down for 10 days.
+[[restart]]
+  policy = 'always'
+  processes = ['app']
+
 [checks]
   [checks.health]
     port = 8080
