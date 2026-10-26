@@ -132,14 +132,14 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: DB tests where user B gets "not found" on user A's recipe for each operation.
 
 ### Task 0.3: Unblock CI (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: pin `runs-on: ubuntu-24.04` in every workflow (Ubuntu 26.04 ships leptonica 1.86,
   whose headers break `leptonica-sys` bindgen: `environ.h:70 unknown type name 'atomic_int'`).
   Temporary until Tesseract is removed in Phase 5.
 - How to validate: Build and Test green on `main`.
 
 ### Task 0.4: Fix the Docker image (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: pin builder and runtime to the same Debian release (`rust:<version>-slim-trixie`
   → `debian:trixie-slim`), install the matching Tesseract/Leptonica runtime packages, remove the
   `|| true` that swallows apt failures (`deploy/Dockerfile:39-40`), and fail the build when a

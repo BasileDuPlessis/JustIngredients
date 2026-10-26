@@ -1,0 +1,16 @@
+# cargo-deny configuration, run in CI by EmbarkStudios/cargo-deny-action.
+# Docs: https://embarkstudios.github.io/cargo-deny/
+
+[graph]
+all-features = true
+
+[advisories]
+# Vulnerabilities always fail. Unmaintained crates fail only when they are direct
+# dependencies; transitive ones (paste, proc-macro-error2) are tracked upstream.
+unmaintained = "workspace"
+ignore = []
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]

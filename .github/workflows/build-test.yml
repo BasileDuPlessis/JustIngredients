@@ -13,7 +13,7 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@1.99
 
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libleptonica-dev libtesseract-dev tesseract-ocr
@@ -41,7 +41,9 @@ jobs:
     - uses: actions/checkout@v4
 
     - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
+      uses: dtolnay/rust-toolchain@1.99
+      with:
+        components: clippy, rustfmt
 
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libleptonica-dev libtesseract-dev tesseract-ocr
@@ -60,14 +62,9 @@ jobs:
     steps:
     - uses: actions/checkout@v4
 
-    - name: Setup Rust
-      uses: dtolnay/rust-toolchain@stable
-
-    - name: Install system dependencies
-      run: sudo apt-get update && sudo apt-get install -y libleptonica-dev libtesseract-dev tesseract-ocr
-
-    - name: Audit dependencies
-      run: cargo install cargo-audit && cargo audit --ignore RUSTSEC-2023-0071
-
-    - name: Check outdated dependencies
-      run: cargo install cargo-outdated && cargo outdated
+    # Vulnerability and source checks configured in deny.toml. Replaces cargo-audit and
+    # cargo-outdated, which were compiled from source on every run; Dependabot handles updates.
+    - name: Check advisories and sources
+      uses: EmbarkStudios/cargo-deny-action@v2
+      with:
+        command: check advisories sources
