@@ -1,130 +1,82 @@
 name: Deploy to Staging
 
+# Runs only after "Build and Test" succeeded on main, and deploys the commit that was tested.
 on:
-  push:
-    branches: [ main ]
+  workflow_run:
+    workflows: ["Build and Test"]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  STAGING_APP: just-ingredients-staging
+  STAGING_DB: just-ingredients-staging-db
+  DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
   deploy-staging:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     environment: staging
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
     steps:
-    - name: Checkout repository
+    - name: Checkout tested commit
       uses: actions/checkout@v4
+      with:
+        ref: ${{ env.DEPLOY_SHA }}
 
-    - name: Setup Fly CLI
+    - name: Setup flyctl
+      uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
+
+    - name: Remove previous staging resources
       run: |
-        curl -L https://fly.io/install.sh | sh
-        export FLYCTL_INSTALL="/home/runner/.fly"
-        export PATH="$FLYCTL_INSTALL/bin:$PATH"
-        echo "$FLYCTL_INSTALL/bin" >> $GITHUB_PATH
-        echo "FLY_API_TOKEN=${{ secrets.FLY_API_TOKEN }}" >> $GITHUB_ENV
-
-    - name: Check Fly CLI authentication
-      run: fly auth whoami
-
-    - name: Clean up any existing staging resources
-      run: |
-        echo "Cleaning up any existing staging resources..."
-        
-        # Stop any running machines first
-        echo "Stopping any running machines..."
-        fly machines list --app just-ingredients-staging --json | jq -r '.[].id' | while read machine_id; do
-          echo "Stopping machine $machine_id..."
-          fly machines stop $machine_id --app just-ingredients-staging || true
-        done || true
-        
-        # Wait a bit for machines to stop
-        echo "Waiting for machines to stop..."
-        sleep 10
-        
-        # Destroy apps
-        fly apps destroy just-ingredients-staging --yes || true
-        fly apps destroy just-ingredients-staging-db --yes || true
-        
-        # Additional cleanup for any orphaned resources
-        echo "Checking for any remaining resources..."
-        fly machines list --app just-ingredients-staging 2>/dev/null || echo "No machines found"
-        
-        echo "Cleanup completed"
+        flyctl apps destroy "$STAGING_APP" --yes || true
+        flyctl apps destroy "$STAGING_DB" --yes || true
 
     - name: Create staging app
-      uses: superfly/flyctl-actions@master
-      with:
-        args: apps create just-ingredients-staging --org personal --yes
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      run: flyctl apps create "$STAGING_APP" --org personal
 
-    - name: Verify staging app creation
+    # The generated database password is printed on success, so stdout is discarded.
+    - name: Create and attach staging database
       run: |
-        echo "Verifying staging app was created successfully..."
-        if ! fly apps list | grep -q "just-ingredients-staging"; then
-          echo "Staging app creation failed - just-ingredients-staging not found in apps list"
-          exit 1
-        fi
-        echo "Staging app creation verified successfully"
-
-    - name: Create staging database
-      uses: superfly/flyctl-actions@master
-      with:
-        args: postgres create --name just-ingredients-staging-db --region cdg --org personal --vm-size shared-cpu-1x --volume-size 1 --password staging_password_123 --initial-cluster-size 1
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      continue-on-error: true
-
-    - name: Attach database to staging app
-      uses: superfly/flyctl-actions@master
-      with:
-        args: postgres attach just-ingredients-staging-db --app just-ingredients-staging --yes
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      continue-on-error: true
+        flyctl postgres create --name "$STAGING_DB" --region cdg --org personal \
+          --vm-size shared-cpu-1x --volume-size 1 --initial-cluster-size 1 > /dev/null
+        flyctl postgres attach "$STAGING_DB" --app "$STAGING_APP" --yes > /dev/null
 
     - name: Set staging secrets
-      uses: superfly/flyctl-actions@master
-      with:
-        args: secrets set TELEGRAM_BOT_TOKEN=${{ secrets.TELEGRAM_BOT_TOKEN }} --app just-ingredients-staging
       env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      run: |
+        printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN" \
+          | flyctl secrets import --stage --app "$STAGING_APP"
 
     - name: Deploy to staging
-      id: deploy
-      uses: superfly/flyctl-actions@master
-      with:
-        args: deploy --config deploy/fly-staging.toml --remote-only --app just-ingredients-staging
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-
-    - name: Retry deployment on failure
-      if: steps.deploy.outcome == 'failure'
-      uses: superfly/flyctl-actions@master
-      with:
-        args: deploy --config deploy/fly-staging.toml --remote-only --app just-ingredients-staging
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-      continue-on-error: true
-
-    - name: Verify database creation
-      run: |
-        echo "Verifying database was created successfully..."
-        if ! fly apps list | grep -q "just-ingredients-staging-db"; then
-          echo "Database creation failed - just-ingredients-staging-db not found in apps list"
-          exit 1
-        fi
-        echo "Database creation verified successfully"
+      run: flyctl deploy --config deploy/fly-staging.toml --remote-only --app "$STAGING_APP"
 
   smoke-tests:
     needs: deploy-staging
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     environment: staging
     steps:
-    - name: Checkout repository
+    - name: Checkout tested commit
       uses: actions/checkout@v4
+      with:
+        ref: ${{ env.DEPLOY_SHA }}
 
     - name: Setup Node.js
       uses: actions/setup-node@v4
       with:
-        node-version: '18'
+        node-version: '22'
 
     - name: Install dependencies
       run: npm install
@@ -135,21 +87,17 @@ jobs:
         STAGING_URL: https://just-ingredients-staging.fly.dev
 
   cleanup-staging:
-    needs: smoke-tests
-    if: always()
+    needs: [deploy-staging, smoke-tests]
+    if: always() && needs.deploy-staging.result != 'skipped'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
     steps:
-    - name: Setup Fly CLI
-      run: |
-        curl -L https://fly.io/install.sh | sh
-        export FLYCTL_INSTALL="/home/runner/.fly"
-        export PATH="$FLYCTL_INSTALL/bin:$PATH"
-        echo "$FLYCTL_INSTALL/bin" >> $GITHUB_PATH
-        echo "FLY_API_TOKEN=${{ secrets.FLY_API_TOKEN }}" >> $GITHUB_ENV
+    - name: Setup flyctl
+      uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
-    - name: Clean up staging resources
+    - name: Destroy staging resources
       run: |
-        echo "Cleaning up staging resources..."
-        fly apps destroy just-ingredients-staging --yes || true
-        fly apps destroy just-ingredients-staging-db --yes || true
-        echo "Cleanup completed"
+        flyctl apps destroy "$STAGING_APP" --yes || true
+        flyctl apps destroy "$STAGING_DB" --yes || true

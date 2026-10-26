@@ -1,46 +1,70 @@
 name: Deploy to Production
 
+# Manual deployment of the selected branch's head commit. The commit must have been
+# deployed to staging successfully first.
 on:
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Environment to deploy to'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-        - production
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
 
 jobs:
   deploy-production:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     environment: production
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      PRODUCTION_URL: https://just-ingredients.fly.dev
     steps:
+    - name: Require a successful staging deployment of this commit
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        conclusion=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "Deploy to Staging" \
+          --commit "$GITHUB_SHA" --status success --limit 1 --json conclusion --jq '.[0].conclusion // ""')
+        if [ "$conclusion" != "success" ]; then
+          echo "::error::Commit $GITHUB_SHA has no successful staging deployment. Deploy it to staging first."
+          exit 1
+        fi
+
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Setup flyctl
+      uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
+
     - name: Deploy to production
-      uses: superfly/flyctl-actions@master
-      with:
-        args: deploy --config deploy/fly.toml --app just-ingredients
-      env:
-        FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      run: flyctl deploy --config deploy/fly.toml --remote-only --app just-ingredients
 
     - name: Post-deployment validation
       run: |
-        curl -f https://just-ingredients.fly.dev/health/live
-        curl -f https://just-ingredients.fly.dev/health/ready
+        for _ in 1 2 3 4 5 6; do
+          if curl -fsS --max-time 10 "$PRODUCTION_URL/health/live" \
+            && curl -fsS --max-time 10 "$PRODUCTION_URL/health/ready"; then
+            exit 0
+          fi
+          sleep 10
+        done
+        exit 1
 
-    - name: Notify deployment success
-      if: success()
+    - name: Notify deployment result
+      if: always()
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        JOB_STATUS: ${{ job.status }}
       run: |
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-          -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -d text="✅ JustIngredients deployed to production successfully! 🌟"
-
-    - name: Notify deployment failure  
-      if: failure()
-      run: |
-        curl -X POST "https://api.telegram.org/bot${{ secrets.TELEGRAM_BOT_TOKEN }}/sendMessage" \
-          -d chat_id="${{ secrets.TELEGRAM_CHAT_ID }}" \
-          -d text="❌ JustIngredients production deployment failed! 🚨"
+        if [ "$JOB_STATUS" = "success" ]; then
+          text="✅ JustIngredients ${GITHUB_SHA::7} deployed to production."
+        else
+          text="❌ JustIngredients ${GITHUB_SHA::7} production deployment failed: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+        fi
+        curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+          --data-urlencode "text=${text}" > /dev/null

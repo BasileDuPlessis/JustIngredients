@@ -198,6 +198,9 @@ March 2026 image meanwhile (restarts reuse it).
   secret digests differ: `9c50…` staging vs `f12d…` prod, so most likely yes) and move it to an
   environment-scoped secret.
 - How to validate: staging run green; no secret value in logs.
+- Progress: workflow part done (no hardcoded password, generated password kept out of logs, no
+  `continue-on-error`, dead retry removed, token not exported to `$GITHUB_ENV`, `setup-flyctl`
+  pinned by SHA, Node 22). Remaining (user action): environment-scoped staging bot token.
 
 ### Task 0.11: Outage alerting (<= 1 hour)
 - [ ] Done
@@ -205,6 +208,8 @@ March 2026 image meanwhile (restarts reuse it).
   Telegram or email alert (free monitor, user action), plus a scheduled workflow (`*/10`) as a
   backup. `/health/live` must reflect the bot loop, not always return "OK".
 - How to validate: stopping the staging machine triggers an alert within 15 minutes.
+- Progress: `.github/workflows/uptime.yml` checks production every 10 minutes and alerts on
+  Telegram. Remaining: `/health/live` reflecting the bot loop; optional external monitor.
 
 ### Review gate R0
 - [ ] Done

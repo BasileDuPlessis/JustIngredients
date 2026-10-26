@@ -1,0 +1,42 @@
+name: Production Uptime
+
+# Alerts on Telegram when production stops answering. GitHub may delay scheduled runs by
+# several minutes, and disables them after 60 days without repository activity.
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: uptime
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    env:
+      PRODUCTION_URL: https://just-ingredients.fly.dev
+    steps:
+    - name: Check readiness
+      run: |
+        for attempt in 1 2 3; do
+          if curl -fsS --max-time 10 "$PRODUCTION_URL/health/ready" > /dev/null; then
+            exit 0
+          fi
+          echo "Attempt $attempt failed"
+          sleep 20
+        done
+        exit 1
+
+    - name: Alert on Telegram
+      if: failure()
+      env:
+        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      run: |
+        curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+          --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+          --data-urlencode "text=🚨 JustIngredients production is down: $PRODUCTION_URL/health/ready failed 3 times. $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" > /dev/null
