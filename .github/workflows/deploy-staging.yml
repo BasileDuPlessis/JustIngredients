@@ -6,7 +6,7 @@ on:
 
 jobs:
   deploy-staging:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: staging
     steps:
     - name: Checkout repository
@@ -115,7 +115,7 @@ jobs:
 
   smoke-tests:
     needs: deploy-staging
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: staging
     steps:
     - name: Checkout repository
@@ -137,7 +137,7 @@ jobs:
   cleanup-staging:
     needs: smoke-tests
     if: always()
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
     - name: Setup Fly CLI
       run: |
