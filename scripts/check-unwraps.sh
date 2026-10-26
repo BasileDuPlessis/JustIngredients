@@ -8,9 +8,9 @@ set -e
 
 echo "Checking for unwrap() violations..."
 
-# Find all .rs files and check for unwrap() usage
-# Exclude test files and target directory
-UNWRAP_FILES=$(find . -name "*.rs" -type f -not -path "./tests/*" -not -path "./target/*" -not -path "./.git/*" -exec grep -l "\.unwrap()" {} \; || true)
+# Check tracked .rs files only, excluding the tests directory. Untracked trees such as
+# build outputs and local git worktrees are not part of the project and are ignored.
+UNWRAP_FILES=$(git grep -l "\.unwrap()" -- '*.rs' ':!tests/' || true)
 
 if [ -n "$UNWRAP_FILES" ]; then
     echo "❌ ERROR: Found unwrap() usage in the following files:"
