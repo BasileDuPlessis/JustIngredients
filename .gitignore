@@ -40,3 +40,5 @@ unicharset
 
 # Scripts directory
 ignore_this_directory
+# Python bytecode
+__pycache__/

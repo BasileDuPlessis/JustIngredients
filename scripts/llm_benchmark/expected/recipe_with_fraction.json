@@ -1,0 +1,11 @@
+{
+  "ingredients": [
+    { "name": "old-fashioned rolled oats", "quantity": 1, "unit": "cup" },
+    { "name": "unsalted butter", "quantity": 8, "unit": "tbsp" },
+    { "name": "all-purpose flour", "quantity": 0.5, "unit": "cup" },
+    { "name": "brown sugar", "quantity": 0.5, "unit": "cup" },
+    { "name": "granulated sugar", "quantity": 0.25, "unit": "cup" },
+    { "name": "salt", "quantity": 0.5, "unit": "tsp" },
+    { "name": "ground cinnamon", "quantity": 0.5, "unit": "tsp" }
+  ]
+}
