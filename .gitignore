@@ -42,3 +42,6 @@ unicharset
 ignore_this_directory
 # Python bytecode
 __pycache__/
+
+# Claude Code worktrees
+.claude/worktrees/

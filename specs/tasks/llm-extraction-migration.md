@@ -23,12 +23,19 @@ Gemini vision call that returns the ingredients as structured JSON.
 | Branching | Work directly on `main`, small commits, CI green before starting the next task. |
 | Output contract | See "Extraction contract" below. |
 
+Answered 2026-10-26:
+- Ingredients without quantity are kept ("sel" → `quantity = null`, `unit = null`). Vague amounts
+  such as "une pincée", "un filet", "à volonté" are neither ingredients nor units: "une pincée de
+  sel" → name `sel`, `quantity = null`, `unit = null`.
+- The Gemini API key is on the paid tier (content not used by Google to improve its products).
+- Required status checks on `main` are not used (work happens directly on `main`); gating is done
+  in the workflows (Task 0.9). Outage alerting is a scheduled workflow (Task 0.11).
+
 ## Open Questions
-1. Ingredients without quantity ("sel", "une pincée"): keep them with `quantity = null` and
-   `needs_review = true` (recommended) or drop them as today?
-2. Is the Gemini API key on a **paid** billing tier? On the free tier Google uses the content
-   (users' photos) to improve its products, and rate limits are low. Paid tier is required
-   before production.
+1. Counted containers ("2 gousses d'ail", "1 sachet de levure", "3 tranches de jambon"): keep the
+   container as unit (`gousse`, `sachet`, `tranche`), or name `ail` with `quantity = 2`,
+   `unit = null`?
+2. _(answered)_
 3. GitHub secret name: reuse the existing `GOOGLE_AI_API_KEY` (created 2025-10-31) or create
    `GEMINI_API_KEY`? The application reads `GEMINI_API_KEY`.
 4. 5–10 real images (web screenshots + cookbook photos, some skewed or poorly lit) are needed
@@ -108,7 +115,7 @@ The pipeline is red and the Docker image it builds cannot start (see "CI/CD Audi
 March 2026 image meanwhile (restarts reuse it).
 
 ### Task 0.1: Messages are dropped as duplicates (IMP-001, <= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: since commit `a0d24fa` (pushed 2026-10-26, not yet in production),
   `message_handler_with_cache` checks the deduplicator and then calls `message_handler`, which
   checks it again; `is_duplicate` records the request on the first call, so the second call

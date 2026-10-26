@@ -99,7 +99,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 ## P0: Fix Now
 
 ### IMP-001: Every message except `/recipes` is dropped as a duplicate
-- [ ] Done
+- [x] Done
 - Priority: P0. Effort: S. Area: Bot routing.
 - Location: `src/bot/message_handler.rs:586-597` (first check), `src/bot/message_handler.rs:635`
   (delegates with the same deduplicator), `src/bot/message_handler.rs:513-524` (second check),

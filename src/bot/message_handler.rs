@@ -510,19 +510,45 @@ pub async fn message_handler(
     );
     let _enter = span.enter();
 
-    // Check for duplicate requests if deduplicator is provided
-    if let Some(dedup) = deduplicator {
-        let request_id = crate::deduplication::RequestId::new(msg.chat.id, msg.id);
-        if dedup.is_duplicate(&request_id)? {
-            debug!(
-                "Ignoring duplicate request: chat_id={}, message_id={}",
-                msg.chat.id, msg.id
-            );
-            observability::record_telegram_duplicate_message();
-            return Ok(());
-        }
+    if is_duplicate_message(deduplicator, msg.chat.id, msg.id)? {
+        return Ok(());
     }
 
+    dispatch_message(bot, msg, pool, dialogue, localization).await
+}
+
+/// Records the request in the deduplicator and returns `true` when it was already seen.
+///
+/// Each incoming message must go through this check exactly once: the deduplicator records
+/// the request on the first call, so a second check would drop the message as a duplicate.
+fn is_duplicate_message(
+    deduplicator: Option<&crate::deduplication::SharedDeduplicator>,
+    chat_id: teloxide::types::ChatId,
+    message_id: teloxide::types::MessageId,
+) -> Result<bool> {
+    let Some(dedup) = deduplicator else {
+        return Ok(false);
+    };
+    let request_id = crate::deduplication::RequestId::new(chat_id, message_id);
+    if dedup.is_duplicate(&request_id)? {
+        debug!(
+            "Ignoring duplicate request: chat_id={}, message_id={}",
+            chat_id, message_id
+        );
+        observability::record_telegram_duplicate_message();
+        return Ok(true);
+    }
+    Ok(false)
+}
+
+/// Handles a message that already passed the duplicate check.
+async fn dispatch_message(
+    bot: Bot,
+    msg: Message,
+    pool: Arc<PgPool>,
+    dialogue: RecipeDialogue,
+    localization: Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
     let start_time = std::time::Instant::now();
     let message_type = if msg.text().is_some() {
         "text"
@@ -583,35 +609,16 @@ pub async fn message_handler_with_cache(
     );
     let _enter = span.enter();
 
-    // Check for duplicate requests if deduplicator is provided
-    if let Some(dedup) = deduplicator {
-        let request_id = crate::deduplication::RequestId::new(msg.chat.id, msg.id);
-        if dedup.is_duplicate(&request_id)? {
-            debug!(
-                "Ignoring duplicate request: chat_id={}, message_id={}",
-                msg.chat.id, msg.id
-            );
-            observability::record_telegram_duplicate_message();
-            return Ok(());
-        }
+    if is_duplicate_message(deduplicator, msg.chat.id, msg.id)? {
+        return Ok(());
     }
 
     let start_time = std::time::Instant::now();
-    let message_type = if msg.text().is_some() {
-        "text"
-    } else if msg.photo().is_some() {
-        "photo"
-    } else if msg.document().is_some() {
-        "document"
-    } else {
-        "unsupported"
-    };
-
-    observability::record_telegram_message(message_type);
 
     // Handle commands with caching support
     if let Some(text) = msg.text() {
         if text.starts_with("/recipes") {
+            observability::record_telegram_message("text");
             debug!(user_id = %msg.chat.id, "Handling /recipes command with caching");
             let language_code = msg
                 .from
@@ -631,11 +638,43 @@ pub async fn message_handler_with_cache(
         }
     }
 
-    // For other operations, delegate to the regular handler
-    message_handler(bot, msg, pool, dialogue, localization, deduplicator).await?;
+    // Other messages go to the regular dispatcher, which records its own message metrics.
+    // The duplicate check above already ran and must not run again.
+    dispatch_message(bot, msg, pool, dialogue, localization).await?;
 
     let duration = start_time.elapsed();
     observability::record_request_metrics("telegram_message_cached", 200, duration);
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::deduplication::{RequestDeduplicator, SharedDeduplicator};
+    use teloxide::types::{ChatId, MessageId};
+
+    #[test]
+    fn is_duplicate_message_without_deduplicator_processes_every_message() -> Result<()> {
+        assert!(!is_duplicate_message(None, ChatId(1), MessageId(1))?);
+        assert!(!is_duplicate_message(None, ChatId(1), MessageId(1))?);
+        Ok(())
+    }
+
+    #[test]
+    fn is_duplicate_message_accepts_first_delivery_and_rejects_redelivery() -> Result<()> {
+        let dedup: SharedDeduplicator = Arc::new(RequestDeduplicator::new(60, 100));
+        assert!(!is_duplicate_message(
+            Some(&dedup),
+            ChatId(1),
+            MessageId(7)
+        )?);
+        assert!(is_duplicate_message(Some(&dedup), ChatId(1), MessageId(7))?);
+        assert!(!is_duplicate_message(
+            Some(&dedup),
+            ChatId(1),
+            MessageId(8)
+        )?);
+        Ok(())
+    }
 }
