@@ -1,0 +1,6 @@
+# Same toolchain locally, in CI and in the Docker builder (deploy/Dockerfile).
+# Bump all three together.
+[toolchain]
+channel = "1.99"
+components = ["clippy", "rustfmt"]
+profile = "minimal"

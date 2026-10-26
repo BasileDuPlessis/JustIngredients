@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1.6
 
 # Builder and runtime use the same Debian release so the binary links against the
-# exact library versions installed at runtime. Bump both together.
-FROM rust:1.93-slim-trixie AS builder
+# exact library versions installed at runtime. Bump both together, and keep the Rust
+# version in sync with rust-toolchain.toml.
+FROM rust:1.99-slim-trixie AS builder
 
 WORKDIR /app
 

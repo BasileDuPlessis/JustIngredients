@@ -307,7 +307,7 @@ impl OcrErrorCorrector {
 
         // Sort corrections by length descending to handle longer patterns first
         let mut sorted_corrections: Vec<_> = self.character_corrections.iter().collect();
-        sorted_corrections.sort_by(|a, b| b.0.len().cmp(&a.0.len()));
+        sorted_corrections.sort_by_key(|(from, _)| std::cmp::Reverse(from.len()));
 
         for (from, to) in sorted_corrections {
             // Use word boundaries only if the pattern consists entirely of word characters

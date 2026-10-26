@@ -607,7 +607,7 @@ impl CacheManager {
         // This is not the most efficient approach, but works for small caches
         // In production, you might want a separate cache or index
         let data = self.user_cache.read_data().ok()?;
-        for (_, entry) in data.iter() {
+        for entry in data.values() {
             if !entry.is_expired() && entry.value.id == user_id {
                 return Some(entry.value.clone());
             }
