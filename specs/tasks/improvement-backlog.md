@@ -154,7 +154,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   3. `rg "WHERE id = \$1\"" src/db.rs` finds no unscoped recipe or ingredient query.
 
 ### IMP-003: Bot token can leak into logs; file download has no timeout
-- [ ] Done
+- [x] Done
 - Priority: P0. Effort: S. Area: Security / HTTP.
 - Related: LLM migration (Task 0.1 and Task 2.3 cover the same code. Do it in Phase 0, not later.)
 - Location: `src/bot/image_processing.rs:102-135` (`download_file`), `src/bot/image_processing.rs:111`
@@ -438,7 +438,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   2. The staging startup log shows "Initializing database connection host=… db=…" with no password.
 
 ### IMP-015: `mem::forget(NamedTempFile)` leaks one file descriptor per image
-- [ ] Done
+- [x] Done
 - Priority: P1. Effort: S. Area: Resources.
 - Related: LLM migration (Task 2.3 removes the temp file. Fix now if the Tesseract backend ships
   in the transition release.)

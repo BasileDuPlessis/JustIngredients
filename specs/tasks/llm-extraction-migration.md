@@ -157,7 +157,7 @@ March 2026 image meanwhile (restarts reuse it).
   connects without exiting.
 
 ### Task 0.6: Stop leaking secrets in logs (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: `DATABASE_URL` (with password) is logged at startup (`src/main.rs:198`); the
   Telegram file URL (contains the bot token) can appear in reqwest errors
   (`src/bot/image_processing.rs`). Fix both before introducing a third secret.

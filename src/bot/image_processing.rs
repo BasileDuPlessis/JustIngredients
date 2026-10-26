@@ -100,38 +100,64 @@ static CIRCUIT_BREAKER: std::sync::LazyLock<CircuitBreaker> =
     std::sync::LazyLock::new(|| CircuitBreaker::new(OCR_CONFIG.recovery.clone()));
 
 pub async fn download_file(bot: &Bot, file_id: teloxide::types::FileId) -> Result<TempFileGuard> {
+    let max_file_size = OCR_CONFIG.max_file_size;
     let file = bot.get_file(file_id).await?;
-    let file_path = file.path;
+    ensure_file_size_allowed(u64::from(file.size), max_file_size)?;
+
+    // The URL contains the bot token: it must never appear in errors or logs.
     let url = format!(
         "https://api.telegram.org/file/bot{}/{}",
         bot.token(),
-        file_path
+        file.path
     );
-
-    let response = reqwest::get(&url).await?;
-
-    // Check Content-Length header to prevent downloading oversized files
-    if let Some(content_length) = response.content_length() {
-        let max_file_size = OCR_CONFIG.max_file_size;
-        if content_length > max_file_size {
-            return Err(anyhow::anyhow!(
-                "File too large: {} bytes (maximum allowed: {} bytes)",
-                content_length,
-                max_file_size
-            ));
-        }
-    }
-
-    let bytes = response.bytes().await?;
+    // The bot's client has the request timeout configured at startup.
+    let bytes = fetch_file_bytes(bot.client(), &url, max_file_size).await?;
 
     let mut temp_file = NamedTempFile::new()?;
     temp_file.as_file_mut().write_all(&bytes)?;
-    let path = temp_file.path().to_string_lossy().to_string();
 
-    // Create a guard that will clean up the file when dropped
-    // The NamedTempFile is forgotten here, but our guard will handle cleanup
-    std::mem::forget(temp_file);
-    Ok(TempFileGuard::new(path))
+    // Keep the file on disk and close its handle; the guard deletes the file when dropped.
+    let (_file, path) = temp_file.keep()?;
+    Ok(TempFileGuard::new(path.to_string_lossy().to_string()))
+}
+
+/// Rejects files larger than `max_file_size` bytes.
+fn ensure_file_size_allowed(size: u64, max_file_size: u64) -> Result<()> {
+    if size > max_file_size {
+        return Err(anyhow::anyhow!(
+            "File too large: {} bytes (maximum allowed: {} bytes)",
+            size,
+            max_file_size
+        ));
+    }
+    Ok(())
+}
+
+/// Downloads `url` with `client`, rejecting HTTP errors and bodies larger than `max_file_size`.
+///
+/// Errors never contain the URL, which embeds the bot token for Telegram file downloads.
+async fn fetch_file_bytes(
+    client: &reqwest::Client,
+    url: &str,
+    max_file_size: u64,
+) -> Result<Vec<u8>> {
+    let response = client
+        .get(url)
+        .send()
+        .await
+        .and_then(reqwest::Response::error_for_status)
+        .map_err(reqwest::Error::without_url)?;
+
+    if let Some(content_length) = response.content_length() {
+        ensure_file_size_allowed(content_length, max_file_size)?;
+    }
+
+    let bytes = response
+        .bytes()
+        .await
+        .map_err(reqwest::Error::without_url)?;
+    ensure_file_size_allowed(bytes.len() as u64, max_file_size)?;
+    Ok(bytes.into())
 }
 
 pub async fn download_and_process_image(
@@ -622,4 +648,32 @@ pub fn process_ingredients_and_extract_matches(
     );
 
     matches
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn file_size_limit_is_inclusive() {
+        assert!(ensure_file_size_allowed(10, 10).is_ok());
+        assert!(ensure_file_size_allowed(11, 10).is_err());
+    }
+
+    #[tokio::test]
+    async fn download_errors_do_not_contain_the_url_or_token() {
+        // Port 1 on localhost refuses connections immediately.
+        let url = "http://127.0.0.1:1/file/bot123456:SECRET-TOKEN/photos/file_1.jpg";
+        let result = fetch_file_bytes(&reqwest::Client::new(), url, 1024).await;
+        let message = match result {
+            Ok(_) => String::from("unexpected success"),
+            Err(error) => format!("{error:#} {error:?}"),
+        };
+        assert!(!message.contains("SECRET-TOKEN"), "token leaked: {message}");
+        assert!(
+            !message.contains("127.0.0.1:1/file"),
+            "url leaked: {message}"
+        );
+        assert_ne!(message, "unexpected success");
+    }
 }
