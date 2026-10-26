@@ -1,6 +1,8 @@
 # syntax=docker/dockerfile:1.6
 
-FROM rust:latest AS builder
+# Builder and runtime use the same Debian release so the binary links against the
+# exact library versions installed at runtime. Bump both together.
+FROM rust:1.93-slim-trixie AS builder
 
 WORKDIR /app
 
@@ -12,8 +14,6 @@ RUN apt-get update \
        libssl-dev \
        libtesseract-dev \
        libleptonica-dev \
-       tesseract-ocr-eng \
-       tesseract-ocr-fra \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.lock ./
@@ -25,26 +25,26 @@ COPY .sqlx ./.sqlx
 RUN cargo build --release \
     && strip --strip-unneeded target/release/just-ingredients
 
-FROM ubuntu:latest AS runtime
+FROM debian:trixie-slim AS runtime
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ca-certificates \
-       libssl3 \
+       libssl3t64 \
+       libleptonica6 \
+       libtesseract5 \
        tesseract-ocr \
        tesseract-ocr-eng \
        tesseract-ocr-fra \
-       liblept5 \
-       libtesseract5 \
-    && mkdir -p /usr/lib/aarch64-linux-gnu /usr/lib/x86_64-linux-gnu \
-    && ln -sf /usr/lib/aarch64-linux-gnu/liblept.so.5 /usr/lib/aarch64-linux-gnu/libleptonica.so.6 2>/dev/null || true \
-    && ln -sf /usr/lib/x86_64-linux-gnu/liblept.so.5 /usr/lib/x86_64-linux-gnu/libleptonica.so.6 2>/dev/null || true \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
 COPY --from=builder /app/target/release/just-ingredients /usr/local/bin/just-ingredients
 COPY config ./config
+
+# Fail the build instead of shipping an image whose binary cannot start.
+RUN ! ldd /usr/local/bin/just-ingredients | grep 'not found'
 
 ENV MEASUREMENT_UNITS_CONFIG_PATH=/app/config/measurement_units.json
 ENV RUST_LOG=info,sqlx=warn
