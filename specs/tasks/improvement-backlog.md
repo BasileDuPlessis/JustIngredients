@@ -123,7 +123,7 @@ they can be pulled into 1-hour micro-tasks without another review.
      for normal traffic.
 
 ### IMP-002: Users can read, rename, edit and delete other users' recipes (IDOR)
-- [ ] Done
+- [x] Done
 - Priority: P0. Effort: M. Area: Security / DB.
 - Location:
   - Callbacks: `src/bot/callbacks/recipe_callbacks.rs:216-268` (rename),

@@ -124,7 +124,7 @@ March 2026 image meanwhile (restarts reuse it).
   it is processed; `telegram_duplicate_messages_total` stays at 0 on staging.
 
 ### Task 0.2: Recipe ownership is never checked (IMP-002, <= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: recipe ids come from callback data and the DB functions filter on `id` only
   (`delete_recipe`, `update_recipe_name`, `read_recipe*` in `src/db.rs`), so a modified Telegram
   client can read, rename, edit or delete another user's recipe. Already in production. Scope every
