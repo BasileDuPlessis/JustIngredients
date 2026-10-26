@@ -15,8 +15,8 @@ use super::recipe_callbacks;
 
 // Import UI builder functions
 use crate::bot::ui_builder::{
-    create_recipe_details_keyboard,
-    create_recipe_instances_keyboard, format_database_ingredients_list,
+    create_recipe_details_keyboard, create_recipe_instances_keyboard,
+    format_database_ingredients_list,
 };
 
 // Import database functions
@@ -189,7 +189,10 @@ pub async fn callback_handler_with_cache(
     localization: Arc<crate::localization::LocalizationManager>,
     cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
 ) -> Result<()> {
-    let span = crate::observability::telegram_span("callback_handler_with_cache", Some(q.from.id.0 as i64));
+    let span = crate::observability::telegram_span(
+        "callback_handler_with_cache",
+        Some(q.from.id.0 as i64),
+    );
     let _enter = span.enter();
 
     let start_time = std::time::Instant::now();
@@ -598,7 +601,8 @@ async fn handle_recipe_selection_cached(
     };
 
     // Query for all recipes with this name for the user using cached function
-    let recipes = crate::db::get_recipes_by_name_cached(&pool, chat_id.0, recipe_name, &cache).await?;
+    let recipes =
+        crate::db::get_recipes_by_name_cached(&pool, chat_id.0, recipe_name, cache).await?;
 
     match recipes.len() {
         0 => {
@@ -617,7 +621,8 @@ async fn handle_recipe_selection_cached(
         1 => {
             // Single recipe - show details directly
             let recipe = &recipes[0];
-            let ingredients = crate::db::get_recipe_ingredients_cached(&pool, recipe.id, &cache).await?;
+            let ingredients =
+                crate::db::get_recipe_ingredients_cached(&pool, recipe.id, cache).await?;
 
             let message = format!(
                 "📖 **{}**\n\n📅 {}\n\n{}",
@@ -664,7 +669,8 @@ async fn handle_recipe_selection_cached(
             // Fetch ingredients for each recipe to show previews using cached function
             let mut recipe_data = Vec::new();
             for recipe in &recipes {
-                let ingredients = crate::db::get_recipe_ingredients_cached(&pool, recipe.id, &cache).await?;
+                let ingredients =
+                    crate::db::get_recipe_ingredients_cached(&pool, recipe.id, cache).await?;
                 recipe_data.push((recipe.clone(), ingredients));
             }
 
@@ -724,7 +730,7 @@ async fn handle_recipe_instance_selection_cached(
     };
 
     // Get ingredients using cached function
-    let ingredients = crate::db::get_recipe_ingredients_cached(&pool, recipe_id, &cache).await?;
+    let ingredients = crate::db::get_recipe_ingredients_cached(&pool, recipe_id, cache).await?;
 
     let message = format!(
         "📖 **{}**\n\n📅 {}\n\n{}",
@@ -741,15 +747,12 @@ async fn handle_recipe_instance_selection_cached(
                 language_code.as_deref(),
             )
         } else {
-            format_database_ingredients_list(
-                &ingredients,
-                language_code.as_deref(),
-                localization,
-            )
+            format_database_ingredients_list(&ingredients, language_code.as_deref(), localization)
         }
     );
 
-    let keyboard = create_recipe_details_keyboard(recipe_id, language_code.as_deref(), localization);
+    let keyboard =
+        create_recipe_details_keyboard(recipe_id, language_code.as_deref(), localization);
 
     bot.send_message(chat_id, message)
         .reply_markup(keyboard)
