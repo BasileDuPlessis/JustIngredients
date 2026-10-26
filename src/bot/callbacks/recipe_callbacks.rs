@@ -7,7 +7,7 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
-use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, MaybeInaccessibleMessage};
+use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, MaybeInaccessibleMessage, User};
 use tracing::debug;
 
 // Import error logging utilities
@@ -29,14 +29,19 @@ use crate::bot::ui_builder::{
 use crate::db::{get_recipes_by_name, read_recipe_with_name};
 
 /// Handle recipe selection callback
+///
+/// `from` is the sender of the callback query (`q.from`): the owner of every recipe read here.
 pub async fn handle_recipe_selection(
     bot: &Bot,
     msg: &MaybeInaccessibleMessage,
     data: &str,
     pool: Arc<PgPool>,
-    language_code: &Option<String>,
+    from: &User,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
+    let language_code = &from.language_code;
+    let telegram_id = from.id.0 as i64;
+
     // Extract recipe name from callback data (format: "select_recipe:Recipe Name")
     let recipe_name = data.strip_prefix("select_recipe:").unwrap_or("");
     debug!(recipe_name = %recipe_name, "Handling recipe selection");
@@ -51,7 +56,7 @@ pub async fn handle_recipe_selection(
     };
 
     // Query for all recipes with this name for the user
-    let recipes = get_recipes_by_name(&pool, chat_id.0, recipe_name).await?;
+    let recipes = get_recipes_by_name(&pool, telegram_id, recipe_name).await?;
 
     match recipes.len() {
         0 => {
@@ -70,7 +75,8 @@ pub async fn handle_recipe_selection(
         1 => {
             // Single recipe - show details directly
             let recipe = &recipes[0];
-            let ingredients = crate::db::get_recipe_ingredients(&pool, recipe.id).await?;
+            let ingredients =
+                crate::db::get_recipe_ingredients(&pool, telegram_id, recipe.id).await?;
 
             let message = format!(
                 "📖 **{}**\n\n📅 {}\n\n{}",
@@ -117,7 +123,8 @@ pub async fn handle_recipe_selection(
             // Fetch ingredients for each recipe to show previews
             let mut recipe_data = Vec::new();
             for recipe in &recipes {
-                let ingredients = crate::db::get_recipe_ingredients(&pool, recipe.id).await?;
+                let ingredients =
+                    crate::db::get_recipe_ingredients(&pool, telegram_id, recipe.id).await?;
                 recipe_data.push((recipe.clone(), ingredients));
             }
 
@@ -137,14 +144,19 @@ pub async fn handle_recipe_selection(
 }
 
 /// Handle recipe instance selection callback (when user selects a specific recipe from duplicates)
+///
+/// `from` is the sender of the callback query (`q.from`): the owner of every recipe read here.
 pub async fn handle_recipe_instance_selection(
     bot: &Bot,
     msg: &MaybeInaccessibleMessage,
     data: &str,
     pool: Arc<PgPool>,
-    language_code: &Option<String>,
+    from: &User,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
+    let language_code = &from.language_code;
+    let telegram_id = from.id.0 as i64;
+
     // Extract recipe ID from callback data (format: "recipe_instance:123")
     let recipe_id_str = data.strip_prefix("recipe_instance:").unwrap_or("");
     let recipe_id: i64 = recipe_id_str.parse().unwrap_or(0);
@@ -160,10 +172,10 @@ pub async fn handle_recipe_instance_selection(
     };
 
     // Get recipe details
-    let recipe = read_recipe_with_name(&pool, recipe_id)
+    let recipe = read_recipe_with_name(&pool, telegram_id, recipe_id)
         .await?
         .ok_or_else(|| anyhow::anyhow!("Recipe not found"))?;
-    let ingredients = crate::db::get_recipe_ingredients(&pool, recipe_id).await?;
+    let ingredients = crate::db::get_recipe_ingredients(&pool, telegram_id, recipe_id).await?;
 
     let message = format!(
         "📖 **{}**\n\n📅 {}\n\n{}",
@@ -195,15 +207,20 @@ pub async fn handle_recipe_instance_selection(
 }
 
 /// Handle recipe action callbacks (rename, delete)
+///
+/// `from` is the sender of the callback query (`q.from`): the owner of every recipe accessed here.
 pub async fn handle_recipe_action(
     bot: &Bot,
     msg: &MaybeInaccessibleMessage,
     data: &str,
     pool: Arc<PgPool>,
     dialogue: &RecipeDialogue,
-    language_code: &Option<String>,
+    from: &User,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
+    let language_code = &from.language_code;
+    let telegram_id = from.id.0 as i64;
+
     // Parse callback data (format: "recipe_action:{action}:{recipe_id}")
     let parts: Vec<&str> = data.split(':').collect();
     if parts.len() < 3 || parts[0] != "recipe_action" {
@@ -229,7 +246,9 @@ pub async fn handle_recipe_action(
     match action {
         "rename" => {
             // Get current recipe details
-            if let Ok(Some(recipe)) = crate::db::read_recipe_with_name(&pool, recipe_id).await {
+            if let Ok(Some(recipe)) =
+                crate::db::read_recipe_with_name(&pool, telegram_id, recipe_id).await
+            {
                 let current_name = recipe
                     .recipe_name
                     .as_ref()
@@ -327,14 +346,13 @@ pub async fn handle_recipe_action(
                 recipe_id,
                 pool,
                 dialogue,
-                language_code,
+                from,
                 localization,
             )
             .await?;
         }
         "statistics" => {
-            handle_recipe_statistics(bot, msg, recipe_id, pool, language_code, localization)
-                .await?;
+            handle_recipe_statistics(bot, msg, recipe_id, pool, from, localization).await?;
         }
         _ => {
             debug!(action = %action, "Unknown recipe action");
@@ -345,14 +363,19 @@ pub async fn handle_recipe_action(
 }
 
 /// Handle recipe statistics display
+///
+/// `from` is the sender of the callback query (`q.from`): the owner of every recipe read here.
 pub async fn handle_recipe_statistics(
     bot: &Bot,
     msg: &MaybeInaccessibleMessage,
     recipe_id: i64,
     pool: Arc<PgPool>,
-    language_code: &Option<String>,
+    from: &User,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
+    let language_code = &from.language_code;
+    let telegram_id = from.id.0 as i64;
+
     debug!(recipe_id = %recipe_id, "Handling recipe statistics");
 
     // Extract chat id from the message
@@ -365,7 +388,7 @@ pub async fn handle_recipe_statistics(
     };
 
     // Get recipe details
-    let recipe = match crate::db::read_recipe_with_name(&pool, recipe_id).await? {
+    let recipe = match crate::db::read_recipe_with_name(&pool, telegram_id, recipe_id).await? {
         Some(recipe) => recipe,
         None => {
             let message = t_lang(localization, "recipe-not-found", language_code.as_deref());
@@ -375,11 +398,11 @@ pub async fn handle_recipe_statistics(
     };
 
     // Get recipe ingredients
-    let ingredients = crate::db::get_recipe_ingredients(&pool, recipe_id).await?;
+    let ingredients = crate::db::get_recipe_ingredients(&pool, telegram_id, recipe_id).await?;
     let ingredient_count = ingredients.len() as i64;
 
     // Get user statistics
-    let user_stats = crate::db::get_user_recipe_statistics(&pool, chat_id.0).await?;
+    let user_stats = crate::db::get_user_recipe_statistics(&pool, telegram_id).await?;
 
     // Format statistics message
     let recipe_name = recipe
@@ -492,14 +515,19 @@ pub async fn handle_recipe_statistics(
 }
 
 /// Handle delete recipe confirmation callbacks
+///
+/// `from` is the sender of the callback query (`q.from`): only a recipe they own can be deleted.
 pub async fn handle_delete_recipe_confirmation(
     bot: &Bot,
     msg: &MaybeInaccessibleMessage,
     data: &str,
     pool: Arc<PgPool>,
-    language_code: &Option<String>,
+    from: &User,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
+    let language_code = &from.language_code;
+    let telegram_id = from.id.0 as i64;
+
     debug!(data = %data, "Handling delete recipe confirmation");
 
     // Extract chat id from the message
@@ -524,7 +552,7 @@ pub async fn handle_delete_recipe_confirmation(
     match action {
         "confirm_delete_recipe" => {
             // Attempt to delete the recipe
-            match crate::db::delete_recipe(&pool, recipe_id).await {
+            match crate::db::delete_recipe(&pool, telegram_id, recipe_id).await {
                 Ok(deleted) => {
                     if deleted {
                         // Delete the confirmation message entirely
@@ -702,15 +730,20 @@ pub async fn handle_delete_recipe_confirmation(
 }
 
 /// Handle edit ingredients callback for saved recipes
+///
+/// `from` is the sender of the callback query (`q.from`): the owner of every recipe read here.
 async fn handle_edit_ingredients_callback(
     bot: &Bot,
     msg: &MaybeInaccessibleMessage,
     recipe_id: i64,
     pool: Arc<PgPool>,
     dialogue: &RecipeDialogue,
-    language_code: &Option<String>,
+    from: &User,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
+    let language_code = &from.language_code;
+    let telegram_id = from.id.0 as i64;
+
     debug!(recipe_id = %recipe_id, "Handling edit ingredients callback");
 
     // Extract chat id from the message
@@ -723,7 +756,7 @@ async fn handle_edit_ingredients_callback(
     };
 
     // Get recipe details
-    let recipe = match crate::db::read_recipe_with_name(&pool, recipe_id).await? {
+    let recipe = match crate::db::read_recipe_with_name(&pool, telegram_id, recipe_id).await? {
         Some(recipe) => recipe,
         None => {
             let message = t_lang(localization, "recipe-not-found", language_code.as_deref());
@@ -733,7 +766,8 @@ async fn handle_edit_ingredients_callback(
     };
 
     // Get current ingredients
-    let original_ingredients = crate::db::get_recipe_ingredients(&pool, recipe_id).await?;
+    let original_ingredients =
+        crate::db::get_recipe_ingredients(&pool, telegram_id, recipe_id).await?;
     if original_ingredients.is_empty() {
         let message = format!(
             "❌ **{}**\n\n{}",

@@ -40,6 +40,11 @@ async fn setup_test_db() -> Result<PgPool> {
     sqlx::query("DROP TABLE IF EXISTS users CASCADE")
         .execute(&pool)
         .await?;
+    // Also reset the migration state, otherwise the migration is considered applied
+    // and the tables dropped above are never recreated
+    sqlx::query("DROP TABLE IF EXISTS schema_migrations CASCADE")
+        .execute(&pool)
+        .await?;
 
     // Initialize schema
     init_database_schema(&pool).await?;
@@ -83,7 +88,7 @@ async fn test_recipe_operations_impl(pool: &PgPool) -> Result<()> {
     assert!(recipe_id > 0);
 
     // Read recipe
-    let recipe = read_recipe(pool, recipe_id).await?;
+    let recipe = read_recipe(pool, 12345, recipe_id).await?;
     assert!(recipe.is_some());
     let recipe = recipe.unwrap();
     assert_eq!(recipe.telegram_id, 12345);
@@ -93,20 +98,20 @@ async fn test_recipe_operations_impl(pool: &PgPool) -> Result<()> {
     );
 
     // Update recipe
-    let updated = update_recipe(pool, recipe_id, "Updated content").await?;
+    let updated = update_recipe(pool, 12345, recipe_id, "Updated content").await?;
     assert!(updated);
 
-    let updated_recipe = read_recipe(pool, recipe_id).await?;
+    let updated_recipe = read_recipe(pool, 12345, recipe_id).await?;
     assert_eq!(
         updated_recipe.unwrap().content,
         std::sync::Arc::new("Updated content".to_string())
     );
 
     // Delete recipe
-    let deleted = delete_recipe(pool, recipe_id).await?;
+    let deleted = delete_recipe(pool, 12345, recipe_id).await?;
     assert!(deleted);
 
-    let not_found = read_recipe(pool, recipe_id).await?;
+    let not_found = read_recipe(pool, 12345, recipe_id).await?;
     assert!(not_found.is_none());
 
     Ok(())
@@ -137,7 +142,7 @@ async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
     assert!(ingredient_id > 0);
 
     // Read ingredient
-    let ingredient = read_ingredient(pool, ingredient_id).await?;
+    let ingredient = read_ingredient(pool, 12345, ingredient_id).await?;
     assert!(ingredient.is_some());
     let ingredient = ingredient.unwrap();
     assert_eq!(ingredient.user_id, user.id);
@@ -149,6 +154,7 @@ async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
     // Update ingredient
     let updated = update_ingredient(
         pool,
+        12345,
         ingredient_id,
         Some("bread flour"),
         Some(3.0),
@@ -157,7 +163,7 @@ async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
     .await?;
     assert!(updated);
 
-    let updated_ingredient = read_ingredient(pool, ingredient_id).await?;
+    let updated_ingredient = read_ingredient(pool, 12345, ingredient_id).await?;
     assert_eq!(updated_ingredient.unwrap().name, "bread flour");
 
     // List ingredients by user
@@ -166,10 +172,10 @@ async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
     assert_eq!(ingredients[0].name, "bread flour");
 
     // Delete ingredient
-    let deleted = delete_ingredient(pool, ingredient_id).await?;
+    let deleted = delete_ingredient(pool, 12345, ingredient_id).await?;
     assert!(deleted);
 
-    let not_found = read_ingredient(pool, ingredient_id).await?;
+    let not_found = read_ingredient(pool, 12345, ingredient_id).await?;
     assert!(not_found.is_none());
 
     Ok(())
@@ -210,17 +216,17 @@ async fn test_get_user_recipes_paginated() -> Result<()> {
 async fn test_get_user_recipes_paginated_impl(pool: &PgPool) -> Result<()> {
     // Create recipes with names
     let recipe1_id = create_recipe(pool, 12345, "flour 2 cups").await?;
-    update_recipe_name(pool, recipe1_id, "Chocolate Cake").await?;
+    update_recipe_name(pool, 12345, recipe1_id, "Chocolate Cake").await?;
 
     let recipe2_id = create_recipe(pool, 12345, "butter 100g").await?;
-    update_recipe_name(pool, recipe2_id, "Apple Pie").await?;
+    update_recipe_name(pool, 12345, recipe2_id, "Apple Pie").await?;
 
     let recipe3_id = create_recipe(pool, 12345, "sugar 1 cup").await?;
-    update_recipe_name(pool, recipe3_id, "Banana Bread").await?;
+    update_recipe_name(pool, 12345, recipe3_id, "Banana Bread").await?;
 
     // Create recipe for different user
     let recipe4_id = create_recipe(pool, 67890, "milk 250ml").await?;
-    update_recipe_name(pool, recipe4_id, "Pancakes").await?;
+    update_recipe_name(pool, 67890, recipe4_id, "Pancakes").await?;
 
     // Test pagination: limit 2, offset 0
     let (recipes, total) = get_user_recipes_paginated(pool, 12345, 2, 0).await?;
@@ -257,17 +263,17 @@ async fn test_get_recipes_by_name() -> Result<()> {
 async fn test_get_recipes_by_name_impl(pool: &PgPool) -> Result<()> {
     // Create multiple recipes with the same name
     let recipe1_id = create_recipe(pool, 12345, "flour 2 cups sugar 1 cup").await?;
-    update_recipe_name(pool, recipe1_id, "Chocolate Cake").await?;
+    update_recipe_name(pool, 12345, recipe1_id, "Chocolate Cake").await?;
 
     let recipe2_id = create_recipe(pool, 12345, "butter 100g eggs 2").await?;
-    update_recipe_name(pool, recipe2_id, "Chocolate Cake").await?;
+    update_recipe_name(pool, 12345, recipe2_id, "Chocolate Cake").await?;
 
     let recipe3_id = create_recipe(pool, 12345, "milk 250ml vanilla 1 tsp").await?;
-    update_recipe_name(pool, recipe3_id, "Vanilla Pudding").await?;
+    update_recipe_name(pool, 12345, recipe3_id, "Vanilla Pudding").await?;
 
     // Create recipe with same name for different user
     let recipe4_id = create_recipe(pool, 67890, "flour 1 cup").await?;
-    update_recipe_name(pool, recipe4_id, "Chocolate Cake").await?;
+    update_recipe_name(pool, 67890, recipe4_id, "Chocolate Cake").await?;
 
     // Test getting multiple recipes with same name
     let recipes = get_recipes_by_name(pool, 12345, "Chocolate Cake").await?;
@@ -314,14 +320,14 @@ async fn test_has_duplicate_recipes() -> Result<()> {
 async fn test_has_duplicate_recipes_impl(pool: &PgPool) -> Result<()> {
     // Create multiple recipes with the same name
     let recipe1_id = create_recipe(pool, 12345, "flour 2 cups").await?;
-    update_recipe_name(pool, recipe1_id, "Chocolate Cake").await?;
+    update_recipe_name(pool, 12345, recipe1_id, "Chocolate Cake").await?;
 
     let recipe2_id = create_recipe(pool, 12345, "butter 100g").await?;
-    update_recipe_name(pool, recipe2_id, "Chocolate Cake").await?;
+    update_recipe_name(pool, 12345, recipe2_id, "Chocolate Cake").await?;
 
     // Create single recipe with different name
     let recipe3_id = create_recipe(pool, 12345, "milk 250ml").await?;
-    update_recipe_name(pool, recipe3_id, "Vanilla Pudding").await?;
+    update_recipe_name(pool, 12345, recipe3_id, "Vanilla Pudding").await?;
 
     // Test duplicate detection - should return true for "Chocolate Cake"
     let has_duplicates = has_duplicate_recipes(pool, 12345, "Chocolate Cake").await?;
@@ -338,6 +344,241 @@ async fn test_has_duplicate_recipes_impl(pool: &PgPool) -> Result<()> {
     // Test with different user - should return false even if name exists for another user
     let has_duplicates = has_duplicate_recipes(pool, 67890, "Chocolate Cake").await?;
     assert!(!has_duplicates);
+
+    Ok(())
+}
+
+// Ownership (IMP-002): recipe ids come from client-controlled callback data, so every
+// recipe and ingredient query must be scoped by the owner. User B must get "not found"
+// for user A's data, and user A must still be able to use it.
+//
+// Telegram ids are far from the sequential recipe/ingredient ids so that swapping the
+// owner and id arguments cannot accidentally pass.
+const OWNER_A: i64 = 111_111_111;
+const OTHER_B: i64 = 222_222_222;
+
+/// Create a named recipe with one ingredient for `telegram_id`.
+/// Returns (recipe_id, ingredient_id).
+async fn create_recipe_with_ingredient(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_name: &str,
+) -> Result<(i64, i64)> {
+    let user = get_or_create_user(pool, telegram_id, Some("en")).await?;
+    let recipe_id = create_recipe(pool, telegram_id, "flour 2 cups").await?;
+    assert!(update_recipe_name(pool, telegram_id, recipe_id, recipe_name).await?);
+    let ingredient_id = create_ingredient(
+        pool,
+        user.id,
+        Some(recipe_id),
+        "flour",
+        Some(2.0),
+        Some("cups"),
+        "flour 2 cups",
+    )
+    .await?;
+    Ok((recipe_id, ingredient_id))
+}
+
+#[tokio::test]
+async fn test_recipe_reads_are_scoped_by_owner() -> Result<()> {
+    skip_if_no_db!(test_recipe_reads_are_scoped_by_owner_impl)
+}
+
+async fn test_recipe_reads_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
+    let (recipe_id, _) = create_recipe_with_ingredient(pool, OWNER_A, "Secret Cake").await?;
+    // B exists too, so "not found" is not just a missing user
+    create_recipe_with_ingredient(pool, OTHER_B, "Other Cake").await?;
+
+    // User B: A's recipe is not found
+    assert!(read_recipe(pool, OTHER_B, recipe_id).await?.is_none());
+    assert!(read_recipe_with_name(pool, OTHER_B, recipe_id)
+        .await?
+        .is_none());
+    assert!(get_recipe_ingredients(pool, OTHER_B, recipe_id)
+        .await?
+        .is_empty());
+
+    // User A: still sees the recipe and its ingredients
+    let recipe = read_recipe(pool, OWNER_A, recipe_id)
+        .await?
+        .expect("owner should read own recipe");
+    assert_eq!(recipe.telegram_id, OWNER_A);
+    let recipe = read_recipe_with_name(pool, OWNER_A, recipe_id)
+        .await?
+        .expect("owner should read own recipe with name");
+    assert_eq!(
+        recipe.recipe_name.as_deref().map(String::as_str),
+        Some("Secret Cake")
+    );
+    assert_eq!(
+        get_recipe_ingredients(pool, OWNER_A, recipe_id)
+            .await?
+            .len(),
+        1
+    );
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_recipe_writes_are_scoped_by_owner() -> Result<()> {
+    skip_if_no_db!(test_recipe_writes_are_scoped_by_owner_impl)
+}
+
+async fn test_recipe_writes_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
+    let (recipe_id, _) = create_recipe_with_ingredient(pool, OWNER_A, "Secret Cake").await?;
+    get_or_create_user(pool, OTHER_B, Some("en")).await?;
+
+    // User B: every write reports "not found" and changes nothing
+    assert!(!update_recipe_name(pool, OTHER_B, recipe_id, "Stolen").await?);
+    assert!(!update_recipe(pool, OTHER_B, recipe_id, "stolen content").await?);
+    assert!(!delete_recipe(pool, OTHER_B, recipe_id).await?);
+
+    let recipe = read_recipe_with_name(pool, OWNER_A, recipe_id)
+        .await?
+        .expect("B must not delete A's recipe");
+    assert_eq!(
+        recipe.recipe_name.as_deref().map(String::as_str),
+        Some("Secret Cake")
+    );
+    assert_eq!(recipe.content.as_str(), "flour 2 cups");
+    assert_eq!(
+        get_recipe_ingredients(pool, OWNER_A, recipe_id)
+            .await?
+            .len(),
+        1,
+        "B's delete attempt must not remove A's ingredients"
+    );
+
+    // User A: can rename, update and delete
+    assert!(update_recipe_name(pool, OWNER_A, recipe_id, "Renamed Cake").await?);
+    assert!(update_recipe(pool, OWNER_A, recipe_id, "sugar 1 cup").await?);
+    let recipe = read_recipe_with_name(pool, OWNER_A, recipe_id)
+        .await?
+        .expect("owner should read own recipe");
+    assert_eq!(
+        recipe.recipe_name.as_deref().map(String::as_str),
+        Some("Renamed Cake")
+    );
+    assert_eq!(recipe.content.as_str(), "sugar 1 cup");
+
+    assert!(delete_recipe(pool, OWNER_A, recipe_id).await?);
+    assert!(read_recipe(pool, OWNER_A, recipe_id).await?.is_none());
+    assert!(get_recipe_ingredients(pool, OWNER_A, recipe_id)
+        .await?
+        .is_empty());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_ingredient_operations_are_scoped_by_owner() -> Result<()> {
+    skip_if_no_db!(test_ingredient_operations_are_scoped_by_owner_impl)
+}
+
+async fn test_ingredient_operations_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
+    let (_, ingredient_id) = create_recipe_with_ingredient(pool, OWNER_A, "Secret Cake").await?;
+    get_or_create_user(pool, OTHER_B, Some("en")).await?;
+
+    // User B: A's ingredient is not found and cannot be changed
+    assert!(read_ingredient(pool, OTHER_B, ingredient_id)
+        .await?
+        .is_none());
+    assert!(
+        !update_ingredient(
+            pool,
+            OTHER_B,
+            ingredient_id,
+            Some("salt"),
+            Some(9.0),
+            Some("kg")
+        )
+        .await?
+    );
+    assert!(!delete_ingredient(pool, OTHER_B, ingredient_id).await?);
+
+    let ingredient = read_ingredient(pool, OWNER_A, ingredient_id)
+        .await?
+        .expect("B must not delete A's ingredient");
+    assert_eq!(ingredient.name, "flour");
+    assert_eq!(ingredient.quantity, Some(2.0));
+    assert_eq!(ingredient.unit, Some("cups".to_string()));
+
+    // User A: can update and delete
+    assert!(
+        update_ingredient(
+            pool,
+            OWNER_A,
+            ingredient_id,
+            Some("bread flour"),
+            Some(3.0),
+            None
+        )
+        .await?
+    );
+    let ingredient = read_ingredient(pool, OWNER_A, ingredient_id)
+        .await?
+        .expect("owner should read own ingredient");
+    assert_eq!(ingredient.name, "bread flour");
+    assert_eq!(ingredient.quantity, Some(3.0));
+
+    assert!(delete_ingredient(pool, OWNER_A, ingredient_id).await?);
+    assert!(read_ingredient(pool, OWNER_A, ingredient_id)
+        .await?
+        .is_none());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_update_recipe_ingredients_is_scoped_by_owner() -> Result<()> {
+    skip_if_no_db!(test_update_recipe_ingredients_is_scoped_by_owner_impl)
+}
+
+async fn test_update_recipe_ingredients_is_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
+    let (recipe_id, _) = create_recipe_with_ingredient(pool, OWNER_A, "Secret Cake").await?;
+    get_or_create_user(pool, OTHER_B, Some("en")).await?;
+
+    // User B: an empty list would delete every ingredient if B owned the recipe
+    let result = update_recipe_ingredients(pool, OTHER_B, recipe_id, &[]).await;
+    assert!(result.is_err(), "B must get 'recipe not found'");
+    assert_eq!(
+        get_recipe_ingredients(pool, OWNER_A, recipe_id)
+            .await?
+            .len(),
+        1
+    );
+
+    // User A: the same call applies
+    update_recipe_ingredients(pool, OWNER_A, recipe_id, &[]).await?;
+    assert!(get_recipe_ingredients(pool, OWNER_A, recipe_id)
+        .await?
+        .is_empty());
+
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_recipe_ingredients_cache_is_scoped_by_owner() -> Result<()> {
+    skip_if_no_db!(test_recipe_ingredients_cache_is_scoped_by_owner_impl)
+}
+
+async fn test_recipe_ingredients_cache_is_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
+    let (recipe_id, _) = create_recipe_with_ingredient(pool, OWNER_A, "Secret Cake").await?;
+    let cache = std::sync::Mutex::new(just_ingredients::cache::CacheManager::new());
+
+    // User A fills the cache
+    let ingredients = get_recipe_ingredients_cached(pool, OWNER_A, recipe_id, &cache).await?;
+    assert_eq!(ingredients.len(), 1);
+
+    // User B must not be served A's cached entry
+    let ingredients = get_recipe_ingredients_cached(pool, OTHER_B, recipe_id, &cache).await?;
+    assert!(ingredients.is_empty());
+
+    // User A still gets the cached ingredients
+    let ingredients = get_recipe_ingredients_cached(pool, OWNER_A, recipe_id, &cache).await?;
+    assert_eq!(ingredients.len(), 1);
 
     Ok(())
 }

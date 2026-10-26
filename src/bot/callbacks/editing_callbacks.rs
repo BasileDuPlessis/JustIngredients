@@ -445,6 +445,9 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         .expect("Current matches slice should be provided for confirm callback");
     let pool = pool.expect("Database pool should be provided for confirm callback");
 
+    // The recipe owner is the sender of the callback query, never a value from callback data
+    let telegram_id = q.from.id.0 as i64;
+
     // Record user engagement metric for recipe confirmation
     crate::observability::record_user_engagement_metrics(
         q.from.id.0 as i64,
@@ -452,6 +455,28 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         None,
         language_code.as_deref(),
     );
+
+    // Check ownership before any write: a recipe owned by another user is handled
+    // exactly like a missing one
+    if crate::db::read_recipe_with_name(pool, telegram_id, recipe_id)
+        .await?
+        .is_none()
+    {
+        if let Some(message) = &q.message {
+            ctx.bot
+                .send_message(
+                    message.chat().id,
+                    t_lang(
+                        ctx.localization,
+                        "error-recipe-not-found",
+                        language_code.as_deref(),
+                    ),
+                )
+                .await?;
+        }
+        dialogue.exit().await?;
+        return Ok(());
+    }
 
     // Detect changes between original and current ingredients
     let changes =
@@ -464,6 +489,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         for (ingredient_id, new_data) in &changes.to_update {
             if let Err(e) = crate::db::update_ingredient(
                 pool,
+                telegram_id,
                 *ingredient_id,
                 Some(&new_data.ingredient_name),
                 new_data.quantity.parse().ok(),
@@ -579,7 +605,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
 
         // Delete ingredients
         for ingredient_id in &changes.to_delete {
-            if let Err(e) = crate::db::delete_ingredient(pool, *ingredient_id).await {
+            if let Err(e) = crate::db::delete_ingredient(pool, telegram_id, *ingredient_id).await {
                 error_logging::log_database_error(
                     &e,
                     "delete_ingredient",
@@ -605,7 +631,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         }
 
         // Fetch updated recipe details and ingredients
-        let recipe = match crate::db::read_recipe_with_name(pool, recipe_id).await {
+        let recipe = match crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await {
             Ok(Some(recipe)) => recipe,
             Ok(None) => {
                 error_logging::log_internal_error(
@@ -655,7 +681,8 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             }
         };
 
-        let updated_ingredients = crate::db::get_recipe_ingredients(pool, recipe_id).await?;
+        let updated_ingredients =
+            crate::db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
         let updated_matches =
             crate::ingredient_editing::ingredients_to_measurement_matches(&updated_ingredients);
 
@@ -706,7 +733,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         }
     } else {
         // No changes made - still show the recipe details
-        let recipe = match crate::db::read_recipe_with_name(pool, recipe_id).await {
+        let recipe = match crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await {
             Ok(Some(recipe)) => recipe,
             Ok(None) => {
                 error_logging::log_internal_error(
@@ -756,7 +783,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             }
         };
 
-        let ingredients = crate::db::get_recipe_ingredients(pool, recipe_id).await?;
+        let ingredients = crate::db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
         let matches = crate::ingredient_editing::ingredients_to_measurement_matches(&ingredients);
 
         let recipe_name = recipe
@@ -828,8 +855,11 @@ async fn handle_cancel_saved_ingredients_button(
         ..
     }) = dialogue_state
     {
+        // The recipe owner is the sender of the callback query, never a value from callback data
+        let telegram_id = q.from.id.0 as i64;
+
         // Fetch recipe details and ingredients from database
-        let recipe = match crate::db::read_recipe_with_name(&pool, recipe_id).await? {
+        let recipe = match crate::db::read_recipe_with_name(&pool, telegram_id, recipe_id).await? {
             Some(recipe) => recipe,
             None => {
                 // Recipe not found, just exit dialogue
@@ -838,7 +868,7 @@ async fn handle_cancel_saved_ingredients_button(
             }
         };
 
-        let ingredients = crate::db::get_recipe_ingredients(&pool, recipe_id).await?;
+        let ingredients = crate::db::get_recipe_ingredients(&pool, telegram_id, recipe_id).await?;
 
         // Convert ingredients to measurement matches for display
         let measurement_matches =

@@ -624,8 +624,15 @@ pub async fn handle_recipe_rename_input(
     // Validate the new recipe name
     match validate_recipe_name(new_name_input) {
         Ok(validated_name) => {
-            // Update the recipe name in the database
-            match update_recipe_name(_pool, recipe_id, validated_name).await {
+            // Update the recipe name in the database. The owner is the sender of the
+            // message; a message without a sender is handled like a missing recipe.
+            let rename_result = match msg.from.as_ref() {
+                Some(user) => {
+                    update_recipe_name(_pool, user.id.0 as i64, recipe_id, validated_name).await
+                }
+                None => Ok(false),
+            };
+            match rename_result {
                 Ok(true) => {
                     let success_message = format!(
                         "✅ **{}**\n\n{}",
@@ -1129,7 +1136,7 @@ pub async fn save_ingredients_to_database(
 
     // Update recipe with recipe name
     info!(recipe_id = %recipe_id, recipe_name = %recipe_name, "Updating recipe name");
-    match update_recipe_name(pool, recipe_id, recipe_name).await {
+    match update_recipe_name(pool, telegram_id, recipe_id, recipe_name).await {
         Ok(_) => {
             info!(recipe_id = %recipe_id, "Recipe name updated successfully");
         }

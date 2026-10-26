@@ -68,7 +68,7 @@ pub async fn create_test_recipe(
     let recipe_id = db::create_recipe(pool, telegram_id, content).await?;
 
     if let Some(recipe_name) = name {
-        db::update_recipe_name(pool, recipe_id, recipe_name).await?;
+        db::update_recipe_name(pool, telegram_id, recipe_id, recipe_name).await?;
     }
 
     Ok(recipe_id)
@@ -144,7 +144,7 @@ pub async fn cleanup_test_data(
 
     // Delete ingredients first (to satisfy foreign key constraints)
     for ingredient in ingredients {
-        db::delete_ingredient(pool, ingredient.id).await?;
+        db::delete_ingredient(pool, telegram_id, ingredient.id).await?;
     }
 
     // Get all recipes for this user
@@ -155,7 +155,7 @@ pub async fn cleanup_test_data(
         // We need to get the recipe by name to get its ID
         let recipes = db::get_recipes_by_name(pool, telegram_id, &recipe_name).await?;
         for recipe in recipes {
-            db::delete_recipe(pool, recipe.id).await?;
+            db::delete_recipe(pool, telegram_id, recipe.id).await?;
         }
     }
 
@@ -167,18 +167,19 @@ pub async fn cleanup_test_data(
 /// More targeted cleanup for tests that create specific recipes.
 pub async fn cleanup_test_recipe(
     pool: &PgPool,
+    telegram_id: i64,
     recipe_id: i64,
 ) -> Result<(), Box<dyn std::error::Error>> {
     // Get ingredients for this recipe
-    let ingredients = db::get_recipe_ingredients(pool, recipe_id).await?;
+    let ingredients = db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
 
     // Delete ingredients first
     for ingredient in ingredients {
-        db::delete_ingredient(pool, ingredient.id).await?;
+        db::delete_ingredient(pool, telegram_id, ingredient.id).await?;
     }
 
     // Delete recipe
-    db::delete_recipe(pool, recipe_id).await?;
+    db::delete_recipe(pool, telegram_id, recipe_id).await?;
 
     Ok(())
 }

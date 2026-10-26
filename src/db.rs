@@ -90,15 +90,24 @@ pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Re
     }
 }
 
-/// Read a recipe from the database by ID
-pub async fn read_recipe(pool: &PgPool, recipe_id: i64) -> Result<Option<Recipe>> {
+/// Read a recipe owned by `telegram_id` from the database by ID
+///
+/// A recipe owned by another user is reported as missing (`Ok(None)`).
+pub async fn read_recipe(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+) -> Result<Option<Recipe>> {
     debug!(recipe_id = %recipe_id, "Reading recipe");
 
-    let row = sqlx::query("SELECT id, telegram_id, content, created_at FROM recipes WHERE id = $1")
-        .bind(recipe_id)
-        .fetch_optional(pool)
-        .await
-        .context("Failed to read recipe")?;
+    let row = sqlx::query(
+        "SELECT id, telegram_id, content, created_at FROM recipes WHERE id = $1 AND telegram_id = $2",
+    )
+    .bind(recipe_id)
+    .bind(telegram_id)
+    .fetch_optional(pool)
+    .await
+    .context("Failed to read recipe")?;
 
     match row {
         Some(row) => {
@@ -119,13 +128,21 @@ pub async fn read_recipe(pool: &PgPool, recipe_id: i64) -> Result<Option<Recipe>
     }
 }
 
-/// Update an existing recipe in the database
-pub async fn update_recipe(pool: &PgPool, recipe_id: i64, new_content: &str) -> Result<bool> {
+/// Update an existing recipe owned by `telegram_id` in the database
+///
+/// Returns `false` when the recipe does not exist or is owned by another user.
+pub async fn update_recipe(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+    new_content: &str,
+) -> Result<bool> {
     debug!(recipe_id = %recipe_id, "Updating recipe");
 
-    let result = sqlx::query("UPDATE recipes SET content = $1 WHERE id = $2")
+    let result = sqlx::query("UPDATE recipes SET content = $1 WHERE id = $2 AND telegram_id = $3")
         .bind(new_content)
         .bind(recipe_id)
+        .bind(telegram_id)
         .execute(pool)
         .await
         .context("Failed to update recipe")?;
@@ -140,23 +157,30 @@ pub async fn update_recipe(pool: &PgPool, recipe_id: i64, new_content: &str) -> 
     }
 }
 
-/// Delete a recipe from the database
-pub async fn delete_recipe(pool: &PgPool, recipe_id: i64) -> Result<bool> {
+/// Delete a recipe owned by `telegram_id` from the database
+///
+/// Returns `false` when the recipe does not exist or is owned by another user;
+/// in that case nothing is deleted.
+pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<bool> {
     debug!(recipe_id = %recipe_id, "Deleting recipe");
 
-    // First, delete all ingredients associated with this recipe
+    // First, delete all ingredients associated with this recipe (only if the caller owns it)
     // This is necessary due to the foreign key constraint between ingredients and recipes
-    let ingredients_deleted = sqlx::query("DELETE FROM ingredients WHERE recipe_id = $1")
-        .bind(recipe_id)
-        .execute(pool)
-        .await
-        .context("Failed to delete ingredients for recipe")?;
+    let ingredients_deleted = sqlx::query(
+        "DELETE FROM ingredients WHERE recipe_id = (SELECT id FROM recipes WHERE id = $1 AND telegram_id = $2)",
+    )
+    .bind(recipe_id)
+    .bind(telegram_id)
+    .execute(pool)
+    .await
+    .context("Failed to delete ingredients for recipe")?;
 
     debug!(recipe_id = %recipe_id, ingredients_deleted = %ingredients_deleted.rows_affected(), "Deleted associated ingredients");
 
     // Now delete the recipe itself
-    let result = sqlx::query("DELETE FROM recipes WHERE id = $1")
+    let result = sqlx::query("DELETE FROM recipes WHERE id = $1 AND telegram_id = $2")
         .bind(recipe_id)
+        .bind(telegram_id)
         .execute(pool)
         .await
         .context("Failed to delete recipe")?;
@@ -467,14 +491,21 @@ pub async fn create_ingredient(
     }
 }
 
-/// Read a single ingredient by ID
-pub async fn read_ingredient(pool: &PgPool, ingredient_id: i64) -> Result<Option<Ingredient>> {
+/// Read a single ingredient by ID, if it belongs to a recipe owned by `telegram_id`
+///
+/// An ingredient of another user's recipe is reported as missing (`Ok(None)`).
+pub async fn read_ingredient(
+    pool: &PgPool,
+    telegram_id: i64,
+    ingredient_id: i64,
+) -> Result<Option<Ingredient>> {
     info!("Reading ingredient with ID: {ingredient_id}");
 
     let row = sqlx::query(
-        "SELECT id, user_id, recipe_id, name, quantity::float8, unit, created_at, updated_at FROM ingredients WHERE id = $1"
+        "SELECT i.id, i.user_id, i.recipe_id, i.name, i.quantity::float8, i.unit, i.created_at, i.updated_at FROM ingredients i JOIN recipes r ON r.id = i.recipe_id WHERE i.id = $1 AND r.telegram_id = $2"
     )
     .bind(ingredient_id)
+    .bind(telegram_id)
     .fetch_optional(pool)
     .await
     .context("Failed to fetch ingredient")?;
@@ -501,9 +532,12 @@ pub async fn read_ingredient(pool: &PgPool, ingredient_id: i64) -> Result<Option
     }
 }
 
-/// Update an existing ingredient in the database
+/// Update an existing ingredient of a recipe owned by `telegram_id`
+///
+/// Returns `false` when the ingredient does not exist or belongs to another user's recipe.
 pub async fn update_ingredient(
     pool: &PgPool,
+    telegram_id: i64,
     ingredient_id: i64,
     name: Option<&str>,
     quantity: Option<f64>,
@@ -511,11 +545,12 @@ pub async fn update_ingredient(
 ) -> Result<bool> {
     info!("Updating ingredient with ID: {ingredient_id}");
 
-    let result = sqlx::query("UPDATE ingredients SET name = COALESCE($1, name), quantity = COALESCE($2, quantity), unit = COALESCE($3, unit), updated_at = CURRENT_TIMESTAMP WHERE id = $4")
+    let result = sqlx::query("UPDATE ingredients SET name = COALESCE($1, name), quantity = COALESCE($2, quantity), unit = COALESCE($3, unit), updated_at = CURRENT_TIMESTAMP WHERE id = $4 AND EXISTS (SELECT 1 FROM recipes r WHERE r.id = ingredients.recipe_id AND r.telegram_id = $5)")
         .bind(name)
         .bind(quantity)
         .bind(unit)
         .bind(ingredient_id)
+        .bind(telegram_id)
         .execute(pool)
         .await
         .context("Failed to update ingredient")?;
@@ -530,12 +565,19 @@ pub async fn update_ingredient(
     }
 }
 
-/// Delete an ingredient from the database
-pub async fn delete_ingredient(pool: &PgPool, ingredient_id: i64) -> Result<bool> {
+/// Delete an ingredient of a recipe owned by `telegram_id`
+///
+/// Returns `false` when the ingredient does not exist or belongs to another user's recipe.
+pub async fn delete_ingredient(
+    pool: &PgPool,
+    telegram_id: i64,
+    ingredient_id: i64,
+) -> Result<bool> {
     info!("Deleting ingredient with ID: {ingredient_id}");
 
-    let result = sqlx::query("DELETE FROM ingredients WHERE id = $1")
+    let result = sqlx::query("DELETE FROM ingredients WHERE id = $1 AND EXISTS (SELECT 1 FROM recipes r WHERE r.id = ingredients.recipe_id AND r.telegram_id = $2)")
         .bind(ingredient_id)
+        .bind(telegram_id)
         .execute(pool)
         .await
         .context("Failed to delete ingredient")?;
@@ -581,12 +623,19 @@ pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec
     Ok(ingredients)
 }
 
-/// Get all ingredients for a specific recipe
-pub async fn get_recipe_ingredients(pool: &PgPool, recipe_id: i64) -> Result<Vec<Ingredient>> {
+/// Get all ingredients for a specific recipe owned by `telegram_id`
+///
+/// Returns an empty list when the recipe does not exist or is owned by another user.
+pub async fn get_recipe_ingredients(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+) -> Result<Vec<Ingredient>> {
     info!("Getting ingredients for recipe_id: {recipe_id}");
 
-    let rows = sqlx::query("SELECT id, user_id, recipe_id, name, quantity::float8, unit, created_at, updated_at FROM ingredients WHERE recipe_id = $1 ORDER BY created_at ASC")
+    let rows = sqlx::query("SELECT i.id, i.user_id, i.recipe_id, i.name, i.quantity::float8, i.unit, i.created_at, i.updated_at FROM ingredients i JOIN recipes r ON r.id = i.recipe_id WHERE i.recipe_id = $1 AND r.telegram_id = $2 ORDER BY i.created_at ASC")
         .bind(recipe_id)
+        .bind(telegram_id)
         .fetch_all(pool)
         .await
         .context("Failed to get recipe ingredients")?;
@@ -618,6 +667,7 @@ pub async fn get_recipe_ingredients(pool: &PgPool, recipe_id: i64) -> Result<Vec
 /// with the database, performing the minimal set of operations needed.
 pub async fn update_recipe_ingredients(
     pool: &PgPool,
+    telegram_id: i64,
     recipe_id: i64,
     ingredients: &[crate::text_processing::MeasurementMatch],
 ) -> Result<()> {
@@ -631,8 +681,13 @@ pub async fn update_recipe_ingredients(
         recipe_id
     );
 
+    // Check ownership before any write: a recipe owned by another user is "not found"
+    let recipe = read_recipe_with_name(pool, telegram_id, recipe_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("Recipe not found during update"))?;
+
     // Get existing ingredients for this recipe
-    let existing_ingredients = get_recipe_ingredients(pool, recipe_id).await?;
+    let existing_ingredients = get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
 
     // Use the change detection logic from ingredient_editing module
     let changes =
@@ -643,8 +698,9 @@ pub async fn update_recipe_ingredients(
 
     // Delete ingredients that are no longer present
     for &ingredient_id in &changes.to_delete {
-        sqlx::query("DELETE FROM ingredients WHERE id = $1")
+        sqlx::query("DELETE FROM ingredients WHERE id = $1 AND recipe_id = $2")
             .bind(ingredient_id)
+            .bind(recipe_id)
             .execute(&mut *tx)
             .await
             .context(format!("Failed to delete ingredient {}", ingredient_id))?;
@@ -656,11 +712,12 @@ pub async fn update_recipe_ingredients(
         let quantity = new_match.quantity.parse::<f64>().ok();
         let unit = new_match.measurement.as_deref();
 
-        sqlx::query("UPDATE ingredients SET name = $1, quantity = $2, unit = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4")
+        sqlx::query("UPDATE ingredients SET name = $1, quantity = $2, unit = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4 AND recipe_id = $5")
             .bind(&new_match.ingredient_name)
             .bind(quantity)
             .bind(unit)
             .bind(ingredient_id)
+            .bind(recipe_id)
             .execute(&mut *tx)
             .await
             .context(format!("Failed to update ingredient {}", ingredient_id))?;
@@ -668,10 +725,6 @@ pub async fn update_recipe_ingredients(
     }
 
     // Add new ingredients
-    let recipe = read_recipe_with_name(pool, recipe_id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("Recipe not found during update"))?;
-
     for new_match in &changes.to_add {
         let quantity = new_match.quantity.parse::<f64>().ok();
         let unit = new_match.measurement.as_deref();
@@ -712,16 +765,25 @@ pub async fn update_recipe_ingredients(
     Ok(())
 }
 
-/// Update the recipe name for a recipe
-pub async fn update_recipe_name(pool: &PgPool, recipe_id: i64, recipe_name: &str) -> Result<bool> {
+/// Update the recipe name for a recipe owned by `telegram_id`
+///
+/// Returns `false` when the recipe does not exist or is owned by another user.
+pub async fn update_recipe_name(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+    recipe_name: &str,
+) -> Result<bool> {
     debug!(recipe_id = %recipe_id, "Updating recipe recipe name");
 
-    let result = sqlx::query("UPDATE recipes SET recipe_name = $1 WHERE id = $2")
-        .bind(recipe_name)
-        .bind(recipe_id)
-        .execute(pool)
-        .await
-        .context("Failed to update recipe recipe name")?;
+    let result =
+        sqlx::query("UPDATE recipes SET recipe_name = $1 WHERE id = $2 AND telegram_id = $3")
+            .bind(recipe_name)
+            .bind(recipe_id)
+            .bind(telegram_id)
+            .execute(pool)
+            .await
+            .context("Failed to update recipe recipe name")?;
 
     let rows_affected = result.rows_affected();
     if rows_affected > 0 {
@@ -733,14 +795,21 @@ pub async fn update_recipe_name(pool: &PgPool, recipe_id: i64, recipe_name: &str
     }
 }
 
-/// Get recipe with recipe name
-pub async fn read_recipe_with_name(pool: &PgPool, recipe_id: i64) -> Result<Option<Recipe>> {
+/// Get recipe with recipe name, if it is owned by `telegram_id`
+///
+/// A recipe owned by another user is reported as missing (`Ok(None)`).
+pub async fn read_recipe_with_name(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+) -> Result<Option<Recipe>> {
     debug!(recipe_id = %recipe_id, "Reading recipe with recipe name");
 
     let row = sqlx::query(
-        "SELECT id, telegram_id, content, recipe_name, created_at FROM recipes WHERE id = $1",
+        "SELECT id, telegram_id, content, recipe_name, created_at FROM recipes WHERE id = $1 AND telegram_id = $2",
     )
     .bind(recipe_id)
+    .bind(telegram_id)
     .fetch_optional(pool)
     .await
     .context("Failed to read recipe with recipe")?;
@@ -874,13 +943,16 @@ pub async fn get_recipes_by_name_cached(
     Ok(recipes)
 }
 
-/// Get all ingredients for a specific recipe with caching
+/// Get all ingredients for a specific recipe owned by `telegram_id` with caching
+///
+/// The cache key includes the owner, so an entry can never be served to another user.
 pub async fn get_recipe_ingredients_cached(
     pool: &PgPool,
+    telegram_id: i64,
     recipe_id: i64,
     cache: &std::sync::Mutex<crate::cache::CacheManager>,
 ) -> Result<Vec<Ingredient>> {
-    let cache_key = format!("recipe_ingredients:{}", recipe_id);
+    let cache_key = format!("recipe_ingredients:{}:{}", telegram_id, recipe_id);
 
     // Try cache first
     {
@@ -898,7 +970,7 @@ pub async fn get_recipe_ingredients_cached(
     }
 
     // Cache miss - fetch from database
-    let ingredients = get_recipe_ingredients(pool, recipe_id).await?;
+    let ingredients = get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
 
     // Cache the result
     {

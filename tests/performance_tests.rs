@@ -713,7 +713,7 @@ mod tests {
                 .expect("Failed to create recipe");
 
             // Set recipe name
-            db::update_recipe_name(&db_pool, recipe_id, &recipe_name)
+            db::update_recipe_name(&db_pool, test_user_id, recipe_id, &recipe_name)
                 .await
                 .ok();
 
@@ -858,7 +858,7 @@ mod tests {
                 .expect("Failed to create recipe");
 
             // Set recipe name
-            db::update_recipe_name(&db_pool, recipe_id, &recipe_name)
+            db::update_recipe_name(&db_pool, test_user_id, recipe_id, &recipe_name)
                 .await
                 .ok();
 
@@ -958,7 +958,7 @@ mod tests {
                         .expect("Failed to create recipe");
 
                     // Set recipe name
-                    db::update_recipe_name(&pool, recipe_id, &recipe_name)
+                    db::update_recipe_name(&pool, user_id, recipe_id, &recipe_name)
                         .await
                         .ok();
 
