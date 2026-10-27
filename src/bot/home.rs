@@ -9,6 +9,7 @@ use tracing::warn;
 
 use super::cleanup;
 use super::commands::command_lines;
+use super::html::{send_html, Html};
 use super::ui_components::truncate_text;
 use crate::db::{get_user_recipes_newest_first, RecipeSummary};
 use crate::localization::{t_args_lang, t_lang, LocalizationManager};
@@ -27,7 +28,7 @@ pub fn render_home(
     latest: &[RecipeSummary],
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
-) -> (String, Option<InlineKeyboardMarkup>) {
+) -> (Html, Option<InlineKeyboardMarkup>) {
     let count = match total {
         0 => t_lang(localization, "home-no-recipes", language_code),
         1 => t_lang(localization, "home-one-recipe", language_code),
@@ -38,13 +39,13 @@ pub fn render_home(
             language_code,
         ),
     };
-    let text = format!(
-        "{}\n{}\n{}\n\n{}",
-        t_lang(localization, "home-title", language_code),
-        count,
-        t_lang(localization, "home-send-photo", language_code),
-        command_lines(localization, language_code)
-    );
+    let text = Html::bold(&t_lang(localization, "home-title", language_code))
+        + Html::text(&format!(
+            "\n{}\n{}\n\n{}",
+            count,
+            t_lang(localization, "home-send-photo", language_code),
+            command_lines(localization, language_code)
+        ));
 
     let mut rows: Vec<Vec<InlineKeyboardButton>> = latest
         .iter()
@@ -86,7 +87,7 @@ pub async fn send_home(
             }
         };
     let (text, keyboard) = render_home(total, &latest, localization, language_code);
-    let request = bot.send_message(chat_id, text);
+    let request = send_html(bot, chat_id, text);
     let result = match keyboard {
         Some(keyboard) => request.reply_markup(keyboard).await,
         None => request.await,
@@ -127,7 +128,8 @@ mod tests {
     #[test]
     fn no_recipe_gives_the_hint_and_no_buttons() {
         let localization = create_localization_manager().expect("localization");
-        let (text, keyboard) = render_home(0, &[], &localization, Some("fr"));
+        let (html, keyboard) = render_home(0, &[], &localization, Some("fr"));
+        let text = html.as_str();
         assert!(text.contains("pas encore de recette"), "{text}");
         assert!(text.contains("photo"), "{text}");
         assert!(
@@ -140,7 +142,8 @@ mod tests {
     #[test]
     fn one_recipe_is_a_button_without_the_all_recipes_button() {
         let localization = create_localization_manager().expect("localization");
-        let (text, keyboard) = render_home(1, &[recipe(7, "Tarte")], &localization, Some("en"));
+        let (html, keyboard) = render_home(1, &[recipe(7, "Tarte")], &localization, Some("en"));
+        let text = html.as_str();
         assert!(text.contains("1 recipe."), "{text}");
         assert!(
             text.contains("/list - ") && text.contains("/help - "),
@@ -165,7 +168,8 @@ mod tests {
             ("fr", "12", "Toutes mes recettes"),
             ("en", "12", "All my recipes"),
         ] {
-            let (text, keyboard) = render_home(12, &latest, &localization, Some(language));
+            let (html, keyboard) = render_home(12, &latest, &localization, Some(language));
+            let text = html.as_str();
             assert!(text.contains(count), "{language}: {text}");
             assert!(!text.contains("Missing translation"), "{language}: {text}");
             let buttons = buttons(&keyboard.expect("keyboard"));

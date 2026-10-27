@@ -1,7 +1,8 @@
 //! Messages in Telegram HTML (`parse_mode = HTML`), safe by construction.
 //!
-//! An [`Html`] value is only built from escaped text and the tags of this module, so a recipe
-//! name, an ingredient or a caption containing `<`, `>` or `&` can never break the markup.
+//! An [`Html`] value is only built from escaped text and the tags of this module (`<b>`,
+//! `<pre>`), so a recipe name, an ingredient or a caption containing `<`, `>` or `&` can never
+//! break the markup.
 //! [`send_html`] and [`edit_html`] are the only way to send one: `Html` does not convert to
 //! `String`, so it cannot be sent as plain text by mistake, and plain text cannot be sent as HTML.
 
@@ -22,6 +23,11 @@ impl Html {
     /// Plain text in bold, escaped.
     pub fn bold(plain: &str) -> Self {
         Html(format!("<b>{}</b>", escape(plain)))
+    }
+
+    /// Plain text as a preformatted block (monospace, kept as is), escaped.
+    pub fn pre(plain: &str) -> Self {
+        Html(format!("<pre>{}</pre>", escape(plain)))
     }
 
     /// The markup sent to Telegram.
@@ -103,6 +109,14 @@ mod tests {
         assert_eq!(
             Html::bold("Crème <brûlée>").as_str(),
             "<b>Crème &lt;brûlée&gt;</b>"
+        );
+    }
+
+    #[test]
+    fn pre_keeps_the_lines_and_escapes_them() {
+        assert_eq!(
+            Html::pre("200 g <farine>\n1 œuf").as_str(),
+            "<pre>200 g &lt;farine&gt;\n1 œuf</pre>"
         );
     }
 

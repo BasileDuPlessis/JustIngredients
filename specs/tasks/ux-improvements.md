@@ -90,7 +90,7 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 ## Phase U1: Display and Navigation Foundations
 
 ### Task U1.1: HTML formatting with escaping (findings 2) (<= 1 hour per area)
-- [ ] Done
+- [x] Done
 - Description: one helper to send/edit messages with `parse_mode = HTML`; every interpolated
   user or model text (recipe names, ingredients, captions, transcriptions) escaped; `**x**`
   becomes `<b>x</b>` in code and locales. Done area by area (review, recipes, help/welcome,
@@ -101,6 +101,11 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   (plain text everywhere, guarded by a localization test). Remaining: HTML with escaping for the
   key screens (review list, recipe card, home, help), built so text cannot break the markup;
   enabling HTML globally would break any message whose user text contains `<`, `>` or `&`.
+- Done (2026-10-27, part 2): `bot::html` (`Html` built only from escaped text, `<b>`, `<pre>`;
+  `send_html`/`edit_html`; `Html` does not convert to `String`). Renderers in `ui_builder`
+  (review list, saved-recipe editing view, recipe card, card after editing) and for home, welcome
+  and help; the no-ingredients transcription moved from literal ``` to `<pre>`. Escaping and
+  renderer unit tests. Manual check pending in Telegram.
 
 ### Task U1.2: User messages without technical prefixes (finding 3) (<= 1 hour)
 - [x] Done

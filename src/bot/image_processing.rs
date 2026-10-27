@@ -1,6 +1,6 @@
 //! Image Processing module for OCR and image handling
 
-use crate::bot::html::edit_html;
+use crate::bot::html::{edit_html, Html};
 use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
@@ -201,16 +201,19 @@ pub async fn download_and_process_image(
     let extracted_text = extraction.transcription;
 
     if ingredients.is_empty() {
-        let mut no_ingredients_msg = format!(
-            "📝 {}\n\n{}",
-            t_lang(localization, "no-ingredients-found", language_code),
-            t_lang(localization, "no-ingredients-suggestion", language_code),
-        );
+        // The transcription is shown as a preformatted block
+        let mut no_ingredients_msg = Html::text("📝 ")
+            + Html::bold(&t_lang(localization, "no-ingredients-found", language_code))
+            + Html::text("\n\n")
+            + Html::text(&t_lang(
+                localization,
+                "no-ingredients-suggestion",
+                language_code,
+            ));
         if !extracted_text.trim().is_empty() {
-            no_ingredients_msg.push_str(&format!("\n\n```\n{extracted_text}\n```"));
+            no_ingredients_msg += Html::text("\n\n") + Html::pre(&extracted_text);
         }
-        bot.edit_message_text(chat_id, message_id, &no_ingredients_msg)
-            .await?;
+        edit_html(bot, chat_id, message_id, no_ingredients_msg).await?;
         return Ok(extracted_text);
     }
 

@@ -276,8 +276,12 @@ dispatcher.
   then to "Missing translation: <key>". A test checks that every literal key used in `src/`
   exists in both files.
 - `users.language_code` is stored when the user is created but not used to pick the language.
-- Messages are plain text (no `parse_mode`), without `**` markers or `[CODE]` prefixes
-  (guarded by `tests/localization_tests.rs`).
+- The key screens are sent in HTML (`parse_mode = HTML`) through `bot::html`: an `Html` value is
+  built only from escaped text, `<b>` and `<pre>`, and sent only with `send_html`/`edit_html`. Bold:
+  the titles of the review list, the saved-recipe editing view, the recipe card (name), the home,
+  welcome and help messages (and their section headers); the no-ingredients message shows the
+  transcription in a `<pre>` block. Every other message is plain text. Locale values have no
+  `**` markers or `[CODE]` prefixes (guarded by `tests/localization_tests.rs`).
 
 ## Testing
 - Unit tests next to the code: error keys present in both locales, caption cleaning, callback
