@@ -263,12 +263,15 @@ March 2026 image meanwhile (restarts reuse it).
   (success, `MAX_TOKENS`, `SAFETY` block, malformed JSON, empty candidates).
 
 ### Task 2.2: HTTP client with retries and circuit breaker (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: `GeminiExtractor` with a shared `reqwest::Client` (connect + total timeouts),
   retry with jittered backoff on 429/500/503/timeouts honoring `Retry-After`, no retry on 4xx,
   existing `CircuitBreaker` (moved out of OCR config, and given a real half-open state first: today
   it has none), key only in the header.
 - How to validate: `wiremock` tests for each status, timeout, and breaker opening.
+- Done: `src/extraction/gemini/client.rs`, shared `src/retry.rs` (also used by the database
+  connection), and a new `src/extraction/breaker.rs` with a real half-open state. The OCR
+  `CircuitBreaker` is left untouched (OCR still runs in production) and goes away in Phase 5.
 
 ### Task 2.3: In-memory image input (<= 1 hour)
 - [ ] Done

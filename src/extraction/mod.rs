@@ -9,6 +9,7 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
+pub mod breaker;
 pub mod config;
 pub mod gemini;
 pub mod mapping;

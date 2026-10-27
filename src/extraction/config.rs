@@ -183,8 +183,10 @@ impl ExtractionConfig {
                 "GEMINI_API_KEY is required when EXTRACTION_BACKEND is 'gemini'".to_string(),
             ));
         }
-        if gemini.model.is_empty() {
-            return Err(AppError::Config("GEMINI_MODEL cannot be empty".to_string()));
+        if !is_valid_model_id(&gemini.model) {
+            return Err(AppError::Config(
+                "GEMINI_MODEL must contain only letters, digits, '.', '-' and '_'".to_string(),
+            ));
         }
         if !(1..=300).contains(&gemini.timeout_secs) {
             return Err(AppError::Config(
@@ -198,6 +200,15 @@ impl ExtractionConfig {
         }
         Ok(())
     }
+}
+
+/// Model ids go into the request path, so only plain id characters are accepted.
+pub fn is_valid_model_id(model: &str) -> bool {
+    !model.is_empty()
+        && !model.starts_with('.')
+        && model
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_'))
 }
 
 fn parse_number<T: FromStr>(value: Option<String>, name: &str) -> AppResult<Option<T>> {
@@ -278,6 +289,16 @@ mod tests {
             assert!(config.validate().is_err(), "{name}={value}");
         }
         Ok(())
+    }
+
+    #[test]
+    fn model_ids_are_restricted_to_path_safe_characters() {
+        for valid in ["gemini-3.5-flash-lite", "gemini_flash-latest"] {
+            assert!(is_valid_model_id(valid), "{valid}");
+        }
+        for invalid in ["", "../x", "a/b", "model?key=1", ".hidden", "gemini flash"] {
+            assert!(!is_valid_model_id(invalid), "{invalid}");
+        }
     }
 
     #[test]

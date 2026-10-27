@@ -40,6 +40,9 @@ tokio-util = { version = "0.7", features = ["io"] } # Tokio utilities
 # Training data generation dependencies
 # (Removed - training binaries deleted)
 
+[dev-dependencies]
+wiremock = "0.6" # HTTP mock server for the Gemini client tests
+
 [[example]]
 name = "recipe_parser"
 path = "examples/recipe_parser.rs"
