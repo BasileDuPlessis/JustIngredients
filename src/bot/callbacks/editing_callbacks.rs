@@ -1,5 +1,6 @@
 //! Editing Callbacks module for handling EditingSavedIngredients dialogue state
 
+use crate::bot::html::edit_html;
 use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
@@ -16,9 +17,7 @@ use crate::localization::t_lang;
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
-use crate::bot::ui_builder::{
-    create_ingredient_review_keyboard, create_recipe_details_keyboard, format_ingredients_list,
-};
+use crate::bot::ui_builder::{create_ingredient_review_keyboard, create_recipe_details_keyboard};
 
 // Import HandlerContext
 use crate::bot::cleanup::send_transient;
@@ -353,19 +352,11 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
             }
         } else {
             // Update the message with remaining ingredients
-            let review_message = format!(
-                "✏️ {}\n\n{}\n\n{}",
-                t_lang(ctx.localization, "editing-recipe", language_code.as_deref()),
-                t_lang(
-                    ctx.localization,
-                    "editing-instructions",
-                    language_code.as_deref()
-                ),
-                format_ingredients_list(
-                    current_matches,
-                    language_code.as_deref(),
-                    ctx.localization
-                )
+            let review_message = crate::bot::ui_builder::render_saved_editing(
+                None,
+                current_matches,
+                language_code.as_deref(),
+                ctx.localization,
             );
 
             let keyboard = create_ingredient_review_keyboard(
@@ -375,22 +366,21 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
             );
 
             // Edit the original message
-            match ctx
-                .bot
-                .edit_message_text(
-                    q.message
-                        .as_ref()
-                        .expect("Callback query should have a message")
-                        .chat()
-                        .id,
-                    q.message
-                        .as_ref()
-                        .expect("Callback query should have a message")
-                        .id(),
-                    review_message,
-                )
-                .reply_markup(keyboard)
-                .await
+            match edit_html(
+                ctx.bot,
+                q.message
+                    .as_ref()
+                    .expect("Callback query should have a message")
+                    .chat()
+                    .id,
+                q.message
+                    .as_ref()
+                    .expect("Callback query should have a message")
+                    .id(),
+                review_message,
+            )
+            .reply_markup(keyboard)
+            .await
             {
                 Ok(_) => (),
                 Err(e) => {

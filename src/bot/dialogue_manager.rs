@@ -1,5 +1,6 @@
 //! Dialogue Manager module for handling dialogue state transitions
 
+use crate::bot::html::{edit_html, send_html};
 use crate::errors::AppError;
 use crate::localization::{t_args_lang, t_lang};
 use anyhow::Result;
@@ -26,7 +27,9 @@ use crate::db::{
 };
 
 // Import UI builder functions
-use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
+use super::ui_builder::{
+    create_ingredient_review_keyboard, format_ingredients_list, render_review, render_saved_editing,
+};
 
 // Import HandlerContext
 use super::cleanup::{self, send_transient};
@@ -200,23 +203,10 @@ pub async fn handle_recipe_name_input(
     match validate_recipe_name(recipe_name_input) {
         Ok(validated_name) => {
             // Recipe name is valid, transition to ingredient review state
-            let review_message = format!(
-                "📝 {}\n\n{}\n\n{}",
-                t_lang(
-                    handler_ctx.localization,
-                    "review-title",
-                    handler_ctx.language_code
-                ),
-                t_lang(
-                    handler_ctx.localization,
-                    "review-description",
-                    handler_ctx.language_code
-                ),
-                format_ingredients_list(
-                    &ingredients,
-                    handler_ctx.language_code,
-                    handler_ctx.localization
-                )
+            let review_message = render_review(
+                &ingredients,
+                handler_ctx.language_code,
+                handler_ctx.localization,
             );
 
             let keyboard = create_ingredient_review_keyboard(
@@ -225,8 +215,7 @@ pub async fn handle_recipe_name_input(
                 handler_ctx.localization,
             );
 
-            let sent_message = bot
-                .send_message(msg.chat.id, review_message)
+            let sent_message = send_html(bot, msg.chat.id, review_message)
                 .reply_markup(keyboard)
                 .await?;
 
@@ -778,27 +767,21 @@ async fn handle_edit_cancellation(params: EditCancellationParams<'_>) -> Result<
     } = params;
 
     // User cancelled editing, return to review state without changes
-    let review_message = format!(
-        "📝 {}\n\n{}\n\n{}",
-        t_lang(ctx.localization, "review-title", ctx.language_code),
-        t_lang(ctx.localization, "review-description", ctx.language_code),
-        format_ingredients_list(ingredients, ctx.language_code, ctx.localization)
-    );
+    let review_message = render_review(ingredients, ctx.language_code, ctx.localization);
 
     let keyboard =
         create_ingredient_review_keyboard(ingredients, ctx.language_code, ctx.localization);
 
     // If we have a message_id, edit the existing message; otherwise send a new one
     if let Some(msg_id) = message_id {
-        match ctx
-            .bot
-            .edit_message_text(
-                msg.chat.id,
-                teloxide::types::MessageId(msg_id),
-                review_message,
-            )
-            .reply_markup(keyboard)
-            .await
+        match edit_html(
+            ctx.bot,
+            msg.chat.id,
+            teloxide::types::MessageId(msg_id),
+            review_message,
+        )
+        .reply_markup(keyboard)
+        .await
         {
             Ok(_) => (),
             Err(e) if is_message_not_modified_error(&e) => {
@@ -814,8 +797,7 @@ async fn handle_edit_cancellation(params: EditCancellationParams<'_>) -> Result<
             }
         }
     } else {
-        ctx.bot
-            .send_message(msg.chat.id, review_message)
+        send_html(ctx.bot, msg.chat.id, review_message)
             .reply_markup(keyboard)
             .await?;
     }
@@ -856,27 +838,21 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
         ingredients[editing_index] = new_ingredient;
 
         // Return to review state with updated ingredients
-        let review_message = format!(
-            "📝 {}\n\n{}\n\n{}",
-            t_lang(ctx.localization, "review-title", ctx.language_code),
-            t_lang(ctx.localization, "review-description", ctx.language_code),
-            format_ingredients_list(&ingredients, ctx.language_code, ctx.localization)
-        );
+        let review_message = render_review(&ingredients, ctx.language_code, ctx.localization);
 
         let keyboard =
             create_ingredient_review_keyboard(&ingredients, ctx.language_code, ctx.localization);
 
         // If we have a message_id, edit the existing message; otherwise send a new one
         if let Some(msg_id) = message_id {
-            match ctx
-                .bot
-                .edit_message_text(
-                    msg.chat.id,
-                    teloxide::types::MessageId(msg_id),
-                    review_message,
-                )
-                .reply_markup(keyboard)
-                .await
+            match edit_html(
+                ctx.bot,
+                msg.chat.id,
+                teloxide::types::MessageId(msg_id),
+                review_message,
+            )
+            .reply_markup(keyboard)
+            .await
             {
                 Ok(_) => (),
                 Err(e) if is_message_not_modified_error(&e) => {
@@ -893,10 +869,8 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
             }
         } else {
             // Send new message with reply to user's input if available
-            let mut send_request = ctx
-                .bot
-                .send_message(msg.chat.id, review_message)
-                .reply_markup(keyboard);
+            let mut send_request =
+                send_html(ctx.bot, msg.chat.id, review_message).reply_markup(keyboard);
 
             if let Some(input_msg_id) = user_input_message_id {
                 send_request = send_request.reply_parameters(
@@ -1492,25 +1466,20 @@ async fn return_to_saved_ingredients_review(
         user_input_message_id,
     } = params;
     // Send updated ingredient list message
-    let review_message = format!(
-        "✏️ {}\n\n{}\n\n{}",
-        t_lang(localization, "editing-recipe", language_code),
-        t_lang(localization, "editing-instructions", language_code),
-        format_ingredients_list(current_matches, language_code, localization)
-    );
+    let review_message = render_saved_editing(None, current_matches, language_code, localization);
 
     let keyboard = create_ingredient_review_keyboard(current_matches, language_code, localization);
 
     // If we have a message_id, edit the existing message; otherwise send a new one
     if let Some(msg_id) = message_id {
-        match bot
-            .edit_message_text(
-                msg.chat.id,
-                teloxide::types::MessageId(msg_id),
-                review_message,
-            )
-            .reply_markup(keyboard)
-            .await
+        match edit_html(
+            bot,
+            msg.chat.id,
+            teloxide::types::MessageId(msg_id),
+            review_message,
+        )
+        .reply_markup(keyboard)
+        .await
         {
             Ok(_) => (),
             Err(e) if is_message_not_modified_error(&e) => {
@@ -1527,9 +1496,7 @@ async fn return_to_saved_ingredients_review(
         }
     } else {
         // Send new message with reply to user's input if available
-        let mut send_request = bot
-            .send_message(msg.chat.id, review_message)
-            .reply_markup(keyboard);
+        let mut send_request = send_html(bot, msg.chat.id, review_message).reply_markup(keyboard);
 
         if let Some(input_msg_id) = user_input_message_id {
             send_request = send_request.reply_parameters(teloxide::types::ReplyParameters::new(

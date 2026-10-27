@@ -3,6 +3,7 @@
 //! This module contains all callback handlers related to recipe management operations,
 //! including selection, deletion, statistics, and other recipe-related actions.
 
+use crate::bot::html::send_html;
 use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
@@ -22,7 +23,7 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 // Import UI builder functions
 use crate::bot::ui_builder::{
     create_ingredient_review_keyboard, create_recipe_details_keyboard,
-    create_recipe_instances_keyboard, format_database_ingredients_list, format_ingredients_list,
+    create_recipe_instances_keyboard, format_database_ingredients_list,
 };
 
 // Import database functions
@@ -786,27 +787,23 @@ async fn handle_edit_ingredients_callback(
         crate::ingredient_editing::ingredients_to_measurement_matches(&original_ingredients);
 
     // Send editing interface
-    let edit_message = format!(
-        "✏️ {}: {}\n\n{}\n\n{}",
-        t_lang(localization, "editing-recipe", language_code.as_deref()),
-        recipe
-            .recipe_name
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or("Unnamed Recipe"),
-        t_lang(
-            localization,
-            "editing-instructions",
-            language_code.as_deref()
+    let edit_message = crate::bot::ui_builder::render_saved_editing(
+        Some(
+            recipe
+                .recipe_name
+                .as_ref()
+                .map(|s| s.as_str())
+                .unwrap_or("Unnamed Recipe"),
         ),
-        format_ingredients_list(&current_matches, language_code.as_deref(), localization)
+        &current_matches,
+        language_code.as_deref(),
+        localization,
     );
 
     let keyboard =
         create_ingredient_review_keyboard(&current_matches, language_code.as_deref(), localization);
 
-    let sent_message = bot
-        .send_message(chat_id, edit_message)
+    let sent_message = send_html(bot, chat_id, edit_message)
         .reply_markup(keyboard)
         .await?;
 

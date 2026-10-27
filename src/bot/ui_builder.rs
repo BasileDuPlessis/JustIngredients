@@ -10,6 +10,7 @@ use std::sync::Arc;
 use crate::text_processing::MeasurementMatch;
 
 // Import common UI components
+use super::html::Html;
 use super::ui_components::{
     create_add_button, create_back_button, create_localized_button_with_emoji,
     create_pagination_buttons, truncate_text, with_ui_metrics_sync,
@@ -72,6 +73,48 @@ pub fn format_ingredients_list(
 
         result
     })
+}
+
+/// The review message (HTML): bold title, instructions and the numbered ingredient list.
+pub fn render_review(
+    ingredients: &[MeasurementMatch],
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Html {
+    Html::text("📝 ")
+        + Html::bold(&t_lang(localization, "review-title", language_code))
+        + Html::text("\n\n")
+        + Html::text(&t_lang(localization, "review-description", language_code))
+        + Html::text("\n\n")
+        + Html::text(&format_ingredients_list(
+            ingredients,
+            language_code,
+            localization,
+        ))
+}
+
+/// The editing view of a saved recipe (HTML): bold title (with the recipe name when given),
+/// instructions and the ingredient list.
+pub fn render_saved_editing(
+    recipe_name: Option<&str>,
+    ingredients: &[MeasurementMatch],
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Html {
+    let mut title =
+        Html::text("✏️ ") + Html::bold(&t_lang(localization, "editing-recipe", language_code));
+    if let Some(name) = recipe_name {
+        title += Html::text(": ") + Html::bold(name);
+    }
+    title
+        + Html::text("\n\n")
+        + Html::text(&t_lang(localization, "editing-instructions", language_code))
+        + Html::text("\n\n")
+        + Html::text(&format_ingredients_list(
+            ingredients,
+            language_code,
+            localization,
+        ))
 }
 
 /// Create inline keyboard for ingredient review
@@ -339,6 +382,50 @@ mod tests {
             end_pos: 0,
             requires_quantity_confirmation: flagged,
         }
+    }
+
+    fn named(name: &str) -> MeasurementMatch {
+        MeasurementMatch {
+            ingredient_name: name.to_string(),
+            ..ingredient("2", Some("g"), false)
+        }
+    }
+
+    #[test]
+    fn review_message_has_a_bold_title_and_escaped_ingredients() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let html = render_review(&[named("<sel> & poivre")], Some("fr"), &localization);
+        let html = html.as_str();
+        assert!(
+            html.starts_with("📝 <b>Révisez vos ingrédients</b>\n\n"),
+            "{html}"
+        );
+        assert!(html.contains("2 g → &lt;sel&gt; &amp; poivre"), "{html}");
+        assert!(!html.contains("<sel>"), "{html}");
+    }
+
+    #[test]
+    fn saved_editing_view_escapes_the_recipe_name() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let html = render_saved_editing(
+            Some("Fish & <Chips>"),
+            &[named("frites")],
+            Some("en"),
+            &localization,
+        );
+        assert!(
+            html.as_str()
+                .starts_with("✏️ <b>Editing recipe</b>: <b>Fish &amp; &lt;Chips&gt;</b>\n\n"),
+            "{}",
+            html.as_str()
+        );
+        let without_name =
+            render_saved_editing(None, &[named("frites")], Some("en"), &localization);
+        assert!(without_name
+            .as_str()
+            .starts_with("✏️ <b>Editing recipe</b>\n\n"));
     }
 
     #[test]

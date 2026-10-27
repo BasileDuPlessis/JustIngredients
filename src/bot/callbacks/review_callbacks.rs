@@ -4,6 +4,7 @@
 //! ReviewIngredients dialogue state. This includes editing, deleting, confirming,
 //! and canceling ingredient reviews.
 
+use crate::bot::html::edit_html;
 use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
@@ -22,9 +23,10 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI components for the focused editing interface
 use crate::bot::cleanup::{self, send_transient};
+use crate::bot::create_ingredient_review_keyboard;
 use crate::bot::home::send_home;
+use crate::bot::ui_builder::render_review;
 use crate::bot::ui_components::create_ingredient_editing_keyboard;
-use crate::bot::{create_ingredient_review_keyboard, format_ingredients_list};
 
 // Import HandlerContext
 use crate::bot::HandlerContext;
@@ -371,24 +373,8 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
             }
         } else {
             // Update the message with remaining ingredients
-            let review_message = format!(
-                "📝 {}\n\n{}\n\n{}",
-                t_lang(
-                    ctx.localization,
-                    "review-title",
-                    dialogue_lang_code.as_deref()
-                ),
-                t_lang(
-                    ctx.localization,
-                    "review-description",
-                    dialogue_lang_code.as_deref()
-                ),
-                format_ingredients_list(
-                    ingredients,
-                    dialogue_lang_code.as_deref(),
-                    ctx.localization
-                )
-            );
+            let review_message =
+                render_review(ingredients, dialogue_lang_code.as_deref(), ctx.localization);
 
             let keyboard = create_ingredient_review_keyboard(
                 ingredients,
@@ -397,22 +383,21 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
             );
 
             // Edit the original message
-            match ctx
-                .bot
-                .edit_message_text(
-                    q.message
-                        .as_ref()
-                        .expect("Callback query should have a message")
-                        .chat()
-                        .id,
-                    q.message
-                        .as_ref()
-                        .expect("Callback query should have a message")
-                        .id(),
-                    review_message,
-                )
-                .reply_markup(keyboard)
-                .await
+            match edit_html(
+                ctx.bot,
+                q.message
+                    .as_ref()
+                    .expect("Callback query should have a message")
+                    .chat()
+                    .id,
+                q.message
+                    .as_ref()
+                    .expect("Callback query should have a message")
+                    .id(),
+                review_message,
+            )
+            .reply_markup(keyboard)
+            .await
             {
                 Ok(_) => (),
                 Err(e) => {

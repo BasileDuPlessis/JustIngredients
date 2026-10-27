@@ -1,5 +1,6 @@
 //! Callback Handler module for processing inline keyboard callback queries
 
+use crate::bot::html::{edit_html, send_html};
 use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
@@ -368,15 +369,10 @@ async fn handle_editing_ingredient_callbacks(
                 );
 
                 // Restore the original recipe display
-                let review_message = format!(
-                    "📝 {}\n\n{}\n\n{}",
-                    t_lang(localization, "review-title", language_code.as_deref()),
-                    t_lang(localization, "review-description", language_code.as_deref()),
-                    crate::bot::format_ingredients_list(
-                        &ingredients,
-                        language_code.as_deref(),
-                        localization
-                    )
+                let review_message = crate::bot::ui_builder::render_review(
+                    &ingredients,
+                    language_code.as_deref(),
+                    localization,
                 );
 
                 let keyboard = crate::bot::create_ingredient_review_keyboard(
@@ -387,14 +383,14 @@ async fn handle_editing_ingredient_callbacks(
 
                 // Use the original message ID to restore the recipe display
                 if let Some(original_msg_id) = original_message_id {
-                    match bot
-                        .edit_message_text(
-                            msg.chat().id,
-                            teloxide::types::MessageId(original_msg_id),
-                            review_message.clone(),
-                        )
-                        .reply_markup(keyboard.clone())
-                        .await
+                    match edit_html(
+                        bot,
+                        msg.chat().id,
+                        teloxide::types::MessageId(original_msg_id),
+                        review_message.clone(),
+                    )
+                    .reply_markup(keyboard.clone())
+                    .await
                     {
                         Ok(_) => (),
                         Err(e) => {
@@ -405,14 +401,14 @@ async fn handle_editing_ingredient_callbacks(
                                 Some(msg.chat().id.0),
                             );
                             // Fallback: send new message if editing fails
-                            bot.send_message(msg.chat().id, review_message)
+                            send_html(bot, msg.chat().id, review_message)
                                 .reply_markup(keyboard)
                                 .await?;
                         }
                     }
                 } else {
                     // No original message ID, send new message
-                    bot.send_message(msg.chat().id, review_message)
+                    send_html(bot, msg.chat().id, review_message)
                         .reply_markup(keyboard)
                         .await?;
                 }
@@ -471,19 +467,11 @@ async fn handle_editing_saved_ingredient_callbacks(
                 );
 
                 // Restore the editing list view
-                let edit_message = format!(
-                    "📝 {}\n\n{}\n\n{}",
-                    t_lang(localization, "editing-recipe", language_code.as_deref()),
-                    t_lang(
-                        localization,
-                        "editing-instructions",
-                        language_code.as_deref()
-                    ),
-                    crate::bot::format_ingredients_list(
-                        &current_matches,
-                        language_code.as_deref(),
-                        localization
-                    )
+                let edit_message = crate::bot::ui_builder::render_saved_editing(
+                    None,
+                    &current_matches,
+                    language_code.as_deref(),
+                    localization,
                 );
 
                 let keyboard = crate::bot::create_ingredient_review_keyboard(
@@ -494,14 +482,14 @@ async fn handle_editing_saved_ingredient_callbacks(
 
                 // Use the original message ID to restore the editing list
                 if let Some(original_msg_id) = original_message_id {
-                    match bot
-                        .edit_message_text(
-                            msg.chat().id,
-                            teloxide::types::MessageId(original_msg_id),
-                            edit_message.clone(),
-                        )
-                        .reply_markup(keyboard.clone())
-                        .await
+                    match edit_html(
+                        bot,
+                        msg.chat().id,
+                        teloxide::types::MessageId(original_msg_id),
+                        edit_message.clone(),
+                    )
+                    .reply_markup(keyboard.clone())
+                    .await
                     {
                         Ok(_) => (),
                         Err(e) => {
@@ -512,14 +500,14 @@ async fn handle_editing_saved_ingredient_callbacks(
                                 Some(msg.chat().id.0),
                             );
                             // Fallback: send new message if editing fails
-                            bot.send_message(msg.chat().id, edit_message)
+                            send_html(bot, msg.chat().id, edit_message)
                                 .reply_markup(keyboard)
                                 .await?;
                         }
                     }
                 } else {
                     // No original message ID, send new message
-                    bot.send_message(msg.chat().id, edit_message)
+                    send_html(bot, msg.chat().id, edit_message)
                         .reply_markup(keyboard)
                         .await?;
                 }

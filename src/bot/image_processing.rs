@@ -1,5 +1,6 @@
 //! Image Processing module for OCR and image handling
 
+use crate::bot::html::edit_html;
 use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
@@ -29,7 +30,7 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
 use super::ui_builder::{
-    create_ingredient_review_keyboard, create_processing_keyboard, format_ingredients_list,
+    create_ingredient_review_keyboard, create_processing_keyboard, render_review,
 };
 
 // Import HandlerContext
@@ -215,15 +216,9 @@ pub async fn download_and_process_image(
 
     // Ingredients found, go directly to review interface
     info!(user_id = %chat_id, backend = extractor.name(), ingredients_count = ingredients.len(), "Sending ingredients review interface");
-    let review_message = format!(
-        "📝 {}\n\n{}\n\n{}",
-        t_lang(localization, "review-title", language_code),
-        t_lang(localization, "review-description", language_code),
-        format_ingredients_list(&ingredients, language_code, localization)
-    );
+    let review_message = render_review(&ingredients, language_code, localization);
     let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
-    let sent_message = bot
-        .edit_message_text(chat_id, message_id, review_message)
+    let sent_message = edit_html(bot, chat_id, message_id, review_message)
         .reply_markup(keyboard)
         .await?;
 

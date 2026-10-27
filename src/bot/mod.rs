@@ -5,6 +5,7 @@
 //! - `cleanup`: Messages of an action, deleted when it ends
 //! - `commands`: Command parsing and the Telegram command menu
 //! - `home`: Home message sent at the end of every action
+//! - `html`: Telegram HTML messages, escaped by construction
 //! - `message_handler`: Handles incoming text, photo, and document messages
 //! - `ui_builder`: Creates keyboards and formats messages
 //! - `dialogue_manager`: Manages dialogue state transitions and validation
@@ -15,6 +16,7 @@ pub mod command_handlers;
 pub mod commands;
 pub mod dialogue_manager;
 pub mod home;
+pub mod html;
 pub mod image_processing;
 pub mod media_handlers;
 pub mod message_handler;
