@@ -258,7 +258,9 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 
 ## Later (not planned yet)
 - Ops: give `monitoring/prometheus.yml` the metrics token and set `METRICS_AUTH_TOKEN` on staging
-  (finding 23); delete the unused `GOOGLE_AI_API_KEY` repository secret (finding 24).
+  (finding 23). Finding 24 done: the unused `GOOGLE_AI_API_KEY` repository secret was deleted by
+  the user on 2026-10-27, with the repository-level `FLY_API_TOKEN` (replaced by one deploy token
+  per environment).
 - Language preference (`/langue`) instead of the Telegram app language (finding 12).
 - Export/share a recipe as text (finding 13); several photos at once.
 
