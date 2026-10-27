@@ -946,7 +946,9 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: the test fails when a call site uses an unknown key.
 
 ### IMP-046: Timing benchmarks run as blocking tests
-- [ ] Done
+- [x] Done (2026-10-27): every test of `tests/performance_tests.rs` and the adaptive
+  preprocessing timing test are `#[ignore]`d (run with `--ignored`); the OCR timing tests go with
+  Phase 5. Moving the text-parser benchmarks to `benches/` (criterion) stays optional.
 - Priority: P2. Effort: M. Area: Tests / CI.
 - Related: LLM migration (most benchmarks measure OCR code that Phase 5 deletes).
 - Location: `tests/performance_tests.rs` (23 tests with ops/sec and overhead thresholds),

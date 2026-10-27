@@ -1,0 +1,20 @@
+#!/bin/sh
+# Pre-push checks, kept short: CI runs every test (integration, DB, doc tests) after the push.
+# Install once with: ./scripts/hooks/install.sh
+
+set -e
+
+echo "🔍 Pre-push checks"
+
+./scripts/check-unwraps.sh
+
+echo "🎨 cargo fmt --check"
+cargo fmt --all -- --check
+
+echo "🔧 cargo clippy"
+cargo clippy --all-targets --all-features --quiet -- -D warnings
+
+echo "🧪 cargo test --lib"
+cargo test --lib --quiet
+
+echo "✅ All quality checks passed! Pushing..."

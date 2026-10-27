@@ -2,6 +2,7 @@
 //!
 //! Comprehensive performance benchmarking suite for the JustIngredients bot.
 //! Covers OCR processing, database operations, end-to-end workflows, and system performance.
+//! Every test is ignored by default (IMP-046): run them with `cargo test --test performance_tests -- --ignored`.
 
 #[cfg(test)]
 mod tests {
@@ -11,6 +12,7 @@ mod tests {
 
     /// Baseline performance test without observability
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_baseline_performance_without_observability() {
         let detector = MeasurementDetector::new().unwrap();
 
@@ -49,6 +51,7 @@ mod tests {
 
     /// Performance test with observability enabled
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_performance_with_observability_enabled() {
         let detector = MeasurementDetector::new().unwrap();
 
@@ -100,6 +103,7 @@ mod tests {
 
     /// Measure observability overhead specifically
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_observability_overhead_measurement() {
         let iterations = 10_000;
 
@@ -145,6 +149,7 @@ mod tests {
 
     /// Test memory usage impact of observability
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_memory_usage_impact() {
         use std::mem;
 
@@ -167,6 +172,7 @@ mod tests {
 
     /// Test CPU usage impact during sustained load
     #[tokio::test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     async fn test_cpu_usage_under_sustained_load() {
         let duration = Duration::from_secs(5);
         let start = Instant::now();
@@ -207,6 +213,7 @@ mod tests {
 
     /// Test observability impact on concurrent operations
     #[tokio::test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     async fn test_concurrent_performance_impact() {
         let task_count = 10;
         let operations_per_task = 1000;
@@ -257,6 +264,7 @@ mod tests {
 
     /// Test observability scalability - performance with increasing load
     #[tokio::test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     async fn test_observability_scalability() {
         let load_levels = vec![1, 5, 10, 20, 50];
         let operations_per_level = 100;
@@ -305,6 +313,7 @@ mod tests {
 
     /// Test that observability doesn't affect core OCR processing speed significantly
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_ocr_processing_speed_impact() {
         let detector = MeasurementDetector::new().unwrap();
 
@@ -375,6 +384,7 @@ mod tests {
 
     /// Test observability garbage collection and cleanup performance
     #[tokio::test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     async fn test_observability_cleanup_performance() {
         let iterations = 1000;
 
@@ -415,6 +425,7 @@ mod tests {
 
     /// Benchmark OCR text extraction performance with mock data
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_ocr_text_extraction_performance() {
         use just_ingredients::ocr::estimate_memory_usage;
 
@@ -485,6 +496,7 @@ mod tests {
 
     /// Benchmark OCR retry delay calculations
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_ocr_retry_delay_performance() {
         use just_ingredients::ocr::calculate_retry_delay;
         use just_ingredients::ocr_config::RecoveryConfig;
@@ -517,6 +529,7 @@ mod tests {
 
     /// Benchmark path validation performance
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_path_validation_performance() {
         use just_ingredients::path_validation::validate_file_path;
 
@@ -562,6 +575,7 @@ mod tests {
 
     /// Benchmark database connection and basic operations
     #[tokio::test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     async fn test_database_connection_performance() {
         use std::env;
 
@@ -605,6 +619,7 @@ mod tests {
 
     /// Benchmark user operations performance
     #[tokio::test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     async fn test_user_operations_performance() {
         use just_ingredients::db;
         use std::env;
@@ -677,6 +692,7 @@ mod tests {
 
     /// Benchmark recipe and ingredient operations
     #[tokio::test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     async fn test_recipe_operations_performance() {
         use just_ingredients::db;
         use std::env;
@@ -798,6 +814,7 @@ mod tests {
 
     /// Benchmark complete OCR-to-database workflow
     #[tokio::test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     async fn test_end_to_end_ocr_workflow_performance() {
         use just_ingredients::db;
         use just_ingredients::text_processing::MeasurementDetector;
@@ -918,6 +935,7 @@ mod tests {
 
     /// Benchmark concurrent user load simulation
     #[tokio::test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     async fn test_concurrent_user_load_simulation() {
         use just_ingredients::db;
         use std::env;
@@ -1035,6 +1053,7 @@ mod tests {
 
     /// Benchmark memory usage patterns
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_memory_usage_patterns() {
         use just_ingredients::text_processing::MeasurementDetector;
         use std::mem;
@@ -1088,6 +1107,7 @@ mod tests {
 
     /// Benchmark automated test execution performance
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_automated_test_execution_performance() {
         // This test measures how fast the test suite itself runs
         // It's a meta-benchmark for the testing infrastructure
@@ -1125,6 +1145,7 @@ mod tests {
 
     /// Comprehensive performance report
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_comprehensive_performance_report() {
         println!("🚀 JustIngredients Performance Benchmark Report");
         println!("================================================");
@@ -1256,6 +1277,7 @@ mod tests {
 
     /// Memory usage profiling for large recipes
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_memory_usage_large_recipes() {
         let detector = MeasurementDetector::new().unwrap();
 
@@ -1369,6 +1391,7 @@ mod tests {
 
     /// Scalability test: Performance with increasing recipe complexity
     #[test]
+    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_scalability_with_recipe_complexity() {
         let detector = MeasurementDetector::new().unwrap();
 
