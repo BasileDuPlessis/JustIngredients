@@ -155,11 +155,13 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   Known limit: the interrupted review or edit message keeps its (now inactive) buttons.
 
 ### Task U1.7: Small message fixes (findings 17, 20) (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: add the missing `use-buttons-instruction` and `error-no-mime-type` messages; the
   rename cancellation says "rename cancelled"; a test checks that every key used in code exists in
   both locales (IMP-045).
 - How to validate: the locale-key test fails when a key is missing.
+- Done (2026-10-27): `use-buttons-instruction`, `error-no-mime-type` and `rename-cancelled` added
+  in both locales; the new key test failed on the first two before they were added.
 
 ### Review gate RU1
 - [ ] Done

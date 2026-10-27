@@ -190,7 +190,7 @@ state).
   🗑️ `recipe_action:delete:<id>`, 📊 `recipe_action:statistics:<id>`, ⬅️ `back_to_recipes`
   (deletes the card message).
 - **Rename**: prompt, state `RenamingRecipe`, typed name saved with `update_recipe_name`
-  (cancel words answer `delete-cancelled`); an empty or too long name is refused and the prompt
+  (cancel words answer `rename-cancelled`); an empty or too long name is refused and the prompt
   stays open.
 - **Edit ingredients**: state `EditingSavedIngredients` with the review keyboard. ✏️ opens
   `EditingSavedIngredient` (typed line, `cancel_ingredient_editing`), ➕ `add_ingredient` opens
@@ -265,8 +265,8 @@ dispatcher.
 - Fluent files `locales/en/main.ftl` and `locales/fr/main.ftl`, embedded at build time.
 - Language: `language_code` of the message or callback sender, `fr-FR` → `fr`; `fr` and `en`
   are supported, anything else gets English. A key missing in French falls back to English,
-  then to "Missing translation: <key>". `error-no-mime-type` and `use-buttons-instruction` are
-  used by the code but defined in neither file, so users get that fallback text.
+  then to "Missing translation: <key>". A test checks that every literal key used in `src/`
+  exists in both files.
 - `users.language_code` is stored when the user is created but not used to pick the language.
 - Messages are plain text (no `parse_mode`), without `**` markers or `[CODE]` prefixes
   (guarded by `tests/localization_tests.rs`).

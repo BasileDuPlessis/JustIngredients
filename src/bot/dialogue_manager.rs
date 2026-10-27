@@ -619,7 +619,7 @@ pub async fn handle_recipe_rename_input(
             msg.chat.id,
             t_lang(
                 handler_ctx.localization,
-                "delete-cancelled",
+                "rename-cancelled",
                 handler_ctx.language_code,
             ),
         )

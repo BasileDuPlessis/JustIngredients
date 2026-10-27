@@ -932,7 +932,9 @@ they can be pulled into 1-hour micro-tasks without another review.
   the network down retries and then connects.
 
 ### IMP-045: Locale keys used in code are not checked against the `.ftl` files
-- [ ] Done
+- [x] Done (2026-10-27, UX Task U1.7): `every_key_used_in_code_exists_in_both_locales` in
+  `tests/localization_tests.rs` finds the literal keys of `t_lang`, `t_args_lang` and the
+  localized button helpers in `src/` and checks both `.ftl` files.
 - Priority: P2. Effort: S. Area: Localization.
 - Location: `src/localization.rs:91` (fallback "Missing translation: …"), every `t_lang`/`t_args_lang`
   call site.

@@ -62,6 +62,7 @@ error-extraction-busy = Too many photos at the same time. Please try again in a 
 error-extraction-unsupported-image = This file is not an image I can read. Please send a photo (JPEG, PNG or WebP).
 error-extraction-image-too-large = This image is too large (10 MB maximum). Please send a smaller photo.
 error-extraction-unreadable = I couldn't read this image. Please try a sharper photo of the ingredient list.
+error-no-mime-type = I can't tell what kind of file this is. Please send a photo (JPEG, PNG or WebP).
 extraction-not-a-recipe = I don't see an ingredient list in this image. Please send a photo of a recipe's ingredients.
 
 # Success messages
@@ -207,6 +208,7 @@ delete-recipe-confirmation = Are you sure you want to delete this recipe? This a
 recipe-deleted = Recipe deleted successfully
 recipe-deleted-help = The recipe and all its ingredients have been permanently removed.
 delete-cancelled = Recipe deletion cancelled
+rename-cancelled = Renaming cancelled. The recipe keeps its name.
 
 # Recipe viewing messages
 recipe-not-found = Recipe not found
@@ -225,6 +227,7 @@ ingredients-updated = Ingredients updated successfully
 ingredients-updated-help = Your recipe ingredients have been updated.
 no-changes-made = No changes were made to the ingredients.
 editing-cancelled = Ingredient editing cancelled
+use-buttons-instruction = Please use the buttons under the ingredient list to edit the recipe.
 no-ingredients-to-edit = No ingredients to edit
 no-ingredients-to-edit-help = This recipe has no ingredients to edit. Try adding some ingredients first.
 error-updating-ingredients = Failed to update ingredients

@@ -299,3 +299,63 @@ fn user_messages_have_no_technical_prefix_or_markdown() {
         }
     }
 }
+
+/// Every message key the code asks for exists in both locales (IMP-045): a missing key shows
+/// "Missing translation: <key>" to the user.
+#[test]
+fn every_key_used_in_code_exists_in_both_locales() {
+    use std::collections::BTreeSet;
+    use std::path::Path;
+
+    fn rust_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) {
+        for entry in std::fs::read_dir(dir).expect("read src directory") {
+            let path = entry.expect("directory entry").path();
+            if path.is_dir() {
+                rust_files(&path, files);
+            } else if path.extension().is_some_and(|ext| ext == "rs") {
+                files.push(path);
+            }
+        }
+    }
+
+    // The key is the literal right after the localization manager argument
+    let calls = [
+        r#"t_(?:args_)?lang\(\s*[^,()"]+,\s*"([a-z0-9-]+)""#,
+        r#"create_localized_button\(\s*[^,()"]+,\s*"([a-z0-9-]+)""#,
+        r#"create_localized_button_with_emoji\(\s*[^,()"]+,\s*"[^"]*",\s*"([a-z0-9-]+)""#,
+    ]
+    .map(|pattern| regex::Regex::new(pattern).expect("valid pattern"));
+
+    let mut files = Vec::new();
+    rust_files(
+        Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")),
+        &mut files,
+    );
+    let mut used = BTreeSet::new();
+    for file in &files {
+        let source = std::fs::read_to_string(file).expect("read source file");
+        for call in &calls {
+            used.extend(call.captures_iter(&source).map(|c| c[1].to_string()));
+        }
+    }
+    assert!(
+        used.len() > 50,
+        "the key search found too few keys: {used:?}"
+    );
+
+    let defined = regex::Regex::new(r"(?m)^([a-z][a-z0-9-]*)\s*=").expect("valid pattern");
+    for (language, source) in [
+        ("en", include_str!("../locales/en/main.ftl")),
+        ("fr", include_str!("../locales/fr/main.ftl")),
+    ] {
+        let keys: BTreeSet<&str> = defined
+            .captures_iter(source)
+            .filter_map(|c| c.get(1).map(|m| m.as_str()))
+            .collect();
+        let missing: Vec<&String> = used.iter().filter(|k| !keys.contains(k.as_str())).collect();
+        assert!(
+            missing.is_empty(),
+            "{language}: keys used in code but missing: {missing:?}"
+        );
+    }
+}

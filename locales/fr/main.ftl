@@ -59,6 +59,7 @@ error-extraction-busy = Trop de photos en même temps. Réessayez dans une minut
 error-extraction-unsupported-image = Ce fichier n'est pas une image que je sais lire. Envoyez une photo (JPEG, PNG ou WebP).
 error-extraction-image-too-large = Cette image est trop lourde (10 Mo maximum). Envoyez une photo plus légère.
 error-extraction-unreadable = Je n'ai pas réussi à lire cette image. Essayez une photo plus nette de la liste d'ingrédients.
+error-no-mime-type = Je ne reconnais pas ce type de fichier. Envoyez une photo (JPEG, PNG ou WebP).
 extraction-not-a-recipe = Je ne vois pas de liste d'ingrédients sur cette image. Envoyez une photo des ingrédients d'une recette.
 
 # Messages de succès
@@ -197,6 +198,7 @@ delete-recipe-confirmation = Êtes-vous sûr de vouloir supprimer cette recette 
 recipe-deleted = Recette supprimée avec succès
 recipe-deleted-help = La recette et tous ses ingrédients ont été supprimés définitivement.
 delete-cancelled = Suppression de recette annulée
+rename-cancelled = Renommage annulé. La recette garde son nom.
 rename-recipe-success = Recette renommée avec succès
 rename-recipe-success-details = Recette renommée de "{$old_name}" à "{$new_name}"
 
@@ -218,6 +220,7 @@ ingredients-updated = Ingrédients mis à jour avec succès
 ingredients-updated-help = Les ingrédients de votre recette ont été mis à jour.
 no-changes-made = Aucune modification n'a été apportée aux ingrédients.
 editing-cancelled = Édition des ingrédients annulée
+use-buttons-instruction = Utilisez les boutons sous la liste d'ingrédients pour modifier la recette.
 no-ingredients-to-edit = Aucun ingrédient à modifier
 no-ingredients-to-edit-help = Cette recette n'a pas d'ingrédients à modifier. Essayez d'ajouter des ingrédients d'abord.
 error-updating-ingredients = Échec de la mise à jour des ingrédients
