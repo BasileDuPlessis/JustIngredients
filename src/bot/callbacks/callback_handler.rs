@@ -366,7 +366,7 @@ async fn handle_editing_ingredient_callbacks(
 
                 // Restore the original recipe display
                 let review_message = format!(
-                    "📝 **{}**\n\n{}\n\n{}",
+                    "📝 {}\n\n{}\n\n{}",
                     t_lang(localization, "review-title", language_code.as_deref()),
                     t_lang(localization, "review-description", language_code.as_deref()),
                     crate::bot::format_ingredients_list(
@@ -469,7 +469,7 @@ async fn handle_editing_saved_ingredient_callbacks(
 
                 // Restore the editing list view
                 let edit_message = format!(
-                    "📝 **{}**\n\n{}\n\n{}",
+                    "📝 {}\n\n{}\n\n{}",
                     t_lang(localization, "editing-recipe", language_code.as_deref()),
                     t_lang(
                         localization,
@@ -617,7 +617,7 @@ async fn handle_recipe_selection_cached(
         0 => {
             // This shouldn't happen if the recipe exists in the list, but handle gracefully
             let message = format!(
-                "❌ **{}**\n\n{}",
+                "❌ {}\n\n{}",
                 t_lang(localization, "recipe-not-found", language_code.as_deref()),
                 t_lang(
                     localization,
@@ -635,7 +635,7 @@ async fn handle_recipe_selection_cached(
                     .await?;
 
             let message = format!(
-                "📖 **{}**\n\n📅 {}\n\n{}",
+                "📖 {}\n\n📅 {}\n\n{}",
                 recipe
                     .recipe_name
                     .as_ref()
@@ -667,7 +667,7 @@ async fn handle_recipe_selection_cached(
         _ => {
             // Multiple recipes with same name - show disambiguation UI
             let message = format!(
-                "📚 **{}**\n\n{}",
+                "📚 {}\n\n{}",
                 recipe_name,
                 t_lang(
                     localization,
@@ -750,7 +750,7 @@ async fn handle_recipe_instance_selection_cached(
         crate::db::get_recipe_ingredients_cached(&pool, telegram_id, recipe_id, cache).await?;
 
     let message = format!(
-        "📖 **{}**\n\n📅 {}\n\n{}",
+        "📖 {}\n\n📅 {}\n\n{}",
         recipe
             .recipe_name
             .as_ref()

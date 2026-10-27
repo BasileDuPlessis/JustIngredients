@@ -4,11 +4,11 @@
 welcome-title = Welcome to Ingredients Bot!
 welcome-description = I'm your recipe assistant: send me a photo of an ingredient list and I'll turn it into a saved recipe. Here's what I can do:
 welcome-features =
-    📸 **Send me photos** of ingredient lists, recipes, or any text you want to extract
-    � **Add captions** to automatically name your recipes
-    �📄 **Send me image files** (PNG, JPG, JPEG, BMP, TIFF, TIF)
-    🔍 **I'll read the ingredients** and let you check them before saving
-    💾 **All extracted text is stored** for future reference
+    📸 Send me photos of ingredient lists, recipes, or any text you want to extract
+    � Add captions to automatically name your recipes
+    �📄 Send me image files (PNG, JPG, JPEG, BMP, TIFF, TIF)
+    🔍 I'll read the ingredients and let you check them before saving
+    💾 All extracted text is stored for future reference
 welcome-commands = Commands:
 welcome-start = /start - Show this welcome message
 welcome-help = /help - Get help and usage instructions
@@ -35,28 +35,28 @@ help-tip5 = • Supported languages: English + French
 help-final = Need help? Just send me an image! 😊
 
 # Error messages
-error-download-failed = [DOWNLOAD] Failed to download the image. Please try again.
-error-unsupported-format = [FORMAT] Unsupported image format. Please use PNG, JPG, JPEG, BMP, TIFF, or TIF formats.
-error-no-text-found = [OCR_RESULT] No text was found in the image. Please try a clearer image with visible text.
-error-ocr-initialization = [OCR_INIT] OCR engine initialization failed. Please try again later.
-error-ocr-extraction = [OCR_EXTRACT] Failed to extract text from the image. Please try again with a different image.
-error-ocr-timeout = [OCR_TIMEOUT] OCR processing timed out: {$msg}
-error-ocr-corruption = [OCR_CORRUPT] OCR engine encountered an internal error. Please try again.
-error-ocr-exhaustion = [OCR_RESOURCE] System resources are exhausted. Please try again later.
-error-validation = [VALIDATION] Image validation failed: {$msg}
-error-image-load = [IMAGE_LOAD] The image format is not supported or the image is corrupted. Please try with a PNG, JPG, or BMP image.
+error-download-failed = Failed to download the image. Please try again.
+error-unsupported-format = Unsupported image format. Please use PNG, JPG, JPEG, BMP, TIFF, or TIF formats.
+error-no-text-found = No text was found in the image. Please try a clearer image with visible text.
+error-ocr-initialization = OCR engine initialization failed. Please try again later.
+error-ocr-extraction = Failed to extract text from the image. Please try again with a different image.
+error-ocr-timeout = OCR processing timed out: {$msg}
+error-ocr-corruption = OCR engine encountered an internal error. Please try again.
+error-ocr-exhaustion = System resources are exhausted. Please try again later.
+error-validation = Image validation failed: {$msg}
+error-image-load = The image format is not supported or the image is corrupted. Please try with a PNG, JPG, or BMP image.
 
 # Ingredient extraction (Gemini or Tesseract)
-error-extraction-unavailable = [EXTRACTION_UNAVAILABLE] Reading recipes is temporarily unavailable. Please try again in a few minutes.
-error-extraction-busy = [EXTRACTION_BUSY] Too many photos at the same time. Please try again in a minute.
-error-extraction-unsupported-image = [FORMAT] This file is not an image I can read. Please send a photo (JPEG, PNG or WebP).
-error-extraction-image-too-large = [FORMAT] This image is too large (10 MB maximum). Please send a smaller photo.
-error-extraction-unreadable = [EXTRACTION_UNREADABLE] I couldn't read this image. Please try a sharper photo of the ingredient list.
-extraction-not-a-recipe = [NOT_A_RECIPE] I don't see an ingredient list in this image. Please send a photo of a recipe's ingredients.
+error-extraction-unavailable = Reading recipes is temporarily unavailable. Please try again in a few minutes.
+error-extraction-busy = Too many photos at the same time. Please try again in a minute.
+error-extraction-unsupported-image = This file is not an image I can read. Please send a photo (JPEG, PNG or WebP).
+error-extraction-image-too-large = This image is too large (10 MB maximum). Please send a smaller photo.
+error-extraction-unreadable = I couldn't read this image. Please try a sharper photo of the ingredient list.
+extraction-not-a-recipe = I don't see an ingredient list in this image. Please send a photo of a recipe's ingredients.
 
 # Success messages
-success-extraction = ✅ **Text extracted successfully!**
-success-extracted-text = 📝 **Extracted Text:**
+success-extraction = ✅ Text extracted successfully!
+success-extracted-text = 📝 Extracted Text:
 success-photo-downloaded = Photo downloaded successfully! Processing...
 success-document-downloaded = Image document downloaded successfully! Processing...
 
@@ -68,7 +68,7 @@ line = Line
 unknown-ingredient = Unknown ingredient
 total-ingredients-found = Total ingredients found
 original-text = Original extracted text
-error-processing-failed = [INGREDIENT_PROCESSING] Failed to process ingredients
+error-processing-failed = Failed to process ingredients
 error-try-again = Please try again with a different image.
 
 # Processing messages
@@ -91,13 +91,13 @@ text-tip = 💡 Tip: Send me a photo of a recipe's ingredient list and I'll read
 # Recipe name dialogue messages
 recipe-name-prompt = 🏷️ What would you like to call this recipe?
 recipe-name-prompt-hint = Please enter a name for your recipe (e.g., "Chocolate Chip Cookies", "Mom's Lasagna")
-recipe-name-invalid = [RECIPE_NAME] Recipe name cannot be empty. Please enter a valid name for your recipe.
-recipe-name-too-long = [RECIPE_NAME] Recipe name is too long (maximum 255 characters). Please enter a shorter name.
+recipe-name-invalid = Recipe name cannot be empty. Please enter a valid name for your recipe.
+recipe-name-too-long = Recipe name is too long (maximum 255 characters). Please enter a shorter name.
 recipe-complete = ✅ Recipe "{$recipe_name}" saved successfully with {$ingredient_count} ingredients!
 
 # Caption-related messages
 caption-used = 📝 Using your caption "{$caption}" as the recipe name
-caption-invalid = [CAPTION] Caption "{$caption}" is invalid, using default recipe name instead
+caption-invalid = Caption "{$caption}" is invalid, using default recipe name instead
 caption-empty = 💡 Tip: Add a caption to your photo to automatically name your recipe!
 
 # Ingredient review messages
@@ -123,7 +123,7 @@ edit-ingredient-name-too-long = Ingredient name is too long (maximum 100 charact
 edit-invalid-quantity = Invalid quantity. Please use a positive number (e.g., "2.5 cups flour").
 quantity-correction-prompt = We couldn't read the exact amount for {$ingredient}. Please type the quantity (or - if there is none):
 review-quantities-to-check = ⚠️ Please check the quantity of: {$ingredients}. Tap an ingredient to fix it, then confirm again.
-error-invalid-edit = [INGREDIENT_EDIT] Invalid ingredient index for editing.
+error-invalid-edit = Invalid ingredient index for editing.
 review-help = Please reply with "confirm" to save these ingredients, or "cancel" to discard them.
 
 # Document messages

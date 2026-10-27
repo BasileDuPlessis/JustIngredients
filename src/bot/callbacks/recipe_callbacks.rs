@@ -66,7 +66,7 @@ pub async fn handle_recipe_selection(
         0 => {
             // This shouldn't happen if the recipe exists in the list, but handle gracefully
             let message = format!(
-                "❌ **{}**\n\n{}",
+                "❌ {}\n\n{}",
                 t_lang(localization, "recipe-not-found", language_code.as_deref()),
                 t_lang(
                     localization,
@@ -83,7 +83,7 @@ pub async fn handle_recipe_selection(
                 crate::db::get_recipe_ingredients(&pool, telegram_id, recipe.id).await?;
 
             let message = format!(
-                "📖 **{}**\n\n📅 {}\n\n{}",
+                "📖 {}\n\n📅 {}\n\n{}",
                 recipe
                     .recipe_name
                     .as_ref()
@@ -115,7 +115,7 @@ pub async fn handle_recipe_selection(
         _ => {
             // Multiple recipes with same name - show disambiguation UI
             let message = format!(
-                "📚 **{}**\n\n{}",
+                "📚 {}\n\n{}",
                 recipe_name,
                 t_lang(
                     localization,
@@ -182,7 +182,7 @@ pub async fn handle_recipe_instance_selection(
     let ingredients = crate::db::get_recipe_ingredients(&pool, telegram_id, recipe_id).await?;
 
     let message = format!(
-        "📖 **{}**\n\n📅 {}\n\n{}",
+        "📖 {}\n\n📅 {}\n\n{}",
         recipe
             .recipe_name
             .as_ref()
@@ -260,7 +260,7 @@ pub async fn handle_recipe_action(
                     .unwrap_or("Unnamed Recipe");
 
                 let message = format!(
-                    "🏷️ **{}**\n\n{}: **{}**\n\n{}",
+                    "🏷️ {}\n\n{}: {}\n\n{}",
                     t_lang(
                         localization,
                         "rename-recipe-title",
@@ -301,7 +301,7 @@ pub async fn handle_recipe_action(
             };
 
             let message = format!(
-                "🗑️ **{}**\n\n{}",
+                "🗑️ {}\n\n{}",
                 t_lang(
                     localization,
                     "delete-recipe-title",
@@ -416,7 +416,7 @@ pub async fn handle_recipe_statistics(
         .unwrap_or("Unnamed Recipe");
 
     let mut stats_message = format!(
-        "📊 **{}: {}**\n\n",
+        "📊 {}: {}\n\n",
         t_lang(
             localization,
             "recipe-statistics-title",
@@ -427,7 +427,7 @@ pub async fn handle_recipe_statistics(
 
     // Recipe-specific stats
     stats_message.push_str(&format!(
-        "📝 **{}**\n",
+        "📝 {}\n",
         t_lang(localization, "recipe-details", language_code.as_deref())
     ));
     stats_message.push_str(&format!(
@@ -443,7 +443,7 @@ pub async fn handle_recipe_statistics(
 
     // User overview stats
     stats_message.push_str(&format!(
-        "\n📈 **{}**\n",
+        "\n📈 {}\n",
         t_lang(localization, "your-statistics", language_code.as_deref())
     ));
     stats_message.push_str(&format!(
@@ -469,7 +469,7 @@ pub async fn handle_recipe_statistics(
     // Recent activity
     if user_stats.recipes_created_today > 0 || user_stats.recipes_created_this_week > 0 {
         stats_message.push_str(&format!(
-            "\n🕐 **{}**\n",
+            "\n🕐 {}\n",
             t_lang(localization, "recent-activity", language_code.as_deref())
         ));
 
@@ -493,7 +493,7 @@ pub async fn handle_recipe_statistics(
     // Most common units (if any)
     if !user_stats.most_common_units.is_empty() {
         stats_message.push_str(&format!(
-            "\n🏷️ **{}**\n",
+            "\n🏷️ {}\n",
             t_lang(localization, "favorite-units", language_code.as_deref())
         ));
 
@@ -677,7 +677,7 @@ pub async fn handle_delete_recipe_confirmation(
                         Some(&[("recipe_id", &recipe_id.to_string())]),
                     );
                     let message = format!(
-                        "❌ **{}**\n\n{}",
+                        "❌ {}\n\n{}",
                         t_lang(
                             localization,
                             "error-deleting-recipe",
@@ -774,7 +774,7 @@ async fn handle_edit_ingredients_callback(
         crate::db::get_recipe_ingredients(&pool, telegram_id, recipe_id).await?;
     if original_ingredients.is_empty() {
         let message = format!(
-            "❌ **{}**\n\n{}",
+            "❌ {}\n\n{}",
             t_lang(
                 localization,
                 "no-ingredients-to-edit",
@@ -796,7 +796,7 @@ async fn handle_edit_ingredients_callback(
 
     // Send editing interface
     let edit_message = format!(
-        "✏️ **{}: {}**\n\n{}\n\n{}",
+        "✏️ {}: {}\n\n{}\n\n{}",
         t_lang(localization, "editing-recipe", language_code.as_deref()),
         recipe
             .recipe_name

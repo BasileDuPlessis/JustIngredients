@@ -4,10 +4,10 @@
 welcome-title = Bienvenue sur Ingredients Bot !
 welcome-description = Je suis votre assistant recettes : envoyez-moi une photo d'une liste d'ingrédients et je la transforme en recette enregistrée. Voici ce que je peux faire :
 welcome-features =
-    📸 **Envoyez-moi des photos** de listes d'ingrédients, de recettes ou de tout texte à extraire
-    📄 **Envoyez-moi des fichiers image** (PNG, JPG, JPEG, BMP, TIFF, TIF)
-    🔍 **Je lirai les ingrédients** et vous les ferai vérifier avant l'enregistrement
-    💾 **Tout texte extrait est stocké** pour référence future
+    📸 Envoyez-moi des photos de listes d'ingrédients, de recettes ou de tout texte à extraire
+    📄 Envoyez-moi des fichiers image (PNG, JPG, JPEG, BMP, TIFF, TIF)
+    🔍 Je lirai les ingrédients et vous les ferai vérifier avant l'enregistrement
+    💾 Tout texte extrait est stocké pour référence future
 welcome-commands = Commandes :
 welcome-start = /start - Afficher ce message de bienvenue
 welcome-help = /help - Obtenir de l'aide et des instructions d'utilisation
@@ -32,28 +32,28 @@ help-tip4 = • Langues supportées : Anglais + Français
 help-final = Besoin d'aide ? Envoyez-moi simplement une image ! 😊
 
 # Messages d'erreur
-error-download-failed = [DOWNLOAD] Échec du téléchargement de l'image. Veuillez réessayer.
-error-unsupported-format = [FORMAT] Format d'image non supporté. Veuillez utiliser les formats PNG, JPG, JPEG, BMP, TIFF ou TIF.
-error-no-text-found = [OCR_RESULT] Aucun texte n'a été trouvé dans l'image. Essayez avec une image plus claire contenant du texte visible.
-error-ocr-initialization = [OCR_INIT] L'initialisation du moteur OCR a échoué. Veuillez réessayer plus tard.
-error-ocr-extraction = [OCR_EXTRACT] Échec de l'extraction du texte de l'image. Essayez avec une image différente.
-error-ocr-timeout = [OCR_TIMEOUT] Le traitement OCR a expiré : {$msg}
-error-ocr-corruption = [OCR_CORRUPT] Le moteur OCR a rencontré une erreur interne. Veuillez réessayer.
-error-ocr-exhaustion = [OCR_RESOURCE] Les ressources système sont épuisées. Veuillez réessayer plus tard.
-error-validation = [VALIDATION] La validation de l'image a échoué : {$msg}
-error-image-load = [IMAGE_LOAD] Le format d'image n'est pas supporté ou l'image est corrompue. Essayez avec une image PNG, JPG ou BMP.
+error-download-failed = Échec du téléchargement de l'image. Veuillez réessayer.
+error-unsupported-format = Format d'image non supporté. Veuillez utiliser les formats PNG, JPG, JPEG, BMP, TIFF ou TIF.
+error-no-text-found = Aucun texte n'a été trouvé dans l'image. Essayez avec une image plus claire contenant du texte visible.
+error-ocr-initialization = L'initialisation du moteur OCR a échoué. Veuillez réessayer plus tard.
+error-ocr-extraction = Échec de l'extraction du texte de l'image. Essayez avec une image différente.
+error-ocr-timeout = Le traitement OCR a expiré : {$msg}
+error-ocr-corruption = Le moteur OCR a rencontré une erreur interne. Veuillez réessayer.
+error-ocr-exhaustion = Les ressources système sont épuisées. Veuillez réessayer plus tard.
+error-validation = La validation de l'image a échoué : {$msg}
+error-image-load = Le format d'image n'est pas supporté ou l'image est corrompue. Essayez avec une image PNG, JPG ou BMP.
 
 # Ingredient extraction (Gemini or Tesseract)
-error-extraction-unavailable = [EXTRACTION_UNAVAILABLE] La lecture des recettes est momentanément indisponible. Réessayez dans quelques minutes.
-error-extraction-busy = [EXTRACTION_BUSY] Trop de photos en même temps. Réessayez dans une minute.
-error-extraction-unsupported-image = [FORMAT] Ce fichier n'est pas une image que je sais lire. Envoyez une photo (JPEG, PNG ou WebP).
-error-extraction-image-too-large = [FORMAT] Cette image est trop lourde (10 Mo maximum). Envoyez une photo plus légère.
-error-extraction-unreadable = [EXTRACTION_UNREADABLE] Je n'ai pas réussi à lire cette image. Essayez une photo plus nette de la liste d'ingrédients.
-extraction-not-a-recipe = [NOT_A_RECIPE] Je ne vois pas de liste d'ingrédients sur cette image. Envoyez une photo des ingrédients d'une recette.
+error-extraction-unavailable = La lecture des recettes est momentanément indisponible. Réessayez dans quelques minutes.
+error-extraction-busy = Trop de photos en même temps. Réessayez dans une minute.
+error-extraction-unsupported-image = Ce fichier n'est pas une image que je sais lire. Envoyez une photo (JPEG, PNG ou WebP).
+error-extraction-image-too-large = Cette image est trop lourde (10 Mo maximum). Envoyez une photo plus légère.
+error-extraction-unreadable = Je n'ai pas réussi à lire cette image. Essayez une photo plus nette de la liste d'ingrédients.
+extraction-not-a-recipe = Je ne vois pas de liste d'ingrédients sur cette image. Envoyez une photo des ingrédients d'une recette.
 
 # Messages de succès
-success-extraction = ✅ **Texte extrait avec succès !**
-success-extracted-text = 📝 **Texte extrait :**
+success-extraction = ✅ Texte extrait avec succès !
+success-extracted-text = 📝 Texte extrait :
 success-photo-downloaded = Photo téléchargée avec succès ! Traitement en cours...
 success-document-downloaded = Document image téléchargé avec succès ! Traitement en cours...
 
@@ -65,7 +65,7 @@ line = Ligne
 unknown-ingredient = Ingrédient inconnu
 total-ingredients-found = Total des ingrédients trouvés
 original-text = Texte extrait original
-error-processing-failed = [INGREDIENT_PROCESSING] Échec du traitement des ingrédients
+error-processing-failed = Échec du traitement des ingrédients
 error-try-again = Veuillez réessayer avec une image différente.
 
 # Messages de traitement
@@ -88,8 +88,8 @@ text-tip = 💡 Conseil : Envoyez-moi une photo de la liste d'ingrédients d'une
 # Messages de dialogue pour le nom de recette
 recipe-name-prompt = 🏷️ Comment souhaitez-vous nommer cette recette ?
 recipe-name-prompt-hint = Veuillez entrer un nom pour votre recette (par ex. "Cookies aux pépites de chocolat", "Lasagnes de Maman")
-recipe-name-invalid = [RECIPE_NAME] Le nom de recette ne peut pas être vide. Veuillez entrer un nom valide pour votre recette.
-recipe-name-too-long = [RECIPE_NAME] Le nom de recette est trop long (maximum 255 caractères). Veuillez entrer un nom plus court.
+recipe-name-invalid = Le nom de recette ne peut pas être vide. Veuillez entrer un nom valide pour votre recette.
+recipe-name-too-long = Le nom de recette est trop long (maximum 255 caractères). Veuillez entrer un nom plus court.
 recipe-complete = ✅ Recette "{$recipe_name}" sauvegardée avec succès avec {$ingredient_count} ingrédients !
 
 # Messages de révision des ingrédients
@@ -113,7 +113,7 @@ edit-ingredient-name-too-long = Le nom d'ingrédient est trop long (maximum 100 
 edit-invalid-quantity = Quantité invalide. Veuillez utiliser un nombre positif (par ex. "2,5 tasses de farine").
 quantity-correction-prompt = Nous n'avons pas pu lire la quantité exacte pour {$ingredient}. Veuillez taper la quantité (ou - s'il n'y en a pas) :
 review-quantities-to-check = ⚠️ Vérifiez la quantité de : {$ingredients}. Touchez un ingrédient pour le corriger, puis confirmez à nouveau.
-error-invalid-edit = [INGREDIENT_EDIT] Index d'ingrédient invalide pour l'édition.
+error-invalid-edit = Index d'ingrédient invalide pour l'édition.
 confirm = Confirmer
 cancel = Annuler
 review-help = Veuillez répondre avec "confirm" pour sauvegarder ces ingrédients, ou "cancel" pour les annuler.
@@ -224,4 +224,4 @@ edit-ingredient-instruction = Entrez le nouveau texte d'ingrédient (ex: "3 tass
 
 # Messages de légende photo
 caption-used = 📝 Utilisation de la légende de la photo comme nom de recette : "{$caption}"
-caption-invalid = [CAPTION] La légende de la photo était invalide, utilisation du nom par défaut : "{$default_name}"
+caption-invalid = La légende de la photo était invalide, utilisation du nom par défaut : "{$default_name}"

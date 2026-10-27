@@ -163,7 +163,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
 
         let ingredient = &current_matches[index];
         let edit_prompt = format!(
-            "✏️ {}\n\n{}: **{} {} {}**\n\n{}",
+            "✏️ {}\n\n{}: {} {} {}\n\n{}",
             t_lang(
                 ctx.localization,
                 "edit-ingredient-title",
@@ -292,7 +292,7 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
         if current_matches.is_empty() {
             // All ingredients deleted - inform user and provide options
             let empty_message = format!(
-                "🗑️ **{}**\n\n{}\n\n{}",
+                "🗑️ {}\n\n{}\n\n{}",
                 t_lang(ctx.localization, "review-title", language_code.as_deref()),
                 t_lang(
                     ctx.localization,
@@ -352,7 +352,7 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
         } else {
             // Update the message with remaining ingredients
             let review_message = format!(
-                "✏️ **{}**\n\n{}\n\n{}",
+                "✏️ {}\n\n{}\n\n{}",
                 t_lang(ctx.localization, "editing-recipe", language_code.as_deref()),
                 t_lang(
                     ctx.localization,
@@ -691,7 +691,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             .recipe_name
             .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
         let recipe_message = format!(
-            "📝 **{}**\n\n{}",
+            "📝 {}\n\n{}",
             recipe_name,
             crate::bot::format_ingredients_list(
                 &updated_matches,
@@ -790,7 +790,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             .recipe_name
             .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
         let recipe_message = format!(
-            "📝 **{}**\n\n{}",
+            "📝 {}\n\n{}",
             recipe_name,
             crate::bot::format_ingredients_list(
                 &matches,
@@ -879,7 +879,7 @@ async fn handle_cancel_saved_ingredients_button(
             .recipe_name
             .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
         let recipe_message = format!(
-            "📝 **{}**\n\n{}",
+            "📝 {}\n\n{}",
             recipe_name,
             crate::bot::format_ingredients_list(
                 &measurement_matches,

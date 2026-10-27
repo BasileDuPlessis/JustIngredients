@@ -86,7 +86,7 @@ pub async fn handle_recipes_pagination(
 
     // Create updated message text
     let recipes_message = format!(
-        "📚 **{}**\n\n{}",
+        "📚 {}\n\n{}",
         t_lang(localization, "your-recipes", language_code.as_deref()),
         t_lang(localization, "select-recipe", language_code.as_deref())
     );
@@ -137,7 +137,7 @@ pub async fn handle_list_recipes(
     if recipes.is_empty() {
         // No recipes found
         let message = format!(
-            "📚 **{}**\n\n{}",
+            "📚 {}\n\n{}",
             t_lang(localization, "your-recipes", language_code.as_deref()),
             t_lang(
                 localization,
@@ -151,7 +151,7 @@ pub async fn handle_list_recipes(
 
     // Create message text
     let recipes_message = format!(
-        "📚 **{}**\n\n{}",
+        "📚 {}\n\n{}",
         t_lang(localization, "your-recipes", language_code.as_deref()),
         t_lang(localization, "select-recipe", language_code.as_deref())
     );

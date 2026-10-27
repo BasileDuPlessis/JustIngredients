@@ -39,7 +39,7 @@ pub async fn handle_start_command(
     }
 
     let welcome_message = format!(
-        "👋 **{}**\n\n{}\n\n{}\n\n{}\n{}\n{}\n\n{}",
+        "👋 {}\n\n{}\n\n{}\n\n{}\n{}\n{}\n\n{}",
         t_lang(localization, "welcome-title", language_code),
         t_lang(localization, "welcome-description", language_code),
         t_lang(localization, "welcome-features", language_code),
@@ -118,7 +118,7 @@ pub async fn handle_recipes_command(
     } else {
         // Create the message text
         let recipes_message = format!(
-            "📚 **{}**\n\n{}",
+            "📚 {}\n\n{}",
             t_lang(localization, "your-recipes", language_code),
             t_lang(localization, "select-recipe", language_code)
         );

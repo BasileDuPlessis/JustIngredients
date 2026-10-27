@@ -28,24 +28,19 @@ fn measurement_text(ingredient: &MeasurementMatch) -> String {
     .join(" ")
 }
 
-/// One ingredient as shown in the review list or on its buttons: "150 g → farine", or just
-/// "sel" without quantity, with ⚠️ when the quantity must be checked. `bold_measurement` wraps
-/// the quantity (and its warning) in `**` for the list, as before.
-pub(crate) fn ingredient_line(
-    ingredient: &MeasurementMatch,
-    name: &str,
-    bold_measurement: bool,
-) -> String {
+/// One ingredient as shown in the review list, on its buttons and in the edit prompt:
+/// "150 g → farine", or just "sel" without quantity, with ⚠️ when the quantity must be checked.
+pub(crate) fn ingredient_line(ingredient: &MeasurementMatch, name: &str) -> String {
     let warning = if ingredient.requires_quantity_confirmation {
         "⚠️ "
     } else {
         ""
     };
     let measurement = measurement_text(ingredient);
-    match (measurement.is_empty(), bold_measurement) {
-        (true, _) => format!("{warning}{name}"),
-        (false, true) => format!("**{warning}{measurement}** → {name}"),
-        (false, false) => format!("{warning}{measurement} → {name}"),
+    if measurement.is_empty() {
+        format!("{warning}{name}")
+    } else {
+        format!("{warning}{measurement} → {name}")
     }
 }
 
@@ -71,7 +66,7 @@ pub fn format_ingredients_list(
             result.push_str(&format!(
                 "{}. {}\n",
                 i + 1,
-                ingredient_line(ingredient, &ingredient_display, true)
+                ingredient_line(ingredient, &ingredient_display)
             ));
         }
 
@@ -102,7 +97,7 @@ pub fn create_ingredient_review_keyboard(
                     ingredient.ingredient_name.clone()
                 };
 
-                let display_text = ingredient_line(ingredient, &ingredient_display, false);
+                let display_text = ingredient_line(ingredient, &ingredient_display);
                 let button_text = truncate_text(&display_text, 20);
 
                 buttons.push(vec![
@@ -375,36 +370,33 @@ mod tests {
 
     #[test]
     fn ingredients_without_quantity_show_only_their_name() {
+        assert_eq!(ingredient_line(&ingredient("", None, false), "sel"), "sel");
         assert_eq!(
-            ingredient_line(&ingredient("", None, false), "sel", true),
-            "sel"
-        );
-        assert_eq!(
-            ingredient_line(&ingredient("", None, true), "sel", false),
+            ingredient_line(&ingredient("", None, true), "sel"),
             "⚠️ sel"
         );
     }
 
     #[test]
-    fn flagged_quantities_keep_the_warning_inside_the_bold_part() {
+    fn flagged_quantities_start_with_a_warning() {
         assert_eq!(
-            ingredient_line(&ingredient("0", Some("cups"), true), "sugar", true),
-            "**⚠️ 0 cups** → sugar"
+            ingredient_line(&ingredient("0", Some("cups"), true), "sugar"),
+            "⚠️ 0 cups → sugar"
         );
     }
 
     #[test]
     fn quantities_and_units_are_shown_before_the_name() {
         assert_eq!(
-            ingredient_line(&ingredient("150", Some("g"), false), "farine", true),
-            "**150 g** → farine"
+            ingredient_line(&ingredient("150", Some("g"), false), "farine"),
+            "150 g → farine"
         );
         assert_eq!(
-            ingredient_line(&ingredient("2", None, true), "gousse d'ail", false),
+            ingredient_line(&ingredient("2", None, true), "gousse d'ail"),
             "⚠️ 2 → gousse d'ail"
         );
         assert_eq!(
-            ingredient_line(&ingredient("", Some("pincée"), false), "sel", false),
+            ingredient_line(&ingredient("", Some("pincée"), false), "sel"),
             "pincée → sel"
         );
     }

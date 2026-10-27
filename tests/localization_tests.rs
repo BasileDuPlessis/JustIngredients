@@ -274,3 +274,23 @@ mod tests {
         assert_ne!(english_message, french_message);
     }
 }
+
+/// User messages read as plain sentences: no technical "[CODE]" prefix and no literal
+/// Markdown "**" (messages are sent without parse mode, so it would show as is).
+#[test]
+fn user_messages_have_no_technical_prefix_or_markdown() {
+    for (language, source) in [
+        ("en", include_str!("../locales/en/main.ftl")),
+        ("fr", include_str!("../locales/fr/main.ftl")),
+    ] {
+        for line in source.lines() {
+            if let Some((key, value)) = line.split_once(" = ") {
+                assert!(
+                    !value.trim_start().starts_with('['),
+                    "{language}: {key} starts with a technical prefix: {value}"
+                );
+            }
+            assert!(!line.contains("**"), "{language}: literal ** in: {line}");
+        }
+    }
+}

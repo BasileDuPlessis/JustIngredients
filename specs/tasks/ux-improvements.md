@@ -40,6 +40,7 @@ are easy to find, and messages read well. Validated by the user on 2026-10-27 fr
 | Nominal state | Hybrid: at the end of a transaction the intermediate messages (prompts, user replies, previews) are deleted, the result is kept (e.g. the saved recipe card), then the home message is posted. |
 | Commands | `/liste`, `/cherche`, `/aide`; English aliases `/list`, `/search`, `/help`; `/start` and `/recipes` still accepted. |
 | Free text | Any text sent outside a dialogue is a search in the user's recipes. |
+| Releases | One production deployment per feature, validated by the user in Telegram before the next one. |
 
 ## Open Questions
 _None at the moment._
@@ -86,9 +87,13 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   errors) to keep commits small.
 - How to validate: unit tests of the escaping helper (`<script>`, `&`, names with `*`); no `**`
   left in `src/bot` or `locales/`.
+- Progress (feature 1, 2026-10-27): the literal `**` markers are gone from messages and locales
+  (plain text everywhere, guarded by a localization test). Remaining: HTML with escaping for the
+  key screens (review list, recipe card, home, help), built so text cannot break the markup;
+  enabling HTML globally would break any message whose user text contains `<`, `>` or `&`.
 
 ### Task U1.2: User messages without technical prefixes (finding 3) (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: drop `[FORMAT]`, `[EXTRACTION_BUSY]`… from the 21 locale messages; the codes stay
   in logs and metrics.
 - How to validate: localization test that no message value starts with `[`; existing tests updated.

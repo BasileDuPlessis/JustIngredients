@@ -193,7 +193,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
                 dialogue_lang_code.as_deref()
             ),
             // Same rendering as the review list ("sel" without quantity, not "**  sel**")
-            crate::bot::ui_builder::ingredient_line(ingredient, &ingredient.ingredient_name, true),
+            crate::bot::ui_builder::ingredient_line(ingredient, &ingredient.ingredient_name),
             t_lang(
                 ctx.localization,
                 "edit-ingredient-instruction",
@@ -301,7 +301,7 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
         if ingredients.is_empty() {
             // All ingredients deleted - inform user and provide options
             let empty_message = format!(
-                "🗑️ **{}**\n\n{}\n\n{}",
+                "🗑️ {}\n\n{}\n\n{}",
                 t_lang(
                     ctx.localization,
                     "review-title",
@@ -365,7 +365,7 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
         } else {
             // Update the message with remaining ingredients
             let review_message = format!(
-                "📝 **{}**\n\n{}\n\n{}",
+                "📝 {}\n\n{}\n\n{}",
                 t_lang(
                     ctx.localization,
                     "review-title",
@@ -569,7 +569,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
 
         // Send confirmation as a new message
         let confirmation_message = format!(
-            "✅ **{}**\n\n📝 {}\n\n{}",
+            "✅ {}\n\n📝 {}\n\n{}",
             t_lang(
                 ctx.localization,
                 "workflow-recipe-saved",
@@ -638,7 +638,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
 
         // Send recipe name prompt as a new message
         let recipe_name_prompt = format!(
-            "🏷️ **{}**\n\n{}",
+            "🏷️ {}\n\n{}",
             t_lang(
                 ctx.localization,
                 "recipe-name-prompt",

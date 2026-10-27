@@ -213,7 +213,7 @@ pub async fn download_and_process_image(
     // Ingredients found, go directly to review interface
     info!(user_id = %chat_id, backend = extractor.name(), ingredients_count = ingredients.len(), "Sending ingredients review interface");
     let review_message = format!(
-        "📝 **{}**\n\n{}\n\n{}",
+        "📝 {}\n\n{}\n\n{}",
         t_lang(localization, "review-title", language_code),
         t_lang(localization, "review-description", language_code),
         format_ingredients_list(&ingredients, language_code, localization)

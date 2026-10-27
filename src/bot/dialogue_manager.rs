@@ -199,7 +199,7 @@ pub async fn handle_recipe_name_input(
         Ok(validated_name) => {
             // Recipe name is valid, transition to ingredient review state
             let review_message = format!(
-                "📝 **{}**\n\n{}\n\n{}",
+                "📝 {}\n\n{}\n\n{}",
                 t_lang(
                     handler_ctx.localization,
                     "review-title",
@@ -635,7 +635,7 @@ pub async fn handle_recipe_rename_input(
             match rename_result {
                 Ok(true) => {
                     let success_message = format!(
-                        "✅ **{}**\n\n{}",
+                        "✅ {}\n\n{}",
                         t_lang(
                             handler_ctx.localization,
                             "rename-recipe-success",
@@ -669,7 +669,7 @@ pub async fn handle_recipe_rename_input(
                         ]),
                     );
                     let message = format!(
-                        "❌ **{}**\n\n{}",
+                        "❌ {}\n\n{}",
                         t_lang(
                             handler_ctx.localization,
                             "error-renaming-recipe",
@@ -748,7 +748,7 @@ async fn handle_edit_cancellation(params: EditCancellationParams<'_>) -> Result<
 
     // User cancelled editing, return to review state without changes
     let review_message = format!(
-        "📝 **{}**\n\n{}\n\n{}",
+        "📝 {}\n\n{}\n\n{}",
         t_lang(ctx.localization, "review-title", ctx.language_code),
         t_lang(ctx.localization, "review-description", ctx.language_code),
         format_ingredients_list(ingredients, ctx.language_code, ctx.localization)
@@ -826,7 +826,7 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
 
         // Return to review state with updated ingredients
         let review_message = format!(
-            "📝 **{}**\n\n{}\n\n{}",
+            "📝 {}\n\n{}\n\n{}",
             t_lang(ctx.localization, "review-title", ctx.language_code),
             t_lang(ctx.localization, "review-description", ctx.language_code),
             format_ingredients_list(&ingredients, ctx.language_code, ctx.localization)
@@ -1440,7 +1440,7 @@ async fn return_to_saved_ingredients_review(
     } = params;
     // Send updated ingredient list message
     let review_message = format!(
-        "✏️ **{}**\n\n{}\n\n{}",
+        "✏️ {}\n\n{}\n\n{}",
         t_lang(localization, "editing-recipe", language_code),
         t_lang(localization, "editing-instructions", language_code),
         format_ingredients_list(current_matches, language_code, localization)
