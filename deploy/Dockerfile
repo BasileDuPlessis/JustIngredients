@@ -10,11 +10,8 @@ WORKDIR /app
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential \
-       clang \
        pkg-config \
        libssl-dev \
-       libtesseract-dev \
-       libleptonica-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.lock ./
@@ -32,11 +29,6 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ca-certificates \
        libssl3t64 \
-       libleptonica6 \
-       libtesseract5 \
-       tesseract-ocr \
-       tesseract-ocr-eng \
-       tesseract-ocr-fra \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

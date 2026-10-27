@@ -19,7 +19,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     services:
       postgres:
@@ -34,19 +34,6 @@ jobs:
 
     - name: Setup Rust
       uses: dtolnay/rust-toolchain@1.99
-
-    - name: Install system dependencies
-      # A stuck mirror once held this step for 20 minutes: fail fast and retry instead
-      timeout-minutes: 8
-      run: |
-        for attempt in 1 2 3; do
-          timeout 120 sudo apt-get update \
-            && timeout 180 sudo apt-get install -y libleptonica-dev libtesseract-dev tesseract-ocr \
-            && exit 0
-          echo "apt attempt $attempt failed, retrying in 10 s"
-          sleep 10
-        done
-        exit 1
 
     - name: Cache dependencies
       uses: Swatinem/rust-cache@v2
@@ -73,7 +60,7 @@ jobs:
         path: target/debug/just-ingredients
 
   lint:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
@@ -86,19 +73,6 @@ jobs:
     - name: Cache dependencies
       uses: Swatinem/rust-cache@v2
 
-    - name: Install system dependencies
-      # A stuck mirror once held this step for 20 minutes: fail fast and retry instead
-      timeout-minutes: 8
-      run: |
-        for attempt in 1 2 3; do
-          timeout 120 sudo apt-get update \
-            && timeout 180 sudo apt-get install -y libleptonica-dev libtesseract-dev tesseract-ocr \
-            && exit 0
-          echo "apt attempt $attempt failed, retrying in 10 s"
-          sleep 10
-        done
-        exit 1
-
     - name: Run clippy
       run: cargo clippy --all-targets --all-features -- -D warnings --allow clippy::expect_used
 
@@ -109,7 +83,7 @@ jobs:
       run: cargo fmt --all -- --check
 
   security:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
