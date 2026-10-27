@@ -80,6 +80,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 | IMP-044 | Dispatcher panics when Telegram is unreachable or the token is invalid at startup | P2 | S | Reliability |
 | IMP-045 | Locale keys used in code are not checked against the `.ftl` files | P2 | S | Localization |
 | IMP-046 | Timing benchmarks run as blocking tests | P2 | M | Tests / CI |
+| IMP-047 | No per-user limit on paid extractions | P3 | S | Cost |
 
 ## Verification of Earlier Findings
 | # | Earlier finding | Result | Item |
@@ -950,4 +951,16 @@ they can be pulled into 1-hour micro-tasks without another review.
   keep only functional assertions in `tests/`, and delete the OCR benchmarks in Phase 5.
 - Validation: `cargo test --all-targets` contains no wall-clock assertions; the benchmark job
   reports numbers without failing the build.
+
+### IMP-047: No per-user limit on paid extractions
+- [ ] Done
+- Priority: P3. Effort: S. Area: Cost.
+- Related: LLM migration (Task 3.4 left it optional).
+- Location: `src/extraction/guard.rs`.
+- Problem: every photo costs about 0.0017 USD. The concurrency limit and the cache bound the load and
+  repeated images, but one user (or a bot) sending thousands of different photos is only limited by
+  Telegram's rate limits.
+- Proposed fix: a per-user daily counter (in memory, reset at midnight UTC, or in Postgres) checked
+  before extraction, with a localized "daily limit reached" message; limit configurable.
+- Validation: unit test with a fake extractor: the N+1th photo of the day is refused without a call.
 

@@ -7,6 +7,7 @@ use just_ingredients::db_connection::{self, DEFAULT_CONNECT_BACKOFF};
 use just_ingredients::deduplication;
 use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
 use just_ingredients::extraction::gemini::GeminiExtractor;
+use just_ingredients::extraction::guard::GuardedExtractor;
 use just_ingredients::extraction::tesseract::TesseractExtractor;
 use just_ingredients::extraction::{ExtractionBackend, SharedExtractor};
 use just_ingredients::localization;
@@ -255,10 +256,15 @@ async fn main() -> Result<()> {
     let localization_manager = localization::create_localization_manager()?;
 
     // Ingredient extraction engine, chosen by EXTRACTION_BACKEND
-    let extractor: SharedExtractor = match app_config.extraction.backend {
+    let engine: SharedExtractor = match app_config.extraction.backend {
         ExtractionBackend::Gemini => Arc::new(GeminiExtractor::new(&app_config.extraction.gemini)?),
         ExtractionBackend::Tesseract => Arc::new(TesseractExtractor::default()),
     };
+    // Concurrency limit and result cache in front of the engine (cost and memory protection)
+    let extractor: SharedExtractor = Arc::new(GuardedExtractor::new(
+        engine,
+        app_config.extraction.gemini.max_concurrency,
+    ));
     info!(
         backend = extractor.name(),
         model = %app_config.extraction.gemini.model,

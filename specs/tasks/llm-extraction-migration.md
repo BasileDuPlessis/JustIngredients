@@ -350,11 +350,14 @@ March 2026 image meanwhile (restarts reuse it).
   The unused `error-ocr-*` keys go away in Phase 5.
 
 ### Task 3.4: Cost and load protection (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: `tokio::sync::Semaphore` around calls, bounded `ExtractionCache` keyed by sha256
   with TTL and size limit (do not reuse `OcrResultCache`: unbounded and never pruned), optional
   per-user daily limit.
 - How to validate: tests for cache hit (no second call) and concurrency limit.
+- Done: `GuardedExtractor` (`src/extraction/guard.rs`) wraps the engine: `GEMINI_MAX_CONCURRENCY` slots,
+  30 s queue timeout reported as busy, SHA-256 result cache (100 entries, 24 h, successes only,
+  `extraction_cache_hits_total`). The per-user daily limit is IMP-047.
 
 ### Task 3.5: Health checks without Tesseract (<= 1 hour)
 - [ ] Done
