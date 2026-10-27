@@ -12,6 +12,7 @@
 pub mod breaker;
 pub mod config;
 pub mod gemini;
+pub mod image;
 pub mod mapping;
 pub mod prompt;
 

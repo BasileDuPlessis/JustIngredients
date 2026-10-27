@@ -274,10 +274,13 @@ March 2026 image meanwhile (restarts reuse it).
   `CircuitBreaker` is left untouched (OCR still runs in production) and goes away in Phase 5.
 
 ### Task 2.3: In-memory image input (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: download to `Bytes` with a size cap and timeout, magic-byte format detection,
   re-encode BMP/TIFF to PNG with the `image` crate or reject with a clear message.
 - How to validate: tests with PNG/JPEG/WebP/BMP/oversized/garbage inputs.
+- Done: `ImageInput::prepare` (`src/extraction/image.rs`), bounded decoding on the blocking pool.
+  The size-capped, timed-out download is `fetch_file_bytes` from Task 0.6; Task 3.1 calls it
+  instead of writing a temporary file.
 
 ### Task 2.4: Metrics and tracing (<= 1 hour)
 - [ ] Done
