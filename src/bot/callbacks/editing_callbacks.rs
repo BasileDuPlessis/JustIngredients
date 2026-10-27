@@ -17,7 +17,9 @@ use crate::localization::t_lang;
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
-use crate::bot::ui_builder::{create_ingredient_review_keyboard, create_recipe_details_keyboard};
+use crate::bot::ui_builder::{
+    create_ingredient_review_keyboard, create_recipe_details_keyboard, render_recipe_summary,
+};
 
 // Import HandlerContext
 use crate::bot::cleanup::send_transient;
@@ -692,36 +694,32 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         let recipe_name = recipe
             .recipe_name
             .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
-        let recipe_message = format!(
-            "📝 {}\n\n{}",
-            recipe_name,
-            crate::bot::format_ingredients_list(
-                &updated_matches,
-                language_code.as_deref(),
-                ctx.localization
-            )
+        let recipe_message = render_recipe_summary(
+            &recipe_name,
+            &updated_matches,
+            language_code.as_deref(),
+            ctx.localization,
         );
 
         let keyboard =
             create_recipe_details_keyboard(recipe_id, language_code.as_deref(), ctx.localization);
 
         // Update the message to show the updated recipe
-        match ctx
-            .bot
-            .edit_message_text(
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .chat()
-                    .id,
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .id(),
-                recipe_message,
-            )
-            .reply_markup(keyboard)
-            .await
+        match edit_html(
+            ctx.bot,
+            q.message
+                .as_ref()
+                .expect("Callback query should have a message")
+                .chat()
+                .id,
+            q.message
+                .as_ref()
+                .expect("Callback query should have a message")
+                .id(),
+            recipe_message,
+        )
+        .reply_markup(keyboard)
+        .await
         {
             Ok(_) => (),
             Err(e) => {
@@ -791,36 +789,32 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         let recipe_name = recipe
             .recipe_name
             .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
-        let recipe_message = format!(
-            "📝 {}\n\n{}",
-            recipe_name,
-            crate::bot::format_ingredients_list(
-                &matches,
-                language_code.as_deref(),
-                ctx.localization
-            )
+        let recipe_message = render_recipe_summary(
+            &recipe_name,
+            &matches,
+            language_code.as_deref(),
+            ctx.localization,
         );
 
         let keyboard =
             create_recipe_details_keyboard(recipe_id, language_code.as_deref(), ctx.localization);
 
         // Update the message to show the recipe details
-        match ctx
-            .bot
-            .edit_message_text(
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .chat()
-                    .id,
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .id(),
-                recipe_message,
-            )
-            .reply_markup(keyboard)
-            .await
+        match edit_html(
+            ctx.bot,
+            q.message
+                .as_ref()
+                .expect("Callback query should have a message")
+                .chat()
+                .id,
+            q.message
+                .as_ref()
+                .expect("Callback query should have a message")
+                .id(),
+            recipe_message,
+        )
+        .reply_markup(keyboard)
+        .await
         {
             Ok(_) => (),
             Err(e) => {
@@ -900,14 +894,11 @@ async fn handle_cancel_saved_ingredients_button(
         let recipe_name = recipe
             .recipe_name
             .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
-        let recipe_message = format!(
-            "📝 {}\n\n{}",
-            recipe_name,
-            crate::bot::format_ingredients_list(
-                &measurement_matches,
-                language_code.as_deref(),
-                localization
-            )
+        let recipe_message = render_recipe_summary(
+            &recipe_name,
+            &measurement_matches,
+            language_code.as_deref(),
+            localization,
         );
 
         let keyboard =
@@ -915,18 +906,18 @@ async fn handle_cancel_saved_ingredients_button(
 
         // Edit the editing message back to the recipe details
         if let Some(message_id) = message_id {
-            match bot
-                .edit_message_text(
-                    q.message
-                        .as_ref()
-                        .expect("Callback query should have a message")
-                        .chat()
-                        .id,
-                    teloxide::types::MessageId(message_id),
-                    recipe_message,
-                )
-                .reply_markup(keyboard)
-                .await
+            match edit_html(
+                bot,
+                q.message
+                    .as_ref()
+                    .expect("Callback query should have a message")
+                    .chat()
+                    .id,
+                teloxide::types::MessageId(message_id),
+                recipe_message,
+            )
+            .reply_markup(keyboard)
+            .await
             {
                 Ok(_) => (),
                 Err(e) => {

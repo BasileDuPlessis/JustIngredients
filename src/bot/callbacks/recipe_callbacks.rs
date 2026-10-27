@@ -23,7 +23,7 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 // Import UI builder functions
 use crate::bot::ui_builder::{
     create_ingredient_review_keyboard, create_recipe_details_keyboard,
-    create_recipe_instances_keyboard, format_database_ingredients_list,
+    create_recipe_instances_keyboard, render_recipe_card,
 };
 
 // Import database functions
@@ -85,33 +85,22 @@ pub async fn handle_recipe_selection(
             let ingredients =
                 crate::db::get_recipe_ingredients(&pool, telegram_id, recipe.id).await?;
 
-            let message = format!(
-                "📖 {}\n\n📅 {}\n\n{}",
+            let message = render_recipe_card(
                 recipe
                     .recipe_name
                     .as_ref()
                     .map(|s| s.as_str())
                     .unwrap_or("Unnamed Recipe"),
-                recipe.created_at.format("%B %d, %Y at %H:%M"),
-                if ingredients.is_empty() {
-                    t_lang(
-                        localization,
-                        "no-ingredients-found",
-                        language_code.as_deref(),
-                    )
-                } else {
-                    format_database_ingredients_list(
-                        &ingredients,
-                        language_code.as_deref(),
-                        localization,
-                    )
-                }
+                recipe.created_at,
+                &ingredients,
+                language_code.as_deref(),
+                localization,
             );
 
             let keyboard =
                 create_recipe_details_keyboard(recipe.id, language_code.as_deref(), localization);
 
-            bot.send_message(chat_id, message)
+            send_html(bot, chat_id, message)
                 .reply_markup(keyboard)
                 .await?;
         }
@@ -184,29 +173,22 @@ pub async fn handle_recipe_instance_selection(
         .ok_or_else(|| anyhow::anyhow!("Recipe not found"))?;
     let ingredients = crate::db::get_recipe_ingredients(&pool, telegram_id, recipe_id).await?;
 
-    let message = format!(
-        "📖 {}\n\n📅 {}\n\n{}",
+    let message = render_recipe_card(
         recipe
             .recipe_name
             .as_ref()
             .map(|s| s.as_str())
             .unwrap_or("Unnamed Recipe"),
-        recipe.created_at.format("%B %d, %Y at %H:%M"),
-        if ingredients.is_empty() {
-            t_lang(
-                localization,
-                "no-ingredients-found",
-                language_code.as_deref(),
-            )
-        } else {
-            format_database_ingredients_list(&ingredients, language_code.as_deref(), localization)
-        }
+        recipe.created_at,
+        &ingredients,
+        language_code.as_deref(),
+        localization,
     );
 
     let keyboard =
         create_recipe_details_keyboard(recipe_id, language_code.as_deref(), localization);
 
-    bot.send_message(chat_id, message)
+    send_html(bot, chat_id, message)
         .reply_markup(keyboard)
         .await?;
 

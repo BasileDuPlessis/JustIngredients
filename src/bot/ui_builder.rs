@@ -341,6 +341,45 @@ pub fn create_recipe_details_keyboard(
     })
 }
 
+/// The recipe card (HTML): bold name, creation date and the saved ingredients.
+pub fn render_recipe_card(
+    recipe_name: &str,
+    created_at: chrono::DateTime<chrono::Utc>,
+    ingredients: &[crate::db::Ingredient],
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Html {
+    Html::text("📖 ")
+        + Html::bold(recipe_name)
+        + Html::text(&format!(
+            "\n\n📅 {}\n\n",
+            created_at.format("%B %d, %Y at %H:%M")
+        ))
+        + Html::text(&format_database_ingredients_list(
+            ingredients,
+            language_code,
+            localization,
+        ))
+}
+
+/// The recipe card shown again after its ingredients were edited (HTML): bold name and the
+/// ingredient list.
+pub fn render_recipe_summary(
+    recipe_name: &str,
+    ingredients: &[MeasurementMatch],
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Html {
+    Html::text("📝 ")
+        + Html::bold(recipe_name)
+        + Html::text("\n\n")
+        + Html::text(&format_ingredients_list(
+            ingredients,
+            language_code,
+            localization,
+        ))
+}
+
 /// Format a list of database ingredients for display
 pub fn format_database_ingredients_list(
     ingredients: &[crate::db::Ingredient],
@@ -426,6 +465,50 @@ mod tests {
         assert!(without_name
             .as_str()
             .starts_with("✏️ <b>Editing recipe</b>\n\n"));
+    }
+
+    #[test]
+    fn recipe_card_has_a_bold_escaped_name_and_escaped_ingredients() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let created_at = chrono::DateTime::parse_from_rfc3339("2026-10-27T16:30:00Z")
+            .expect("date")
+            .with_timezone(&chrono::Utc);
+        let ingredient = crate::db::Ingredient {
+            id: 1,
+            user_id: 1,
+            recipe_id: Some(1),
+            name: "lait <entier> & sucre".to_string(),
+            quantity: Some(2.0),
+            unit: Some("dl".to_string()),
+            created_at,
+            updated_at: created_at,
+        };
+        let card = render_recipe_card(
+            "Tarte <b>",
+            created_at,
+            &[ingredient],
+            Some("fr"),
+            &localization,
+        );
+        assert_eq!(
+            card.as_str(),
+            "📖 <b>Tarte &lt;b&gt;</b>\n\n📅 October 27, 2026 at 16:30\n\n• 2 dl lait &lt;entier&gt; &amp; sucre"
+        );
+        let empty = render_recipe_card("Vide", created_at, &[], Some("en"), &localization);
+        assert!(
+            empty.as_str().ends_with("No Ingredients Detected"),
+            "{}",
+            empty.as_str()
+        );
+    }
+
+    #[test]
+    fn recipe_summary_has_a_bold_escaped_name() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let summary = render_recipe_summary("A & B", &[named("sel")], Some("fr"), &localization);
+        assert_eq!(summary.as_str(), "📝 <b>A &amp; B</b>\n\n1. 2 g → sel\n");
     }
 
     #[test]
