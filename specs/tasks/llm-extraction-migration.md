@@ -414,7 +414,12 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: build, clippy and tests green; `cargo tree | grep -i tess` empty.
 
 ### Task 5.2: Trim the text parser
-- [ ] Done
+- [x] Done (2026-10-27): multi-line merging (`is_incomplete_ingredient`,
+  `extract_multi_line_ingredient`, `max_combine_lines`, multi-line metrics), the OCR letter
+  corrections of quantities (`l/2`, `O/4`, guessed fractions) and the letter-mix anomaly check are
+  gone; Unicode fractions, ingredient name cleaning and the empty, zero, too large and malformed
+  quantity checks stay for typed lines. 940 lines removed; `text_processing_tests` for manual input
+  green (10 OCR-only parser tests removed).
 - Description: remove OCR-noise handling from `text_processing.rs` (multi-line merging, OCR
   fraction fixes, letter-mix anomalies), keep the parser used for manual input.
 - How to validate: `text_processing_tests` for manual input still green.

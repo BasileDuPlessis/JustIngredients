@@ -30,8 +30,8 @@ specs/
 
 ## Task Plans
 - [LLM Extraction Migration](tasks/llm-extraction-migration.md): Gemini extraction (in
-  production), Tesseract removal and pipeline (Phase 5: Tasks 5.1, 5.3, 5.4 and 5.5 done; 5.2
-  and gate R5 open).
+  production), Tesseract removal and pipeline (Phase 5 done; Tasks 5.2 and 5.4 wait for their
+  review).
 - [UX Improvements](tasks/ux-improvements.md): messages, navigation, recipe creation, recipe
   list, search.
 - [Measurement Standardization](tasks/measurement-standardization-tasks.md): canonical units
