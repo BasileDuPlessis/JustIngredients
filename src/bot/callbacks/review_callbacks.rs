@@ -464,6 +464,30 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         ingredients_slice.expect("Ingredients slice should be provided for confirm callback");
     let pool = pool.expect("Database pool should be provided for confirm callback");
 
+    // Quantities the extractor was unsure about, or out of range, must be checked before
+    // saving; saving them as they are would store a wrong or zero quantity (IMP-004).
+    let to_check: Vec<&str> = ingredients
+        .iter()
+        .filter(|ingredient| ingredient.requires_quantity_confirmation)
+        .map(|ingredient| ingredient.ingredient_name.as_str())
+        .collect();
+    if !to_check.is_empty() {
+        if let Some(message) = q.message.as_ref() {
+            ctx.bot
+                .send_message(
+                    message.chat().id,
+                    t_args_lang(
+                        ctx.localization,
+                        "review-quantities-to-check",
+                        &[("ingredients", &to_check.join(", "))],
+                        dialogue_lang_code.as_deref(),
+                    ),
+                )
+                .await?;
+        }
+        return Ok(());
+    }
+
     // Record user engagement metric for recipe confirmation
     crate::observability::record_user_engagement_metrics(
         q.from.id.0 as i64,

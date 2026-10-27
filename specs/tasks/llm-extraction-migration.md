@@ -322,7 +322,7 @@ March 2026 image meanwhile (restarts reuse it).
   tests); validated by the extractor tests, the Tesseract adapter test and staging.
 
 ### Task 3.2: Persistence mapping (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: `transcription` → `recipes.content`, `source_text` → `ingredients.raw_text`
   (instead of the whole text in every row), apply the decision of open question 1. The Confirm
   button must refuse to save items still flagged `requires_quantity_confirmation` (IMP-004: today
@@ -333,6 +333,10 @@ March 2026 image meanwhile (restarts reuse it).
   needs the source line.
 - How to validate: DB test on saved rows; review test where Confirm with a flagged item asks for
   the quantity.
+- Done: the transcription is what reaches `recipes.content` (full-text search); the Confirm button
+  refuses to save while ⚠️ quantities remain and lists them (editing an ingredient clears its flag);
+  ingredients without quantity show as `sel` instead of `**** → sel` (shared `ingredient_line`).
+  The handler itself is not unit-tested (no Telegram types in tests).
 
 ### Task 3.3: User-facing errors and messages (<= 1 hour)
 - [x] Done

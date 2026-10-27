@@ -15,6 +15,36 @@ use super::ui_components::{
     create_pagination_buttons, truncate_text, with_ui_metrics_sync,
 };
 
+/// Quantity and unit as shown to the user ("150 g", "2", "pincée"), empty when the
+/// ingredient has neither (e.g. "sel").
+fn measurement_text(ingredient: &MeasurementMatch) -> String {
+    [
+        ingredient.quantity.trim(),
+        ingredient.measurement.as_deref().unwrap_or("").trim(),
+    ]
+    .into_iter()
+    .filter(|part| !part.is_empty())
+    .collect::<Vec<_>>()
+    .join(" ")
+}
+
+/// One ingredient as shown in the review list or on its buttons: "150 g → farine", or just
+/// "sel" without quantity, with ⚠️ when the quantity must be checked. `bold_measurement` wraps
+/// the quantity (and its warning) in `**` for the list, as before.
+fn ingredient_line(ingredient: &MeasurementMatch, name: &str, bold_measurement: bool) -> String {
+    let warning = if ingredient.requires_quantity_confirmation {
+        "⚠️ "
+    } else {
+        ""
+    };
+    let measurement = measurement_text(ingredient);
+    match (measurement.is_empty(), bold_measurement) {
+        (true, _) => format!("{warning}{name}"),
+        (false, true) => format!("**{warning}{measurement}** → {name}"),
+        (false, false) => format!("{warning}{measurement} → {name}"),
+    }
+}
+
 /// Format ingredients as a simple numbered list for review
 pub fn format_ingredients_list(
     ingredients: &[MeasurementMatch],
@@ -34,24 +64,10 @@ pub fn format_ingredients_list(
                 ingredient.ingredient_name.clone()
             };
 
-            let measurement_display = if let Some(ref unit) = ingredient.measurement {
-                format!("{} {}", ingredient.quantity, unit)
-            } else {
-                ingredient.quantity.clone()
-            };
-
-            // Add warning emoji for quantities that need confirmation
-            let measurement_display = if ingredient.requires_quantity_confirmation {
-                format!("⚠️ {}", measurement_display)
-            } else {
-                measurement_display
-            };
-
             result.push_str(&format!(
-                "{}. **{}** → {}\n",
+                "{}. {}\n",
                 i + 1,
-                measurement_display,
-                ingredient_display
+                ingredient_line(ingredient, &ingredient_display, true)
             ));
         }
 
@@ -82,20 +98,7 @@ pub fn create_ingredient_review_keyboard(
                     ingredient.ingredient_name.clone()
                 };
 
-                let measurement_display = if let Some(ref unit) = ingredient.measurement {
-                    format!("{} {}", ingredient.quantity, unit)
-                } else {
-                    ingredient.quantity.clone()
-                };
-
-                // Add warning emoji for quantities that need confirmation
-                let measurement_display = if ingredient.requires_quantity_confirmation {
-                    format!("⚠️ {}", measurement_display)
-                } else {
-                    measurement_display
-                };
-
-                let display_text = format!("{} → {}", measurement_display, ingredient_display);
+                let display_text = ingredient_line(ingredient, &ingredient_display, false);
                 let button_text = truncate_text(&display_text, 20);
 
                 buttons.push(vec![
@@ -348,4 +351,57 @@ pub fn format_database_ingredients_list(
     }
 
     result.trim_end().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn ingredient(quantity: &str, unit: Option<&str>, flagged: bool) -> MeasurementMatch {
+        MeasurementMatch {
+            quantity: quantity.to_string(),
+            measurement: unit.map(str::to_string),
+            ingredient_name: "x".to_string(),
+            line_number: 0,
+            start_pos: 0,
+            end_pos: 0,
+            requires_quantity_confirmation: flagged,
+        }
+    }
+
+    #[test]
+    fn ingredients_without_quantity_show_only_their_name() {
+        assert_eq!(
+            ingredient_line(&ingredient("", None, false), "sel", true),
+            "sel"
+        );
+        assert_eq!(
+            ingredient_line(&ingredient("", None, true), "sel", false),
+            "⚠️ sel"
+        );
+    }
+
+    #[test]
+    fn flagged_quantities_keep_the_warning_inside_the_bold_part() {
+        assert_eq!(
+            ingredient_line(&ingredient("0", Some("cups"), true), "sugar", true),
+            "**⚠️ 0 cups** → sugar"
+        );
+    }
+
+    #[test]
+    fn quantities_and_units_are_shown_before_the_name() {
+        assert_eq!(
+            ingredient_line(&ingredient("150", Some("g"), false), "farine", true),
+            "**150 g** → farine"
+        );
+        assert_eq!(
+            ingredient_line(&ingredient("2", None, true), "gousse d'ail", false),
+            "⚠️ 2 → gousse d'ail"
+        );
+        assert_eq!(
+            ingredient_line(&ingredient("", Some("pincée"), false), "sel", false),
+            "pincée → sel"
+        );
+    }
 }
