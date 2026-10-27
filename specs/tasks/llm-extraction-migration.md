@@ -174,7 +174,7 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: security job green in under a minute.
 
 ### Task 0.8: Run the whole test suite in CI (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: CI runs only `cargo test --lib`; `tests/` and doc tests never run. Add a Postgres
   service container, `cargo test --all-targets` and `cargo test --doc`; fix or quarantine failing
   tests. `db_tests` drop the tables of whatever `DATABASE_URL` points to and keep
@@ -203,13 +203,14 @@ March 2026 image meanwhile (restarts reuse it).
   pinned by SHA, Node 22). Remaining (user action): environment-scoped staging bot token.
 
 ### Task 0.11: Outage alerting (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: external uptime check on `https://just-ingredients.fly.dev/health/ready` with a
   Telegram or email alert (free monitor, user action), plus a scheduled workflow (`*/10`) as a
   backup. `/health/live` must reflect the bot loop, not always return "OK".
 - How to validate: stopping the staging machine triggers an alert within 15 minutes.
 - Progress: `.github/workflows/uptime.yml` checks production every 10 minutes and alerts on
-  Telegram. Remaining: `/health/live` reflecting the bot loop; optional external monitor.
+  Telegram (first scheduled runs green). `/health/live` reflecting the bot loop moved to Task 3.5,
+  which rewrites the health checks anyway; an external monitor stays optional.
 
 ### Review gate R0
 - [ ] Done
@@ -325,7 +326,8 @@ March 2026 image meanwhile (restarts reuse it).
 ### Task 3.5: Health checks without Tesseract (<= 1 hour)
 - [ ] Done
 - Description: replace `check_ocr_health` with a configuration check; readiness must not
-  call the paid API.
+  call the paid API. Make `/health/live` reflect the bot (moved from Task 0.11): track the last
+  successful Telegram call instead of always answering "OK" (see IMP-039).
 - How to validate: `/health/ready` returns 200 without Tesseract installed.
 
 ### Review gate R3
