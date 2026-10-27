@@ -4,6 +4,7 @@
 //! during a Postgres restart) the connection is retried with exponential backoff instead of
 //! exiting, so the bot comes back on its own once the database is up.
 
+use std::future::Future;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
 
@@ -87,18 +88,34 @@ pub async fn connect_with_retry(
         .max_lifetime(config.max_lifetime_secs.map(Duration::from_secs))
         .idle_timeout(config.idle_timeout_secs.map(Duration::from_secs));
     let target = describe_database_target(&config.url);
+
+    retry_transient(policy, &target, || {
+        pool_options.clone().connect_with(connect_options.clone())
+    })
+    .await
+}
+
+/// Runs `attempt` until it succeeds, retrying transient errors with the backoff of `policy`.
+///
+/// Stops at the first non-transient error, or when the next retry would end after
+/// `policy.max_elapsed`.
+async fn retry_transient<T, F, Fut>(
+    policy: ConnectRetryPolicy,
+    target: &str,
+    mut attempt: F,
+) -> Result<T, sqlx::Error>
+where
+    F: FnMut() -> Fut,
+    Fut: Future<Output = Result<T, sqlx::Error>>,
+{
     let started = Instant::now();
     let mut retry = 0;
 
     loop {
-        match pool_options
-            .clone()
-            .connect_with(connect_options.clone())
-            .await
-        {
-            Ok(pool) => {
+        match attempt().await {
+            Ok(value) => {
                 info!(database = %target, retries = retry, "Connected to database");
-                return Ok(pool);
+                return Ok(value);
             }
             Err(error) => {
                 retry += 1;
@@ -111,7 +128,7 @@ pub async fn connect_with_retry(
                 warn!(
                     database = %target,
                     retry,
-                    retry_in_secs = delay.as_secs(),
+                    retry_in_ms = delay.as_millis(),
                     error = %error,
                     "Database unavailable, retrying"
                 );
@@ -160,39 +177,68 @@ mod tests {
         )));
     }
 
+    fn fast_policy() -> ConnectRetryPolicy {
+        ConnectRetryPolicy {
+            initial_delay: Duration::from_millis(5),
+            max_delay: Duration::from_millis(20),
+            max_elapsed: Duration::from_millis(500),
+        }
+    }
+
+    fn refused() -> sqlx::Error {
+        sqlx::Error::Io(std::io::Error::from(std::io::ErrorKind::ConnectionRefused))
+    }
+
     #[tokio::test]
-    async fn non_transient_error_fails_without_retrying() {
+    async fn transient_errors_are_retried_until_success() {
+        let mut attempts = 0;
+        let result = retry_transient(fast_policy(), "test", || {
+            attempts += 1;
+            let outcome = if attempts < 3 {
+                Err(refused())
+            } else {
+                Ok(attempts)
+            };
+            async move { outcome }
+        })
+        .await;
+        assert!(matches!(result, Ok(3)));
+        assert_eq!(attempts, 3);
+    }
+
+    #[tokio::test]
+    async fn non_transient_error_stops_after_one_attempt() {
+        let mut attempts = 0;
+        let result: Result<(), sqlx::Error> = retry_transient(fast_policy(), "test", || {
+            attempts += 1;
+            async { Err(sqlx::Error::Configuration("bad password".into())) }
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(attempts, 1);
+    }
+
+    #[tokio::test]
+    async fn retries_stop_once_max_elapsed_is_reached() {
+        let mut attempts = 0;
+        let started = Instant::now();
+        let result: Result<(), sqlx::Error> = retry_transient(fast_policy(), "test", || {
+            attempts += 1;
+            async { Err(refused()) }
+        })
+        .await;
+        assert!(result.is_err());
+        assert!(attempts > 3, "retried: {attempts} attempts");
+        assert!(started.elapsed() < Duration::from_secs(2), "bounded");
+    }
+
+    #[tokio::test]
+    async fn invalid_url_fails_before_connecting() {
         let config = DatabaseConfig {
             url: "not a url".to_string(),
             ..DatabaseConfig::default()
         };
-        let started = Instant::now();
-        let result = connect_with_retry(&config, ConnectRetryPolicy::default()).await;
-        assert!(result.is_err());
-        assert!(started.elapsed() < Duration::from_secs(1));
-    }
-
-    #[tokio::test]
-    async fn unreachable_server_is_retried_until_max_elapsed() {
-        // Port 1 on localhost refuses connections immediately.
-        let config = DatabaseConfig {
-            url: "postgres://user:pass@127.0.0.1:1/db".to_string(),
-            connect_timeout_secs: 1,
-            ..DatabaseConfig::default()
-        };
-        let policy = ConnectRetryPolicy {
-            initial_delay: Duration::from_millis(50),
-            max_delay: Duration::from_millis(100),
-            max_elapsed: Duration::from_millis(400),
-        };
-        let started = Instant::now();
-        let result = connect_with_retry(&config, policy).await;
-        assert!(result.is_err());
-        let elapsed = started.elapsed();
-        assert!(
-            elapsed >= Duration::from_millis(150),
-            "retried: {elapsed:?}"
-        );
-        assert!(elapsed < Duration::from_secs(5), "bounded: {elapsed:?}");
+        let result = connect_with_retry(&config, fast_policy()).await;
+        assert!(matches!(result, Err(sqlx::Error::Configuration(_))));
     }
 }

@@ -213,7 +213,7 @@ March 2026 image meanwhile (restarts reuse it).
   which rewrites the health checks anyway; an external monitor stays optional.
 
 ### Review gate R0
-- [ ] Done
+- [x] Done
 
 ## Phase 1: Foundations (no behavior change)
 
@@ -437,3 +437,4 @@ Target pipeline (Task 5.4):
 ## Review Log
 | Gate | Date | Commits | Findings | Outcome |
 |---|---|---|---|---|
+| R0 | 2026-10-27 | `9c9c970..9ce3e40` (14 commits) | 3 should-fix: fork PRs could trigger the staging deploy via `workflow_run`; production gate bypassable by a manual staging run; retry test did not exercise the retry loop. 4 nits: missing locale key (fixed, IMP-045 added), handler-level dedup test (IMP-031), owner identity split between `chat.id` and `from.id` (IMP-024, do before Phase 3), adjacent `i64` owner/recipe parameters (IMP-038). Independent run: fmt, clippy, 441 tests + 43 doc tests, 26/26 DB tests. | Passed with fixes: the 3 should-fix items and the locale key fixed in the commits following `9ce3e40`. |

@@ -468,7 +468,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                     message.chat().id,
                     t_lang(
                         ctx.localization,
-                        "error-recipe-not-found",
+                        "recipe-not-found",
                         language_code.as_deref(),
                     ),
                 )
@@ -649,7 +649,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                             .id,
                         t_lang(
                             ctx.localization,
-                            "error-recipe-not-found",
+                            "recipe-not-found",
                             language_code.as_deref(),
                         ),
                     )
@@ -751,7 +751,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                             .id,
                         t_lang(
                             ctx.localization,
-                            "error-recipe-not-found",
+                            "recipe-not-found",
                             language_code.as_deref(),
                         ),
                     )

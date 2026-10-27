@@ -78,6 +78,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 | IMP-042 | Deprecated Node 20 actions; smoke tests on Node 18 check health only | P3 | S | CI/CD |
 | IMP-043 | README describes a pipeline that does not exist | P3 | S | Docs |
 | IMP-044 | Dispatcher panics when Telegram is unreachable or the token is invalid at startup | P2 | S | Reliability |
+| IMP-045 | Locale keys used in code are not checked against the `.ftl` files | P2 | S | Localization |
 
 ## Verification of Earlier Findings
 | # | Earlier finding | Result | Item |
@@ -923,4 +924,16 @@ they can be pulled into 1-hour micro-tasks without another review.
   backoff, and exit with a clear error (and an alert) on `InvalidToken`.
 - Validation: starting with an invalid token exits with a one-line error and no panic; starting with
   the network down retries and then connects.
+
+### IMP-045: Locale keys used in code are not checked against the `.ftl` files
+- [ ] Done
+- Priority: P2. Effort: S. Area: Localization.
+- Location: `src/localization.rs:91` (fallback "Missing translation: …"), every `t_lang`/`t_args_lang`
+  call site.
+- Problem: found by review gate R0: `src/bot/callbacks/editing_callbacks.rs` used the key
+  `error-recipe-not-found` (3 call sites, fixed) which exists in neither locale, so users saw
+  "Missing translation: error-recipe-not-found". Nothing prevents the next missing key.
+- Proposed fix: a test that collects the string literals passed to `t_lang`/`t_args_lang` in `src/`
+  and asserts each key exists in both `locales/en/main.ftl` and `locales/fr/main.ftl`.
+- Validation: the test fails when a call site uses an unknown key.
 
