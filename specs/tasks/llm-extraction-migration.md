@@ -283,7 +283,7 @@ March 2026 image meanwhile (restarts reuse it).
   instead of writing a temporary file.
 
 ### Task 2.4: Metrics and tracing (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: `llm_requests_total{model,outcome}`, `llm_request_duration_seconds`,
   `llm_tokens_total{model,kind}`, `llm_estimated_cost_usd_total{model}`, one tracing span per
   call (model, tokens, latency, finish reason). `/metrics` and `/health/*` are publicly reachable
@@ -291,6 +291,11 @@ March 2026 image meanwhile (restarts reuse it).
   before exposing cost data.
 - How to validate: metrics test with the in-process recorder; `/metrics` on staging returns 401
   without the token.
+- Done: `llm_requests_total{model,outcome}`, `llm_request_duration_seconds{model}`,
+  `llm_retries_total{model}`, `llm_tokens_total{model,kind}`,
+  `llm_estimated_cost_micro_usd_total{model}` (prices in `src/extraction/pricing.rs`). The token
+  check now applies to `/metrics` only: before, setting `METRICS_AUTH_TOKEN` would also have
+  locked out the Fly health checks. Setting the secret on Fly is part of Task 4.1.
 
 ### Task 2.5: Live test (<= 1 hour)
 - [ ] Done
@@ -352,7 +357,8 @@ March 2026 image meanwhile (restarts reuse it).
 ### Task 4.1: Secrets (user action)
 - [ ] Done
 - Description: `fly secrets set GEMINI_API_KEY=... -a just-ingredients-staging` and
-  `-a just-ingredients`; GitHub secret for the staging workflow.
+  `-a just-ingredients`; GitHub secret for the staging workflow. Also set `METRICS_AUTH_TOKEN`
+  (random value) on both apps so `/metrics` and its cost data are not public.
 
 ### Task 4.2: Staging then production
 - [ ] Done

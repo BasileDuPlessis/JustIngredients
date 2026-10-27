@@ -42,6 +42,7 @@ tokio-util = { version = "0.7", features = ["io"] } # Tokio utilities
 
 [dev-dependencies]
 wiremock = "0.6" # HTTP mock server for the Gemini client tests
+metrics-util = { version = "0.20", features = ["debugging"] } # In-process recorder for metric tests
 
 [[example]]
 name = "recipe_parser"

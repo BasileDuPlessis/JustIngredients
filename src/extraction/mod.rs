@@ -14,6 +14,7 @@ pub mod config;
 pub mod gemini;
 pub mod image;
 pub mod mapping;
+pub mod pricing;
 pub mod prompt;
 
 use std::future::Future;
@@ -172,6 +173,23 @@ pub enum ExtractionError {
 }
 
 impl ExtractionError {
+    /// Short, stable label for metrics and logs.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::Config(_) => "config",
+            Self::UnsupportedImage(_) => "unsupported_image",
+            Self::ImageTooLarge { .. } => "image_too_large",
+            Self::RateLimited { .. } => "rate_limited",
+            Self::Timeout => "timeout",
+            Self::Network(_) => "network",
+            Self::Api { .. } => "api_error",
+            Self::Blocked(_) => "blocked",
+            Self::Truncated => "truncated",
+            Self::InvalidResponse(_) => "invalid_response",
+            Self::CircuitOpen => "circuit_open",
+        }
+    }
+
     /// Whether retrying the same request later can succeed: rate limits (429), timeouts,
     /// network errors and server errors (5xx).
     pub fn is_transient(&self) -> bool {

@@ -12,11 +12,13 @@ use super::types::{
 };
 use crate::extraction::breaker::CircuitBreaker;
 use crate::extraction::config::is_valid_model_id;
+use crate::extraction::pricing::estimated_cost_micro_usd;
 use crate::extraction::prompt::{response_schema, EXTRACTION_PROMPT};
 use crate::extraction::{
     Extraction, ExtractionError, ExtractionFuture, GeminiConfig, ImageInput, IngredientExtractor,
     ThinkingLevel,
 };
+use crate::observability::{record_llm_request, record_llm_usage};
 use crate::retry::{retry_with_backoff, Backoff, RetryDecision};
 use crate::secret::SecretString;
 
@@ -155,9 +157,18 @@ impl GeminiExtractor {
             _ => permit.success(),
         }
 
-        let elapsed_ms = started.elapsed().as_millis();
+        let elapsed = started.elapsed();
+        let elapsed_ms = elapsed.as_millis();
+        let retries = attempts.saturating_sub(1);
         match result {
             Ok(output) => {
+                record_llm_request(&self.model, "success", elapsed, retries);
+                record_llm_usage(
+                    &self.model,
+                    output.usage.prompt_token_count,
+                    output.usage.output_tokens(),
+                    estimated_cost_micro_usd(&self.model, &output.usage),
+                );
                 info!(
                     model = %self.model,
                     model_version = output.model_version.as_deref().unwrap_or("unknown"),
@@ -171,6 +182,7 @@ impl GeminiExtractor {
                 Ok(output.extraction)
             }
             Err(error) => {
+                record_llm_request(&self.model, error.kind(), elapsed, retries);
                 warn!(model = %self.model, attempts, elapsed_ms, error = %error, "Gemini extraction failed");
                 Err(error)
             }

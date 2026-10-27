@@ -61,6 +61,12 @@ impl RateLimiter {
     }
 }
 
+/// Paths that require `METRICS_AUTH_TOKEN` when it is set. Health checks stay open: Fly and
+/// the uptime monitor call them without a token.
+pub fn is_protected_path(path: &str) -> bool {
+    path == "/metrics"
+}
+
 /// Check authentication token from Authorization header
 pub fn check_auth(req: &hyper::Request<hyper::body::Incoming>) -> bool {
     // Get auth token from environment
@@ -184,8 +190,9 @@ pub async fn start_metrics_server_basic_with_config(
                                         return Ok(response);
                                     }
 
-                                    // Authentication check
-                                    if !check_auth(&req) {
+                                    // Authentication check: only /metrics is protected; health checks
+                                    // (Fly, uptime monitor) must keep working without a token.
+                                    if is_protected_path(req.uri().path()) && !check_auth(&req) {
                                         let mut response =
                                             hyper::Response::new("Unauthorized".to_string());
                                         *response.status_mut() = hyper::StatusCode::UNAUTHORIZED;
@@ -315,8 +322,9 @@ pub async fn start_metrics_server_with_health_checks(
                                         return Ok(response);
                                     }
 
-                                    // Authentication check
-                                    if !check_auth(&req) {
+                                    // Authentication check: only /metrics is protected; health checks
+                                    // (Fly, uptime monitor) must keep working without a token.
+                                    if is_protected_path(req.uri().path()) && !check_auth(&req) {
                                         let mut response =
                                             hyper::Response::new("Unauthorized".to_string());
                                         *response.status_mut() = hyper::StatusCode::UNAUTHORIZED;
@@ -406,6 +414,42 @@ pub fn record_ocr_metrics(success: bool, duration: std::time::Duration, image_si
     metrics::counter!("ocr_operations_total", "result" => if success { "success" } else { "failure" }).increment(1);
     metrics::histogram!("ocr_duration_seconds").record(duration.as_secs_f64());
     metrics::histogram!("ocr_image_size_bytes").record(image_size as f64);
+}
+
+/// Records one image sent to the extraction service: outcome (`success` or an
+/// `ExtractionError::kind`), latency including retries, and retries.
+pub fn record_llm_request(
+    model: &str,
+    outcome: &'static str,
+    duration: std::time::Duration,
+    retries: u32,
+) {
+    metrics::counter!("llm_requests_total", "model" => model.to_string(), "outcome" => outcome)
+        .increment(1);
+    metrics::histogram!("llm_request_duration_seconds", "model" => model.to_string())
+        .record(duration.as_secs_f64());
+    if retries > 0 {
+        metrics::counter!("llm_retries_total", "model" => model.to_string())
+            .increment(u64::from(retries));
+    }
+}
+
+/// Records the tokens billed for one successful call and, when the model price is known, its
+/// estimated cost in micro-USD (`llm_estimated_cost_micro_usd_total / 1e6` is in USD).
+pub fn record_llm_usage(
+    model: &str,
+    input_tokens: u64,
+    output_tokens: u64,
+    cost_micro_usd: Option<u64>,
+) {
+    metrics::counter!("llm_tokens_total", "model" => model.to_string(), "kind" => "input")
+        .increment(input_tokens);
+    metrics::counter!("llm_tokens_total", "model" => model.to_string(), "kind" => "output")
+        .increment(output_tokens);
+    if let Some(cost) = cost_micro_usd {
+        metrics::counter!("llm_estimated_cost_micro_usd_total", "model" => model.to_string())
+            .increment(cost);
+    }
 }
 
 /// Parameters for OCR performance metrics recording
@@ -1047,4 +1091,77 @@ pub fn set_classical_velocity_baseline(baseline: f64) {
 /// Record bug fixes for quality tracking
 pub fn record_bug_fix() {
     metrics::counter!("bugs_fixed_total").increment(1);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
+
+    #[test]
+    fn only_metrics_requires_the_token() {
+        assert!(is_protected_path("/metrics"));
+        for open in ["/health/live", "/health/ready", "/"] {
+            assert!(!is_protected_path(open), "{open}");
+        }
+    }
+
+    /// Metric name, labels and value from the debugging recorder.
+    type Sample = (String, Vec<(String, String)>, DebugValue);
+
+    #[test]
+    fn llm_metrics_are_recorded_with_model_and_outcome() {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        metrics::with_local_recorder(&recorder, || {
+            record_llm_request(
+                "gemini-test",
+                "success",
+                std::time::Duration::from_millis(1500),
+                2,
+            );
+            record_llm_usage("gemini-test", 1561, 492, Some(1698));
+        });
+
+        let values: Vec<Sample> = snapshotter
+            .snapshot()
+            .into_vec()
+            .into_iter()
+            .map(|(key, _, _, value)| {
+                let labels = key
+                    .key()
+                    .labels()
+                    .map(|label| (label.key().to_string(), label.value().to_string()))
+                    .collect();
+                (key.key().name().to_string(), labels, value)
+            })
+            .collect();
+        let counter = |name: &str, label: (&str, &str)| {
+            values.iter().find_map(|(n, labels, value)| match value {
+                DebugValue::Counter(count)
+                    if n == name && labels.iter().any(|(k, v)| k == label.0 && v == label.1) =>
+                {
+                    Some(*count)
+                }
+                _ => None,
+            })
+        };
+        assert_eq!(
+            counter("llm_requests_total", ("outcome", "success")),
+            Some(1)
+        );
+        assert_eq!(
+            counter("llm_retries_total", ("model", "gemini-test")),
+            Some(2)
+        );
+        assert_eq!(counter("llm_tokens_total", ("kind", "input")), Some(1561));
+        assert_eq!(counter("llm_tokens_total", ("kind", "output")), Some(492));
+        assert_eq!(
+            counter(
+                "llm_estimated_cost_micro_usd_total",
+                ("model", "gemini-test")
+            ),
+            Some(1698)
+        );
+    }
 }
