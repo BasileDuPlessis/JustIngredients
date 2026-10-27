@@ -402,9 +402,21 @@ cargo build --release         # Optimized release build
 
 ### Testing
 ```bash
-cargo test                     # Run all tests
+cargo test                     # Run all tests (database and live API tests are ignored)
 cargo test --doc              # Run documentation tests
 cargo run --example recipe_parser  # Run recipe parsing example
+
+# Database tests: each test gets its own database created by #[sqlx::test].
+# Point DATABASE_URL at a server where you can create databases (never production).
+SQLX_OFFLINE=true DATABASE_URL=postgres://user:pass@localhost/ji_test \
+  cargo test --test db_tests -- --include-ignored
+
+# Live Gemini test: calls the paid API (about 0.002 USD per image), reads GEMINI_API_KEY
+# from the environment or .env. Never run in CI.
+cargo test --test gemini_live -- --ignored --nocapture
+
+# Compare Gemini models on test_images/ (cost per photo, latency, accuracy)
+python3 scripts/llm_benchmark/gemini_benchmark.py --models gemini-3.5-flash-lite
 ```
 
 ### Code Quality

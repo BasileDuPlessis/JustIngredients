@@ -298,10 +298,11 @@ March 2026 image meanwhile (restarts reuse it).
   locked out the Fly health checks. Setting the secret on Fly is part of Task 4.1.
 
 ### Task 2.5: Live test (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: `#[ignore]` test running the real API on `test_images/`, skipped without
   `GEMINI_API_KEY`. Documented in README.
 - How to validate: `cargo test --test gemini_live -- --ignored` passes locally.
+- Done: `tests/gemini_live.rs`; first run on 2026-10-27: 7/7 ingredients, quantities and units, 2.1 s.
 
 ### Review gate R2
 - [ ] Done
