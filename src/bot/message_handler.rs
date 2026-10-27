@@ -11,6 +11,7 @@ use crate::localization::{t_args_lang, t_lang};
 
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
+use crate::extraction::SharedExtractor;
 
 // Import command handlers
 use super::command_handlers::{
@@ -503,6 +504,7 @@ pub async fn message_handler(
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
     deduplicator: Option<&crate::deduplication::SharedDeduplicator>,
+    extractor: SharedExtractor,
 ) -> Result<()> {
     let span = crate::observability::telegram_span(
         "message_handler",
@@ -514,7 +516,7 @@ pub async fn message_handler(
         return Ok(());
     }
 
-    dispatch_message(bot, msg, pool, dialogue, localization).await
+    dispatch_message(bot, msg, pool, dialogue, localization, extractor).await
 }
 
 /// Records the request in the deduplicator and returns `true` when it was already seen.
@@ -548,6 +550,7 @@ async fn dispatch_message(
     pool: Arc<PgPool>,
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
+    extractor: SharedExtractor,
 ) -> Result<()> {
     let start_time = std::time::Instant::now();
     let message_type = if msg.text().is_some() {
@@ -565,9 +568,9 @@ async fn dispatch_message(
     let result = if msg.text().is_some() {
         handle_text_message(&bot, &msg, dialogue, pool, &localization).await
     } else if msg.photo().is_some() {
-        handle_photo_message(&bot, &msg, dialogue, pool, &localization).await
+        handle_photo_message(&bot, &msg, dialogue, pool, &localization, &extractor).await
     } else if msg.document().is_some() {
-        handle_document_message(&bot, &msg, dialogue, pool, &localization).await
+        handle_document_message(&bot, &msg, dialogue, pool, &localization, &extractor).await
     } else {
         handle_unsupported_message(&bot, &msg, &localization).await
     };
@@ -590,6 +593,17 @@ async fn dispatch_message(
     result
 }
 
+/// Services shared by every message, built once at startup and cloned per message (all
+/// fields are reference-counted).
+#[derive(Clone)]
+pub struct MessageServices {
+    pub pool: Arc<PgPool>,
+    pub localization: Arc<crate::localization::LocalizationManager>,
+    pub cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
+    pub deduplicator: Option<crate::deduplication::SharedDeduplicator>,
+    pub extractor: SharedExtractor,
+}
+
 /// Cache-enabled message handler for improved performance
 ///
 /// This version includes caching for database queries and OCR results
@@ -597,19 +611,23 @@ async fn dispatch_message(
 pub async fn message_handler_with_cache(
     bot: Bot,
     msg: Message,
-    pool: Arc<PgPool>,
     dialogue: RecipeDialogue,
-    localization: Arc<crate::localization::LocalizationManager>,
-    cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
-    deduplicator: Option<&crate::deduplication::SharedDeduplicator>,
+    services: MessageServices,
 ) -> Result<()> {
+    let MessageServices {
+        pool,
+        localization,
+        cache,
+        deduplicator,
+        extractor,
+    } = services;
     let span = crate::observability::telegram_span(
         "message_handler_with_cache",
         msg.from.as_ref().map(|u| u.id.0 as i64),
     );
     let _enter = span.enter();
 
-    if is_duplicate_message(deduplicator, msg.chat.id, msg.id)? {
+    if is_duplicate_message(deduplicator.as_ref(), msg.chat.id, msg.id)? {
         return Ok(());
     }
 
@@ -640,7 +658,7 @@ pub async fn message_handler_with_cache(
 
     // Other messages go to the regular dispatcher, which records its own message metrics.
     // The duplicate check above already ran and must not run again.
-    dispatch_message(bot, msg, pool, dialogue, localization).await?;
+    dispatch_message(bot, msg, pool, dialogue, localization, extractor).await?;
 
     let duration = start_time.elapsed();
     observability::record_request_metrics("telegram_message_cached", 200, duration);

@@ -28,13 +28,13 @@ Answered 2026-10-26:
   such as "une pincée", "un filet", "à volonté" are neither ingredients nor units: "une pincée de
   sel" → name `sel`, `quantity = null`, `unit = null`.
 - The Gemini API key is on the paid tier (content not used by Google to improve its products).
+- Counted pieces and containers are part of the ingredient name (2026-10-27): "2 gousses d'ail" →
+  quantity 2, no unit, name `gousse d'ail`; "1 sachet de levure" → name `sachet de levure`.
 - Required status checks on `main` are not used (work happens directly on `main`); gating is done
   in the workflows (Task 0.9). Outage alerting is a scheduled workflow (Task 0.11).
 
 ## Open Questions
-1. Counted containers ("2 gousses d'ail", "1 sachet de levure", "3 tranches de jambon"): keep the
-   container as unit (`gousse`, `sachet`, `tranche`), or name `ail` with `quantity = 2`,
-   `unit = null`? Until decided, the prompt keeps the container as unit (`2 gousse ail`).
+1. _(answered)_
 2. _(answered)_
 3. GitHub secret name: reuse the existing `GOOGLE_AI_API_KEY` (created 2025-10-31) or create
    `GEMINI_API_KEY`? The application reads `GEMINI_API_KEY`.
@@ -310,12 +310,16 @@ March 2026 image meanwhile (restarts reuse it).
 ## Phase 3: Bot Integration
 
 ### Task 3.1: Wire the extractor behind the backend switch (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: switch the `EXTRACTION_BACKEND` default to `gemini` (set `GEMINI_API_KEY` on Fly first,
   Task 4.1). Replace the OCR call in `download_and_process_image`
   (`src/bot/image_processing.rs`) with `IngredientExtractor`; `TesseractExtractor` adapter keeps
   the old path available.
 - How to validate: bot tests with a fake extractor; manual test on staging with both backends.
+- Done: the extractor (`SharedExtractor`, chosen at startup) reaches the photo handlers through
+  `MessageServices`; download stays in memory (`download_file_bytes`); `TesseractExtractor` wraps the
+  old pipeline; default backend is `gemini`. Handlers are not unit-tested (no Telegram `Message` in
+  tests); validated by the extractor tests, the Tesseract adapter test and staging.
 
 ### Task 3.2: Persistence mapping (<= 1 hour)
 - [ ] Done
@@ -324,17 +328,22 @@ March 2026 image meanwhile (restarts reuse it).
   button must refuse to save items still flagged `requires_quantity_confirmation` (IMP-004: today
   it saves quantity 0), otherwise `needs_review` from Gemini has no effect.
   Display ingredients without quantity sensibly (today `1. **** → sel` and a button ` → sel`,
-  see IMP-025), and keep `source_text` through the mapping (today `to_measurement_matches`
-  drops it) so it can be stored in `raw_text`. (R1 findings)
+  see IMP-025). (R1 finding.) `source_text` is not carried to `ingredients.raw_text`: the column is
+  never read, and carrying it would change all 73 `MeasurementMatch` literals; revisit if a feature
+  needs the source line.
 - How to validate: DB test on saved rows; review test where Confirm with a flagged item asks for
   the quantity.
 
 ### Task 3.3: User-facing errors and messages (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: `error-extraction-*` keys in `locales/{en,fr}/main.ftl` (unavailable, rate
   limited, image unsupported, not a recipe), fix the `{$msg}` placeholder bug, remove "OCR"
   wording.
 - How to validate: localization tests for both languages.
+- Done: six `error-extraction-*`/`extraction-not-a-recipe` keys in both languages, one per error
+  kind (test checks every `ExtractionError` maps to a key present in both files); the `{}`
+  placeholder bug disappeared with the OCR error mapping; welcome/help texts no longer mention OCR.
+  The unused `error-ocr-*` keys go away in Phase 5.
 
 ### Task 3.4: Cost and load protection (<= 1 hour)
 - [ ] Done

@@ -29,13 +29,14 @@ pub struct HandlerContext<'a> {
 
 // Re-export main handler functions for use in main.rs
 pub use callbacks::callback_handler::{callback_handler, callback_handler_with_cache};
-pub use message_handler::{message_handler, message_handler_with_cache};
+pub use message_handler::{message_handler, message_handler_with_cache, MessageServices};
 
 // Re-export utility functions that might be used elsewhere
 pub use crate::validation::parse_ingredient_from_text;
 pub use dialogue_manager::save_ingredients_to_database;
 pub use image_processing::{
-    download_and_process_image, download_file, process_ingredients_and_extract_matches,
+    download_and_process_image, download_file_bytes, extraction_error_key,
+    process_ingredients_and_extract_matches,
 };
 pub use ui_builder::{
     create_ingredient_review_keyboard, create_post_confirmation_keyboard,

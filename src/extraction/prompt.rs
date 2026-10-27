@@ -99,6 +99,7 @@ mod tests {
         for rule in [
             "une pincée",
             "un quart de beurre",
+            "gousse d'ail",
             "Convert cl and dl to ml",
             "needs_review",
             "is_recipe",

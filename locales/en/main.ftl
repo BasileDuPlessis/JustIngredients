@@ -2,12 +2,12 @@
 # Main welcome and help messages
 
 welcome-title = Welcome to Ingredients Bot!
-welcome-description = I'm your OCR assistant that can extract text from images. Here's what I can do:
+welcome-description = I'm your recipe assistant: send me a photo of an ingredient list and I'll turn it into a saved recipe. Here's what I can do:
 welcome-features =
     📸 **Send me photos** of ingredient lists, recipes, or any text you want to extract
     � **Add captions** to automatically name your recipes
     �📄 **Send me image files** (PNG, JPG, JPEG, BMP, TIFF, TIF)
-    🔍 **I'll process them with OCR** and send back the extracted text
+    🔍 **I'll read the ingredients** and let you check them before saving
     💾 **All extracted text is stored** for future reference
 welcome-commands = Commands:
 welcome-start = /start - Show this welcome message
@@ -19,7 +19,7 @@ help-description = How to use me:
 help-step1 = 1. 📸 Send a photo of text you want to extract
 help-step2 = 2. � Add a caption to name your recipe (optional)
 help-step3 = 3. �📎 Or send an image file (PNG, JPG, JPEG, BMP, TIFF, TIF)
-help-step4 = 4. ⏳ I'll process it with OCR technology
+help-step4 = 4. ⏳ I'll read the ingredients from the image
 help-step5 = 5. 📝 You'll receive the extracted text and can review/edit ingredients
 help-formats = Supported formats: PNG, JPG, JPEG, BMP, TIFF, TIF
 help-limits = File size limit: 10MB for JPEG, 5MB for other formats
@@ -45,6 +45,14 @@ error-ocr-corruption = [OCR_CORRUPT] OCR engine encountered an internal error. P
 error-ocr-exhaustion = [OCR_RESOURCE] System resources are exhausted. Please try again later.
 error-validation = [VALIDATION] Image validation failed: {$msg}
 error-image-load = [IMAGE_LOAD] The image format is not supported or the image is corrupted. Please try with a PNG, JPG, or BMP image.
+
+# Ingredient extraction (Gemini or Tesseract)
+error-extraction-unavailable = [EXTRACTION_UNAVAILABLE] Reading recipes is temporarily unavailable. Please try again in a few minutes.
+error-extraction-busy = [EXTRACTION_BUSY] Too many photos at the same time. Please try again in a minute.
+error-extraction-unsupported-image = [FORMAT] This file is not an image I can read. Please send a photo (JPEG, PNG or WebP).
+error-extraction-image-too-large = [FORMAT] This image is too large (10 MB maximum). Please send a smaller photo.
+error-extraction-unreadable = [EXTRACTION_UNREADABLE] I couldn't read this image. Please try a sharper photo of the ingredient list.
+extraction-not-a-recipe = [NOT_A_RECIPE] I don't see an ingredient list in this image. Please send a photo of a recipe's ingredients.
 
 # Success messages
 success-extraction = ✅ **Text extracted successfully!**
@@ -78,7 +86,7 @@ unsupported-final = Try sending me an image with text! 📝
 
 # Regular text responses
 text-response = Received: {$text}
-text-tip = 💡 Tip: Send me an image with text to extract it using OCR!
+text-tip = 💡 Tip: Send me a photo of a recipe's ingredient list and I'll read it for you!
 
 # Recipe name dialogue messages
 recipe-name-prompt = 🏷️ What would you like to call this recipe?

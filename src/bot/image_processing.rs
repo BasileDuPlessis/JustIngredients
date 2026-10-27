@@ -2,10 +2,8 @@
 
 use anyhow::Result;
 use sqlx::postgres::PgPool;
-use std::io::Write;
 use std::sync::Arc;
 use teloxide::prelude::*;
-use tempfile::NamedTempFile;
 use tracing::{debug, info, warn};
 
 // Import localization
@@ -38,49 +36,14 @@ use super::ui_builder::{
 // use super::HandlerContext;
 
 // Import observability
+use crate::extraction::image::MAX_IMAGE_BYTES;
+use crate::extraction::mapping::to_measurement_matches;
+use crate::extraction::{ExtractionError, ImageInput, SharedExtractor};
 use crate::observability;
 
 // Import error logging utilities
 use crate::errors::error_logging;
 
-/// RAII guard for temporary files that ensures cleanup on drop
-pub struct TempFileGuard {
-    path: String,
-}
-
-impl TempFileGuard {
-    fn new(path: String) -> Self {
-        Self { path }
-    }
-
-    fn path(&self) -> &str {
-        &self.path
-    }
-}
-
-impl std::fmt::Display for TempFileGuard {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.path)
-    }
-}
-
-impl AsRef<std::path::Path> for TempFileGuard {
-    fn as_ref(&self) -> &std::path::Path {
-        std::path::Path::new(&self.path)
-    }
-}
-
-impl Drop for TempFileGuard {
-    fn drop(&mut self) {
-        if let Err(e) = std::fs::remove_file(&self.path) {
-            error_logging::log_filesystem_error(&e, "cleanup_temp_file", Some(&self.path), None);
-        } else {
-            debug!(path = %self.path, "Temporary file cleaned up successfully in drop");
-        }
-    }
-}
-
-/// Parameters for image processing
 #[derive(Debug)]
 pub struct ImageProcessingParams<'a> {
     pub file_id: teloxide::types::FileId,
@@ -90,17 +53,14 @@ pub struct ImageProcessingParams<'a> {
     pub dialogue: RecipeDialogue,
     pub pool: Arc<PgPool>,
     pub caption: Option<String>,
+    /// Engine that reads the ingredients (Gemini or Tesseract, from `EXTRACTION_BACKEND`).
+    pub extractor: SharedExtractor,
 }
 
-// Create OCR configuration with default settings
-static OCR_CONFIG: std::sync::LazyLock<OcrConfig> = std::sync::LazyLock::new(OcrConfig::default);
-static OCR_INSTANCE_MANAGER: std::sync::LazyLock<OcrInstanceManager> =
-    std::sync::LazyLock::new(OcrInstanceManager::default);
-static CIRCUIT_BREAKER: std::sync::LazyLock<CircuitBreaker> =
-    std::sync::LazyLock::new(|| CircuitBreaker::new(OCR_CONFIG.recovery.clone()));
-
-pub async fn download_file(bot: &Bot, file_id: teloxide::types::FileId) -> Result<TempFileGuard> {
-    let max_file_size = OCR_CONFIG.max_file_size;
+/// Downloads a Telegram file into memory, rejecting files larger than the extraction limit
+/// before and during the download.
+pub async fn download_file_bytes(bot: &Bot, file_id: teloxide::types::FileId) -> Result<Vec<u8>> {
+    let max_file_size = MAX_IMAGE_BYTES;
     let file = bot.get_file(file_id).await?;
     ensure_file_size_allowed(u64::from(file.size), max_file_size)?;
 
@@ -111,14 +71,7 @@ pub async fn download_file(bot: &Bot, file_id: teloxide::types::FileId) -> Resul
         file.path
     );
     // The bot's client has the request timeout configured at startup.
-    let bytes = fetch_file_bytes(bot.client(), &url, max_file_size).await?;
-
-    let mut temp_file = NamedTempFile::new()?;
-    temp_file.as_file_mut().write_all(&bytes)?;
-
-    // Keep the file on disk and close its handle; the guard deletes the file when dropped.
-    let (_file, path) = temp_file.keep()?;
-    Ok(TempFileGuard::new(path.to_string_lossy().to_string()))
+    fetch_file_bytes(bot.client(), &url, max_file_size).await
 }
 
 /// Rejects files larger than `max_file_size` bytes.
@@ -173,11 +126,13 @@ pub async fn download_and_process_image(
         dialogue,
         pool: _pool,
         caption,
+        extractor,
     } = params;
-    let temp_file_guard = match download_file(bot, file_id).await {
-        Ok(guard) => {
-            debug!(user_id = %chat_id, temp_path = %guard, "Image downloaded successfully");
-            guard
+
+    let bytes = match download_file_bytes(bot, file_id).await {
+        Ok(bytes) => {
+            debug!(user_id = %chat_id, bytes = bytes.len(), "Image downloaded successfully");
+            bytes
         }
         Err(e) => {
             error_logging::log_network_error(&e, "download_image_file", None, None);
@@ -188,198 +143,141 @@ pub async fn download_and_process_image(
             .await?;
             return Err(e);
         }
-    }; // The guard will be moved into the async block below
-    let result = async {
-        info!("Image downloaded to: {}", temp_file_guard);
+    };
 
-        // Send initial success message with cancel button and capture its ID
-        let processing_keyboard = create_processing_keyboard(language_code, localization);
-        let success_msg = bot.send_message(chat_id, success_message)
-            .reply_markup(processing_keyboard)
+    // Processing message with a cancel button, replaced below by the result
+    let processing_keyboard = create_processing_keyboard(language_code, localization);
+    let processing_message = bot
+        .send_message(chat_id, success_message)
+        .reply_markup(processing_keyboard)
+        .await?;
+    let message_id = processing_message.id;
+
+    let extraction = match ImageInput::prepare(bytes).await {
+        Ok(image) => extractor.extract(&image).await,
+        Err(error) => Err(error),
+    };
+    let extraction = match extraction {
+        Ok(extraction) => extraction,
+        Err(error) => {
+            observability::record_error_metrics(error.kind(), extractor.name());
+            if is_operator_error(&error) {
+                tracing::error!(user_id = %chat_id, backend = extractor.name(), error = %error, "Ingredient extraction misconfigured");
+            } else {
+                warn!(user_id = %chat_id, backend = extractor.name(), error = %error, "Ingredient extraction failed");
+            }
+            bot.edit_message_text(
+                chat_id,
+                message_id,
+                t_lang(localization, extraction_error_key(&error), language_code),
+            )
             .await?;
-        let success_message_id = success_msg.id;
-
-        // Validate image format before OCR processing
-        if !crate::ocr::is_supported_image_format(temp_file_guard.path(), &OCR_CONFIG) {
-            warn!(user_id = %chat_id, "Unsupported image format rejected");
-            bot.edit_message_text(chat_id, success_message_id, t_lang(localization, "error-unsupported-format", language_code))
-                .await?;
-            return Ok(String::new());
+            return Err(anyhow::anyhow!("ingredient extraction failed: {error}"));
         }
+    };
 
-        // Extract text from the image using OCR with circuit breaker protection
-        match crate::ocr::extract_text_from_image(
-            temp_file_guard.path(),
-            &OCR_CONFIG,
-            &OCR_INSTANCE_MANAGER,
-            &CIRCUIT_BREAKER,
+    if !extraction.is_recipe {
+        info!(user_id = %chat_id, backend = extractor.name(), "Image shows no ingredient list");
+        bot.edit_message_text(
+            chat_id,
+            message_id,
+            t_lang(localization, "extraction-not-a-recipe", language_code),
         )
-        .await
-        {
-            Ok((extracted_text, confidence)) => {
-                // Log confidence information
-                info!(
-                    user_id = %chat_id,
-                    confidence_score = confidence.overall_score,
-                    flags = ?confidence.flags,
-                    "OCR extraction completed with confidence score"
-                );
+        .await?;
+        return Ok(String::new());
+    }
 
-                // Check if OCR result should be flagged for review
-                if crate::ocr::should_flag_for_review(&confidence, 0.7) {
-                    warn!(
-                        user_id = %chat_id,
-                        confidence_score = confidence.overall_score,
-                        flags = ?confidence.flags,
-                        "OCR result flagged for review: {}",
-                        crate::ocr::get_confidence_description(&confidence)
-                    );
+    let ingredients = to_measurement_matches(&extraction);
+    let extracted_text = extraction.transcription;
+
+    if ingredients.is_empty() {
+        let mut no_ingredients_msg = format!(
+            "📝 {}\n\n{}",
+            t_lang(localization, "no-ingredients-found", language_code),
+            t_lang(localization, "no-ingredients-suggestion", language_code),
+        );
+        if !extracted_text.trim().is_empty() {
+            no_ingredients_msg.push_str(&format!("\n\n```\n{extracted_text}\n```"));
+        }
+        bot.edit_message_text(chat_id, message_id, &no_ingredients_msg)
+            .await?;
+        return Ok(extracted_text);
+    }
+
+    // Ingredients found, go directly to review interface
+    info!(user_id = %chat_id, backend = extractor.name(), ingredients_count = ingredients.len(), "Sending ingredients review interface");
+    let review_message = format!(
+        "📝 **{}**\n\n{}\n\n{}",
+        t_lang(localization, "review-title", language_code),
+        t_lang(localization, "review-description", language_code),
+        format_ingredients_list(&ingredients, language_code, localization)
+    );
+    let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
+    let sent_message = bot
+        .edit_message_text(chat_id, message_id, review_message)
+        .reply_markup(keyboard)
+        .await?;
+
+    // Determine recipe name: use caption if valid, otherwise "Recipe"
+    // PHOTO CAPTION FEATURE: Automatically uses photo captions as recipe name candidates
+    let (recipe_name_candidate, recipe_name_from_caption) = match &caption {
+        Some(caption_text) if !caption_text.trim().is_empty() => {
+            // Validate the caption as a recipe name using existing validation logic
+            match crate::validation::validate_recipe_name(caption_text) {
+                Ok(validated_name) => {
+                    info!(user_id = %chat_id, recipe_name = %validated_name, "Using caption as recipe name");
+                    (validated_name.to_string(), Some(caption_text.clone()))
                 }
-
-                if extracted_text.is_empty() {
-                    warn!(user_id = %chat_id, "OCR extraction returned empty text");
-                    bot.edit_message_text(chat_id, success_message_id, t_lang(localization, "error-no-text-found", language_code))
-                        .await?;
-                    Ok(String::new())
-                } else {
-                    info!(
-                        user_id = %chat_id,
-                        chars_extracted = extracted_text.len(),
-                        "OCR extraction completed successfully"
-                    );
-
-                    // Process the extracted text to find ingredients with measurements and automated recovery
-                    let ingredients = process_ingredients_with_recovery(
-                        &extracted_text,
-                        temp_file_guard.path(),
-                        &OCR_CONFIG,
-                        &OCR_INSTANCE_MANAGER,
-                        &CIRCUIT_BREAKER,
-                        language_code,
-                    ).await;
-
-                    if ingredients.is_empty() {
-                        // No ingredients found, edit the success message
-                        let no_ingredients_msg = format!(
-                            "📝 {}\n\n{}\n\n```\n{}\n```",
-                            t_lang(localization, "no-ingredients-found", language_code),
-                            t_lang(localization, "no-ingredients-suggestion", language_code),
-                            extracted_text
-                        );
-                        bot.edit_message_text(chat_id, success_message_id, &no_ingredients_msg).await?;
-                    } else {
-                        // Ingredients found, go directly to review interface
-                        info!(user_id = %chat_id, ingredients_count = ingredients.len(), "Sending ingredients review interface");
-                        let review_message = format!(
-                            "📝 **{}**\n\n{}\n\n{}",
-                            t_lang(localization, "review-title", language_code),
-                            t_lang(localization, "review-description", language_code),
-                            format_ingredients_list(&ingredients, language_code, localization)
-                        );
-
-                        let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
-
-                        // Edit the success message with the ingredients review
-                        let sent_message = bot.edit_message_text(chat_id, success_message_id, review_message)
-                            .reply_markup(keyboard)
-                            .await?;
-
-                        // Determine recipe name: use caption if valid, otherwise "Recipe"
-                        // PHOTO CAPTION FEATURE: Automatically uses photo captions as recipe name candidates
-                        // This enhances UX by allowing users to name recipes directly when sending photos
-                        let (recipe_name_candidate, recipe_name_from_caption) = match &caption {
-                            Some(caption_text) if !caption_text.trim().is_empty() => {
-                                // Validate the caption as a recipe name using existing validation logic
-                                // This ensures captions meet the same standards as manually entered names
-                                match crate::validation::validate_recipe_name(caption_text) {
-                                    Ok(validated_name) => {
-                                        info!(user_id = %chat_id, recipe_name = %validated_name, "Using caption as recipe name");
-                                        (validated_name.to_string(), Some(caption_text.clone())) // Caption was successfully used
-                                    }
-                                    Err(_) => {
-                                        // Caption is invalid (empty, too long, etc.), fall back to default
-                                        // This provides graceful degradation and maintains functionality
-                                        warn!(user_id = %chat_id, caption = %caption_text, "Caption is invalid, using default recipe name");
-                                        let default_name = "Recipe";
-                                        (default_name.to_string(), None) // Caption was not used
-                                    }
-                                }
-                            }
-                            _ => {
-                                // No caption or empty caption, use default
-                                // This maintains backward compatibility - existing users see no change
-                                debug!(user_id = %chat_id, "No caption provided, using default recipe name");
-                                ("Recipe".to_string(), None) // No caption available
-                            }
-                        };
-
-                        // Update dialogue state to review ingredients with caption-derived recipe name
-                        dialogue
-                            .update(RecipeDialogueState::ReviewIngredients {
-                                recipe_name: recipe_name_candidate,
-                                ingredients,
-                                language_code: language_code.map(|s| s.to_string()),
-                                message_id: Some(sent_message.id.0 as i32),
-                                extracted_text: extracted_text.clone(),
-                                recipe_name_from_caption, // Only set when caption was successfully validated and used
-                            })
-                            .await?;
-
-                        info!(user_id = %chat_id, "Ingredients review interface sent successfully");
-                    }
-
-                    Ok(extracted_text)
+                Err(_) => {
+                    warn!(user_id = %chat_id, caption = %caption_text, "Caption is invalid, using default recipe name");
+                    ("Recipe".to_string(), None)
                 }
-            }
-            Err(e) => {
-                error_logging::log_ocr_error(
-                    &e,
-                    "extract_text_from_image",
-                    Some(chat_id.0),
-                    None,
-                    None,
-                );
-
-                // Provide more specific error messages based on the error type
-                let error_message = match &e {
-                    OcrError::Validation(msg) => {
-                        observability::record_error_metrics("validation", "ocr");
-                        t_lang(localization, "error-validation", language_code).replace("{}", msg)
-                    }
-                    OcrError::ImageLoad(_) => {
-                        observability::record_error_metrics("image_load", "ocr");
-                        t_lang(localization, "error-image-load", language_code)
-                    }
-                    OcrError::Initialization(_) => {
-                        observability::record_error_metrics("initialization", "ocr");
-                        t_lang(localization, "error-ocr-initialization", language_code)
-                    }
-                    OcrError::Extraction(_) => {
-                        observability::record_error_metrics("extraction", "ocr");
-                        t_lang(localization, "error-ocr-extraction", language_code)
-                    }
-                    OcrError::Timeout(msg) => {
-                        observability::record_error_metrics("timeout", "ocr");
-                        t_lang(localization, "error-ocr-timeout", language_code).replace("{}", msg)
-                    }
-                    OcrError::_InstanceCorruption(_) => {
-                        observability::record_error_metrics("instance_corruption", "ocr");
-                        t_lang(localization, "error-ocr-corruption", language_code)
-                    }
-                    OcrError::_ResourceExhaustion(_) => {
-                        observability::record_error_metrics("resource_exhaustion", "ocr");
-                        t_lang(localization, "error-ocr-exhaustion", language_code)
-                    }
-                };
-
-                bot.edit_message_text(chat_id, success_message_id, &error_message).await?;
-                Err(anyhow::anyhow!("OCR processing failed: {:?}", e))
             }
         }
-    }
-    .await;
+        _ => {
+            debug!(user_id = %chat_id, "No caption provided, using default recipe name");
+            ("Recipe".to_string(), None)
+        }
+    };
 
-    result
+    // Update dialogue state to review ingredients with caption-derived recipe name
+    dialogue
+        .update(RecipeDialogueState::ReviewIngredients {
+            recipe_name: recipe_name_candidate,
+            ingredients,
+            language_code: language_code.map(|s| s.to_string()),
+            message_id: Some(sent_message.id.0 as i32),
+            extracted_text: extracted_text.clone(),
+            recipe_name_from_caption,
+        })
+        .await?;
+
+    info!(user_id = %chat_id, "Ingredients review interface sent successfully");
+    Ok(extracted_text)
+}
+
+/// Locale key of the message shown to the user for an extraction failure.
+pub fn extraction_error_key(error: &ExtractionError) -> &'static str {
+    match error {
+        ExtractionError::UnsupportedImage(_) => "error-extraction-unsupported-image",
+        ExtractionError::ImageTooLarge { .. } => "error-extraction-image-too-large",
+        ExtractionError::RateLimited { .. } => "error-extraction-busy",
+        ExtractionError::Blocked(_)
+        | ExtractionError::Recitation
+        | ExtractionError::Truncated
+        | ExtractionError::InvalidResponse(_) => "error-extraction-unreadable",
+        ExtractionError::Config(_)
+        | ExtractionError::Timeout
+        | ExtractionError::Network(_)
+        | ExtractionError::Api { .. }
+        | ExtractionError::CircuitOpen => "error-extraction-unavailable",
+    }
+}
+
+/// Failures the operator must fix (configuration, invalid key or model), logged as errors.
+fn is_operator_error(error: &ExtractionError) -> bool {
+    matches!(error, ExtractionError::Config(_))
+        || matches!(error, ExtractionError::Api { status, .. } if *status < 500 && *status != 429)
 }
 
 /// Attempts automated recovery of anomalous quantity measurements using targeted re-OCR
@@ -653,6 +551,61 @@ pub fn process_ingredients_and_extract_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn every_extraction_error_has_a_message_in_both_languages() {
+        let errors = [
+            ExtractionError::Config(String::new()),
+            ExtractionError::UnsupportedImage(String::new()),
+            ExtractionError::ImageTooLarge { size: 1, max: 0 },
+            ExtractionError::RateLimited { retry_after: None },
+            ExtractionError::Timeout,
+            ExtractionError::Network(String::new()),
+            ExtractionError::Api {
+                status: 500,
+                message: String::new(),
+            },
+            ExtractionError::Blocked(String::new()),
+            ExtractionError::Recitation,
+            ExtractionError::Truncated,
+            ExtractionError::InvalidResponse(String::new()),
+            ExtractionError::CircuitOpen,
+        ];
+        let locales = [
+            include_str!("../../locales/en/main.ftl"),
+            include_str!("../../locales/fr/main.ftl"),
+        ];
+        let mut keys: Vec<&str> = errors.iter().map(extraction_error_key).collect();
+        keys.push("extraction-not-a-recipe");
+        for key in keys {
+            for locale in locales {
+                assert!(
+                    locale
+                        .lines()
+                        .any(|line| line.starts_with(&format!("{key} = "))),
+                    "missing locale key {key}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn only_configuration_problems_are_operator_errors() {
+        assert!(is_operator_error(&ExtractionError::Config(String::new())));
+        assert!(is_operator_error(&ExtractionError::Api {
+            status: 400,
+            message: String::new()
+        }));
+        assert!(!is_operator_error(&ExtractionError::Api {
+            status: 429,
+            message: String::new()
+        }));
+        assert!(!is_operator_error(&ExtractionError::Api {
+            status: 503,
+            message: String::new()
+        }));
+        assert!(!is_operator_error(&ExtractionError::Timeout));
+    }
 
     #[test]
     fn file_size_limit_is_inclusive() {

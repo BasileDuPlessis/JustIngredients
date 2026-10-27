@@ -6,6 +6,9 @@ use just_ingredients::db;
 use just_ingredients::db_connection::{self, DEFAULT_CONNECT_BACKOFF};
 use just_ingredients::deduplication;
 use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
+use just_ingredients::extraction::gemini::GeminiExtractor;
+use just_ingredients::extraction::tesseract::TesseractExtractor;
+use just_ingredients::extraction::{ExtractionBackend, SharedExtractor};
 use just_ingredients::localization;
 use just_ingredients::observability;
 use std::env;
@@ -251,6 +254,17 @@ async fn main() -> Result<()> {
     // Initialize localization manager
     let localization_manager = localization::create_localization_manager()?;
 
+    // Ingredient extraction engine, chosen by EXTRACTION_BACKEND
+    let extractor: SharedExtractor = match app_config.extraction.backend {
+        ExtractionBackend::Gemini => Arc::new(GeminiExtractor::new(&app_config.extraction.gemini)?),
+        ExtractionBackend::Tesseract => Arc::new(TesseractExtractor::default()),
+    };
+    info!(
+        backend = extractor.name(),
+        model = %app_config.extraction.gemini.model,
+        "Ingredient extraction initialized"
+    );
+
     // Initialize the bot with custom client configuration for better reliability
     let client = reqwest::Client::builder()
         .timeout(Duration::from_secs(30)) // 30 second timeout
@@ -267,30 +281,18 @@ async fn main() -> Result<()> {
     // Set up the dispatcher with shared connection and dialogue support
     let handler = dptree::entry()
         .branch(Update::filter_message().endpoint({
-            let pool = Arc::clone(&shared_pool);
             let storage = dialogue_storage.clone();
-            let localization = Arc::clone(&localization_manager);
-            let cache = Arc::clone(&cache_manager);
-            let dedup = Arc::clone(&deduplicator);
+            let services = bot::MessageServices {
+                pool: Arc::clone(&shared_pool),
+                localization: Arc::clone(&localization_manager),
+                cache: Arc::clone(&cache_manager),
+                deduplicator: Some(Arc::clone(&deduplicator)),
+                extractor: Arc::clone(&extractor),
+            };
             move |bot: Bot, msg: Message| {
-                let pool = Arc::clone(&pool);
-                let storage = storage.clone();
-                let localization = Arc::clone(&localization);
-                let cache = Arc::clone(&cache);
-                let dedup = Arc::clone(&dedup);
-                let dialogue = RecipeDialogue::new(storage, msg.chat.id);
-                async move {
-                    bot::message_handler_with_cache(
-                        bot,
-                        msg,
-                        pool,
-                        dialogue,
-                        localization,
-                        cache,
-                        Some(&dedup),
-                    )
-                    .await
-                }
+                let dialogue = RecipeDialogue::new(storage.clone(), msg.chat.id);
+                let services = services.clone();
+                async move { bot::message_handler_with_cache(bot, msg, dialogue, services).await }
             }
         }))
         .branch(Update::filter_callback_query().endpoint({

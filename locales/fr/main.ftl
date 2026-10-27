@@ -2,11 +2,11 @@
 # Messages principaux de bienvenue et d'aide
 
 welcome-title = Bienvenue sur Ingredients Bot !
-welcome-description = Je suis votre assistant OCR qui peut extraire le texte des images. Voici ce que je peux faire :
+welcome-description = Je suis votre assistant recettes : envoyez-moi une photo d'une liste d'ingrédients et je la transforme en recette enregistrée. Voici ce que je peux faire :
 welcome-features =
     📸 **Envoyez-moi des photos** de listes d'ingrédients, de recettes ou de tout texte à extraire
     📄 **Envoyez-moi des fichiers image** (PNG, JPG, JPEG, BMP, TIFF, TIF)
-    🔍 **Je les traiterai avec OCR** et vous renverrai le texte extrait
+    🔍 **Je lirai les ingrédients** et vous les ferai vérifier avant l'enregistrement
     💾 **Tout texte extrait est stocké** pour référence future
 welcome-commands = Commandes :
 welcome-start = /start - Afficher ce message de bienvenue
@@ -17,7 +17,7 @@ help-title = 🆘 Aide d'Ingredients Bot
 help-description = Comment m'utiliser :
 help-step1 = 1. 📸 Envoyer une photo de texte à extraire (la légende devient le nom de la recette)
 help-step2 = 2. 📎 Ou envoyer un fichier image (PNG, JPG, JPEG, BMP, TIFF, TIF)
-help-step3 = 3. ⏳ Je le traiterai avec la technologie OCR
+help-step3 = 3. ⏳ Je lis les ingrédients sur l'image
 help-step4 = 4. 📝 Vous recevrez le texte extrait
 help-formats = Formats supportés : PNG, JPG, JPEG, BMP, TIFF, TIF
 help-limits = Limite de taille de fichier : 10 Mo pour JPEG, 5 Mo pour les autres formats
@@ -42,6 +42,14 @@ error-ocr-corruption = [OCR_CORRUPT] Le moteur OCR a rencontré une erreur inter
 error-ocr-exhaustion = [OCR_RESOURCE] Les ressources système sont épuisées. Veuillez réessayer plus tard.
 error-validation = [VALIDATION] La validation de l'image a échoué : {$msg}
 error-image-load = [IMAGE_LOAD] Le format d'image n'est pas supporté ou l'image est corrompue. Essayez avec une image PNG, JPG ou BMP.
+
+# Ingredient extraction (Gemini or Tesseract)
+error-extraction-unavailable = [EXTRACTION_UNAVAILABLE] La lecture des recettes est momentanément indisponible. Réessayez dans quelques minutes.
+error-extraction-busy = [EXTRACTION_BUSY] Trop de photos en même temps. Réessayez dans une minute.
+error-extraction-unsupported-image = [FORMAT] Ce fichier n'est pas une image que je sais lire. Envoyez une photo (JPEG, PNG ou WebP).
+error-extraction-image-too-large = [FORMAT] Cette image est trop lourde (10 Mo maximum). Envoyez une photo plus légère.
+error-extraction-unreadable = [EXTRACTION_UNREADABLE] Je n'ai pas réussi à lire cette image. Essayez une photo plus nette de la liste d'ingrédients.
+extraction-not-a-recipe = [NOT_A_RECIPE] Je ne vois pas de liste d'ingrédients sur cette image. Envoyez une photo des ingrédients d'une recette.
 
 # Messages de succès
 success-extraction = ✅ **Texte extrait avec succès !**
@@ -75,7 +83,7 @@ unsupported-final = Essayez d'envoyer une image avec du texte ! 📝
 
 # Réponses texte régulières
 text-response = Reçu : {$text}
-text-tip = 💡 Conseil : Envoyez-moi une image avec du texte pour l'extraire avec OCR !
+text-tip = 💡 Conseil : Envoyez-moi une photo de la liste d'ingrédients d'une recette, je la lirai pour vous !
 
 # Messages de dialogue pour le nom de recette
 recipe-name-prompt = 🏷️ Comment souhaitez-vous nommer cette recette ?

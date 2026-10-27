@@ -11,6 +11,7 @@ use crate::localization::t_lang;
 
 // Import dialogue types
 use crate::dialogue::RecipeDialogue;
+use crate::extraction::SharedExtractor;
 
 // Import image processing functions
 use super::image_processing::{download_and_process_image, ImageProcessingParams};
@@ -28,6 +29,7 @@ pub async fn handle_photo_message(
     dialogue: RecipeDialogue,
     pool: Arc<PgPool>,
     localization: &Arc<crate::localization::LocalizationManager>,
+    extractor: &SharedExtractor,
 ) -> Result<()> {
     // Extract user's language code from Telegram
     let language_code = msg
@@ -64,6 +66,7 @@ pub async fn handle_photo_message(
                     dialogue,
                     pool,
                     caption,
+                    extractor: SharedExtractor::clone(extractor),
                 },
                 localization,
             )
@@ -80,6 +83,7 @@ pub async fn handle_document_message(
     dialogue: RecipeDialogue,
     pool: Arc<PgPool>,
     localization: &Arc<crate::localization::LocalizationManager>,
+    extractor: &SharedExtractor,
 ) -> Result<()> {
     // Extract user's language code from Telegram
     let language_code = msg
@@ -117,6 +121,7 @@ pub async fn handle_document_message(
                         dialogue,
                         pool,
                         caption: None, // Documents don't have captions like photos do
+                        extractor: SharedExtractor::clone(extractor),
                     },
                     localization,
                 )

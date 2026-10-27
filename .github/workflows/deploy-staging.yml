@@ -71,8 +71,13 @@ jobs:
     - name: Set staging secrets
       env:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       run: |
-        printf 'TELEGRAM_BOT_TOKEN=%s\n' "$TELEGRAM_BOT_TOKEN" \
+        if [ -z "$GEMINI_API_KEY" ]; then
+          echo "::error::GEMINI_API_KEY is not set in the staging environment secrets"
+          exit 1
+        fi
+        printf 'TELEGRAM_BOT_TOKEN=%s\nGEMINI_API_KEY=%s\n' "$TELEGRAM_BOT_TOKEN" "$GEMINI_API_KEY" \
           | flyctl secrets import --stage --app "$STAGING_APP"
 
     - name: Deploy to staging

@@ -2,7 +2,7 @@
 //!
 //! | Variable | Default | Meaning |
 //! |---|---|---|
-//! | `EXTRACTION_BACKEND` | `tesseract` | `gemini` or `tesseract` |
+//! | `EXTRACTION_BACKEND` | `gemini` | `gemini` or `tesseract` (OCR fallback until Phase 5) |
 //! | `GEMINI_API_KEY` | (none) | required when the backend is `gemini` |
 //! | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | model id |
 //! | `GEMINI_TIMEOUT_SECS` | `40` | time budget for one image, retries included, 1–300 |
@@ -12,8 +12,7 @@
 //! Values are parsed at startup whatever the backend: a malformed `GEMINI_*` value stops the
 //! bot, while range checks only apply when the backend is `gemini`.
 //!
-//! The backend stays `tesseract` by default until the Gemini path is wired into the bot
-//! (migration Task 3.1), so deploying this code changes nothing.
+//! With the default `gemini` backend the bot does not start without `GEMINI_API_KEY`.
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
@@ -126,7 +125,7 @@ pub struct ExtractionConfig {
 impl Default for ExtractionConfig {
     fn default() -> Self {
         Self {
-            backend: ExtractionBackend::Tesseract,
+            backend: ExtractionBackend::Gemini,
             gemini: GeminiConfig::default(),
         }
     }
@@ -236,12 +235,20 @@ mod tests {
     }
 
     #[test]
-    fn defaults_keep_tesseract_and_need_no_key() -> AppResult<()> {
+    fn defaults_use_gemini_and_require_a_key() -> AppResult<()> {
         let config = load(&[])?;
         assert_eq!(config, ExtractionConfig::default());
-        assert_eq!(config.backend, ExtractionBackend::Tesseract);
+        assert_eq!(config.backend, ExtractionBackend::Gemini);
         assert_eq!(config.gemini.model, DEFAULT_GEMINI_MODEL);
         assert_eq!(config.gemini.thinking_level, ThinkingLevel::Minimal);
+        assert!(config.validate().is_err(), "no GEMINI_API_KEY");
+        load(&[("GEMINI_API_KEY", "key")])?.validate()
+    }
+
+    #[test]
+    fn tesseract_fallback_needs_no_key() -> AppResult<()> {
+        let config = load(&[("EXTRACTION_BACKEND", "tesseract")])?;
+        assert_eq!(config.backend, ExtractionBackend::Tesseract);
         config.validate()
     }
 
