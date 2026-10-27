@@ -21,6 +21,7 @@ use crate::bot::ui_builder::{
 };
 
 // Import HandlerContext
+use crate::bot::home::send_home;
 use crate::bot::HandlerContext;
 
 // Import callback types module
@@ -834,6 +835,16 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
 
     // End the dialogue
     dialogue.exit().await?;
+    if let Some(message) = &q.message {
+        send_home(
+            ctx.bot,
+            pool,
+            message.chat().id,
+            ctx.localization,
+            language_code.as_deref(),
+        )
+        .await;
+    }
 
     Ok(())
 }
@@ -932,6 +943,16 @@ async fn handle_cancel_saved_ingredients_button(
 
     // End the dialogue
     dialogue.exit().await?;
+    if let Some(message) = &q.message {
+        send_home(
+            bot,
+            &pool,
+            message.chat().id,
+            localization,
+            language_code.as_deref(),
+        )
+        .await;
+    }
     Ok(())
 }
 

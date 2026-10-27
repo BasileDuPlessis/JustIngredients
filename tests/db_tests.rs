@@ -222,6 +222,41 @@ async fn test_get_user_recipes_paginated_impl(pool: &PgPool) -> Result<()> {
 
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_get_user_recipes_newest_first(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+
+    // Two recipes with the same name stay two entries; the unnamed one is left out
+    let mut ids = Vec::new();
+    for name in ["Tarte", "Crêpes", "Tarte"] {
+        let id = create_recipe(&pool, 12345, "content").await?;
+        update_recipe_name(&pool, 12345, id, name).await?;
+        ids.push(id);
+    }
+    create_recipe(&pool, 12345, "unnamed").await?;
+    let other = create_recipe(&pool, 67890, "content").await?;
+    update_recipe_name(&pool, 67890, other, "Pancakes").await?;
+
+    let (recipes, total) = get_user_recipes_newest_first(&pool, 12345, 2, 0).await?;
+    assert_eq!(total, 3);
+    let page: Vec<(i64, &str)> = recipes.iter().map(|r| (r.id, r.name.as_str())).collect();
+    assert_eq!(page, vec![(ids[2], "Tarte"), (ids[1], "Crêpes")]);
+
+    let (recipes, total) = get_user_recipes_newest_first(&pool, 12345, 2, 2).await?;
+    assert_eq!(total, 3);
+    assert_eq!(recipes.len(), 1);
+    assert_eq!(recipes[0].id, ids[0]);
+
+    let (recipes, total) = get_user_recipes_newest_first(&pool, 99999, 3, 0).await?;
+    assert_eq!((recipes.len(), total), (0, 0));
+
+    assert!(get_user_recipes_newest_first(&pool, 12345, 0, 0)
+        .await
+        .is_err());
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn test_get_recipes_by_name(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
     test_get_recipes_by_name_impl(&pool).await

@@ -32,6 +32,14 @@ command-list = Mes recettes
 command-help = Aide et conseils
 search-coming-soon = La recherche arrive bientôt. En attendant, /liste affiche toutes vos recettes.
 
+# Message d'accueil (fin de chaque action)
+home-title = 🏠 Accueil
+home-no-recipes = Vous n'avez pas encore de recette.
+home-one-recipe = Vous avez 1 recette.
+home-recipe-count = Vous avez {$count} recettes.
+home-send-photo = 📸 Envoyez une photo d'une liste d'ingrédients pour ajouter une recette.
+home-all-recipes = 📚 Toutes mes recettes
+
 # Messages d'erreur
 error-download-failed = Échec du téléchargement de l'image. Veuillez réessayer.
 error-unsupported-format = Format d'image non supporté. Veuillez utiliser les formats PNG, JPG, JPEG, BMP, TIFF ou TIF.

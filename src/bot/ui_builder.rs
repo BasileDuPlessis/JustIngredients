@@ -145,33 +145,6 @@ pub fn create_ingredient_review_keyboard(
     )
 }
 
-/// Create inline keyboard for post-confirmation workflow
-pub fn create_post_confirmation_keyboard(
-    language_code: Option<&str>,
-    localization: &Arc<crate::localization::LocalizationManager>,
-) -> InlineKeyboardMarkup {
-    with_ui_metrics_sync("create_post_confirmation_keyboard", 0, || {
-        let buttons = vec![
-            vec![create_localized_button_with_emoji(
-                localization,
-                "📚",
-                "workflow-list-recipes",
-                "workflow_list_recipes".to_string(),
-                language_code,
-            )],
-            vec![create_localized_button_with_emoji(
-                localization,
-                "🔍",
-                "workflow-search-recipes",
-                "workflow_search_recipes".to_string(),
-                language_code,
-            )],
-        ];
-
-        InlineKeyboardMarkup::new(buttons)
-    })
-}
-
 /// Create inline keyboard for OCR processing with cancel option
 pub fn create_processing_keyboard(
     language_code: Option<&str>,

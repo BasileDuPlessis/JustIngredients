@@ -947,10 +947,13 @@ they can be pulled into 1-hour micro-tasks without another review.
 - [ ] Done
 - Priority: P2. Effort: M. Area: Tests / CI.
 - Related: LLM migration (most benchmarks measure OCR code that Phase 5 deletes).
-- Location: `tests/performance_tests.rs` (23 tests with ops/sec and overhead thresholds).
+- Location: `tests/performance_tests.rs` (23 tests with ops/sec and overhead thresholds),
+  `tests/integration_tests.rs`.
 - Problem: since Task 0.8 CI runs all test targets, so wall-clock thresholds gate merges on shared,
   noisy runners. `test_multi_line_vs_single_line_performance` (relative degradation < 5%) failed in
   CI run for `54a06df` at 39.5% and once in the local pre-push hook; it is now `#[ignore]`d.
+  `tests/integration_tests.rs` has the same kind of test: `test_adaptive_preprocessing_performance_comparison`
+  (high-quality preprocessing < 300 ms) failed the CI run for `80a6941` at 307 ms.
 - Proposed fix: move the benchmarks to `benches/` (criterion) or a non-blocking scheduled CI job,
   keep only functional assertions in `tests/`, and delete the OCR benchmarks in Phase 5.
 - Validation: `cargo test --all-targets` contains no wall-clock assertions; the benchmark job

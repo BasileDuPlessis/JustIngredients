@@ -26,11 +26,10 @@ use crate::db::{
 };
 
 // Import UI builder functions
-use super::ui_builder::{
-    create_ingredient_review_keyboard, create_post_confirmation_keyboard, format_ingredients_list,
-};
+use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
 
 // Import HandlerContext
+use super::home::send_home;
 use super::HandlerContext;
 
 /// Check if the error is a "message not modified" Telegram API error
@@ -318,6 +317,7 @@ pub async fn handle_recipe_name_after_confirm_input(
             bot,
             msg,
             dialogue,
+            &pool,
             handler_ctx.localization,
             handler_ctx.language_code,
         )
@@ -357,6 +357,7 @@ async fn handle_recipe_name_cancellation(
     bot: &Bot,
     msg: &Message,
     dialogue: RecipeDialogue,
+    pool: &PgPool,
     localization: &Arc<crate::localization::LocalizationManager>,
     language_code: Option<&str>,
 ) -> Result<()> {
@@ -367,6 +368,7 @@ async fn handle_recipe_name_cancellation(
     )
     .await?;
     dialogue.exit().await?;
+    send_home(bot, pool, msg.chat.id, localization, language_code).await;
     Ok(())
 }
 
@@ -470,16 +472,6 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
                     ctx.bot.send_message(msg.chat.id, success_message).await?;
                 }
             }
-            // Send post-confirmation menu for legacy workflow
-            let confirmation_keyboard =
-                create_post_confirmation_keyboard(ctx.language_code, ctx.localization);
-            ctx.bot
-                .send_message(
-                    msg.chat.id,
-                    t_lang(ctx.localization, "workflow-what-next", ctx.language_code),
-                )
-                .reply_markup(confirmation_keyboard)
-                .await?;
         } else {
             ctx.bot.send_message(msg.chat.id, success_message).await?;
         }
@@ -487,6 +479,14 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
 
     // End the dialogue
     dialogue.exit().await?;
+    send_home(
+        ctx.bot,
+        pool,
+        msg.chat.id,
+        ctx.localization,
+        ctx.language_code,
+    )
+    .await;
     Ok(())
 }
 
@@ -597,7 +597,7 @@ pub async fn handle_recipe_rename_input(
         localization: _,
     } = ctx;
     let RecipeRenameInputParams {
-        pool: _pool,
+        pool,
         new_name_input,
         recipe_id,
         current_name,
@@ -618,6 +618,14 @@ pub async fn handle_recipe_rename_input(
         )
         .await?;
         dialogue.exit().await?;
+        send_home(
+            bot,
+            pool,
+            msg.chat.id,
+            handler_ctx.localization,
+            handler_ctx.language_code,
+        )
+        .await;
         return Ok(());
     }
 
@@ -628,7 +636,7 @@ pub async fn handle_recipe_rename_input(
             // message; a message without a sender is handled like a missing recipe.
             let rename_result = match msg.from.as_ref() {
                 Some(user) => {
-                    update_recipe_name(_pool, user.id.0 as i64, recipe_id, validated_name).await
+                    update_recipe_name(pool, user.id.0 as i64, recipe_id, validated_name).await
                 }
                 None => Ok(false),
             };
@@ -695,7 +703,8 @@ pub async fn handle_recipe_rename_input(
                 ),
             )
             .await?;
-            // Keep dialogue active, user can try again
+            // Keep the dialogue: the user can type another name
+            return Ok(());
         }
         Err(AppError::Validation(error_msg)) if error_msg == "too_long" => {
             bot.send_message(
@@ -707,7 +716,8 @@ pub async fn handle_recipe_rename_input(
                 ),
             )
             .await?;
-            // Keep dialogue active, user can try again
+            // Keep the dialogue: the user can type another name
+            return Ok(());
         }
         Err(_) => {
             bot.send_message(
@@ -719,12 +729,21 @@ pub async fn handle_recipe_rename_input(
                 ),
             )
             .await?;
-            // Keep dialogue active, user can try again
+            // Keep the dialogue: the user can type another name
+            return Ok(());
         }
     }
 
     // End the dialogue
     dialogue.exit().await?;
+    send_home(
+        bot,
+        pool,
+        msg.chat.id,
+        handler_ctx.localization,
+        handler_ctx.language_code,
+    )
+    .await;
     Ok(())
 }
 
@@ -946,7 +965,7 @@ pub async fn handle_ingredient_review_input(
         localization: _,
     } = ctx;
     let IngredientReviewInputParams {
-        pool: _pool,
+        pool,
         review_input,
         recipe_name,
         ingredients,
@@ -1002,7 +1021,7 @@ pub async fn handle_ingredient_review_input(
 
             // No ingredients require confirmation, proceed with saving
             if let Err(e) = save_ingredients_to_database(
-                &_pool,
+                &pool,
                 msg.chat.id.0,
                 &extracted_text,
                 &ingredients,
@@ -1043,6 +1062,14 @@ pub async fn handle_ingredient_review_input(
 
             // End the dialogue
             dialogue.exit().await?;
+            send_home(
+                bot,
+                &pool,
+                msg.chat.id,
+                handler_ctx.localization,
+                handler_ctx.language_code,
+            )
+            .await;
         }
         "cancel" | "stop" => {
             // User cancelled, end dialogue without saving
@@ -1056,6 +1083,14 @@ pub async fn handle_ingredient_review_input(
             )
             .await?;
             dialogue.exit().await?;
+            send_home(
+                bot,
+                &pool,
+                msg.chat.id,
+                handler_ctx.localization,
+                handler_ctx.language_code,
+            )
+            .await;
         }
         _ => {
             // Unknown command, show help
@@ -1551,6 +1586,14 @@ pub async fn handle_quantity_correction_input(
         )
         .await?;
         dialogue.exit().await?;
+        send_home(
+            bot,
+            &pool,
+            msg.chat.id,
+            handler_ctx.localization,
+            handler_ctx.language_code,
+        )
+        .await;
         return Ok(());
     }
 
@@ -1646,6 +1689,14 @@ pub async fn handle_quantity_correction_input(
 
                 // End the dialogue
                 dialogue.exit().await?;
+                send_home(
+                    bot,
+                    &pool,
+                    msg.chat.id,
+                    handler_ctx.localization,
+                    handler_ctx.language_code,
+                )
+                .await;
             }
         }
         None => {

@@ -26,6 +26,7 @@ use crate::bot::ui_builder::{
 };
 
 // Import database functions
+use crate::bot::home::send_home;
 use crate::db::{get_recipes_by_name, read_recipe_with_name};
 
 /// Handle recipe selection callback
@@ -727,9 +728,10 @@ pub async fn handle_delete_recipe_confirmation(
                 }
             }
         }
-        _ => {}
+        _ => return Ok(()),
     }
 
+    send_home(bot, &pool, chat_id, localization, language_code.as_deref()).await;
     Ok(())
 }
 

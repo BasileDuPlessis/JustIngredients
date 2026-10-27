@@ -1084,60 +1084,6 @@ mod tests {
         assert!(!invalid_callback.starts_with("page:"));
     }
 
-    /// Test post-confirmation keyboard creation
-    #[test]
-    fn test_post_confirmation_keyboard_creation() {
-        let manager = setup_localization();
-        use just_ingredients::bot::create_post_confirmation_keyboard;
-        use teloxide::types::{InlineKeyboardButtonKind, InlineKeyboardMarkup};
-
-        // Test keyboard creation for English
-        let keyboard_en = create_post_confirmation_keyboard(Some("en"), &manager);
-
-        let InlineKeyboardMarkup {
-            inline_keyboard: keyboard_en,
-        } = keyboard_en;
-        {
-            // Should have 2 rows: each with 1 button
-            assert_eq!(keyboard_en.len(), 2);
-            assert_eq!(keyboard_en[0].len(), 1); // List Recipes
-            assert_eq!(keyboard_en[1].len(), 1); // Search Recipes
-
-            // Check button texts and callbacks
-            assert!(keyboard_en[0][0].text.contains("List My Recipes"));
-            assert!(keyboard_en[1][0].text.contains("Search Recipes"));
-
-            // Check callback data
-            if let InlineKeyboardButtonKind::CallbackData(data) = &keyboard_en[0][0].kind {
-                assert_eq!(data, "workflow_list_recipes");
-            } else {
-                panic!("Expected callback button");
-            }
-            if let InlineKeyboardButtonKind::CallbackData(data) = &keyboard_en[1][0].kind {
-                assert_eq!(data, "workflow_search_recipes");
-            } else {
-                panic!("Expected callback button");
-            }
-        }
-
-        // Test keyboard creation for French
-        let keyboard_fr = create_post_confirmation_keyboard(Some("fr"), &manager);
-
-        let InlineKeyboardMarkup {
-            inline_keyboard: keyboard_fr,
-        } = keyboard_fr;
-        {
-            // Should have 2 rows: each with 1 button
-            assert_eq!(keyboard_fr.len(), 2);
-            assert_eq!(keyboard_fr[0].len(), 1); // List Recipes
-            assert_eq!(keyboard_fr[1].len(), 1); // Search Recipes
-
-            // Check that French text is different from English
-            assert_ne!(keyboard_fr[0][0].text, keyboard_en[0][0].text);
-            assert_ne!(keyboard_fr[1][0].text, keyboard_en[1][0].text);
-        }
-    }
-
     /// Test workflow localization keys
     #[test]
     fn test_workflow_localization_keys() {

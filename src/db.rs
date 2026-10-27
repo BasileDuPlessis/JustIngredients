@@ -1073,6 +1073,68 @@ pub async fn get_user_recipes_paginated(
     Ok((recipe_names, total))
 }
 
+/// A saved recipe as shown in lists: id, name and creation date.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecipeSummary {
+    pub id: i64,
+    pub name: String,
+    pub created_at: DateTime<Utc>,
+}
+
+/// Recipes of a user, newest first, and the user's total number of recipes.
+///
+/// Recipes without a name are left out, as in the recipe list.
+pub async fn get_user_recipes_newest_first(
+    pool: &PgPool,
+    telegram_id: i64,
+    limit: i64,
+    offset: i64,
+) -> Result<(Vec<RecipeSummary>, i64)> {
+    if !(1..=100).contains(&limit) {
+        return Err(anyhow::anyhow!(
+            "Invalid pagination limit: {} (must be between 1 and 100)",
+            limit
+        ));
+    }
+    if !(0..=10000).contains(&offset) {
+        return Err(anyhow::anyhow!(
+            "Invalid pagination offset: {} (must be between 0 and 10000)",
+            offset
+        ));
+    }
+
+    let total: i64 = sqlx::query(
+        "SELECT COUNT(*) FROM recipes WHERE telegram_id = $1 AND recipe_name IS NOT NULL",
+    )
+    .bind(telegram_id)
+    .fetch_one(pool)
+    .await
+    .context("Failed to count recipes")?
+    .get(0);
+
+    let rows = sqlx::query(
+        "SELECT id, recipe_name, created_at FROM recipes \
+         WHERE telegram_id = $1 AND recipe_name IS NOT NULL \
+         ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3",
+    )
+    .bind(telegram_id)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(pool)
+    .await
+    .context("Failed to get the latest recipes")?;
+
+    let recipes = rows
+        .into_iter()
+        .map(|row| RecipeSummary {
+            id: row.get(0),
+            name: row.get(1),
+            created_at: row.get(2),
+        })
+        .collect();
+    Ok((recipes, total))
+}
+
 /// Recipe statistics data structure
 #[derive(Debug)]
 pub struct RecipeStatistics {

@@ -37,6 +37,7 @@ src/bot/
 ├── media_handlers.rs       # Photo and image document messages
 ├── image_processing.rs     # Download, extraction call, review message, error keys
 ├── dialogue_manager.rs     # Text input of each dialogue state, save to database
+├── home.rs                 # Home message sent at the end of every action
 ├── ui_builder.rs           # Review list and keyboards, recipe list and card keyboards
 ├── ui_components.rs        # Buttons, pagination row, focused edit keyboard
 ├── recipe_selection.rs     # Callback data of recipe list buttons (64-byte limit)
@@ -45,7 +46,7 @@ src/bot/
     ├── review_callbacks.rs    # ReviewIngredients buttons (edit, delete, confirm, cancel)
     ├── editing_callbacks.rs   # EditingSavedIngredients buttons
     ├── recipe_callbacks.rs    # Recipe selection, card actions, delete confirmation, statistics
-    ├── workflow_callbacks.rs  # Recipe list, pagination, post-save buttons
+    ├── workflow_callbacks.rs  # Recipe list, pagination, "all my recipes" and older post-save buttons
     └── callback_types.rs      # Parameter structs
 ```
 
@@ -123,14 +124,15 @@ Keyboard (`create_ingredient_review_keyboard`): per ingredient ✏️ `edit_<i>`
 - `confirm`: **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
   with their names and stays in the review until they are edited or deleted. Then:
   - name from the caption: saved at once; the review keeps its text without buttons; a
-    confirmation follows with the post-save buttons;
+    confirmation follows, then the [home message](#home-message);
   - otherwise: buttons removed, `recipe-name-prompt` sent, state
     `WaitingForRecipeNameAfterConfirm`. The typed name ("cancel", "stop", "back" cancel; empty
     or over 255 bytes refused) is saved and the prompt is edited to `recipe-complete`, followed
-    by "What would you like to do next?" with the post-save buttons.
-- `cancel_review`: `review-cancelled`, dialogue ended.
-- Post-save buttons: 📚 `workflow_list_recipes` (recipe list), 🔍 `workflow_search_recipes`
-  (answers `workflow-search-coming-soon`).
+    by the home message.
+- `cancel_review`: `review-cancelled`, dialogue ended, home message.
+- Older messages may still carry the post-save buttons that the home message replaced:
+  📚 `workflow_list_recipes` (recipe list) and 🔍 `workflow_search_recipes` (answers
+  `workflow-search-coming-soon`); both are still handled.
 
 Typed text in `ReviewIngredients`: "confirm", "ok", "yes" or "save" asks each flagged quantity in
 turn (`AwaitingQuantityCorrection`; a number in range, or `-`/"none"/"aucune" for none) and then
@@ -141,6 +143,21 @@ Saving (`save_ingredients_to_database`): `get_or_create_user`, `create_recipe` (
 transcription), `update_recipe_name`, then one `create_ingredient` per line, not in a single
 transaction. Owner id: the callback sender (`from.id`) on the caption path, the chat id on the
 typed paths; they are equal in private chats (IMP-024).
+
+## Home Message
+`home::send_home` ends every finished action:
+- saving a recipe: caption path, typed name, typed "confirm", end of the quantity questions;
+- cancelling: the review (button or typed word), the processing message, the name prompt, the
+  quantity questions;
+- a saved recipe: rename (also when it fails), delete confirmed or cancelled, ingredient editing
+  confirmed or cancelled.
+
+Content (`home::render_home`, pure): 🏠 title, the number of recipes, a hint to send a photo
+and the menu commands (`/liste`, `/aide` or `/list`, `/help`). Buttons: the 3 newest recipes
+(📖 name cut at 40 characters, `recipe_instance:<id>`), then 📚 `workflow_list_recipes` when
+there are more; no keyboard without recipes. Recipes are read with
+`db::get_user_recipes_newest_first` for the chat id. A failure is logged and no home message is
+sent; the action itself is not affected. Earlier messages are not deleted yet (UX Task U1.5).
 
 ## My Recipes
 - **List** (`/liste`, 📚 button): distinct recipe names of the chat id, alphabetical, 5 per
@@ -156,7 +173,8 @@ typed paths; they are equal in private chats (IMP-024).
   🗑️ `recipe_action:delete:<id>`, 📊 `recipe_action:statistics:<id>`, ⬅️ `back_to_recipes`
   (deletes the card message).
 - **Rename**: prompt, state `RenamingRecipe`, typed name saved with `update_recipe_name`
-  (cancel words answer `delete-cancelled`).
+  (cancel words answer `delete-cancelled`); an empty or too long name is refused and the prompt
+  stays open.
 - **Edit ingredients**: state `EditingSavedIngredients` with the review keyboard. ✏️ opens
   `EditingSavedIngredient` (typed line, `cancel_ingredient_editing`), ➕ `add_ingredient` opens
   `AddingIngredientToSavedRecipe` (typed line), 🗑️ removes, ✅ `confirm` writes the differences
@@ -181,12 +199,12 @@ handlers below, which work in any state. The query is always answered.
 | `add_ingredient` | `EditingSavedIngredients` | Add a line to a saved recipe (no effect during a review) |
 | `cancel_ingredient_editing` | `EditingIngredient`, `EditingSavedIngredient` | Leave the focused edit prompt |
 | `select_recipe:`, `select_recipe_h:` | any | Open a recipe by name |
-| `recipe_instance:<id>` | any | Open one of several same-name recipes |
+| `recipe_instance:<id>` | any | Open a recipe by id (same-name list, home message) |
 | `recipe_action:<action>:<id>` | any | `rename`, `edit_ingredients`, `delete`, `statistics` |
 | `confirm_delete_recipe:`, `cancel_delete_recipe:` | any | Delete confirmation |
 | `back_to_recipes` | any | Delete the current message |
 | `page:<n>` | any | Recipe list page |
-| `workflow_list_recipes`, `workflow_search_recipes` | any | Post-save buttons (`workflow_add_another` is handled but never sent) |
+| `workflow_list_recipes`, `workflow_search_recipes` | any | Recipe list (home "all my recipes" button), search placeholder; `workflow_add_another` is handled but never sent |
 | `cancel_processing` | any | Processing message replaced by `processing-cancelled`, dialogue ended |
 
 `cancel_empty` and `noop` are sent but have no handler. In `ReviewIngredients`, `workflow_*`

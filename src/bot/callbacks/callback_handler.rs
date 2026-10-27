@@ -12,6 +12,7 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import recipe callbacks module
 use super::recipe_callbacks;
+use crate::bot::home::send_home;
 
 // Import UI builder functions
 use crate::bot::ui_builder::{
@@ -164,7 +165,7 @@ pub async fn callback_handler(
             )
             .await?;
         } else if data == "cancel_processing" {
-            handle_cancel_processing_button(&bot, &q, &dialogue, &localization).await?;
+            handle_cancel_processing_button(&bot, &q, &dialogue, &localization, &pool).await?;
         }
     }
 
@@ -313,7 +314,7 @@ pub async fn callback_handler_with_cache(
             )
             .await?;
         } else if data == "cancel_processing" {
-            handle_cancel_processing_button(&bot, &q, &dialogue, &localization).await?;
+            handle_cancel_processing_button(&bot, &q, &dialogue, &localization, &pool).await?;
         }
     }
 
@@ -549,6 +550,7 @@ async fn handle_cancel_processing_button(
     q: &teloxide::types::CallbackQuery,
     dialogue: &RecipeDialogue,
     localization: &Arc<crate::localization::LocalizationManager>,
+    pool: &PgPool,
 ) -> Result<()> {
     let message = q
         .message
@@ -574,6 +576,7 @@ async fn handle_cancel_processing_button(
 
     // End the dialogue
     dialogue.exit().await?;
+    send_home(bot, pool, chat_id, localization, language_code.as_deref()).await;
     Ok(())
 }
 

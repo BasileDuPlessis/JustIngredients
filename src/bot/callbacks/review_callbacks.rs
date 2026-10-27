@@ -21,10 +21,9 @@ use crate::localization::{t_args_lang, t_lang};
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI components for the focused editing interface
+use crate::bot::home::send_home;
 use crate::bot::ui_components::create_ingredient_editing_keyboard;
-use crate::bot::{
-    create_ingredient_review_keyboard, create_post_confirmation_keyboard, format_ingredients_list,
-};
+use crate::bot::{create_ingredient_review_keyboard, format_ingredients_list};
 
 // Import HandlerContext
 use crate::bot::HandlerContext;
@@ -118,8 +117,15 @@ pub async fn handle_review_ingredients_callbacks(
             } else if data == "add_more" {
                 handle_add_more_button(bot, q, &dialogue_lang_code, dialogue, localization).await?;
             } else if data == "cancel_review" {
-                handle_cancel_review_button(bot, q, &dialogue_lang_code, dialogue, localization)
-                    .await?;
+                handle_cancel_review_button(
+                    bot,
+                    q,
+                    &dialogue_lang_code,
+                    dialogue,
+                    localization,
+                    &pool,
+                )
+                .await?;
             } else if data.starts_with("workflow_") {
                 super::workflow_callbacks::handle_workflow_button(
                     bot,
@@ -567,9 +573,16 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
             }
         }
 
-        // Send confirmation as a new message
+        // Send confirmation as a new message, then the home message
+        let chat_id = q
+            .message
+            .as_ref()
+            .expect("Callback query should have a message")
+            .chat()
+            .id;
+        // `workflow-recipe-saved` already starts with ✅
         let confirmation_message = format!(
-            "✅ {}\n\n📝 {}\n\n{}",
+            "{}\n\n📝 {}",
             t_lang(
                 ctx.localization,
                 "workflow-recipe-saved",
@@ -580,28 +593,17 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
                 "caption-recipe-saved",
                 &[("recipe_name", caption_recipe_name.as_str())],
                 dialogue_lang_code.as_deref()
-            ),
-            t_lang(
-                ctx.localization,
-                "workflow-what-next",
-                dialogue_lang_code.as_deref()
             )
         );
-
-        let confirmation_keyboard =
-            create_post_confirmation_keyboard(dialogue_lang_code.as_deref(), ctx.localization);
-
-        ctx.bot
-            .send_message(
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .chat()
-                    .id,
-                confirmation_message,
-            )
-            .reply_markup(confirmation_keyboard)
-            .await?;
+        ctx.bot.send_message(chat_id, confirmation_message).await?;
+        send_home(
+            ctx.bot,
+            pool,
+            chat_id,
+            ctx.localization,
+            dialogue_lang_code.as_deref(),
+        )
+        .await;
 
         // End the dialogue - workflow complete
         dialogue.exit().await?;
@@ -712,6 +714,7 @@ async fn handle_cancel_review_button(
     dialogue_lang_code: &Option<String>,
     dialogue: &RecipeDialogue,
     localization: &Arc<crate::localization::LocalizationManager>,
+    pool: &PgPool,
 ) -> Result<()> {
     let message = q
         .message
@@ -736,6 +739,14 @@ async fn handle_cancel_review_button(
 
     // End the dialogue
     dialogue.exit().await?;
+    send_home(
+        bot,
+        pool,
+        chat_id,
+        localization,
+        dialogue_lang_code.as_deref(),
+    )
+    .await;
     Ok(())
 }
 

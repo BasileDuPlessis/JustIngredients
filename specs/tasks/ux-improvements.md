@@ -48,7 +48,7 @@ are easy to find, and messages read well. Validated by the user on 2026-10-27 fr
 | Nominal state | Hybrid: at the end of a transaction the intermediate messages (prompts, user replies, previews) are deleted, the result is kept (e.g. the saved recipe card), then the home message is posted. |
 | Commands | `/liste`, `/cherche`, `/aide`; English aliases `/list`, `/search`, `/help`; `/start` and `/recipes` still accepted. |
 | Free text | Any text sent outside a dialogue is a search in the user's recipes. |
-| Releases | One production deployment per feature, validated by the user in Telegram before the next one. |
+| Releases | One production deployment per feature, validated by the user in Telegram before the next one. Changed on 2026-10-27 (after v19): features are grouped, one deployment per phase (U1.3–U1.7 together after RU1). |
 
 ## Open Questions
 _None at the moment._
@@ -117,18 +117,24 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   characters (U+FFFD) in the English welcome and help, now caught by the localization test.
 
 ### Task U1.4: Home message (findings 14, 15) (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: one pure renderer for the home message (number of recipes, last recipes as
   buttons, clickable `/commands`, "send a photo" hint) and one function that sends it, called at
   the end of every finished transaction (save, cancel, delete, rename, edit of a saved recipe).
 - How to validate: renderer unit tests (0, 1, many recipes; both languages); manual check that
   each listed transaction ends with it.
+- Done (2026-10-27): `bot::home` (`render_home`, `send_home`) and
+  `db::get_user_recipes_newest_first` (reusable for U3.1). It replaces the post-save
+  "What next?" buttons. Also fixed: an invalid new name no longer ends the rename dialogue, and
+  the caption save confirmation no longer shows ✅ twice. Manual check pending in Telegram.
 
 ### Task U1.5: Transaction cleanup (finding 14, hybrid decision) (<= 1 hour)
 - [ ] Done
 - Description: dialogue states record the message ids a transaction creates (bot prompts and
   user replies); at the end they are deleted, ignoring messages older than 48 h, then the home
   message is posted.
+- Note (2026-10-27): the quantity question prompt id is never stored today
+  (`handle_quantity_correction_input` edits a copy of the state returned by `dialogue.get()`).
 - How to validate: unit test of the id bookkeeping; manual run of a full creation: only the
   saved recipe (if kept) and the home message remain.
 
