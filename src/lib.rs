@@ -24,6 +24,7 @@ pub mod ocr_errors;
 pub mod path_validation;
 pub mod preprocessing;
 pub mod text_processing;
+pub mod units;
 pub mod validation;
 
 // Re-export types for easier access

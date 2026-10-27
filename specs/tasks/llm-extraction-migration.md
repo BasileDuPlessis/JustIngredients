@@ -218,7 +218,7 @@ March 2026 image meanwhile (restarts reuse it).
 ## Phase 1: Foundations (no behavior change)
 
 ### Task 1.1: Canonical units module (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: `src/units.rs` with `canonicalize_unit(&str) -> Option<CanonicalUnit>` per the
   measurement contract, plus French spoon units (`cuillère à soupe`/`c. à s.` → `tbsp`,
   `cuillère à café`/`c. à c.` → `tsp`). Fix the contract: `cl`/`dl` are not aliases of `ml`

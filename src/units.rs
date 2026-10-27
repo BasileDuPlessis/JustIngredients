@@ -1,0 +1,347 @@
+//! # Units
+//!
+//! Canonical measurement units, as defined by the unit contract in
+//! `specs/tasks/measurement-standardization-tasks.md` (Task 1). Every unit that is stored or
+//! shown goes through [`normalize_measurement`], whether it comes from the extraction model or
+//! from a user edit, so `g`, `gr`, `GR` and `grammes` all end up as `g`.
+//!
+//! Rules:
+//! - matching ignores case, surrounding spaces, dots and French accents (`c. à s.` = `cas`);
+//! - `cl` and `dl` are not spellings of `ml`: they are converted, scaling the quantity;
+//! - `cc` is a French teaspoon (`cuillère à café`), not a cubic centimetre;
+//! - unknown units (`pincée`, `gousse`, …) are kept, lowercased and trimmed.
+
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+
+use std::fmt;
+
+/// A unit with a single canonical spelling.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum CanonicalUnit {
+    Gram,
+    Kilogram,
+    Milligram,
+    Pound,
+    Ounce,
+    Cup,
+    Teaspoon,
+    Tablespoon,
+    Pint,
+    Quart,
+    Gallon,
+    Liter,
+    Milliliter,
+}
+
+impl CanonicalUnit {
+    /// The canonical spelling stored in the database and shown to users.
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Gram => "g",
+            Self::Kilogram => "kg",
+            Self::Milligram => "mg",
+            Self::Pound => "lb",
+            Self::Ounce => "oz",
+            Self::Cup => "cup",
+            Self::Teaspoon => "tsp",
+            Self::Tablespoon => "tbsp",
+            Self::Pint => "pint",
+            Self::Quart => "quart",
+            Self::Gallon => "gallon",
+            Self::Liter => "l",
+            Self::Milliliter => "ml",
+        }
+    }
+}
+
+impl fmt::Display for CanonicalUnit {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
+    }
+}
+
+/// Spellings of each canonical unit, compared after [`match_key`].
+const ALIASES: &[(CanonicalUnit, &[&str])] = &[
+    (
+        CanonicalUnit::Gram,
+        &["g", "gr", "gram", "grams", "gramme", "grammes"],
+    ),
+    (
+        CanonicalUnit::Kilogram,
+        &[
+            "kg",
+            "kilo",
+            "kilos",
+            "kilogram",
+            "kilograms",
+            "kilogramme",
+            "kilogrammes",
+        ],
+    ),
+    (
+        CanonicalUnit::Milligram,
+        &[
+            "mg",
+            "milligram",
+            "milligrams",
+            "milligramme",
+            "milligrammes",
+        ],
+    ),
+    (CanonicalUnit::Pound, &["lb", "lbs", "pound", "pounds"]),
+    (CanonicalUnit::Ounce, &["oz", "ounce", "ounces"]),
+    (CanonicalUnit::Cup, &["cup", "cups"]),
+    (
+        CanonicalUnit::Teaspoon,
+        &[
+            "tsp",
+            "teaspoon",
+            "teaspoons",
+            "cuillère à café",
+            "cuillères à café",
+            "cuil à café",
+            "cuil. à café",
+            "c. à c.",
+            "cc",
+        ],
+    ),
+    (
+        CanonicalUnit::Tablespoon,
+        &[
+            "tbsp",
+            "tablespoon",
+            "tablespoons",
+            "cuillère à soupe",
+            "cuillères à soupe",
+            "cuil à soupe",
+            "cuil. à soupe",
+            "c. à s.",
+            "cs",
+        ],
+    ),
+    (CanonicalUnit::Pint, &["pint", "pints"]),
+    (CanonicalUnit::Quart, &["quart", "quarts"]),
+    (CanonicalUnit::Gallon, &["gallon", "gallons"]),
+    (
+        CanonicalUnit::Liter,
+        &["l", "liter", "liters", "litre", "litres"],
+    ),
+    (
+        CanonicalUnit::Milliliter,
+        &[
+            "ml",
+            "milliliter",
+            "milliliters",
+            "millilitre",
+            "millilitres",
+            "cm3",
+        ],
+    ),
+];
+
+/// Units that are a multiple of a canonical unit: the quantity is scaled on conversion.
+const SCALED_ALIASES: &[(&[&str], CanonicalUnit, f64)] = &[
+    (
+        &[
+            "cl",
+            "centilitre",
+            "centilitres",
+            "centiliter",
+            "centiliters",
+        ],
+        CanonicalUnit::Milliliter,
+        10.0,
+    ),
+    (
+        &["dl", "décilitre", "décilitres", "deciliter", "deciliters"],
+        CanonicalUnit::Milliliter,
+        100.0,
+    ),
+];
+
+/// A quantity and unit after normalization.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NormalizedMeasurement {
+    pub quantity: Option<f64>,
+    /// Canonical spelling for known units, cleaned original otherwise; `None` when empty.
+    pub unit: Option<String>,
+}
+
+/// Lowercases, trims, collapses inner whitespace and strips trailing `.` and `,`.
+pub fn clean_unit(raw: &str) -> String {
+    let collapsed = raw.split_whitespace().collect::<Vec<_>>().join(" ");
+    collapsed
+        .trim_end_matches(['.', ','])
+        .trim_end()
+        .to_lowercase()
+}
+
+/// Key used to compare spellings: lowercase, no dots or spaces, French accents folded.
+fn match_key(raw: &str) -> String {
+    raw.to_lowercase()
+        .chars()
+        .filter(|c| !c.is_whitespace() && *c != '.')
+        .map(|c| match c {
+            'à' | 'â' => 'a',
+            'é' | 'è' | 'ê' | 'ë' => 'e',
+            'î' | 'ï' => 'i',
+            'ô' => 'o',
+            'ù' | 'û' => 'u',
+            'ç' => 'c',
+            other => other,
+        })
+        .collect()
+}
+
+/// Returns the canonical unit for a spelling, or `None` if the unit is unknown or scaled
+/// (`cl`, `dl`: use [`normalize_measurement`], which also converts the quantity).
+pub fn canonicalize_unit(raw: &str) -> Option<CanonicalUnit> {
+    let key = match_key(raw);
+    ALIASES.iter().find_map(|(unit, aliases)| {
+        aliases
+            .iter()
+            .any(|alias| match_key(alias) == key)
+            .then_some(*unit)
+    })
+}
+
+/// Normalizes a quantity and unit: canonical spelling for known units, `cl`/`dl` converted to
+/// `ml` with the quantity scaled, unknown units kept as cleaned text, empty units dropped.
+pub fn normalize_measurement(
+    quantity: Option<f64>,
+    raw_unit: Option<&str>,
+) -> NormalizedMeasurement {
+    let Some(raw_unit) = raw_unit.filter(|unit| !unit.trim().is_empty()) else {
+        return NormalizedMeasurement {
+            quantity,
+            unit: None,
+        };
+    };
+
+    if let Some(unit) = canonicalize_unit(raw_unit) {
+        return NormalizedMeasurement {
+            quantity,
+            unit: Some(unit.as_str().to_string()),
+        };
+    }
+
+    let key = match_key(raw_unit);
+    for (aliases, unit, factor) in SCALED_ALIASES {
+        if aliases.iter().any(|alias| match_key(alias) == key) {
+            return NormalizedMeasurement {
+                quantity: quantity.map(|q| q * factor),
+                unit: Some(unit.as_str().to_string()),
+            };
+        }
+    }
+
+    NormalizedMeasurement {
+        quantity,
+        unit: Some(clean_unit(raw_unit)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn spellings_map_to_canonical_units() {
+        let cases = [
+            ("g", "g"),
+            ("gr", "g"),
+            ("GR", "g"),
+            ("g.", "g"),
+            ("grammes", "g"),
+            (" Kg ", "kg"),
+            ("lbs", "lb"),
+            ("Tablespoons", "tbsp"),
+            ("teaspoon", "tsp"),
+            ("cuillère à soupe", "tbsp"),
+            ("cuillères à café", "tsp"),
+            ("c. à s.", "tbsp"),
+            ("c.à.s", "tbsp"),
+            ("c à c", "tsp"),
+            ("cuillere a soupe", "tbsp"),
+            ("cc", "tsp"),
+            ("cs", "tbsp"),
+            ("Litres", "l"),
+            ("millilitres", "ml"),
+            ("cm3", "ml"),
+        ];
+        for (raw, expected) in cases {
+            assert_eq!(
+                canonicalize_unit(raw).map(CanonicalUnit::as_str),
+                Some(expected),
+                "{raw}"
+            );
+        }
+    }
+
+    #[test]
+    fn unknown_and_scaled_units_have_no_canonical_unit() {
+        for raw in ["pincée", "gousse", "fl oz", "cl", "dl", ""] {
+            assert_eq!(canonicalize_unit(raw), None, "{raw}");
+        }
+    }
+
+    #[test]
+    fn centilitres_and_decilitres_convert_to_millilitres() {
+        assert_eq!(
+            normalize_measurement(Some(20.0), Some("cl")),
+            NormalizedMeasurement {
+                quantity: Some(200.0),
+                unit: Some("ml".to_string())
+            }
+        );
+        assert_eq!(
+            normalize_measurement(Some(2.5), Some("dL")),
+            NormalizedMeasurement {
+                quantity: Some(250.0),
+                unit: Some("ml".to_string())
+            }
+        );
+        assert_eq!(
+            normalize_measurement(None, Some("cl")),
+            NormalizedMeasurement {
+                quantity: None,
+                unit: Some("ml".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn unknown_units_are_kept_cleaned() {
+        assert_eq!(
+            normalize_measurement(Some(2.0), Some("  Gousses. ")),
+            NormalizedMeasurement {
+                quantity: Some(2.0),
+                unit: Some("gousses".to_string())
+            }
+        );
+    }
+
+    #[test]
+    fn empty_units_are_dropped() {
+        for raw in [None, Some(""), Some("   ")] {
+            assert_eq!(
+                normalize_measurement(Some(3.0), raw),
+                NormalizedMeasurement {
+                    quantity: Some(3.0),
+                    unit: None
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn known_units_keep_the_quantity() {
+        assert_eq!(
+            normalize_measurement(Some(150.0), Some("Grammes")),
+            NormalizedMeasurement {
+                quantity: Some(150.0),
+                unit: Some("g".to_string())
+            }
+        );
+    }
+}

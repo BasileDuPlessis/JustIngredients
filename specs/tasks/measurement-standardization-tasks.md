@@ -28,8 +28,13 @@ Standardize unit variants so inputs like `g`, `gr`, and `GR` are stored and proc
     - `quart` (aliases: `quarts`)
     - `gallon` (aliases: `gallons`)
     - `l` (aliases: `liter`, `liters`, `litre`, `litres`)
-    - `ml` (aliases: `milliliter`, `milliliters`, `millilitre`, `millilitres`, `cc`, `cl`, `dl`)
-  - Normalization Policy: lowercase, trim spaces, remove trailing punctuation (e.g., `g.` -> `g`).
+    - `ml` (aliases: `milliliter`, `milliliters`, `millilitre`, `millilitres`, `cm3`)
+  - Scaled units (converted, quantity multiplied): `cl` -> `ml` x10, `dl` -> `ml` x100.
+  - French spoons: `cuillère à soupe`, `c. à s.`, `cs` -> `tbsp`; `cuillère à café`, `c. à c.`, `cc` -> `tsp`
+    (`cc` is a teaspoon in French recipes, not a cubic centimetre).
+  - Revised 2026-10-27: `cl`/`dl` were listed as aliases of `ml`, which stored 20 cl as 20 ml.
+  - Normalization Policy: lowercase, trim spaces, remove trailing punctuation (e.g., `g.` -> `g`);
+    matching also ignores inner dots, spaces and French accents (`c.à.s` = `c. à s.`).
   - Unknown Unit Behavior: keep as-is (preserve user input).
 - How to validate:
   1. Open `config/measurement_units.json` and verify alias sets exist for key units (`g`, `kg`, `ml`, `l`, `tsp`, `tbsp`).
@@ -37,8 +42,11 @@ Standardize unit variants so inputs like `g`, `gr`, and `GR` are stored and proc
   3. Ensure no duplicate aliases conflict across canonical groups.
 
 ## Task 2: Add Canonicalization Helper in Parsing Layer (<= 1 hour)
-- [ ] Done
-- Description:
+- [x] Done
+- Done as Task 1.1 of `llm-extraction-migration.md`: the helper lives in `src/units.rs`
+  (`canonicalize_unit`, `normalize_measurement`) so that both the LLM output and manual edits use it.
+  Wiring it into the parsing and save paths is Task 3 below and Task 1.3 of the migration plan.
+- Description (original):
   - Implement a helper in `src/text_processing.rs` to normalize detected units to canonical values.
   - Apply it where `measurement` is currently lowercased.
   - Keep matching behavior unchanged; only normalize output unit value.
