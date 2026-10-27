@@ -190,7 +190,7 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: a red CI run does not trigger the staging deploy.
 
 ### Task 0.10: Staging workflow hygiene (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: remove the hardcoded `staging_password_123` (public repo, printed in logs), the
   `continue-on-error` on DB create/attach, the retry step that can never run (its `if:` lacks
   `failure()`), the export of `FLY_API_TOKEN` to `$GITHUB_ENV`, and `curl | sh` + `@master` actions
@@ -200,7 +200,8 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: staging run green; no secret value in logs.
 - Progress: workflow part done (no hardcoded password, generated password kept out of logs, no
   `continue-on-error`, dead retry removed, token not exported to `$GITHUB_ENV`, `setup-flyctl`
-  pinned by SHA, Node 22). Remaining (user action): environment-scoped staging bot token.
+  pinned by SHA, Node 22). Staging bot token set as a `staging` environment secret (2026-10-27);
+  first staging run with it: 40476257980, green, production unaffected.
 
 ### Task 0.11: Outage alerting (<= 1 hour)
 - [x] Done
