@@ -10,4 +10,5 @@ Rules:
 - needs_review: true when the text is hard to read or the quantity is ambiguous.
 - source_text: the ingredient line exactly as printed.
 - transcription: the full ingredient section as plain text, one line per ingredient.
+- title: the recipe title exactly as printed (the dish name, e.g. "Tarte aux pommes"), without the site name, author, rating or category. Use null when no title is visible: never invent or summarise one from the ingredients.
 - is_recipe: false when the image shows no recipe or ingredient list; then return an empty ingredients list.

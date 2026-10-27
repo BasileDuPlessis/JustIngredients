@@ -20,6 +20,9 @@ use serde::Deserialize;
 
 #[derive(Deserialize)]
 struct Expected {
+    /// Recipe title shown on the image; `null` when it shows none (nothing may be invented).
+    #[serde(default)]
+    title: Option<String>,
     ingredients: Vec<ExpectedIngredient>,
 }
 
@@ -66,7 +69,16 @@ async fn extracts_the_test_images() -> Result<(), Box<dyn Error>> {
         let image = ImageInput::prepare(std::fs::read(&path)?).await?;
         let extraction = extractor.extract(&image).await?;
         let matches = to_measurement_matches(&extraction);
-        println!("{stem}: {} ingredients", matches.len());
+        println!(
+            "{stem}: {} ingredients, title {:?}",
+            matches.len(),
+            extraction.title
+        );
+        assert_eq!(
+            extraction.title.as_deref().map(str::to_lowercase),
+            expected.title.as_deref().map(str::to_lowercase),
+            "{stem}: title"
+        );
 
         for item in &expected.ingredients {
             let found = matches

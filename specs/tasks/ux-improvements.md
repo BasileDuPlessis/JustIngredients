@@ -176,10 +176,15 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 ## Phase U2: Recipe Creation
 
 ### Task U2.1: Recipe title read by Gemini (finding 1) (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: nullable `title` in the extraction schema and prompt; precedence caption (without
   links) > title > ask; benchmark and live test rerun.
 - How to validate: schema/prompt tests; live test returns a title for a titled page; saved name.
+- Done (2026-10-27): `title` (string or null, required) in the schema and `Extraction`; the prompt
+  asks for the printed title and forbids inventing one; `known_recipe_name` (caption > title >
+  ask, unit-tested). The live test now checks the title (null on the only fixture, which has
+  none); it could not run locally (the `.env` key is the revoked one): check on staging with a
+  titled and an untitled page. The benchmark was not rerun (it only scores ingredients).
 
 ### Task U2.2: One button per ingredient (finding 4) (<= 1 hour)
 - [ ] Done

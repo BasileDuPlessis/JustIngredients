@@ -101,8 +101,10 @@ the user's language.
    - `is_recipe = false`: `extraction-not-a-recipe`;
    - no ingredient: `no-ingredients-found` with the transcription;
    - otherwise the review message, and the state becomes `ReviewIngredients`.
-6. Recipe name candidate: the caption without links (`http://`, `https://`, `www.`) if a valid
-   name remains, otherwise the default name "Recipe".
+6. Recipe name (`image_processing::known_recipe_name`): the caption without links (`http://`,
+   `https://`, `www.`) if a valid name remains, else the `title` read on the page by Gemini (if
+   valid); such a name is used at confirm without asking. Otherwise the default name "Recipe" and
+   the name is asked after confirm.
 
 ## Review, Confirm, Name, Save
 The review message lists one line per ingredient ("150 g → farine", or "sel" without quantity).

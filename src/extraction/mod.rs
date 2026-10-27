@@ -129,6 +129,9 @@ pub struct ExtractedIngredient {
 pub struct Extraction {
     /// `false` when the image is not a recipe or ingredient list.
     pub is_recipe: bool,
+    /// Recipe title as printed; `None` when the image shows none (never invented).
+    #[serde(default)]
+    pub title: Option<String>,
     pub language: RecipeLanguage,
     /// The ingredient section as plain text, one line per ingredient.
     pub transcription: String,

@@ -114,6 +114,7 @@ mod tests {
     fn extraction(ingredients: Vec<ExtractedIngredient>) -> Extraction {
         Extraction {
             is_recipe: true,
+            title: None,
             language: RecipeLanguage::Fr,
             transcription: String::new(),
             ingredients,

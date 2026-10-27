@@ -4,6 +4,12 @@
     "is_recipe": {
       "type": "boolean"
     },
+    "title": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
     "language": {
       "type": "string",
       "enum": [
@@ -54,6 +60,7 @@
   },
   "required": [
     "is_recipe",
+    "title",
     "language",
     "transcription",
     "ingredients"

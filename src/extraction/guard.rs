@@ -184,6 +184,7 @@ mod tests {
                 } else {
                     Ok(Extraction {
                         is_recipe: !self.not_a_recipe,
+                        title: None,
                         language: RecipeLanguage::Fr,
                         transcription: "sel".to_string(),
                         ingredients: vec![ExtractedIngredient {

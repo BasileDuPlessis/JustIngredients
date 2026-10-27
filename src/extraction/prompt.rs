@@ -37,7 +37,13 @@ mod tests {
         let schema: serde_json::Value = serde_json::from_str(response_schema()?.get())?;
         assert_eq!(
             required(&schema),
-            vec!["is_recipe", "language", "transcription", "ingredients"]
+            vec![
+                "is_recipe",
+                "title",
+                "language",
+                "transcription",
+                "ingredients"
+            ]
         );
         assert_eq!(
             required(&schema["properties"]["ingredients"]["items"]),
@@ -56,6 +62,8 @@ mod tests {
             schema: response_schema()?,
         })?;
         let position = |key: &str| body.find(&format!("\"{key}\""));
+        assert!(position("is_recipe") < position("title"));
+        assert!(position("title") < position("transcription"));
         assert!(position("is_recipe") < position("transcription"));
         assert!(position("transcription") < position("ingredients"));
         assert!(position("quantity") < position("needs_review"));
@@ -66,11 +74,12 @@ mod tests {
     #[test]
     fn a_response_following_the_schema_deserializes() -> Result<(), serde_json::Error> {
         let extraction: Extraction = serde_json::from_str(
-            r#"{"is_recipe": true, "language": "fr", "transcription": "1 pincée de sel",
+            r#"{"is_recipe": true, "title": "Pâte brisée", "language": "fr", "transcription": "1 pincée de sel",
                 "ingredients": [{"name": "sel", "quantity": null, "unit": null,
                                  "needs_review": false, "source_text": "1 pincée de sel"}]}"#,
         )?;
         assert_eq!(extraction.ingredients[0].name, "sel");
+        assert_eq!(extraction.title.as_deref(), Some("Pâte brisée"));
         Ok(())
     }
 

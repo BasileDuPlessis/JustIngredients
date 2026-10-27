@@ -49,7 +49,8 @@ failure is logged as an error and the bot still starts (photos then fail with
 ## Request and Response
 - Prompt `config/extraction/prompt.md` and JSON schema `config/extraction/schema.json`, embedded
   at compile time and shared with `scripts/llm_benchmark`.
-- Response fields: `is_recipe`, `language` (`fr`, `en`, `other`), `transcription` (ingredient
+- Response fields: `is_recipe`, `title` (the recipe title as printed, or null: the prompt forbids
+  inventing one), `language` (`fr`, `en`, `other`), `transcription` (ingredient
   section, one line per ingredient), `ingredients[]` with `name`, `quantity` (number or null),
   `unit` (string or null), `needs_review`, `source_text`.
 - `mapping::to_measurement_matches`: canonical units, names cut to the database limit, quantities

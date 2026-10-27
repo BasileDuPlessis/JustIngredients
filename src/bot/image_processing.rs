@@ -184,6 +184,7 @@ pub async fn download_and_process_image(
 
     let ingredients = to_measurement_matches(&extraction);
     let extracted_text = extraction.transcription;
+    let title = extraction.title;
 
     if ingredients.is_empty() {
         // The transcription is shown as a preformatted block
@@ -210,19 +211,21 @@ pub async fn download_and_process_image(
         .reply_markup(keyboard)
         .await?;
 
-    // Determine recipe name: use the caption if it gives one, otherwise "Recipe" (and the name
-    // is asked after confirmation). PHOTO CAPTION FEATURE: captions name recipes directly.
-    let (recipe_name_candidate, recipe_name_from_caption) =
-        match caption.as_deref().and_then(recipe_name_from_caption) {
-            Some(name) => {
-                info!(user_id = %chat_id, recipe_name = %name, "Using caption as recipe name");
-                (name.clone(), Some(name))
-            }
-            None => {
-                debug!(user_id = %chat_id, "No usable caption, using default recipe name");
-                ("Recipe".to_string(), None)
-            }
-        };
+    // Recipe name: the caption, else the title read on the page; otherwise "Recipe" and the
+    // name is asked after confirmation.
+    let (recipe_name_candidate, recipe_name_from_caption) = match known_recipe_name(
+        caption.as_deref(),
+        title.as_deref(),
+    ) {
+        Some(name) => {
+            info!(user_id = %chat_id, recipe_name = %name, "Recipe name from the caption or the page title");
+            (name.clone(), Some(name))
+        }
+        None => {
+            debug!(user_id = %chat_id, "No caption or title, the name will be asked");
+            ("Recipe".to_string(), None)
+        }
+    };
 
     // Update dialogue state to review ingredients with caption-derived recipe name
     dialogue
@@ -241,6 +244,17 @@ pub async fn download_and_process_image(
 
     info!(user_id = %chat_id, "Ingredients review interface sent successfully");
     Ok(extracted_text)
+}
+
+/// Name a recipe gets without asking: the caption (without links) wins over the title read on
+/// the page; `None` when neither gives a valid name.
+pub fn known_recipe_name(caption: Option<&str>, title: Option<&str>) -> Option<String> {
+    caption.and_then(recipe_name_from_caption).or_else(|| {
+        title
+            .map(str::trim)
+            .and_then(|title| crate::validation::validate_recipe_name(title).ok())
+            .map(str::to_string)
+    })
 }
 
 /// Recipe name suggested by a photo caption. Links are removed: sharing a web page to Telegram
@@ -307,6 +321,26 @@ fn is_operator_error(error: &ExtractionError) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_caption_wins_over_the_title_then_the_name_is_asked() {
+        assert_eq!(
+            known_recipe_name(Some("Tarte de Mamie"), Some("Tarte aux pommes")).as_deref(),
+            Some("Tarte de Mamie")
+        );
+        assert_eq!(
+            known_recipe_name(None, Some("  Tarte aux pommes ")).as_deref(),
+            Some("Tarte aux pommes")
+        );
+        // A caption made only of a link gives no name: the title is used
+        assert_eq!(
+            known_recipe_name(Some("https://www.marmiton.org/x.aspx"), Some("Crêpes")).as_deref(),
+            Some("Crêpes")
+        );
+        assert_eq!(known_recipe_name(None, Some("   ")), None);
+        assert_eq!(known_recipe_name(None, Some(&"x".repeat(300))), None);
+        assert_eq!(known_recipe_name(None, None), None);
+    }
 
     #[test]
     fn captions_lose_their_links() {
