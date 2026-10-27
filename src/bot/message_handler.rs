@@ -148,7 +148,7 @@ async fn handle_text_message(
                 recipe_name,
                 ingredients,
                 language_code: dialogue_lang_code,
-                message_id: _,
+                message_id: review_message_id,
                 extracted_text,
                 recipe_name_from_caption: _,
             }) => {
@@ -174,6 +174,7 @@ async fn handle_text_message(
                             language_code: effective_language_code,
                         },
                         extracted_text,
+                        review_message_id,
                     },
                 )
                 .await;

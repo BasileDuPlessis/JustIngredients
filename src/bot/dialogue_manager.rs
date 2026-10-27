@@ -47,6 +47,8 @@ pub struct IngredientReviewInputParams<'a> {
     pub ingredients: Vec<MeasurementMatch>,
     pub ctx: &'a HandlerContext<'a>,
     pub extracted_text: String,
+    /// The review message (ingredient list), deleted once the review is confirmed.
+    pub review_message_id: Option<i32>,
 }
 
 /// Parameters for recipe name success handling
@@ -981,11 +983,16 @@ pub async fn handle_ingredient_review_input(
         ingredients,
         ctx: handler_ctx,
         extracted_text,
+        review_message_id,
     } = params;
     let input = review_input.trim().to_lowercase();
 
     match input.as_str() {
         "confirm" | "ok" | "yes" | "save" => {
+            // The review ends here: its list goes with the action's messages
+            if let Some(id) = review_message_id {
+                cleanup::track(msg.chat.id, teloxide::types::MessageId(id));
+            }
             // Check if any ingredient requires quantity confirmation
             if let Some((index, ingredient)) = ingredients
                 .iter()

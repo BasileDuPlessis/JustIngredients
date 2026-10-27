@@ -49,6 +49,7 @@ are easy to find, and messages read well. Validated by the user on 2026-10-27 fr
 | Commands | `/liste`, `/cherche`, `/aide`; English aliases `/list`, `/search`, `/help`; `/start` and `/recipes` still accepted. |
 | Free text | Any text sent outside a dialogue is a search in the user's recipes. |
 | Photo | Kept while its ingredients are reviewed, deleted with the other messages when the review ends (2026-10-27). |
+| Review list | Deleted once the review is confirmed: the saved notice and the home message remain (2026-10-27). |
 | Releases | One production deployment per feature, validated by the user in Telegram before the next one. Changed on 2026-10-27 (after v19): features are grouped, one deployment per phase (U1.3–U1.7 together after RU1). |
 
 ## Open Questions

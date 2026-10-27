@@ -125,9 +125,10 @@ Keyboard (`create_ingredient_review_keyboard`): per ingredient ✏️ `edit_<i>`
 - `delete_<i>`: removes the line. When none is left, the message offers `add_more` (asks for
   another photo and resets the state to `Start`; the review is dropped) and `cancel_empty`.
 - `confirm`: **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
-  with their names and stays in the review until they are edited or deleted. Then:
-  - name from the caption: saved at once; the review keeps its text without buttons; a
-    confirmation follows, then the [home message](#home-message);
+  with their names and stays in the review until they are edited or deleted. Then the review
+  message is recorded for cleanup (deleted with the home message at the end) and:
+  - name from the caption: saved at once; the review loses its buttons; a confirmation
+    follows, then the [home message](#home-message);
   - otherwise: buttons removed, `recipe-name-prompt` sent, state
     `WaitingForRecipeNameAfterConfirm`. The typed name ("cancel", "stop", "back" cancel; empty
     or over 255 bytes refused) is saved and the prompt is edited to `recipe-complete`, followed
@@ -174,9 +175,12 @@ Before sending it, `send_home` deletes what the action left behind (`bot::cleanu
   and the name prompt when the name is cancelled;
 - the user's photo or image document, recorded once its review starts: it stays while the
   ingredients are reviewed and goes when the review ends (saved, cancelled or interrupted by a
-  command). A photo whose extraction fails is not recorded.
+  command). A photo whose extraction fails is not recorded;
+- the review message (ingredient list), recorded when the review is confirmed (✅ button or
+  typed "confirm"): after saving, the confirmation and the home message remain.
 
-Kept: the ingredient list, saved or cancelled notices, recipe cards and lists. Only recorded messages are deleted; records older than 48 h are skipped
+Kept: saved or cancelled notices (a review cancelled before confirming keeps its list edited to
+`review-cancelled`), recipe cards and lists. Only recorded messages are deleted; records older than 48 h are skipped
 (Telegram refuses them), at most 200 per chat, in memory (lost on restart, like the dialogue
 state).
 

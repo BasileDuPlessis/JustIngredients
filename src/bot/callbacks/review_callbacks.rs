@@ -21,7 +21,7 @@ use crate::localization::{t_args_lang, t_lang};
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI components for the focused editing interface
-use crate::bot::cleanup::send_transient;
+use crate::bot::cleanup::{self, send_transient};
 use crate::bot::home::send_home;
 use crate::bot::ui_components::create_ingredient_editing_keyboard;
 use crate::bot::{create_ingredient_review_keyboard, format_ingredients_list};
@@ -508,6 +508,11 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         dialogue_lang_code.as_deref(),
     );
 
+    // The review ends here: its list goes with the action's messages
+    if let Some(message) = q.message.as_ref() {
+        cleanup::track(message.chat().id, message.id());
+    }
+
     // Check if we have a recipe name from caption
     if let Some(caption_recipe_name) = recipe_name_from_caption.and_then(|opt| opt.as_ref()) {
         // STREAMLINED WORKFLOW: Skip recipe name input when caption is available
@@ -547,7 +552,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
             return Ok(());
         }
 
-        // Remove the keyboard from the ingredients message to keep it visible
+        // Remove the keyboard: the list is deleted at the end, and stays inactive if it cannot be
         match ctx
             .bot
             .edit_message_reply_markup(
@@ -610,7 +615,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         // LEGACY WORKFLOW: No caption available, ask for recipe name
         debug!(user_id = %q.from.id, "No caption available, proceeding with recipe name input");
 
-        // Remove the keyboard from the ingredients message to keep it visible
+        // Remove the keyboard: the list is deleted at the end, and stays inactive if it cannot be
         match ctx
             .bot
             .edit_message_reply_markup(
