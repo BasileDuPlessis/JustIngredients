@@ -30,10 +30,10 @@ jobs:
         options: >-
           --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Setup Rust
-      uses: dtolnay/rust-toolchain@1.99
+      uses: dtolnay/rust-toolchain@1.120
 
     - name: Cache dependencies
       uses: Swatinem/rust-cache@v2
@@ -54,7 +54,7 @@ jobs:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
     - name: Upload artifacts
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: just-ingredients-binary
         path: target/debug/just-ingredients
@@ -63,10 +63,10 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 20
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     - name: Setup Rust
-      uses: dtolnay/rust-toolchain@1.99
+      uses: dtolnay/rust-toolchain@1.120
       with:
         components: clippy, rustfmt
 
@@ -86,7 +86,7 @@ jobs:
     runs-on: ubuntu-26.04
     timeout-minutes: 10
     steps:
-    - uses: actions/checkout@v4
+    - uses: actions/checkout@v7
 
     # Vulnerability and source checks configured in deny.toml. Replaces cargo-audit and
     # cargo-outdated, which were compiled from source on every run; Dependabot handles updates.
