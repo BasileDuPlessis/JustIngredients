@@ -1158,6 +1158,7 @@ mod tests {
 
     /// Performance benchmark: Single-line vs Multi-line ingredient parsing
     #[test]
+    #[ignore = "timing-sensitive: compares two noisy measurements to within 5%, flaky on shared CI runners; run with --ignored"]
     fn test_multi_line_vs_single_line_performance() {
         let detector = MeasurementDetector::new().unwrap();
 

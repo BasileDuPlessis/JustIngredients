@@ -79,6 +79,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 | IMP-043 | README describes a pipeline that does not exist | P3 | S | Docs |
 | IMP-044 | Dispatcher panics when Telegram is unreachable or the token is invalid at startup | P2 | S | Reliability |
 | IMP-045 | Locale keys used in code are not checked against the `.ftl` files | P2 | S | Localization |
+| IMP-046 | Timing benchmarks run as blocking tests | P2 | M | Tests / CI |
 
 ## Verification of Earlier Findings
 | # | Earlier finding | Result | Item |
@@ -936,4 +937,17 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Proposed fix: a test that collects the string literals passed to `t_lang`/`t_args_lang` in `src/`
   and asserts each key exists in both `locales/en/main.ftl` and `locales/fr/main.ftl`.
 - Validation: the test fails when a call site uses an unknown key.
+
+### IMP-046: Timing benchmarks run as blocking tests
+- [ ] Done
+- Priority: P2. Effort: M. Area: Tests / CI.
+- Related: LLM migration (most benchmarks measure OCR code that Phase 5 deletes).
+- Location: `tests/performance_tests.rs` (23 tests with ops/sec and overhead thresholds).
+- Problem: since Task 0.8 CI runs all test targets, so wall-clock thresholds gate merges on shared,
+  noisy runners. `test_multi_line_vs_single_line_performance` (relative degradation < 5%) failed in
+  CI run for `54a06df` at 39.5% and once in the local pre-push hook; it is now `#[ignore]`d.
+- Proposed fix: move the benchmarks to `benches/` (criterion) or a non-blocking scheduled CI job,
+  keep only functional assertions in `tests/`, and delete the OCR benchmarks in Phase 5.
+- Validation: `cargo test --all-targets` contains no wall-clock assertions; the benchmark job
+  reports numbers without failing the build.
 
