@@ -1,315 +1,107 @@
 # Deployment & Infrastructure Feature Specification
 
+> Describes the setup as it is (verified against `main` at `ec2e7d3`, 2026-10-27). The target
+> pipeline (one image per commit, permanent staging, rollback) is planned in Task 5.4 of
+> [LLM Extraction Migration](tasks/llm-extraction-migration.md#cicd-audit); Tesseract removal
+> from the image in Task 5.3.
+
 ## Overview
-The deployment and infrastructure feature manages the production deployment of the Telegram bot application on Fly.io. It includes containerization, monitoring, secrets management, and operational procedures for reliable production operation.
+The bot runs as one Fly.io machine (app `just-ingredients`, region `cdg`) with a Fly Postgres
+database. It receives Telegram updates by long polling, so the only HTTP traffic is health
+checks and metrics. GitHub Actions tests every push, deploys a throw-away staging app after
+green CI on `main`, and deploys production manually after approval.
 
-## Requirements
-
-### Functional Requirements
-- **Container Deployment**: Docker-based application packaging
-- **Environment Management**: Secure configuration and secrets
-- **Monitoring Setup**: Application and infrastructure monitoring
-- **Health Checks**: Service availability verification
-- **Logging**: Centralized log collection and analysis
-- **Scaling**: Automatic resource adjustment based on load
-
-### Non-Functional Requirements
-- **Reliability**: 99.9% uptime target
-- **Performance**: Sub-second response times
-- **Security**: Secure secrets management and access control
-- **Maintainability**: Easy deployment and rollback procedures
-- **Observability**: Comprehensive monitoring and alerting
-
-### Success Criteria
-- [x] Application deploys successfully to Fly.io
-- [x] All secrets properly managed and accessible
-- [x] Monitoring dashboards functional (Prometheus + Grafana live)
-- [x] Health checks passing
-- [x] Logs collected and searchable
-- [x] Staging environment configured (`fly-staging.toml`)
-
-## Architecture
-
-### Deployment Components
-```
-Production Infrastructure
-├── Application Container    # Dockerized Rust application (deploy/Dockerfile)
-├── Database Instance       # Managed PostgreSQL (Fly.io)
-├── Monitoring Stack        # Prometheus + Grafana (deploy/fly-monitoring.toml + fly-grafana.toml)
-├── Staging Environment     # deploy/fly-staging.toml
-├── Load Balancer          # Fly.io edge network
-└── Secrets Management     # Fly.io secrets (flyctl secrets set)
-```
-
-### Data Flow
-1. **Code Deployment**: Git push triggers automated build
-2. **Container Build**: Docker image creation and registry push
-3. **Service Deployment**: Rolling update with health checks
-4. **Traffic Routing**: Load balancer distributes requests
-5. **Monitoring**: Metrics collection and alerting
-6. **Logging**: Centralized log aggregation and analysis
-
-### Integration Points
-- **Fly.io Platform**: Infrastructure as a service
-- **Docker Registry**: Container image storage
-- **PostgreSQL**: Managed database service
-- **Prometheus/Grafana**: Monitoring and visualization
-- **GitHub Actions**: CI/CD pipeline
-
-## API Design
-
-### Deployment Operations
-```bash
-# Deploy application
-fly deploy
-
-# Check status
-fly status
-
-# View logs
-fly logs
-
-# Scale application
-fly scale count 2
-
-# Manage secrets
-fly secrets set DATABASE_URL="postgresql://..."
-fly secrets list
-```
-
-### Health Check Endpoints
-```rust
-// Application health
-GET /health
-
-// Database connectivity
-GET /health/db
-
-// OCR service status
-GET /health/ocr
-```
-
-### Monitoring Endpoints
-```rust
-// Metrics export
-GET /metrics
-
-// Readiness probe
-GET /ready
-
-// Liveness probe
-GET /live
-```
-
-## Implementation Notes
-
-### Key Decisions
-- **Fly.io Platform**: Global deployment with edge network
-- **Docker Containers**: Consistent deployment artifacts
-- **Managed Database**: PostgreSQL as a service
-- **Prometheus Monitoring**: Industry-standard metrics collection
-- **GitHub Actions CI/CD**: Automated testing and deployment
-
-### Constraints
-- **Resource Limits**: Fly.io VM size restrictions
-- **Network Latency**: Global distribution considerations
-- **Cost Optimization**: Efficient resource utilization
-- **Security Compliance**: Secrets and data protection
-
-### Dependencies
-- **Docker**: Container runtime and build system
-- **Fly CLI**: Infrastructure management
-- **Prometheus**: Metrics collection
-- **Grafana**: Dashboard visualization
-
-## Container Configuration
-
-### Dockerfile (`deploy/Dockerfile`)
-```dockerfile
-# syntax=docker/dockerfile:1.6
-FROM rust:latest AS builder
-WORKDIR /app
-RUN apt-get install -y build-essential clang pkg-config libssl-dev \
-    libtesseract-dev libleptonica-dev tesseract-ocr-eng tesseract-ocr-fra
-COPY Cargo.toml Cargo.lock ./
-COPY src ./src
-COPY config ./config
-COPY locales ./locales
-COPY .sqlx ./.sqlx
-RUN cargo build --release && strip --strip-unneeded target/release/just-ingredients
-
-FROM ubuntu:latest AS runtime
-RUN apt-get install -y ca-certificates libssl3 tesseract-ocr \
-    tesseract-ocr-eng tesseract-ocr-fra liblept5 libtesseract5
-COPY --from=builder /app/target/release/just-ingredients /usr/local/bin/just-ingredients
-COPY config ./config
-ENV MEASUREMENT_UNITS_CONFIG_PATH=/app/config/measurement_units.json
-ENV RUST_LOG=info,sqlx=warn
-CMD ["just-ingredients"]
-```
-
-### Fly.io Configuration Files
+## Components
 | File | Purpose |
 |---|---|
-| `deploy/fly.toml` | Production deployment |
-| `deploy/fly-staging.toml` | Staging environment |
-| `deploy/fly-monitoring.toml` | Prometheus monitoring app |
-| `deploy/fly-grafana.toml` | Grafana dashboard app |
+| `deploy/Dockerfile` | Image built by Fly (remote builder) and by the GHCR workflow |
+| `deploy/fly.toml` | Production app `just-ingredients` |
+| `deploy/fly-staging.toml` | Staging app `just-ingredients-staging` (created per run) |
+| `deploy/fly-monitoring.toml`, `monitoring/prometheus.yml` | Prometheus app |
+| `deploy/fly-grafana.toml`, `monitoring/grafana/` | Grafana app |
+| `rust-toolchain.toml` | Rust 1.99, same as CI and the Docker builder |
+| `.github/workflows/*.yml` | CI/CD (below) |
+| `smoke-tests.js`, `package.json` | Staging smoke tests |
 
-### Fly.io Configuration
-```toml
-# fly.toml
-app = "just-ingredients"
-primary_region = "cdg"
+## Container (`deploy/Dockerfile`)
+- Builder `rust:1.99-slim-trixie`, runtime `debian:trixie-slim` (same Debian release, so the
+  binary links against the runtime libraries). Bump Rust here, in `rust-toolchain.toml` and in
+  the CI workflow together.
+- `cargo build --release` with `.sqlx/` (offline query checks); the binary is stripped.
+- Runtime packages: CA certificates, libssl, and Leptonica/Tesseract with English and French
+  data for the `EXTRACTION_BACKEND=tesseract` fallback.
+- The build fails if `ldd` reports a missing library.
+- `config/` is copied (`MEASUREMENT_UNITS_CONFIG_PATH=/app/config/measurement_units.json`);
+  locales, prompt and schema are embedded in the binary. `RUST_LOG=info,sqlx=warn`.
 
-[build]
-  dockerfile = "Dockerfile"
+## Fly Configuration (`deploy/fly.toml`, same in `fly-staging.toml`)
+- `[env]`: `HEALTH_PORT=8080`, `LOG_FORMAT=pretty`, `RUST_LOG=info,sqlx=warn`,
+  `METRICS_BIND_ALL_INTERFACES=true`.
+- `[[restart]] policy = 'always'`: the bot restarts whenever it exits (the default policy gave
+  up during a Postgres restart on 2026-10-16 and left the bot down for 10 days).
+- Checks: `GET /health/live` every 15 s (timeout 2 s, grace 30 s), as a machine check and an
+  `http_service` check.
+- `[http_service]`: internal port 8080, HTTPS forced, `auto_stop_machines = false`,
+  `min_machines_running = 1`.
 
-[http_service]
-  internal_port = 8080
-  force_https = true
+## HTTP Endpoints
+One server on `HEALTH_PORT` (8080), bound to all interfaces only when
+`METRICS_BIND_ALL_INTERFACES=true` (localhost otherwise), limited to 10 requests per minute per
+client IP. Code: `src/observability/metrics.rs`, `src/observability/health_checks.rs`.
 
-[[vm]]
-  size = "shared-cpu-1x"
+| Endpoint | Behaviour |
+|---|---|
+| `GET /health/live` | 200 `OK` while the Telegram heartbeat is fresh; 503 after 5 minutes without a successful Telegram call (`getMe` every minute, 5-minute grace at startup). |
+| `GET /health/ready` | 200 when the database answers `SELECT 1`, the heartbeat is fresh and the bot token is well formed; 503 `NOT READY: <reason>` otherwise. Gemini is not called. |
+| `GET /metrics` | Prometheus text format. When `METRICS_AUTH_TOKEN` is set, requires `Authorization: Bearer <token>` (401 otherwise); open when it is unset. |
 
-[env]
-  RUST_LOG = "info"
+Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` or `/live`).
 
-[metrics]
-  port = 9090
-  path = "/metrics"
-```
+## Secrets and Configuration
+- **Production** (Fly secrets, set by hand with `fly secrets set`, never by CI):
+  `DATABASE_URL` (Fly Postgres), `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`, `METRICS_AUTH_TOKEN`.
+  The bot refuses to start without a well-formed `TELEGRAM_BOT_TOKEN` and `DATABASE_URL`, or
+  without `GEMINI_API_KEY` when the backend is `gemini`.
+- **Staging**: recreated on every run. `DATABASE_URL` comes from `flyctl postgres attach`;
+  `TELEGRAM_BOT_TOKEN` (a separate bot) and `GEMINI_API_KEY` come from the GitHub `staging`
+  environment and are imported with `flyctl secrets import --stage`. `METRICS_AUTH_TOKEN` is not
+  set there.
+- **GitHub repository secrets**: `FLY_API_TOKEN`; `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`
+  for the production deploy notification and the uptime alert.
+- Optional variables with defaults: `EXTRACTION_BACKEND` (`gemini`), `GEMINI_MODEL`,
+  `GEMINI_TIMEOUT_SECS`, `GEMINI_THINKING_LEVEL`, `GEMINI_MAX_CONCURRENCY`, database pool and
+  observability settings; see `.env.example`.
 
-## Monitoring & Observability
+## CI/CD (`.github/workflows/`)
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `build-test.yml` "Build and Test" | Push and PR to `main` | `build`: Postgres 16 service, `cargo build`, `cargo test --all-targets`, doc tests, `db_tests` with `--include-ignored`. `lint`: clippy `-D warnings`, `scripts/check-unwraps.sh`, `cargo fmt --check`. `security`: cargo-deny `check advisories sources`. Rust 1.99, `SQLX_OFFLINE=true`, Ubuntu 24.04. |
+| `build-and-push-docker.yml` | Push and PR to `main` | Builds `deploy/Dockerfile` and pushes it to GHCR. Deployments do not use this image (Fly builds its own). |
+| `deploy-staging.yml` "Deploy to Staging" | `workflow_run` after a successful "Build and Test" on a push to `main` from this repository (or manual on `main`) | Run name `Deploy to Staging <sha>`. Destroys any previous staging app and database, creates both, attaches the database, imports the secrets, deploys the tested commit, runs the smoke tests (`/health/live`, `/health/ready`), then always destroys the app and database. |
+| `deploy-production.yml` "Deploy to Production" | Manual, `main` only | Environment `production` with a required reviewer. Gate: a successful "Build and Test" push run for the commit and a successful run named `Deploy to Staging <sha>`. `flyctl deploy --config deploy/fly.toml --remote-only`, then `/health/live` and `/health/ready` (6 tries, 10 s apart), then a Telegram notification of the result. |
+| `uptime.yml` "Production Uptime" | Every 10 minutes (and manual) | `GET /health/ready` on production, 3 tries 20 s apart; Telegram alert on failure. GitHub may delay scheduled runs and disables them after 60 days without activity. |
 
-### Metrics Collection
-```rust
-// Application metrics
-ocr_requests_total: Counter
-ocr_processing_duration: Histogram
-db_query_duration: Histogram
-telegram_webhook_errors: Counter
+## Monitoring
+- Alerting: only the uptime workflow and the production deploy notification (Telegram).
+  `monitoring/prometheus.yml` has no alert rules.
+- Prometheus scrapes `https://just-ingredients.fly.dev/metrics` every 30 s. Its configuration
+  sends no token, so the scrape is refused (401) while `METRICS_AUTH_TOKEN` is set.
+- Logs: `fly logs` (pretty format).
+- Main metrics (all names: the `metrics::counter!`, `histogram!` and `gauge!` calls in
+  `src/observability/metrics.rs` and `src/extraction/`):
 
-// System metrics
-cpu_usage: Gauge
-memory_usage: Gauge
-disk_usage: Gauge
-network_io: Counter
-```
+| Area | Metrics |
+|---|---|
+| Extraction | `llm_requests_total{model,outcome}`, `llm_request_duration_seconds{model}`, `llm_retries_total{model}`, `llm_tokens_total{model,kind}`, `llm_estimated_cost_micro_usd_total{model}`, `extraction_cache_hits_total{backend}`, `errors_total{type,component}` |
+| Telegram | `telegram_messages_total{type}`, `telegram_duplicate_messages_total`, `telegram_processing_duration_seconds{type}`, `requests_total`, `request_duration_seconds` |
+| Database | `db_operations_total{operation}`, `db_operation_duration_seconds` |
+| Health and process | `health_checks_total{type,result}`, `health_check_status{type}`, `health_check_duration_seconds`, `process_memory_mb` |
+| Tesseract fallback only | `ocr_*` |
 
-### Alerting Rules
-```yaml
-# Prometheus alerting rules
-groups:
-  - name: just-ingredients
-    rules:
-      - alert: HighErrorRate
-        expr: rate(ocr_requests_total{status="error"}[5m]) > 0.1
-        for: 5m
-        labels:
-          severity: warning
-
-      - alert: SlowProcessing
-        expr: histogram_quantile(0.95, rate(ocr_processing_duration_bucket[5m])) > 30
-        for: 5m
-        labels:
-          severity: warning
-```
-
-### Dashboard Panels
-- **Request Rate**: OCR requests per minute
-- **Error Rate**: Failed request percentage
-- **Processing Time**: 95th percentile duration
-- **Resource Usage**: CPU, memory, disk metrics
-- **Database Performance**: Query latency and throughput
-
-## Security Configuration
-
-### Secrets Management
-```bash
-# Set production secrets
-fly secrets set TELEGRAM_BOT_TOKEN="your_bot_token"
-fly secrets set DATABASE_URL="postgresql://user:pass@host:5432/db"
-fly secrets set HEALTH_PORT="8080"
-
-# List secrets
-fly secrets list
-
-# Unset secret
-fly secrets unset OLD_SECRET
-```
-
-### Network Security
-- **HTTPS Only**: All traffic encrypted
-- **Firewall Rules**: Restrict access to necessary ports
-- **API Authentication**: Telegram webhook verification
-- **Database Security**: Connection encryption and access controls
-
-## CI/CD Pipeline
-
-### GitHub Actions Workflow
-```yaml
-name: Deploy to Fly.io
-on:
-  push:
-    branches: [ main ]
-
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: dtolnay/rust-toolchain@stable
-      - run: cargo test --verbose
-
-  deploy:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: superfly/flyctl-actions/setup-flyctl@master
-      - run: flyctl deploy --remote-only
-        env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-```
-
-## Testing Strategy
-
-### Pre-deployment Tests
-- **Unit Tests**: All code passes testing
-- **Integration Tests**: End-to-end functionality
-- **Container Tests**: Docker image validation
-- **Smoke Tests**: Basic functionality in staging
-
-### Deployment Tests
-- **Health Checks**: Service availability verification
-- **Load Tests**: Performance under expected traffic
-- **Failover Tests**: Automatic recovery validation
-- **Rollback Tests**: Deployment reversal procedures
-
-## Operational Procedures
-
-### Deployment Process
-1. **Code Review**: PR review and approval
-2. **Automated Testing**: CI pipeline execution
-3. **Staging Deployment**: Test in staging environment
-4. **Production Deployment**: Rolling update to production
-5. **Verification**: Health checks and monitoring validation
-6. **Rollback Plan**: Ready reversion procedure
-
-### Incident Response
-1. **Detection**: Monitoring alerts and notifications
-2. **Assessment**: Log analysis and metric review
-3. **Containment**: Scale back or rollback deployment
-4. **Recovery**: Deploy fix or restore from backup
-5. **Post-mortem**: Incident analysis and improvement
-
-## Future Enhancements
-
-### Potential Improvements
-- **Multi-region Deployment**: Global distribution
-- **Auto-scaling**: Dynamic resource allocation
-- **Blue-Green Deployment**: Zero-downtime updates
-- **Advanced Monitoring**: Distributed tracing
-- **Disaster Recovery**: Cross-region failover
-- **Performance Optimization**: CDN integration
+## Operations
+- Deploy: push to `main`, wait for green CI and staging, then run "Deploy to Production" and
+  approve it.
+- Rollback: the pipeline has none (the production workflow deploys the head of `main`; planned
+  in Task 5.4). `EXTRACTION_BACKEND=tesseract` switches extraction back to OCR without a code
+  change.
+- Status and logs: `fly status -a just-ingredients`, `fly logs -a just-ingredients`.

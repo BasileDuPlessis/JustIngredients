@@ -1,80 +1,52 @@
 # Specs Directory
 
-This directory contains project specifications and design documents. All specs are versioned and maintained as living documentation.
+Specifications of the JustIngredients bot. Feature specs describe what the code does today;
+task plans describe planned work and record its progress.
 
 ## Directory Structure
 
 ```
 specs/
-├── README.md                    # Management guidelines and spec types
-├── ocr-processing.md           # Feature: OCR text extraction
-├── telegram-bot.md             # Feature: Bot user interface  
-├── database-design.md          # Feature: Data persistence
-├── deployment.md               # Feature: Infrastructure
-└── tasks/                      # Task specifications
-    ├── ocr-refactor-strategy.md    # Completed OCR modularization
-    └── ...                         # Future task specs
+├── README.md                     # This index
+├── telegram-bot.md               # Feature: bot interface, dialogue, recipes
+├── database-design.md            # Feature: data persistence
+├── deployment.md                 # Feature: Fly.io, CI/CD, health checks, metrics
+├── ocr-processing.md             # Superseded: Tesseract pipeline (fallback only)
+├── ocr-text-cleaning.md          # Superseded: OCR artifact cleaning (fallback only)
+└── tasks/
+    ├── llm-extraction-migration.md       # Tesseract → Gemini migration
+    ├── ux-improvements.md                # UX plan (phases U0–U4)
+    ├── measurement-standardization-tasks.md  # Canonical units
+    └── improvement-backlog.md            # Verified code-quality items (IMP-xxx)
 ```
 
-## Versioning Convention
+## Feature Specifications
+- [Telegram Bot](telegram-bot.md): commands, photo flow, review and save, recipe list, callback
+  data, dialogue states, errors, localization.
+- [Database Design](database-design.md): schema, owner-scoped queries, migrations, cache.
+- [Deployment](deployment.md): container, Fly configuration, health endpoints, secrets, CI/CD,
+  monitoring.
+- [OCR Processing](ocr-processing.md) (superseded): Tesseract pipeline, kept while the
+  `EXTRACTION_BACKEND=tesseract` fallback exists; deleted in migration Task 5.5.
+- [OCR Text Cleaning](ocr-text-cleaning.md) (superseded): same status.
 
-- Use semantic versioning: `MAJOR.MINOR.PATCH`
-- **Feature specs**: Version when architecture changes (v2.0 for breaking changes)
-- **Task specs**: Usually keep only current version, update in-place for progress
-- Keep version history **within** the spec document itself
-- Archive old versions only for major milestones or significant changes
+## Task Plans
+- [LLM Extraction Migration](tasks/llm-extraction-migration.md): Gemini extraction (in
+  production), Tesseract removal (Phase 5), target CI/CD pipeline.
+- [UX Improvements](tasks/ux-improvements.md): messages, navigation, recipe creation, recipe
+  list, search.
+- [Measurement Standardization](tasks/measurement-standardization-tasks.md): canonical units
+  (tasks 1–2 done).
+
+## Backlog
+- [Improvement Backlog](tasks/improvement-backlog.md): prioritized, verified items to pull
+  into 1-hour tasks.
 
 ## Maintenance Guidelines
-
-### When to Update Specs
-- **Must Update**: Architecture changes, new requirements, breaking changes
-- **Should Update**: Completed milestones, significant decisions, lessons learned
-- **Don't Update**: Minor implementation details, routine bug fixes
-
-### Versioning Strategy
-- **Feature Specs**: Create new versions (v2.0.md) for major changes
-- **Task Specs**: Update current version in-place for progress tracking
-- **Archive**: Move old versions to `archive/` after 6-12 months
-
-### How to Update
-1. For **feature specs**: Create new version file when making breaking changes
-2. For **task specs**: Update existing file with progress and completion markers
-3. Add version history section within the spec document
-4. Document implementation notes and decisions
-
-## Current Specs
-
-### Feature Specifications
-- [OCR Processing](ocr-processing.md) - Text extraction and ingredient parsing from images
-- [Telegram Bot](telegram-bot.md) - User interface and conversation management
-- [Database Design](database-design.md) - Data persistence and full-text search
-- [Deployment](deployment.md) - Infrastructure and production operations
-
-### Task Specifications
-- [OCR Refactor Strategy](tasks/ocr-refactor-strategy.md) - Completed modularization (all tasks done)
-
-## Spec Types
-
-### Feature Specs
-High-level design documents for major application components. Include:
-- Functional and non-functional requirements
-- Architecture and data flow
-- API design and interfaces
-- Implementation constraints
-- Testing and monitoring strategies
-
-### Task Specs
-Detailed implementation plans for specific work items. Include:
-- Step-by-step execution plan
-- Success criteria for each step
-- Validation procedures
-- Rollback plans
-
-## Workflow
-
-1. **Read feature specs** for architectural context and requirements
-2. **Create task specs** in `/tasks/` for implementation work  
-3. **Execute tasks** following success criteria
-4. **Update feature specs** with lessons learned and architectural changes
-5. **Version specs** when significant changes occur
-6. **Archive completed task specs** after 3-6 months
+- Feature specs describe the current code only. Planned changes go into a task plan, linked
+  from the feature spec.
+- Update the feature spec in the same commit as a behaviour change (commands, states, callback
+  data, endpoints, secrets, workflows).
+- Task plans are updated in place: tick tasks, add a short "Done:" note, record review gates.
+- A spec that no longer matches the code is marked superseded at the top, then deleted.
+- Every relative link must point to an existing file.

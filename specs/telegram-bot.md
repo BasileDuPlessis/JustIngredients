@@ -1,252 +1,251 @@
 # Telegram Bot Feature Specification
 
+> Describes the code as it is (verified against `main` at `ec2e7d3`, 2026-10-27). Planned changes
+> are not described here: see [UX Improvements](tasks/ux-improvements.md) and
+> [LLM Extraction Migration](tasks/llm-extraction-migration.md).
+
 ## Overview
-The Telegram bot feature provides the user interface for the ingredient extraction service. It handles incoming messages, processes images, manages conversations, and delivers formatted results to users.
-
-## Requirements
-
-### Functional Requirements
-- **Message Handling**: Process text, photos, documents, and commands
-- **Image Processing**: Accept and validate image uploads
-- **Conversation Management**: Multi-step recipe creation workflow
-- **Command Support**: /start, /help, and other bot commands
-- **Localization**: Support for English and French languages
-- **Error Recovery**: Graceful handling of processing failures
-- **Result Formatting**: Clear presentation of extracted ingredients
-
-### Non-Functional Requirements
-- **Responsiveness**: Quick acknowledgment of user inputs
-- **Reliability**: Handle network issues and API failures
-- **User Experience**: Intuitive conversation flow
-- **Scalability**: Support multiple concurrent users
-- **Security**: Safe file handling and input validation
-
-### Success Criteria
-- [x] All message types handled appropriately
-- [x] Image upload and processing works seamlessly
-- [x] Conversation state maintained correctly
-- [x] Commands respond with helpful information
-- [x] Multi-language support functional
-- [x] Error messages are user-friendly
-- [x] Inline ingredient editing supported
-- [x] Interactive callback buttons for review and editing
+The bot reads the ingredient list of a recipe photo, lets the user review and correct it, and
+saves it as a recipe. Saved recipes can be listed, opened, renamed, edited and deleted. Messages
+are in English or French, following the Telegram app language.
 
 ## Architecture
 
-### Component Design
+### Runtime (`src/main.rs`)
+- teloxide 0.17 `Dispatcher` with **long polling** (no webhook, no public bot endpoint). The
+  HTTP server on port 8080 only serves health checks and metrics (see [Deployment](deployment.md)).
+- Two branches: messages go to `bot::message_handler_with_cache`, callback queries to
+  `bot::callback_handler_with_cache`.
+- Updates of one chat are handled one at a time (teloxide default); different chats run
+  concurrently.
+- Dialogue state: `InMemStorage<RecipeDialogueState>` keyed by chat id. It is lost on every
+  restart or deploy.
+- Duplicate deliveries of a message are dropped by `deduplication` (key: chat id + message id,
+  5 minutes, 10,000 entries). Callback queries are not deduplicated.
+- Telegram client timeout 30 s. A heartbeat (`getMe` every minute) feeds the health checks.
+
+### Components
 ```
-Telegram Bot Layer (src/bot/)
-├── message_handler.rs      # Route incoming messages
-├── media_handlers.rs       # Handle photo/document uploads
-├── dialogue_manager.rs     # Conversation state and flow
-├── command_handlers.rs     # Bot commands (/start, /help, /list, /search, /delete)
-├── ui_builder.rs          # Response formatting and keyboards
-├── ui_components.rs       # Reusable UI component helpers
-├── image_processing.rs    # Image download and temp file management
-├── localization.rs        # Multi-language support (Fluent bundles)
+src/main.rs                 # Startup, extractor choice, dispatcher
+src/dialogue.rs             # RecipeDialogueState, RecipeDialogue
+src/localization.rs         # Fluent bundles (en, fr), language detection
+src/extraction/             # IngredientExtractor trait, Gemini and Tesseract backends, guard
+src/bot/
+├── message_handler.rs      # MessageServices, routing of messages by type and dialogue state
+├── command_handlers.rs     # /start, /help, /recipes, unsupported messages
+├── media_handlers.rs       # Photo and image document messages
+├── image_processing.rs     # Download, extraction call, review message, error keys
+├── dialogue_manager.rs     # Text input of each dialogue state, save to database
+├── ui_builder.rs           # Review list and keyboards, recipe list and card keyboards
+├── ui_components.rs        # Buttons, pagination row, focused edit keyboard
+├── recipe_selection.rs     # Callback data of recipe list buttons (64-byte limit)
 └── callbacks/
-    ├── callback_handler.rs    # Dispatch incoming callback queries
-    ├── callback_types.rs      # Typed callback action enums
-    ├── editing_callbacks.rs   # Ingredient edit/delete/add callbacks
-    ├── recipe_callbacks.rs    # Recipe save/rename/delete callbacks
-    ├── review_callbacks.rs    # Review confirmation and adjustment callbacks
-    └── workflow_callbacks.rs  # High-level workflow transitions
+    ├── callback_handler.rs    # Dispatch by dialogue state, then by data prefix
+    ├── review_callbacks.rs    # ReviewIngredients buttons (edit, delete, confirm, cancel)
+    ├── editing_callbacks.rs   # EditingSavedIngredients buttons
+    ├── recipe_callbacks.rs    # Recipe selection, card actions, delete confirmation, statistics
+    ├── workflow_callbacks.rs  # Recipe list, pagination, post-save buttons
+    └── callback_types.rs      # Parameter structs
 ```
 
-### Data Flow
-1. **Message Reception**: Telegram webhook delivers updates
-2. **Message Routing**: Determine message type and handler
-3. **Validation**: Check input format and permissions
-4. **Processing**: Execute appropriate business logic
-5. **Response Formatting**: Create user-friendly output
-6. **Message Delivery**: Send response via Telegram API
+### `MessageServices`
+Built once in `main.rs` and cloned per message (all fields reference-counted):
+`pool` (Postgres), `localization`, `cache` (`CacheManager`), `deduplicator`, `extractor`
+(`SharedExtractor`). The callback branch receives the pool, localization and cache directly.
 
-### Integration Points
-- **OCR Processing**: Extract text from uploaded images
-- **Database**: Store user data and conversation history
-- **Localization**: Provide translated responses
-- **Error Handling**: Centralized error response formatting
+## Messages and Commands
+| Input | Behaviour |
+|---|---|
+| `/recipes` | Checked first with `starts_with("/recipes")`, in any dialogue state (state unchanged): first page of the recipe list. |
+| `/start` | Exact match, only outside a dialogue: welcome message. |
+| `/help` | Exact match, only outside a dialogue: help message. |
+| Other text, no dialogue | Echo "Received: <text>" plus a tip to send a photo (`text-response`, `text-tip`). No search. |
+| Text in a dialogue | Handled by the current state (see [Dialogue States](#dialogue-states)). `/start` and `/help` are not recognized there: while a name is expected, `/help` is saved as the name. |
+| Photo | Largest size, caption used as recipe name candidate. Handled whatever the state: a successful extraction replaces the current dialogue with a new review. |
+| Document | Only `image/*` MIME types, caption ignored; otherwise `error-unsupported-format` or `error-no-mime-type`. |
+| Anything else | `unsupported-*` message. |
 
-## API Design
+There is no Telegram command menu (`setMyCommands` is never called). The welcome message lists
+`/start` and `/help`, the help message only `/start`; neither mentions `/recipes`.
 
-### Message Handlers
-```rust
-// Main message processing
-pub async fn handle_message(bot: &Bot, message: &Message, dialogue: &mut Dialogue) -> Result<(), BotError>
+## Photo Flow
+1. `download_file_bytes` downloads the file into memory, at most 10 MB (`MAX_IMAGE_BYTES`),
+   checked on the declared size, `Content-Length` and the body. Errors never contain the file
+   URL (it embeds the bot token). Too large: `error-extraction-image-too-large`; other failures:
+   `error-download-failed`.
+2. A processing message (`processing-photo` or `processing-document`) is sent with a ❌ Cancel
+   button (`cancel_processing`). Since the chat's next update waits for this one, a press is
+   only handled after the extraction has finished, and then cancels the review that has just
+   appeared.
+3. `ImageInput::prepare`: JPEG, PNG and WebP are sent as they are; other formats the `image`
+   crate decodes (BMP, TIFF, GIF…) are converted to JPEG, one conversion at a time, with
+   8,000 px and 96 MB decoding limits.
+4. `SharedExtractor` (`Arc<dyn IngredientExtractor>`), chosen at startup by
+   `EXTRACTION_BACKEND`:
+   - `gemini` (default): `GeminiExtractor`, model `GEMINI_MODEL` (default
+     `gemini-3.5-flash-lite`), prompt and JSON schema in `config/extraction/`, retries with
+     backoff, 20 s per attempt, 40 s per image (`GEMINI_TIMEOUT_SECS`), circuit breaker
+     (5 failed images, open 60 s). Access is checked at startup (failure only logged).
+   - `tesseract`: `TesseractExtractor`, the previous OCR pipeline, kept as a rollback.
+   - Both are wrapped in `GuardedExtractor`: `GEMINI_MAX_CONCURRENCY` slots (default 2; 1 for
+     Tesseract), a photo waiting more than 30 s for a slot gets the busy message, successful
+     results cached by SHA-256 of the image (100 entries, 24 h).
+5. The processing message is edited with the result:
+   - an error: the `error-extraction-*` message of the error (see [Errors](#errors));
+   - `is_recipe = false`: `extraction-not-a-recipe`;
+   - no ingredient: `no-ingredients-found` with the transcription;
+   - otherwise the review message, and the state becomes `ReviewIngredients`.
+6. Recipe name candidate: the caption without links (`http://`, `https://`, `www.`) if a valid
+   name remains, otherwise the default name "Recipe".
 
-// Photo processing
-pub async fn handle_photo(bot: &Bot, message: &Message, dialogue: &Dialogue) -> Result<(), BotError>
+## Review, Confirm, Name, Save
+The review message lists one line per ingredient ("150 g → farine", or "sel" without quantity).
+A ⚠️ prefix marks `requires_quantity_confirmation`: `needs_review` from the model, quantity
+outside (0, `MAX_QUANTITY`], not storable in `DECIMAL(10,3)`, or unit cut to 50 characters
+(`extraction/mapping.rs`).
 
-// Document processing
-pub async fn handle_document(bot: &Bot, message: &Message, dialogue: &Dialogue) -> Result<(), BotError>
+Keyboard (`create_ingredient_review_keyboard`): per ingredient ✏️ `edit_<i>` and 🗑️
+`delete_<i>` (label cut at 20 characters), then ✅ `confirm`, ❌ `cancel_review`, and ➕
+`add_ingredient`.
 
-// Command handling
-pub async fn handle_command(bot: &Bot, message: &Message, command: &str) -> Result<(), BotError>
-```
+- `edit_<i>`: the review message becomes a focused prompt with only a Cancel button
+  (`cancel_ingredient_editing`); state `EditingIngredient`. The user retypes the whole line
+  ("3 cups flour"), parsed by `parse_ingredient_from_text`; an edited line is no longer flagged.
+  "cancel", "stop" or "back" (or the button) restore the review.
+- `delete_<i>`: removes the line. When none is left, the message offers `add_more` (asks for
+  another photo and resets the state to `Start`; the review is dropped) and `cancel_empty`.
+- `confirm`: **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
+  with their names and stays in the review until they are edited or deleted. Then:
+  - name from the caption: saved at once; the review keeps its text without buttons; a
+    confirmation follows with the post-save buttons;
+  - otherwise: buttons removed, `recipe-name-prompt` sent, state
+    `WaitingForRecipeNameAfterConfirm`. The typed name ("cancel", "stop", "back" cancel; empty
+    or over 255 bytes refused) is saved and the prompt is edited to `recipe-complete`, followed
+    by "What would you like to do next?" with the post-save buttons.
+- `cancel_review`: `review-cancelled`, dialogue ended.
+- Post-save buttons: 📚 `workflow_list_recipes` (recipe list), 🔍 `workflow_search_recipes`
+  (answers `workflow-search-coming-soon`).
 
-### Dialogue States
-```rust
-/// Conversation state machine for recipe creation workflow
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
-pub enum RecipeDialogueState {
-    #[default]
-    Start,
-    WaitingForRecipeName {
-        extracted_text: String,
-        ingredients: Vec<MeasurementMatch>,
-        language_code: Option<String>,
-    },
-    ReviewIngredients {
-        recipe_name: String,
-        ingredients: Vec<MeasurementMatch>,
-        language_code: Option<String>,
-        message_id: Option<i32>,
-        extracted_text: String,
-        recipe_name_from_caption: Option<String>,
-    },
-    EditingIngredient {
-        recipe_name: String,
-        ingredients: Vec<MeasurementMatch>,
-        editing_index: usize,
-        language_code: Option<String>,
-        message_id: Option<i32>,
-        original_message_id: Option<i32>,
-        extracted_text: String,
-        recipe_name_from_caption: Option<String>,
-    },
-    WaitingForRecipeNameAfterConfirm {
-        ingredients: Vec<MeasurementMatch>,
-        language_code: Option<String>,
-        extracted_text: String,
-        recipe_name_from_caption: Option<String>,
-        message_id: Option<i32>,
-    },
-    RenamingRecipe {
-        recipe_id: i64,
-        current_name: String,
-        language_code: Option<String>,
-    },
-    EditingSavedIngredients {
-        recipe_id: i64,
-        original_ingredients: Vec<Ingredient>,
-        current_matches: Vec<MeasurementMatch>,
-        language_code: Option<String>,
-        message_id: Option<i32>,
-    },
-    EditingSavedIngredient {
-        recipe_id: i64,
-        original_ingredients: Vec<Ingredient>,
-        current_matches: Vec<MeasurementMatch>,
-        editing_index: usize,
-        language_code: Option<String>,
-        message_id: Option<i32>,
-        original_message_id: Option<i32>,
-    },
-    AddingIngredientToSavedRecipe {
-        recipe_id: i64,
-        original_ingredients: Vec<Ingredient>,
-        current_matches: Vec<MeasurementMatch>,
-        language_code: Option<String>,
-        message_id: Option<i32>,
-    },
-    AwaitingQuantityCorrection {
-        recipe_name: String,
-        ingredients: Vec<MeasurementMatch>,
-        ingredient_index: usize,
-        language_code: Option<String>,
-        message_id: Option<i32>,
-        extracted_text: String,
-        recipe_name_from_caption: Option<String>,
-    },
-}
-```
+Typed text in `ReviewIngredients`: "confirm", "ok", "yes" or "save" asks each flagged quantity in
+turn (`AwaitingQuantityCorrection`; a number in range, or `-`/"none"/"aucune" for none) and then
+saves under the current name (caption or "Recipe") without asking for a name; "cancel" or "stop"
+cancels; anything else answers `review-help`.
 
-### Error Handling
-- **NetworkError**: Telegram API communication failures
-- **ValidationError**: Invalid user input or file format
-- **ProcessingError**: OCR or database operation failures
-- **TimeoutError**: Operations exceeding time limits
+Saving (`save_ingredients_to_database`): `get_or_create_user`, `create_recipe` (content = the
+transcription), `update_recipe_name`, then one `create_ingredient` per line, not in a single
+transaction. Owner id: the callback sender (`from.id`) on the caption path, the chat id on the
+typed paths; they are equal in private chats (IMP-024).
 
-## Implementation Notes
+## My Recipes
+- **List** (`/recipes`, 📚 button): distinct recipe names of the chat id, alphabetical, 5 per
+  page, one button per name (label cut at 30 characters). Callback data: `select_recipe:<name>`,
+  or `select_recipe_h:<12 hex>` (SHA-256 fingerprint) when the first form exceeds 64 bytes,
+  resolved among the user's own names (`recipe_selection.rs`). Pagination row: ⬅️ `page:<n>`,
+  "Page x of y" (`noop`, ignored), ➡️ `page:<n>`; it edits the list message.
+- **Selection** (owner = callback sender): no recipe → `recipe-not-found`; one → recipe card;
+  several with the same name → one button per recipe "📅 date • first 3 ingredients"
+  (`recipe_instance:<id>`) and ⬅️ `back_to_recipes`.
+- **Recipe card**: name, creation date (English format in both languages), ingredients. Buttons:
+  ✏️ `recipe_action:rename:<id>`, 📝 `recipe_action:edit_ingredients:<id>`,
+  🗑️ `recipe_action:delete:<id>`, 📊 `recipe_action:statistics:<id>`, ⬅️ `back_to_recipes`
+  (deletes the card message).
+- **Rename**: prompt, state `RenamingRecipe`, typed name saved with `update_recipe_name`
+  (cancel words answer `delete-cancelled`).
+- **Edit ingredients**: state `EditingSavedIngredients` with the review keyboard. ✏️ opens
+  `EditingSavedIngredient` (typed line, `cancel_ingredient_editing`), ➕ `add_ingredient` opens
+  `AddingIngredientToSavedRecipe` (typed line), 🗑️ removes, ✅ `confirm` writes the differences
+  (update, create, delete), ❌ `cancel_review` drops them. Typed text outside the prompts answers
+  `use-buttons-instruction`.
+- **Delete**: confirmation with `confirm_delete_recipe:<id>:<card message id>` and
+  `cancel_delete_recipe:<id>:<card message id>`; confirming deletes the recipe, its ingredients,
+  the confirmation and the card.
+- **Statistics**: recipe ingredient count and date, then the user's totals, recent activity and
+  common units, with a button back to the recipe.
+- Name lookups and card ingredients are cached for 5 minutes per owner and not invalidated by
+  writes: a card opened from the list soon after a rename, edit or delete can show old data.
 
-### Key Decisions
-- **Dialogue Framework**: Teloxide dialogue system for state management
-- **Webhook Integration**: Real-time message processing
-- **File Download**: Secure temporary file handling
-- **Keyboard UI**: Interactive buttons for user choices
-- **Localization**: Fluent bundles for i18n support
+## Callback Data
+`callback_handler_with_cache` first runs the handler of the current state, then the prefix
+handlers below, which work in any state. The query is always answered.
 
-### Constraints
-- **Rate Limits**: Respect Telegram API limitations
-- **File Size Limits**: Telegram's 20MB file size restriction
-- **Timeout Handling**: 30-second processing windows
-- **Memory Management**: Clean up temporary files immediately
+| Data | Handled in | Action |
+|---|---|---|
+| `edit_<i>`, `delete_<i>`, `confirm`, `cancel_review` | `ReviewIngredients`, `EditingSavedIngredients` | Review or saved-recipe editing (above) |
+| `add_more` | `ReviewIngredients` | Ask for another photo, state `Start` |
+| `add_ingredient` | `EditingSavedIngredients` | Add a line to a saved recipe (no effect during a review) |
+| `cancel_ingredient_editing` | `EditingIngredient`, `EditingSavedIngredient` | Leave the focused edit prompt |
+| `select_recipe:`, `select_recipe_h:` | any | Open a recipe by name |
+| `recipe_instance:<id>` | any | Open one of several same-name recipes |
+| `recipe_action:<action>:<id>` | any | `rename`, `edit_ingredients`, `delete`, `statistics` |
+| `confirm_delete_recipe:`, `cancel_delete_recipe:` | any | Delete confirmation |
+| `back_to_recipes` | any | Delete the current message |
+| `page:<n>` | any | Recipe list page |
+| `workflow_list_recipes`, `workflow_search_recipes` | any | Post-save buttons (`workflow_add_another` is handled but never sent) |
+| `cancel_processing` | any | Processing message replaced by `processing-cancelled`, dialogue ended |
 
-### Dependencies
-- **teloxide**: Telegram bot framework
-- **tokio**: Async runtime for concurrent processing
-- **fluent-bundle**: Internationalization support
-- **tempfile**: Secure temporary file creation
+`cancel_empty` and `noop` are sent but have no handler. In `ReviewIngredients`, `workflow_*`
+data is handled twice (by the state handler and by the prefix handler).
 
-## User Experience Flow
+## Dialogue States
+`RecipeDialogueState` (`src/dialogue.rs`); every variant except `Start` keeps the language code
+of the message that opened it.
 
-### Recipe Creation Workflow
-1. **Start**: User sends /start or sends photo directly
-2. **Image Upload**: User sends photo or document (with optional caption as recipe name)
-3. **Processing**: Bot shows progress, calls OCR service
-4. **Review**: Display extracted ingredients with confidence; user can accept, edit, or delete each
-5. **Recipe Naming**: Prompt for (or confirm caption as) recipe name
-6. **Save**: Persist recipe and ingredients to database
+| State | Entered by | Text input |
+|---|---|---|
+| `Start` (default) | `add_more`; also no state | Commands and echo |
+| `ReviewIngredients` | Successful extraction; end of an edit | "confirm"/"ok"/"yes"/"save", "cancel"/"stop", else help |
+| `EditingIngredient` | `edit_<i>` in a review | Whole ingredient line |
+| `AwaitingQuantityCorrection` | Typed "confirm" with flagged lines | Quantity or `-` |
+| `WaitingForRecipeNameAfterConfirm` | `confirm` without a caption name | Recipe name |
+| `RenamingRecipe` | `recipe_action:rename` | New name |
+| `EditingSavedIngredients` | `recipe_action:edit_ingredients` | Refused (use the buttons) |
+| `EditingSavedIngredient` | `edit_<i>` on a saved recipe | Whole ingredient line |
+| `AddingIngredientToSavedRecipe` | `add_ingredient` on a saved recipe | New ingredient line |
+| `WaitingForRecipeName` | Never entered (only tests build it) | Recipe name |
 
-### Recipe Management Workflow
-- `/list` — paginated list of saved recipes with inline action buttons
-- `/search <query>` — full-text search across recipe names and ingredients
-- `/delete` — select and delete a saved recipe
-- Inline edit: rename recipe, edit/delete/add individual ingredients from saved recipes
+## Errors
+Extraction errors map to locale keys in `extraction_error_key` (`image_processing.rs`):
 
-### Error Recovery
-- **Invalid Input**: Clear error messages with guidance
-- **Processing Failure**: Retry options and alternative suggestions
-- **Timeout**: Progress indication and retry mechanisms
-- **Network Issues**: Automatic retry with exponential backoff
+| Key | `ExtractionError` |
+|---|---|
+| `error-extraction-unsupported-image` | `UnsupportedImage` |
+| `error-extraction-image-too-large` | `ImageTooLarge` (also before download) |
+| `error-extraction-busy` | `RateLimited` (HTTP 429 or no free slot within 30 s) |
+| `error-extraction-unreadable` | `Blocked`, `Recitation`, `Truncated`, `InvalidResponse`, other 4xx about the image |
+| `error-extraction-unavailable` | `Config`, `Timeout`, `Network`, 5xx, invalid key or model, `CircuitOpen` |
 
-## Testing Strategy
+Other keys: `extraction-not-a-recipe`, `no-ingredients-found`, `error-download-failed`,
+`error-unsupported-format`, `error-no-mime-type`, `error-processing-failed` (save failed).
+Configuration errors (invalid key, unknown model) are logged as errors, the others as warnings;
+all are counted in `errors_total{type, component=<backend>}`. Handler errors are logged by the
+dispatcher.
 
-### Unit Tests
-- Message parsing and routing logic
-- Dialogue state transitions
-- Input validation functions
-- Response formatting
+## Localization
+- Fluent files `locales/en/main.ftl` and `locales/fr/main.ftl`, embedded at build time.
+- Language: `language_code` of the message or callback sender, `fr-FR` → `fr`; `fr` and `en`
+  are supported, anything else gets English. A key missing in French falls back to English,
+  then to "Missing translation: <key>". `error-no-mime-type` and `use-buttons-instruction` are
+  used by the code but defined in neither file, so users get that fallback text.
+- `users.language_code` is stored when the user is created but not used to pick the language.
+- Messages are plain text (no `parse_mode`), without `**` markers or `[CODE]` prefixes
+  (guarded by `tests/localization_tests.rs`).
 
-### Integration Tests
-- End-to-end conversation flows
-- Image upload and processing
-- Database interaction during conversations
-- Localization functionality
+## Testing
+- Unit tests next to the code: error keys present in both locales, caption cleaning, callback
+  data length, quantity guard, duplicate detection.
+- `tests/bot_tests.rs`, `tests/dialogue_tests.rs`, `tests/localization_tests.rs`: keyboards,
+  formatting, state values, locale files. No test drives the handlers against a fake Telegram.
+- `tests/gemini_live.rs`: ignored by default, calls the paid API.
+- Manual check in Telegram on staging, then production.
 
-### User Acceptance Tests
-- Real Telegram bot interaction
-- Error scenario handling
-- Multi-language support validation
-
-## Monitoring & Observability
-
-### Metrics
-- Message processing rates
-- Conversation completion rates
-- Error rates by type
-- User engagement metrics
-
-### Logging
-- Message receipt and processing
-- State transitions
-- Error conditions with context
-- Performance timing
-
-## Future Enhancements
-
-### Potential Improvements
-- **Bulk Operations**: Process multiple images at once
-- **User Preferences**: Per-user language and notification settings
-- **Sharing Features**: Export recipes (e.g., PDF, CSV)
-- **Analytics**: Usage statistics and ingredient insights
+## Planned Changes
+Source of truth: [UX Improvements](tasks/ux-improvements.md).
+- Phase U1: HTML formatting with escaping, short commands (`/liste`, `/cherche`, `/aide` and
+  English aliases) with a Telegram menu, a home message and cleanup at the end of each
+  transaction.
+- Phase U2: recipe title read by Gemini, one button per ingredient, field-level editing, no dead
+  Cancel button during processing.
+- Phase U3: one list entry per recipe (newest first, 8 per page), simpler recipe card, one owner
+  identity (IMP-024).
+- Phase U4: French-aware search from a command, the search button and free text.
+- Tesseract removal: Phase 5 of [LLM Extraction Migration](tasks/llm-extraction-migration.md).

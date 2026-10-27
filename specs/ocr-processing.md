@@ -1,5 +1,11 @@
 # OCR Processing Feature Specification
 
+> **Superseded.** Photos are read by the Gemini vision API (`src/extraction/`, default
+> `EXTRACTION_BACKEND=gemini`); see [LLM Extraction Migration](tasks/llm-extraction-migration.md)
+> and [Telegram Bot](telegram-bot.md#photo-flow). This page describes the Tesseract pipeline,
+> kept only as the fallback selected with `EXTRACTION_BACKEND=tesseract`. It is not maintained
+> and will be deleted in migration Task 5.5.
+
 ## Overview
 The OCR (Optical Character Recognition) processing feature extracts text from images sent by users through the Telegram bot. It supports multiple image formats, handles ingredient extraction from recipe images, and provides confidence scoring for extracted text.
 

@@ -1,16 +1,21 @@
 # Database Design Feature Specification
 
 ## Overview
-The database design provides persistent storage for user data, recipes, and extracted ingredients. It uses PostgreSQL with full-text search capabilities to enable efficient querying and retrieval. The schema is **recipe-centric**: users own recipes, and recipes contain ingredients. There is no intermediate OCR entry table.
+The database design provides persistent storage for user data, recipes, and extracted ingredients. It uses PostgreSQL; a full-text column and index exist on recipe content, but the bot does not search yet (see [Full-Text Search](#full-text-search-implementation)). The schema is **recipe-centric**: users own recipes, and recipes contain ingredients. There is no intermediate OCR entry table.
+
+> Verified against `src/db.rs` at `ec2e7d3` (2026-10-27). Planned changes (one list entry per
+> recipe, one owner identity, French-aware search) are in [UX Improvements](tasks/ux-improvements.md)
+> Phases U3 and U4.
 
 ## Requirements
 
 ### Functional Requirements
-- **User Management**: Store user profiles and language preferences
-- **Recipe Storage**: Persist recipes with OCR text and optional name
+- **User Management**: Store users with the Telegram language code seen at creation (replies use the language of each message, not this column)
+- **Recipe Storage**: Persist recipes with the extracted text (the Gemini transcription of the ingredient section, or the OCR text with the Tesseract fallback) and an optional name
 - **Ingredient Storage**: Structured storage of parsed ingredients linked to recipes
-- **Full-Text Search**: Search recipes by content and name
+- **Full-Text Search**: `search_recipes` searches recipe content (not names) with the English configuration; no handler calls it
 - **Recipe Organization**: List, paginate, and query recipes per user
+- **Ownership**: Every recipe and ingredient query takes the owner's Telegram id and filters on it (ingredients through their recipe), so a user can never read or change another user's data
 - **Data Integrity**: Maintain referential integrity
 - **Performance**: Efficient queries with caching for common operations
 
@@ -24,7 +29,7 @@ The database design provides persistent storage for user data, recipes, and extr
 ### Success Criteria
 - [x] All user data properly stored and retrieved
 - [x] Recipe and ingredient data accurately stored
-- [x] Full-text search working across recipe names
+- [ ] Search used by the bot (planned: UX Phase U4; the existing query covers content only)
 - [x] Performance meets sub-second requirements
 - [x] Data integrity maintained through constraints
 - [x] In-memory caching reduces repeated DB lookups
@@ -39,23 +44,24 @@ Database Schema
 ├── recipes table        # Recipe records owned by a telegram user
 ├── ingredients table    # Parsed ingredient data linked to recipes
 ├── schema_migrations    # Versioned migration tracking
-└── FTS indexes         # Full-text search on recipe content/name
+└── FTS index           # GIN index on the generated content_tsv column (content only)
 ```
 
 ### Table Relationships
 ```
 users (1) ──── (N) recipes (1) ──── (N) ingredients
   telegram_id              recipe_id (FK)
+  id ─────────────────────────────── user_id (FK)
 ```
 
-Note: `recipes.telegram_id` directly references the Telegram user; no join table is needed.
+Note: `recipes.telegram_id` holds the Telegram user id by value (no foreign key to `users`); no join table is needed. `ingredients.user_id` is the internal `users.id`.
 
 ### Data Flow
-1. **User Registration**: `get_or_create_user()` on first Telegram interaction
-2. **Recipe Creation**: `create_recipe()` stores OCR text under `telegram_id`
-3. **Ingredient Parsing**: `create_ingredient()` / `update_recipe_ingredients()` persist parsed data
+1. **User Registration**: `get_or_create_user()` when a recipe is saved or an ingredient is added (not on `/start`)
+2. **Recipe Creation**: `create_recipe()` stores the extracted text under `telegram_id`
+3. **Ingredient Storage**: one `create_ingredient()` per line on save; edits of a saved recipe use `update_ingredient()`, `create_ingredient()` and `delete_ingredient()` (`update_recipe_ingredients()` exists but the bot does not call it). The save is not one transaction.
 4. **Recipe Naming**: `update_recipe_name()` sets human-readable name
-5. **Search Queries**: FTS on `content`, name lookup by ILIKE
+5. **Lookups**: the recipe list reads distinct names (`get_user_recipes_paginated`), a selected name is matched exactly (`recipe_name = $2`); no full-text query is used
 
 ## API Design
 
@@ -70,31 +76,34 @@ pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>>
 pub async fn get_or_create_user_cached(pool, telegram_id, language_code, cache) -> Result<User>
 pub async fn get_user_by_telegram_id_cached(pool, telegram_id, cache) -> Result<Option<User>>
 
-// Recipe CRUD
+// Recipe CRUD (owner-scoped: rows of another telegram_id behave as missing)
 pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Result<i64>
-pub async fn read_recipe(pool: &PgPool, recipe_id: i64) -> Result<Option<Recipe>>
-pub async fn update_recipe(pool: &PgPool, recipe_id: i64, new_content: &str) -> Result<bool>
-pub async fn delete_recipe(pool: &PgPool, recipe_id: i64) -> Result<bool>
-pub async fn update_recipe_name(pool: &PgPool, recipe_id: i64, recipe_name: &str) -> Result<bool>
-pub async fn read_recipe_with_name(pool: &PgPool, recipe_id: i64) -> Result<Option<Recipe>>
+pub async fn read_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Option<Recipe>>
+pub async fn update_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64, new_content: &str) -> Result<bool>
+pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<bool> // also deletes its ingredients
+pub async fn update_recipe_name(pool: &PgPool, telegram_id: i64, recipe_id: i64, recipe_name: &str) -> Result<bool>
+pub async fn read_recipe_with_name(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Option<Recipe>>
 
 // Recipe search & listing
-pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Result<Vec<Recipe>>
-pub async fn get_recipes_by_name(pool: &PgPool, telegram_id: i64, name: &str) -> Result<Vec<Recipe>>
-pub async fn get_recipes_by_name_cached(pool, telegram_id, name, cache) -> Result<Vec<Recipe>>
-pub async fn get_user_recipes_paginated(pool: &PgPool, telegram_id: i64, page: i64, page_size: i64) -> Result<Vec<Recipe>>
-pub async fn has_duplicate_recipes(pool: &PgPool, telegram_id: i64, name: &str) -> Result<bool>
+pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Result<Vec<Recipe>> // not called by the bot
+pub async fn get_recipes_by_name(pool: &PgPool, telegram_id: i64, recipe_name: &str) -> Result<Vec<Recipe>> // exact name
+pub async fn get_recipes_by_name_cached(pool, telegram_id, recipe_name, cache) -> Result<Vec<Recipe>>
+pub async fn get_user_recipe_names(pool: &PgPool, telegram_id: i64) -> Result<Vec<String>>
+pub async fn get_user_recipes_paginated(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<String>, i64)> // distinct names A-Z, total
+pub async fn has_duplicate_recipes(pool: &PgPool, telegram_id: i64, recipe_name: &str) -> Result<bool>
 pub async fn get_user_recipe_statistics(pool: &PgPool, telegram_id: i64) -> Result<RecipeStatistics>
 
-// Ingredient CRUD
-pub async fn create_ingredient(pool: &PgPool, params: CreateIngredientParams) -> Result<Ingredient>
-pub async fn read_ingredient(pool: &PgPool, ingredient_id: i64) -> Result<Option<Ingredient>>
-pub async fn update_ingredient(pool: &PgPool, ingredient_id: i64, updates: IngredientUpdate) -> Result<bool>
-pub async fn delete_ingredient(pool: &PgPool, ingredient_id: i64) -> Result<bool>
-pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>>
-pub async fn get_recipe_ingredients(pool: &PgPool, recipe_id: i64) -> Result<Vec<Ingredient>>
-pub async fn get_recipe_ingredients_cached(pool, recipe_id, cache) -> Result<Vec<Ingredient>>
-pub async fn update_recipe_ingredients(pool: &PgPool, recipe_id: i64, new_ingredients: Vec<NewIngredient>) -> Result<()>
+// Ingredient CRUD (owner-scoped through the ingredient's recipe, except where noted)
+pub async fn create_ingredient(pool: &PgPool, user_id: i64, recipe_id: Option<i64>, name: &str, quantity: Option<f64>, unit: Option<&str>, raw_text: &str) -> Result<i64> // user_id = users.id; callers check recipe ownership
+pub async fn read_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64) -> Result<Option<Ingredient>>
+pub async fn update_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64, name: Option<&str>, quantity: Option<f64>, unit: Option<&str>) -> Result<bool>
+pub async fn delete_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64) -> Result<bool>
+pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> // by users.id
+pub async fn get_recipe_ingredients(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Vec<Ingredient>>
+pub async fn get_recipe_ingredients_cached(pool, telegram_id, recipe_id, cache) -> Result<Vec<Ingredient>>
+pub async fn update_recipe_ingredients(pool: &PgPool, telegram_id: i64, recipe_id: i64, ingredients: &[MeasurementMatch]) -> Result<()>
+
+// The *_cached functions keep results 5 minutes per owner; writes do not invalidate them
 
 // Schema management
 pub async fn init_database_schema(pool: &PgPool) -> Result<()>
@@ -114,7 +123,7 @@ pub struct User {
 pub struct Recipe {
     pub id: i64,
     pub telegram_id: i64,       // Owner
-    pub content: Arc<String>,   // Raw OCR extracted text
+    pub content: Arc<String>,   // Extracted text (Gemini transcription or OCR text)
     pub recipe_name: Option<Arc<String>>,
     pub created_at: DateTime<Utc>,
 }
@@ -152,7 +161,7 @@ pub async fn get_current_version(pool: &PgPool) -> Result<i32>
 pub async fn rollback_to_version(pool: &PgPool, target_version: i32) -> Result<()>
 ```
 
-Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`.
+Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There is one migration today (version 1, `create_initial_tables`).
 
 ### Constraints
 - **Data Types**: Appropriate PostgreSQL types for performance
@@ -184,23 +193,24 @@ CREATE TABLE users (
 CREATE TABLE recipes (
     id BIGSERIAL PRIMARY KEY,
     telegram_id BIGINT NOT NULL,
-    content TEXT NOT NULL,          -- Raw OCR extracted text
+    content TEXT NOT NULL,          -- Extracted text (transcription or OCR text)
     recipe_name VARCHAR(255),
-    created_at TIMESTAMPTZ DEFAULT NOW()
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
 );
-CREATE INDEX recipes_content_tsv_idx ON recipes USING GIN (to_tsvector('english', content));
+CREATE INDEX recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
 ```
 
 ### Ingredients Table
 ```sql
 CREATE TABLE ingredients (
     id BIGSERIAL PRIMARY KEY,
-    user_id BIGINT NOT NULL,
+    user_id BIGINT NOT NULL REFERENCES users(id),
     recipe_id BIGINT REFERENCES recipes(id),
     name VARCHAR(255) NOT NULL,
-    quantity NUMERIC(10,3),
+    quantity DECIMAL(10,3),
     unit VARCHAR(50),
-    raw_text TEXT NOT NULL,
+    raw_text TEXT,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
@@ -212,30 +222,36 @@ CREATE INDEX ingredients_user_id_idx   ON ingredients (user_id);
 ```sql
 CREATE TABLE schema_migrations (
     version INTEGER PRIMARY KEY,
+    name TEXT NOT NULL,
     applied_at TIMESTAMPTZ DEFAULT NOW()
 );
 ```
 
 ## Full-Text Search Implementation
 
+The column, index and query exist and are covered by a database test, but no bot handler calls
+`search_recipes`: the search button answers "coming soon". The English configuration does not
+stem French words or ignore accents, and recipe names and ingredient names are not searched.
+A French-aware search is planned in [UX Improvements](tasks/ux-improvements.md) Phase U4.
+
 ### FTS Configuration
 ```sql
--- GIN index on recipe content for keyword search
-CREATE INDEX recipes_content_tsv_idx
-    ON recipes USING GIN (to_tsvector('english', content));
+-- Generated column and GIN index on recipe content
+content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
+CREATE INDEX recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
 ```
 
-### Search Queries
+### Queries
 ```sql
--- Recipe full-text search (user-scoped)
-SELECT * FROM recipes
-WHERE telegram_id = $1
-  AND to_tsvector('english', content) @@ plainto_tsquery('english', $2);
+-- search_recipes (user-scoped, unused by the bot)
+SELECT id, telegram_id, content, recipe_name, created_at FROM recipes
+WHERE telegram_id = $1 AND content_tsv @@ plainto_tsquery('english', $2)
+ORDER BY created_at DESC;
 
--- Recipe name lookup
-SELECT * FROM recipes
-WHERE telegram_id = $1
-  AND LOWER(recipe_name) LIKE LOWER('%' || $2 || '%');
+-- get_recipes_by_name: exact name, used when a name is picked in the recipe list
+SELECT id, telegram_id, content, recipe_name, created_at FROM recipes
+WHERE telegram_id = $1 AND recipe_name = $2
+ORDER BY created_at DESC;
 ```
 
 ## Testing Strategy
@@ -258,16 +274,16 @@ WHERE telegram_id = $1
 ## Monitoring & Observability
 
 ### Metrics
-- Query execution times
-- Connection pool utilization
-- Database size growth
-- Search query performance
+- `db_operations_total{operation}`, `db_operation_duration_seconds`, `db_rows_affected`,
+  `db_performance_class_total{operation,class}` (fast < 10 ms, medium < 100 ms, slow), recorded
+  by `create_recipe`, `create_ingredient`, `update_recipe_ingredients` and `get_recipes_by_name`
+- No connection pool or database size metrics
+- Database health: `/health/ready` and the 60 s health recorder run `SELECT 1`
 
 ### Logging
-- Slow query detection
-- Connection issues
+- Connection retries at startup (`db_connection::connect_with_retry`)
+- Connection issues and query errors
 - Migration execution
-- FTS index updates
 
 ## Future Enhancements
 

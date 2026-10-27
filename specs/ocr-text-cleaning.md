@@ -1,5 +1,11 @@
 # OCR Text Cleaning Feature Specification
 
+> **Superseded.** Photos are read by the Gemini vision API (`src/extraction/`, default
+> `EXTRACTION_BACKEND=gemini`), which returns structured ingredients without OCR artifacts; see
+> [LLM Extraction Migration](tasks/llm-extraction-migration.md). This page describes the
+> Tesseract pipeline, kept only as the fallback selected with `EXTRACTION_BACKEND=tesseract`. It
+> is not maintained and will be deleted in migration Task 5.5.
+
 ## Overview
 The OCR text cleaning feature enhances the text extraction process by removing common OCR artifacts that interfere with ingredient parsing. Specifically, this feature removes leading dashes (-) and dots (.) from each line of extracted text, which are frequently introduced by OCR when processing formatted recipe lists.
 

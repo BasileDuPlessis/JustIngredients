@@ -32,11 +32,19 @@ are easy to find, and messages read well. Validated by the user on 2026-10-27 fr
 | 14 | Navigation | After an action the chat is left with prompts and intermediate messages; no way back to a nominal state (user request). |
 | 15 | Navigation | `/recipes` is long to type; commands are not proposed after actions; no Telegram command menu (user request). |
 | 16 | Specs | `telegram-bot.md` describes `/list`, `/search`, `/delete` and a webhook that do not exist; `ocr-*.md` describe the replaced OCR pipeline; `deployment.md` lists a missing `/health/ocr`; `README.md` links a missing file. |
+| 17 | Messages | `use-buttons-instruction` and `error-no-mime-type` are missing in both locales: users see "Missing translation". |
+| 18 | Navigation | `/start` and `/help` typed during a dialogue are taken as input (`/help` can become a recipe name). |
+| 19 | Creation | Typing "confirm"/"ok" in the review saves the recipe as "Recipe" without asking a name; the button asks it. |
+| 20 | Messages | Cancelling a rename answers "Recipe deletion cancelled". |
+| 21 | Dead paths | ➕ Add ingredient does nothing in the first review, `cancel_empty` has no handler, `workflow_*` buttons run twice in `ReviewIngredients`, `WaitingForRecipeName` is never entered (IMP-007). |
+| 22 | Recipes | The 5-minute recipe/ingredient cache is never cleared on writes: a card opened after a rename, edit or delete can be stale (IMP-010). |
+| 23 | Ops | `monitoring/prometheus.yml` scrapes without the token (401 since `METRICS_AUTH_TOKEN`); staging has no token. |
+| 24 | Ops | The repository secret `GOOGLE_AI_API_KEY` is unused. |
 
 ## Decisions
 | Topic | Decision (2026-10-27) |
 |---|---|
-| Findings | All 16 findings are accepted for improvement (12 and 13 stay "later"). |
+| Findings | Findings 1–16 accepted by the user (12 and 13 stay "later"); 17–24 found while updating the specs (Phase U0) and added. |
 | Nominal state | Hybrid: at the end of a transaction the intermediate messages (prompts, user replies, previews) are deleted, the result is kept (e.g. the saved recipe card), then the home message is posted. |
 | Commands | `/liste`, `/cherche`, `/aide`; English aliases `/list`, `/search`, `/help`; `/start` and `/recipes` still accepted. |
 | Free text | Any text sent outside a dialogue is a search in the user's recipes. |
@@ -62,13 +70,13 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 ## Phase U0: Specs That Match the Code
 
 ### Task U0.1: Rewrite `telegram-bot.md` (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: actual commands, long polling, extraction by `IngredientExtractor`, real dialogue
   states and flows; mark this plan as the source of upcoming changes.
 - How to validate: every command, callback prefix and state listed exists in `src/bot/`.
 
 ### Task U0.2: Retire the OCR specs and fix the index (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: mark `ocr-processing.md` and `ocr-text-cleaning.md` as superseded (deleted with
   migration Task 5.5), fix `deployment.md` health endpoints, rewrite `specs/README.md` index
   (feature specs, task plans, backlog).
@@ -120,6 +128,19 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 - How to validate: unit test of the id bookkeeping; manual run of a full creation: only the
   saved recipe (if kept) and the home message remain.
 
+### Task U1.6: Commands always win (finding 18) (<= 1 hour)
+- [ ] Done
+- Description: a message starting with `/` is a command in every dialogue state: it ends the current
+  transaction (with the U1.5 cleanup) and runs; it is never taken as a name, quantity or ingredient.
+- How to validate: dialogue tests: `/aide` while naming a recipe shows the help and no recipe is saved.
+
+### Task U1.7: Small message fixes (findings 17, 20) (<= 1 hour)
+- [ ] Done
+- Description: add the missing `use-buttons-instruction` and `error-no-mime-type` messages; the
+  rename cancellation says "rename cancelled"; a test checks that every key used in code exists in
+  both locales (IMP-045).
+- How to validate: the locale-key test fails when a key is missing.
+
 ### Review gate RU1
 - [ ] Done
 
@@ -149,6 +170,13 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   outside the per-chat update so it can, if cheap); show "⏳ Reading the recipe…".
 - How to validate: no dead button; message replaced by the review or an error.
 
+### Task U2.5: One confirm behaviour, no dead buttons (findings 19, 21) (<= 1 hour)
+- [ ] Done
+- Description: typed "confirm" behaves like the button (asks the name when there is no caption or
+  title); ➕ Add ingredient works in the first review; remove `cancel_empty`, the duplicate
+  `workflow_*` dispatch and the unused `WaitingForRecipeName` state.
+- How to validate: dialogue tests for typed and button confirm; grep shows no unhandled callback.
+
 ### Review gate RU2
 - [ ] Done
 
@@ -172,6 +200,12 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   unaffected: chat id = user id); decide whether groups are supported or politely refused.
 - How to validate: DB tests with chat id ≠ user id.
 
+### Task U3.4: Fresh recipe data after every change (finding 22, IMP-010) (<= 1 hour)
+- [ ] Done
+- Description: invalidate the cached recipe and ingredient entries on rename, edit, delete and save,
+  so the card and the home message never show stale data.
+- How to validate: cache tests: read, rename, read again returns the new name.
+
 ### Review gate RU3
 - [ ] Done
 
@@ -194,6 +228,8 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 - [ ] Done
 
 ## Later (not planned yet)
+- Ops: give `monitoring/prometheus.yml` the metrics token and set `METRICS_AUTH_TOKEN` on staging
+  (finding 23); delete the unused `GOOGLE_AI_API_KEY` repository secret (finding 24).
 - Language preference (`/langue`) instead of the Telegram app language (finding 12).
 - Export/share a recipe as text (finding 13); several photos at once.
 
