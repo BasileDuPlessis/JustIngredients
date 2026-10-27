@@ -129,12 +129,18 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   the caption save confirmation no longer shows ✅ twice. Manual check pending in Telegram.
 
 ### Task U1.5: Transaction cleanup (finding 14, hybrid decision) (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: dialogue states record the message ids a transaction creates (bot prompts and
   user replies); at the end they are deleted, ignoring messages older than 48 h, then the home
   message is posted.
-- Note (2026-10-27): the quantity question prompt id is never stored today
-  (`handle_quantity_correction_input` edits a copy of the state returned by `dialogue.get()`).
+- Done (2026-10-27): `bot::cleanup` records message ids per chat, outside the dialogue states
+  (they are rebuilt at every transition): the user's texts in a dialogue and the prompts sent
+  with `send_transient`. `send_home` deletes them and the previous home message. Kept: photo
+  (the bot does not store it), ingredient list, saved or cancelled notice, recipe card. Manual
+  check pending in Telegram.
+- Note: the quantity question prompt id is still never stored in the dialogue state
+  (`handle_quantity_correction_input` edits a copy returned by `dialogue.get()`); cleanup does not
+  need it any more, the field can go with U2.5.
 - How to validate: unit test of the id bookkeeping; manual run of a full creation: only the
   saved recipe (if kept) and the home message remain.
 

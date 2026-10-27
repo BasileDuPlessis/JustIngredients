@@ -32,6 +32,7 @@ src/localization.rs         # Fluent bundles (en, fr), language detection
 src/extraction/             # IngredientExtractor trait, Gemini and Tesseract backends, guard
 src/bot/
 ├── message_handler.rs      # MessageServices, routing of messages by type and dialogue state
+├── cleanup.rs              # Messages of an action, deleted when it ends
 ├── commands.rs             # Command parsing, Telegram command menu
 ├── command_handlers.rs     # Welcome, help, recipe list, search placeholder, unsupported messages
 ├── media_handlers.rs       # Photo and image document messages
@@ -157,7 +158,21 @@ and the menu commands (`/liste`, `/aide` or `/list`, `/help`). Buttons: the 3 ne
 (📖 name cut at 40 characters, `recipe_instance:<id>`), then 📚 `workflow_list_recipes` when
 there are more; no keyboard without recipes. Recipes are read with
 `db::get_user_recipes_newest_first` for the chat id. A failure is logged and no home message is
-sent; the action itself is not affected. Earlier messages are not deleted yet (UX Task U1.5).
+sent; the action itself is not affected.
+
+Before sending it, `send_home` deletes what the action left behind (`bot::cleanup`, one
+`deleteMessages` call per 100 ids, failures logged at debug level):
+- the previous home message, so a chat has one home message at the bottom;
+- the messages recorded during the action: every text the user typed in a dialogue state
+  (recorded in `handle_text_message`) and the bot prompts sent with `cleanup::send_transient`:
+  quantity questions and the "check the quantities" warning, "try again" answers (name, edit,
+  quantity), `review-help`, `use-buttons-instruction`, the rename and add-ingredient prompts,
+  and the name prompt when the name is cancelled.
+
+Kept: the photo (the bot does not store it), the ingredient list, saved or cancelled notices,
+recipe cards and lists. Only recorded messages are deleted; records older than 48 h are skipped
+(Telegram refuses them), at most 200 per chat, in memory (lost on restart, like the dialogue
+state).
 
 ## My Recipes
 - **List** (`/liste`, 📚 button): distinct recipe names of the chat id, alphabetical, 5 per

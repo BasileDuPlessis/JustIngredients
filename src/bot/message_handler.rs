@@ -14,6 +14,7 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 use crate::extraction::SharedExtractor;
 
 // Import command handlers
+use super::cleanup;
 use super::command_handlers::{
     handle_help_command, handle_recipes_command, handle_search_command, handle_start_command,
     handle_unsupported_message,
@@ -61,6 +62,11 @@ async fn handle_text_message(
 
         // Check dialogue state first
         let dialogue_state = dialogue.get().await?;
+
+        // Replies typed during an action are deleted when it ends
+        if !matches!(dialogue_state, None | Some(RecipeDialogueState::Start)) {
+            cleanup::track(msg.chat.id, msg.id);
+        }
         match dialogue_state {
             Some(RecipeDialogueState::WaitingForRecipeName {
                 extracted_text,
@@ -304,7 +310,8 @@ async fn handle_text_message(
             Some(RecipeDialogueState::EditingSavedIngredients { .. }) => {
                 // Users should use buttons in this state, not type text
                 let effective_language_code = language_code; // No dialogue language code available
-                bot.send_message(
+                cleanup::send_transient(
+                    bot,
                     msg.chat.id,
                     t_lang(
                         localization,

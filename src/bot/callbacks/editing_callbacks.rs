@@ -21,6 +21,7 @@ use crate::bot::ui_builder::{
 };
 
 // Import HandlerContext
+use crate::bot::cleanup::send_transient;
 use crate::bot::home::send_home;
 use crate::bot::HandlerContext;
 
@@ -974,7 +975,8 @@ async fn handle_add_ingredient_button(
         ..
     }) = dialogue_state
     {
-        bot.send_message(
+        send_transient(
+            bot,
             q.message
                 .as_ref()
                 .expect("Callback query should have a message")

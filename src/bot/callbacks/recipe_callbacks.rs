@@ -26,6 +26,7 @@ use crate::bot::ui_builder::{
 };
 
 // Import database functions
+use crate::bot::cleanup::send_transient;
 use crate::bot::home::send_home;
 use crate::db::{get_recipes_by_name, read_recipe_with_name};
 
@@ -279,7 +280,7 @@ pub async fn handle_recipe_action(
                         language_code.as_deref()
                     )
                 );
-                bot.send_message(chat_id, message).await?;
+                send_transient(bot, chat_id, message).await?;
 
                 // Transition to renaming state
                 dialogue

@@ -21,6 +21,7 @@ use crate::localization::{t_args_lang, t_lang};
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI components for the focused editing interface
+use crate::bot::cleanup::send_transient;
 use crate::bot::home::send_home;
 use crate::bot::ui_components::create_ingredient_editing_keyboard;
 use crate::bot::{create_ingredient_review_keyboard, format_ingredients_list};
@@ -484,17 +485,17 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
     let to_check = quantities_to_check(ingredients);
     if !to_check.is_empty() {
         if let Some(message) = q.message.as_ref() {
-            ctx.bot
-                .send_message(
-                    message.chat().id,
-                    t_args_lang(
-                        ctx.localization,
-                        "review-quantities-to-check",
-                        &[("ingredients", &to_check.join(", "))],
-                        dialogue_lang_code.as_deref(),
-                    ),
-                )
-                .await?;
+            send_transient(
+                ctx.bot,
+                message.chat().id,
+                t_args_lang(
+                    ctx.localization,
+                    "review-quantities-to-check",
+                    &[("ingredients", &to_check.join(", "))],
+                    dialogue_lang_code.as_deref(),
+                ),
+            )
+            .await?;
         }
         return Ok(());
     }

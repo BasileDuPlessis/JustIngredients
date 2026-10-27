@@ -2,6 +2,7 @@
 //!
 //! This module is split into several submodules for better organization:
 //! - `callbacks`: All callback query handling (organized into submodules)
+//! - `cleanup`: Messages of an action, deleted when it ends
 //! - `commands`: Command parsing and the Telegram command menu
 //! - `home`: Home message sent at the end of every action
 //! - `message_handler`: Handles incoming text, photo, and document messages
@@ -9,6 +10,7 @@
 //! - `dialogue_manager`: Manages dialogue state transitions and validation
 
 pub mod callbacks;
+pub mod cleanup;
 pub mod command_handlers;
 pub mod commands;
 pub mod dialogue_manager;

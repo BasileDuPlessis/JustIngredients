@@ -29,6 +29,7 @@ use crate::db::{
 use super::ui_builder::{create_ingredient_review_keyboard, format_ingredients_list};
 
 // Import HandlerContext
+use super::cleanup::{self, send_transient};
 use super::home::send_home;
 use super::HandlerContext;
 
@@ -317,6 +318,7 @@ pub async fn handle_recipe_name_after_confirm_input(
             bot,
             msg,
             dialogue,
+            message_id,
             &pool,
             handler_ctx.localization,
             handler_ctx.language_code,
@@ -357,6 +359,7 @@ async fn handle_recipe_name_cancellation(
     bot: &Bot,
     msg: &Message,
     dialogue: RecipeDialogue,
+    prompt_message_id: Option<i32>,
     pool: &PgPool,
     localization: &Arc<crate::localization::LocalizationManager>,
     language_code: Option<&str>,
@@ -368,6 +371,10 @@ async fn handle_recipe_name_cancellation(
     )
     .await?;
     dialogue.exit().await?;
+    // The name prompt is the saved notice only when a name is given
+    if let Some(id) = prompt_message_id {
+        cleanup::track(msg.chat.id, teloxide::types::MessageId(id));
+    }
     send_home(bot, pool, msg.chat.id, localization, language_code).await;
     Ok(())
 }
@@ -507,7 +514,7 @@ async fn handle_recipe_name_validation_error(
         _ => t_lang(localization, "recipe-name-invalid", language_code),
     };
 
-    bot.send_message(msg.chat.id, error_message).await?;
+    send_transient(bot, msg.chat.id, error_message).await?;
     // Keep dialogue active, user can try again
     Ok(())
 }
@@ -694,7 +701,8 @@ pub async fn handle_recipe_rename_input(
             }
         }
         Err(AppError::Validation(error_msg)) if error_msg == "empty" => {
-            bot.send_message(
+            send_transient(
+                bot,
                 msg.chat.id,
                 t_lang(
                     handler_ctx.localization,
@@ -707,7 +715,8 @@ pub async fn handle_recipe_rename_input(
             return Ok(());
         }
         Err(AppError::Validation(error_msg)) if error_msg == "too_long" => {
-            bot.send_message(
+            send_transient(
+                bot,
                 msg.chat.id,
                 t_lang(
                     handler_ctx.localization,
@@ -720,7 +729,8 @@ pub async fn handle_recipe_rename_input(
             return Ok(());
         }
         Err(_) => {
-            bot.send_message(
+            send_transient(
+                bot,
                 msg.chat.id,
                 t_lang(
                     handler_ctx.localization,
@@ -908,12 +918,12 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
             .await?;
     } else {
         // Invalid index, return to review state
-        ctx.bot
-            .send_message(
-                msg.chat.id,
-                t_lang(ctx.localization, "error-invalid-edit", ctx.language_code),
-            )
-            .await?;
+        send_transient(
+            ctx.bot,
+            msg.chat.id,
+            t_lang(ctx.localization, "error-invalid-edit", ctx.language_code),
+        )
+        .await?;
         dialogue
             .update(RecipeDialogueState::ReviewIngredients {
                 recipe_name,
@@ -948,7 +958,7 @@ async fn handle_edit_error(
         t_lang(localization, &error_msg, language_code),
         t_lang(localization, "edit-try-again", language_code)
     );
-    bot.send_message(msg.chat.id, error_message).await?;
+    send_transient(bot, msg.chat.id, error_message).await?;
     // Stay in editing state for user to try again
     Ok(())
 }
@@ -1004,7 +1014,7 @@ pub async fn handle_ingredient_review_input(
                     handler_ctx.language_code,
                 );
 
-                let sent_message = bot.send_message(msg.chat.id, prompt_message).await?;
+                let sent_message = send_transient(bot, msg.chat.id, prompt_message).await?;
                 let message_id = sent_message.id.0 as i32;
 
                 // Update the state with the message ID
@@ -1107,7 +1117,7 @@ pub async fn handle_ingredient_review_input(
                     handler_ctx.localization
                 )
             );
-            bot.send_message(msg.chat.id, help_message).await?;
+            send_transient(bot, msg.chat.id, help_message).await?;
             // Keep dialogue active
         }
     }
@@ -1403,7 +1413,8 @@ pub async fn handle_saved_ingredient_edit_input(
                 .await?;
             } else {
                 // Invalid index
-                bot.send_message(
+                send_transient(
+                    bot,
                     msg.chat.id,
                     t_lang(
                         handler_ctx.localization,
@@ -1634,7 +1645,7 @@ pub async fn handle_quantity_correction_input(
                     handler_ctx.language_code,
                 );
 
-                let sent_message = bot.send_message(msg.chat.id, prompt_message).await?;
+                let sent_message = send_transient(bot, msg.chat.id, prompt_message).await?;
                 let new_message_id = sent_message.id.0 as i32;
 
                 // Update the state with the message ID
@@ -1701,7 +1712,8 @@ pub async fn handle_quantity_correction_input(
         }
         None => {
             // Invalid quantity - send error message
-            bot.send_message(
+            send_transient(
+                bot,
                 msg.chat.id,
                 t_lang(
                     handler_ctx.localization,

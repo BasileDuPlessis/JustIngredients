@@ -1,12 +1,13 @@
 //! Home message: the state every finished action returns to (save, cancel, delete, rename,
 //! edit of a saved recipe). It gives the number of recipes, the latest ones as buttons, the
-//! commands and a hint to send a photo.
+//! commands and a hint to send a photo. Sending it first deletes what the action left behind.
 
 use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 use tracing::warn;
 
+use super::cleanup;
 use super::commands::command_lines;
 use super::ui_components::truncate_text;
 use crate::db::{get_user_recipes_newest_first, RecipeSummary};
@@ -64,7 +65,8 @@ pub fn render_home(
     (text, keyboard)
 }
 
-/// Sends the home message to a private chat (the chat id is the recipe owner).
+/// Ends an action in a private chat (the chat id is the recipe owner): deletes the messages the
+/// action left behind and the previous home message (see `cleanup`), then sends the home message.
 ///
 /// Never fails: the action that ends here has already succeeded, so errors are only logged.
 pub async fn send_home(
@@ -74,6 +76,7 @@ pub async fn send_home(
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
 ) {
+    cleanup::delete_tracked(bot, chat_id).await;
     let (latest, total) =
         match get_user_recipes_newest_first(pool, chat_id.0, LATEST_RECIPES, 0).await {
             Ok(recipes) => recipes,
@@ -88,8 +91,9 @@ pub async fn send_home(
         Some(keyboard) => request.reply_markup(keyboard).await,
         None => request.await,
     };
-    if let Err(e) = result {
-        warn!(error = %e, "Failed to send the home message");
+    match result {
+        Ok(sent) => cleanup::set_home(chat_id, sent.id),
+        Err(e) => warn!(error = %e, "Failed to send the home message"),
     }
 }
 
