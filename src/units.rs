@@ -34,6 +34,23 @@ pub enum CanonicalUnit {
 }
 
 impl CanonicalUnit {
+    /// Every canonical unit.
+    pub const ALL: [Self; 13] = [
+        Self::Gram,
+        Self::Kilogram,
+        Self::Milligram,
+        Self::Pound,
+        Self::Ounce,
+        Self::Cup,
+        Self::Teaspoon,
+        Self::Tablespoon,
+        Self::Pint,
+        Self::Quart,
+        Self::Gallon,
+        Self::Liter,
+        Self::Milliliter,
+    ];
+
     /// The canonical spelling stored in the database and shown to users.
     pub const fn as_str(self) -> &'static str {
         match self {
@@ -95,12 +112,16 @@ const ALIASES: &[(CanonicalUnit, &[&str])] = &[
         CanonicalUnit::Teaspoon,
         &[
             "tsp",
+            "tsps",
             "teaspoon",
             "teaspoons",
             "cuillère à café",
             "cuillères à café",
+            "cuillerée à café",
+            "cuillerées à café",
             "cuil à café",
             "cuil. à café",
+            "c. à café",
             "c. à c.",
             "cc",
         ],
@@ -109,12 +130,18 @@ const ALIASES: &[(CanonicalUnit, &[&str])] = &[
         CanonicalUnit::Tablespoon,
         &[
             "tbsp",
+            "tbsps",
+            "tbs",
+            "tbl",
             "tablespoon",
             "tablespoons",
             "cuillère à soupe",
             "cuillères à soupe",
+            "cuillerée à soupe",
+            "cuillerées à soupe",
             "cuil à soupe",
             "cuil. à soupe",
+            "c. à soupe",
             "c. à s.",
             "cs",
         ],
@@ -135,6 +162,7 @@ const ALIASES: &[(CanonicalUnit, &[&str])] = &[
             "millilitre",
             "millilitres",
             "cm3",
+            "cm³",
         ],
     ),
 ];
@@ -196,6 +224,12 @@ fn match_key(raw: &str) -> String {
 /// Returns the canonical unit for a spelling, or `None` if the unit is unknown or scaled
 /// (`cl`, `dl`: use [`normalize_measurement`], which also converts the quantity).
 pub fn canonicalize_unit(raw: &str) -> Option<CanonicalUnit> {
+    // US cookbooks abbreviate tablespoon as "T" and teaspoon as "t": the case is the meaning.
+    match raw.trim().trim_end_matches('.') {
+        "T" => return Some(CanonicalUnit::Tablespoon),
+        "t" => return Some(CanonicalUnit::Teaspoon),
+        _ => {}
+    }
     let key = match_key(raw);
     ALIASES.iter().find_map(|(unit, aliases)| {
         aliases
@@ -268,6 +302,12 @@ mod tests {
             ("Litres", "l"),
             ("millilitres", "ml"),
             ("cm3", "ml"),
+            ("cm³", "ml"),
+            ("T", "tbsp"),
+            ("t.", "tsp"),
+            ("tbs", "tbsp"),
+            ("c. à soupe", "tbsp"),
+            ("cuillerée à café", "tsp"),
         ];
         for (raw, expected) in cases {
             assert_eq!(
@@ -275,6 +315,27 @@ mod tests {
                 Some(expected),
                 "{raw}"
             );
+        }
+    }
+
+    #[test]
+    fn no_spelling_belongs_to_two_units() {
+        let mut seen = std::collections::HashMap::new();
+        let canonical = ALIASES
+            .iter()
+            .flat_map(|(unit, aliases)| aliases.iter().map(move |alias| (alias, unit.as_str())));
+        let scaled = SCALED_ALIASES.iter().flat_map(|(aliases, _, factor)| {
+            aliases
+                .iter()
+                .map(move |alias| (alias, if *factor == 10.0 { "cl" } else { "dl" }))
+        });
+        for (alias, unit) in canonical.chain(scaled) {
+            if let Some(previous) = seen.insert(match_key(alias), unit) {
+                assert_eq!(
+                    previous, unit,
+                    "'{alias}' is listed for {previous} and {unit}"
+                );
+            }
         }
     }
 

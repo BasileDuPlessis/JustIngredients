@@ -34,7 +34,7 @@ Answered 2026-10-26:
 ## Open Questions
 1. Counted containers ("2 gousses d'ail", "1 sachet de levure", "3 tranches de jambon"): keep the
    container as unit (`gousse`, `sachet`, `tranche`), or name `ail` with `quantity = 2`,
-   `unit = null`?
+   `unit = null`? Until decided, the prompt keeps the container as unit (`2 gousse ail`).
 2. _(answered)_
 3. GitHub secret name: reuse the existing `GOOGLE_AI_API_KEY` (created 2025-10-31) or create
    `GEMINI_API_KEY`? The application reads `GEMINI_API_KEY`.
@@ -251,7 +251,7 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: benchmark still at 100%; Rust test that the schema parses as JSON.
 
 ### Review gate R1
-- [ ] Done
+- [x] Done
 
 ## Phase 2: Gemini Client
 
@@ -311,6 +311,9 @@ March 2026 image meanwhile (restarts reuse it).
   (instead of the whole text in every row), apply the decision of open question 1. The Confirm
   button must refuse to save items still flagged `requires_quantity_confirmation` (IMP-004: today
   it saves quantity 0), otherwise `needs_review` from Gemini has no effect.
+  Display ingredients without quantity sensibly (today `1. **** → sel` and a button ` → sel`,
+  see IMP-025), and keep `source_text` through the mapping (today `to_measurement_matches`
+  drops it) so it can be stored in `raw_text`. (R1 findings)
 - How to validate: DB test on saved rows; review test where Confirm with a flagged item asks for
   the quantity.
 
@@ -443,3 +446,4 @@ Target pipeline (Task 5.4):
 | Gate | Date | Commits | Findings | Outcome |
 |---|---|---|---|---|
 | R0 | 2026-10-27 | `9c9c970..9ce3e40` (14 commits) | 3 should-fix: fork PRs could trigger the staging deploy via `workflow_run`; production gate bypassable by a manual staging run; retry test did not exercise the retry loop. 4 nits: missing locale key (fixed, IMP-045 added), handler-level dedup test (IMP-031), owner identity split between `chat.id` and `from.id` (IMP-024, do before Phase 3), adjacent `i64` owner/recipe parameters (IMP-038). Independent run: fmt, clippy, 441 tests + 43 doc tests, 26/26 DB tests. | Passed with fixes: the 3 should-fix items and the locale key fixed in the commits following `9ce3e40`. |
+| R1 | 2026-10-27 | `54a06df..16148c4` (5 commits) | 5 should-fix: schema keys sorted by `serde_json::Value` (bot would send another field order than the benchmark), units > 50 chars and quantities >= 1e7 not storable, API key not trimmed, null quantities display badly (moved to Task 3.2), truncation test not covering the char boundary. Nits: T/t, French spoon spellings, `quart` vs "un quart", alias collision test, 429 transient, rounding before range check, prompt/unit-list sync test, docs, UTF-8 in the benchmark. | Passed with fixes: all fixed in the next commit except the display item (Task 3.2) and `source_text` (Task 3.2). |

@@ -46,8 +46,8 @@ MIME_TYPES = {".jpg": "image/jpeg", ".jpeg": "image/jpeg", ".png": "image/png", 
 EXCLUDED_MODEL_WORDS = ("image", "tts", "live", "audio", "embedding", "exp", "8b", "robotics", "computer")
 
 # Prompt and response schema shared with the bot (src/extraction/prompt.rs).
-PROMPT = (ROOT / "config" / "extraction" / "prompt.md").read_text()
-SCHEMA = json.loads((ROOT / "config" / "extraction" / "schema.json").read_text())
+PROMPT = (ROOT / "config" / "extraction" / "prompt.md").read_text(encoding="utf-8")
+SCHEMA = json.loads((ROOT / "config" / "extraction" / "schema.json").read_text(encoding="utf-8"))
 
 
 def load_api_key():

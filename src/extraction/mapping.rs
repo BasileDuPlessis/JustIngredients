@@ -12,6 +12,12 @@ pub const MAX_NAME_BYTES: usize = 100;
 /// Largest quantity accepted by validation (`validation::validate_quantity_range`).
 pub const MAX_QUANTITY: f64 = 10_000.0;
 
+/// Longest unit the `ingredients.unit VARCHAR(50)` column stores.
+pub const MAX_UNIT_CHARS: usize = 50;
+
+/// Quantities from this value up do not fit `ingredients.quantity DECIMAL(10,3)`.
+const UNSTORABLE_QUANTITY: f64 = 10_000_000.0;
+
 /// Maps every ingredient with a non-empty name, in order. The list index becomes the line
 /// number; character positions are not meaningful for model output and are set to 0.
 pub fn to_measurement_matches(extraction: &Extraction) -> Vec<MeasurementMatch> {
@@ -35,19 +41,36 @@ fn to_measurement_match(ingredient: &ExtractedIngredient) -> Option<MeasurementM
 
     let quantity = ingredient.quantity.filter(|q| q.is_finite());
     let normalized = normalize_measurement(quantity, ingredient.unit.as_deref());
-    let out_of_range = normalized
-        .quantity
-        .is_some_and(|q| q <= 0.0 || q > MAX_QUANTITY);
+
+    // Checked on the stored value (3 decimals): 0.0004 would be saved as 0.
+    let rounded = normalized.quantity.map(round_to_stored_precision);
+    let unstorable = rounded.is_some_and(|q| q.abs() >= UNSTORABLE_QUANTITY);
+    let quantity = rounded.filter(|_| !unstorable);
+    let out_of_range = quantity.is_some_and(|q| q <= 0.0 || q > MAX_QUANTITY);
+
+    let (unit, unit_truncated) = match normalized.unit {
+        Some(unit) if unit.chars().count() > MAX_UNIT_CHARS => {
+            (Some(unit.chars().take(MAX_UNIT_CHARS).collect()), true)
+        }
+        unit => (unit, false),
+    };
 
     Some(MeasurementMatch {
-        quantity: normalized.quantity.map(format_quantity).unwrap_or_default(),
-        measurement: normalized.unit,
+        quantity: quantity.map(format_quantity).unwrap_or_default(),
+        measurement: unit,
         ingredient_name: name.to_string(),
         line_number: 0,
         start_pos: 0,
         end_pos: 0,
-        requires_quantity_confirmation: ingredient.needs_review || out_of_range,
+        requires_quantity_confirmation: ingredient.needs_review
+            || out_of_range
+            || unstorable
+            || unit_truncated,
     })
+}
+
+fn round_to_stored_precision(quantity: f64) -> f64 {
+    (quantity * 1000.0).round() / 1000.0
 }
 
 /// Formats a quantity as stored (`DECIMAL(10,3)`): at most 3 decimals, no trailing zeros.
@@ -178,14 +201,56 @@ mod tests {
 
     #[test]
     fn empty_names_are_skipped_and_long_names_truncated() {
-        let long_name = "é".repeat(60); // 120 bytes
+        // 121 bytes; byte 100 falls inside an "é", so the cut must move back to byte 99.
+        let long_name = format!("a{}", "é".repeat(60));
         let matches = to_measurement_matches(&extraction(vec![
             ingredient("   ", Some(1.0), None),
             ingredient(&long_name, Some(1.0), None),
         ]));
         assert_eq!(matches.len(), 1);
-        assert_eq!(matches[0].ingredient_name.len(), MAX_NAME_BYTES);
+        assert_eq!(matches[0].ingredient_name.len(), MAX_NAME_BYTES - 1);
+        assert!(matches[0].ingredient_name.ends_with('é'));
         assert_eq!(matches[0].line_number, 0);
+    }
+
+    #[test]
+    fn values_the_database_cannot_store_are_dropped_and_flagged() {
+        let long_unit = "u".repeat(MAX_UNIT_CHARS + 10);
+        let matches = to_measurement_matches(&extraction(vec![
+            ingredient("farine", Some(2.0e7), Some("g")),
+            ingredient("sucre", Some(1.0), Some(&long_unit)),
+            ingredient("sel", Some(0.0004), Some("g")),
+        ]));
+        assert_eq!(matches[0].quantity, "", "does not fit DECIMAL(10,3)");
+        assert!(matches[0].requires_quantity_confirmation);
+        assert_eq!(
+            matches[1].measurement.as_deref().map(|u| u.chars().count()),
+            Some(MAX_UNIT_CHARS)
+        );
+        assert!(matches[1].requires_quantity_confirmation);
+        assert_eq!(matches[2].quantity, "0");
+        assert!(matches[2].requires_quantity_confirmation, "stored as 0");
+    }
+
+    #[test]
+    fn unflagged_matches_pass_the_bot_validation() {
+        let matches = to_measurement_matches(&extraction(vec![
+            ingredient("farine", Some(10_000.0), Some("g")),
+            ingredient("lait", Some(0.001), Some("l")),
+            ingredient(&"n".repeat(MAX_NAME_BYTES), Some(1.0), None),
+            ingredient("sel", None, None),
+        ]));
+        for measurement in matches.iter().filter(|m| !m.requires_quantity_confirmation) {
+            assert!(
+                crate::validation::validate_measurement_match(measurement, "").is_ok(),
+                "{measurement:?}"
+            );
+            assert!(
+                crate::validation::validate_quantity_range(measurement).is_ok(),
+                "{measurement:?}"
+            );
+        }
+        assert_eq!(matches.len(), 4);
     }
 
     #[test]

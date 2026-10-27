@@ -73,10 +73,12 @@ impl ImageInput {
         Ok(Self { bytes, mime })
     }
 
+    /// The image file content.
     pub fn bytes(&self) -> &[u8] {
         &self.bytes
     }
 
+    /// The detected image format.
     pub fn mime(&self) -> ImageMime {
         self.mime
     }
@@ -131,37 +133,49 @@ pub struct Extraction {
 /// Why an extraction failed. Messages never contain credentials or URLs with credentials.
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum ExtractionError {
+    /// Missing or invalid configuration (e.g. no API key).
     #[error("extraction is not configured: {0}")]
     Config(String),
+    /// The image is not JPEG, PNG or WebP.
     #[error("unsupported image: {0}")]
     UnsupportedImage(String),
+    /// The image exceeds the size accepted for extraction.
     #[error("image too large: {size} bytes (maximum {max})")]
     ImageTooLarge { size: u64, max: u64 },
+    /// The service rejected the call with HTTP 429; `retry_after` comes from `Retry-After`.
     #[error("extraction service rate limit reached")]
     RateLimited { retry_after: Option<Duration> },
+    /// The call did not complete within the configured timeout.
     #[error("extraction service timed out")]
     Timeout,
+    /// The service could not be reached (DNS, TLS, connection).
     #[error("extraction service unreachable: {0}")]
     Network(String),
+    /// The service answered with another HTTP error status.
     #[error("extraction service returned HTTP {status}: {message}")]
     Api { status: u16, message: String },
+    /// The model declined to answer (e.g. safety block); the reason is the API's.
     #[error("extraction refused by the model: {0}")]
     Blocked(String),
+    /// The response hit the output token limit before the JSON was complete.
     #[error("extraction output was cut off before the end")]
     Truncated,
+    /// The response could not be parsed into an [`Extraction`].
     #[error("extraction returned an invalid response: {0}")]
     InvalidResponse(String),
+    /// Calls are suspended by the circuit breaker after repeated failures.
     #[error("extraction temporarily disabled after repeated failures")]
     CircuitOpen,
 }
 
 impl ExtractionError {
-    /// Whether retrying the same request later can succeed.
+    /// Whether retrying the same request later can succeed: rate limits (429), timeouts,
+    /// network errors and server errors (5xx).
     pub fn is_transient(&self) -> bool {
         matches!(
             self,
             Self::RateLimited { .. } | Self::Timeout | Self::Network(_)
-        ) || matches!(self, Self::Api { status, .. } if *status >= 500)
+        ) || matches!(self, Self::Api { status, .. } if *status == 429 || *status >= 500)
     }
 }
 
@@ -242,6 +256,11 @@ mod tests {
         assert!(ExtractionError::RateLimited { retry_after: None }.is_transient());
         assert!(ExtractionError::Api {
             status: 503,
+            message: String::new()
+        }
+        .is_transient());
+        assert!(ExtractionError::Api {
+            status: 429,
             message: String::new()
         }
         .is_transient());

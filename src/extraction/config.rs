@@ -9,6 +9,9 @@
 //! | `GEMINI_THINKING_LEVEL` | `minimal` | `minimal`, `low`, `medium` or `high` |
 //! | `GEMINI_MAX_CONCURRENCY` | `4` | concurrent API calls, 1–32 |
 //!
+//! Values are parsed at startup whatever the backend: a malformed `GEMINI_*` value stops the
+//! bot, while range checks only apply when the backend is `gemini`.
+//!
 //! The backend stays `tesseract` by default until the Gemini path is wired into the bot
 //! (migration Task 3.1), so deploying this code changes nothing.
 
@@ -147,8 +150,9 @@ impl ExtractionConfig {
                 .transpose()?
                 .unwrap_or(defaults.backend),
             gemini: GeminiConfig {
+                // Pasted secrets often end with a newline, which would break the request header.
                 api_key: get("GEMINI_API_KEY")
-                    .map(SecretString::new)
+                    .map(|value| SecretString::new(value.trim()))
                     .unwrap_or_default(),
                 model: get("GEMINI_MODEL")
                     .map(|value| value.trim().to_string())
@@ -273,6 +277,13 @@ mod tests {
             ])?;
             assert!(config.validate().is_err(), "{name}={value}");
         }
+        Ok(())
+    }
+
+    #[test]
+    fn api_key_is_trimmed() -> AppResult<()> {
+        let config = load(&[("GEMINI_API_KEY", "  AIza-key\n")])?;
+        assert_eq!(config.gemini.api_key.expose(), "AIza-key");
         Ok(())
     }
 
