@@ -3,7 +3,12 @@ name: Deploy to Staging
 run-name: Deploy to Staging ${{ github.event.workflow_run.head_sha || github.sha }}
 
 # Runs only after "Build and Test" succeeded for a push to main of this repository, and
-# deploys the commit that was tested. Pull requests (including from forks) never deploy.
+# deploys the image that run built for the tested commit. Pull requests (including from forks)
+# never deploy.
+#
+# Staging is a permanent app with its own database and the test bot: it keeps running between
+# deployments, so the test bot can be used to try a change before production. It is created
+# once by hand (see specs/deployment.md), not by this workflow.
 on:
   workflow_run:
     workflows: ["Build and Test"]
@@ -20,7 +25,7 @@ concurrency:
 
 env:
   STAGING_APP: just-ingredients-staging
-  STAGING_DB: just-ingredients-staging-db
+  IMAGE: ghcr.io/basileduplessis/justingredients
   DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
 jobs:
@@ -30,10 +35,11 @@ jobs:
       (github.event.workflow_run.conclusion == 'success' &&
        github.event.workflow_run.event == 'push' &&
        github.event.workflow_run.head_repository.full_name == github.repository)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    runs-on: ubuntu-26.04
+    timeout-minutes: 15
     environment: staging
     env:
+      # Deploy token of the staging app only (environment secret)
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
     steps:
     - name: Checkout tested commit
@@ -44,48 +50,14 @@ jobs:
     - name: Setup flyctl
       uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
-    - name: Remove previous staging resources
+    - name: Deploy the tested image
       run: |
-        flyctl apps destroy "$STAGING_APP" --yes || true
-        flyctl apps destroy "$STAGING_DB" --yes || true
-
-    - name: Create staging app
-      run: flyctl apps create "$STAGING_APP" --org personal
-
-    # Both commands print the generated database password on success, so stdout is discarded.
-    # attach reaches the new database over Fly's private network, which is not always
-    # reachable from the runner right after creation: retry instead of ignoring failures.
-    - name: Create and attach staging database
-      run: |
-        flyctl postgres create --name "$STAGING_DB" --region cdg --org personal \
-          --vm-size shared-cpu-1x --volume-size 1 --initial-cluster-size 1 > /dev/null
-        for attempt in 1 2 3 4; do
-          if flyctl postgres attach "$STAGING_DB" --app "$STAGING_APP" --yes > /dev/null; then
-            exit 0
-          fi
-          echo "attach attempt $attempt failed, retrying in 30 s"
-          sleep 30
-        done
-        exit 1
-
-    - name: Set staging secrets
-      env:
-        TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      run: |
-        if [ -z "$GEMINI_API_KEY" ]; then
-          echo "::error::GEMINI_API_KEY is not set in the staging environment secrets"
-          exit 1
-        fi
-        printf 'TELEGRAM_BOT_TOKEN=%s\nGEMINI_API_KEY=%s\n' "$TELEGRAM_BOT_TOKEN" "$GEMINI_API_KEY" \
-          | flyctl secrets import --stage --app "$STAGING_APP"
-
-    - name: Deploy to staging
-      run: flyctl deploy --config deploy/fly-staging.toml --remote-only --app "$STAGING_APP"
+        flyctl deploy --config deploy/fly-staging.toml --app "$STAGING_APP" \
+          --image "$IMAGE:sha-$DEPLOY_SHA"
 
   smoke-tests:
     needs: deploy-staging
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 10
     environment: staging
     steps:
@@ -106,19 +78,3 @@ jobs:
       run: npm run smoke-test
       env:
         STAGING_URL: https://just-ingredients-staging.fly.dev
-
-  cleanup-staging:
-    needs: [deploy-staging, smoke-tests]
-    if: always() && needs.deploy-staging.result != 'skipped'
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    env:
-      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
-    steps:
-    - name: Setup flyctl
-      uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
-
-    - name: Destroy staging resources
-      run: |
-        flyctl apps destroy "$STAGING_APP" --yes || true
-        flyctl apps destroy "$STAGING_DB" --yes || true

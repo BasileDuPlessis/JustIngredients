@@ -1,27 +1,28 @@
 # Deployment & Infrastructure Feature Specification
 
-> Describes the setup as it is (verified against `main` at `ec2e7d3`, 2026-10-27). The target
-> pipeline (one image per commit, permanent staging, rollback) is planned in Task 5.4 of
-> [LLM Extraction Migration](tasks/llm-extraction-migration.md#cicd-audit). Tesseract was
-> removed from the code, the image and CI on 2026-10-27 (Tasks 5.1 and 5.3).
+> Describes the setup as it is (2026-10-27, after Tasks 5.1, 5.3 and 5.4 of
+> [LLM Extraction Migration](tasks/llm-extraction-migration.md#cicd-audit)): no Tesseract, one
+> image per commit, permanent staging, automatic production rollback.
 
 ## Overview
 The bot runs as one Fly.io machine (app `just-ingredients`, region `cdg`) with a Fly Postgres
 database. It receives Telegram updates by long polling, so the only HTTP traffic is health
-checks and metrics. GitHub Actions tests every push, deploys a throw-away staging app after
-green CI on `main`, and deploys production manually after approval.
+checks and metrics. GitHub Actions tests every push and builds one image per commit of `main`;
+that image goes to a permanent staging app (with the test bot), then to production when a
+deployment is started by hand and approved.
 
 ## Components
 | File | Purpose |
 |---|---|
-| `deploy/Dockerfile` | Image built by Fly (remote builder) and by the GHCR workflow |
+| `deploy/Dockerfile` | Image built once per commit of `main` by "Build and Test" (job `image`), pushed to `ghcr.io/basileduplessis/justingredients:sha-<commit>` (public package) |
 | `deploy/fly.toml` | Production app `just-ingredients` |
-| `deploy/fly-staging.toml` | Staging app `just-ingredients-staging` (created per run) |
+| `deploy/fly-staging.toml` | Permanent staging app `just-ingredients-staging` (test bot, own database) |
 | `deploy/fly-monitoring.toml`, `monitoring/prometheus.yml` | Prometheus app |
 | `deploy/fly-grafana.toml`, `monitoring/grafana/` | Grafana app |
 | `rust-toolchain.toml` | Rust 1.99, same as CI and the Docker builder |
 | `.github/workflows/*.yml` | CI/CD (below) |
 | `smoke-tests.js`, `package.json` | Staging smoke tests |
+| `scripts/check-health.sh` | Waits for `/health/live` and `/health/ready` (production deploy and rollback) |
 
 ## Container (`deploy/Dockerfile`)
 - Builder `rust:1.99-slim-trixie`, runtime `debian:trixie-slim` (same Debian release, so the
@@ -62,22 +63,24 @@ Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` 
   `DATABASE_URL` (Fly Postgres), `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`, `METRICS_AUTH_TOKEN`.
   The bot refuses to start without a well-formed `TELEGRAM_BOT_TOKEN` and `DATABASE_URL`, or
   without `GEMINI_API_KEY`.
-- **Staging**: recreated on every run. `DATABASE_URL` comes from `flyctl postgres attach`;
-  `TELEGRAM_BOT_TOKEN` (a separate bot) and `GEMINI_API_KEY` come from the GitHub `staging`
-  environment and are imported with `flyctl secrets import --stage`. `METRICS_AUTH_TOKEN` is not
-  set there.
-- **GitHub repository secrets**: `FLY_API_TOKEN`; `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID`
-  for the production deploy notification and the uptime alert.
+- **Staging** (permanent app `just-ingredients-staging`, created once by hand, see
+  [Staging Setup](#staging-setup)): Fly secrets `DATABASE_URL` (from `fly postgres attach` of
+  `just-ingredients-staging-db`), `TELEGRAM_BOT_TOKEN` of the test bot, `GEMINI_API_KEY`.
+  `METRICS_AUTH_TOKEN` is not set there.
+- **GitHub environment secrets**: `FLY_API_TOKEN` in `staging` and in `production`, each a deploy
+  token of its own app (`fly tokens create deploy -a <app>`); a repository-level `FLY_API_TOKEN`
+  is only a fallback while they are missing.
+- **GitHub repository secrets**: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for the production
+  deploy notification and the uptime alert.
 - Optional variables with defaults: `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECS`, `GEMINI_THINKING_LEVEL`, `GEMINI_MAX_CONCURRENCY`, database pool and
   observability settings; see `.env.example`.
 
 ## CI/CD (`.github/workflows/`)
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `build-test.yml` "Build and Test" | Push and PR to `main` | `build`: Postgres 16 service, `cargo build`, `cargo test --all-targets`, doc tests, `db_tests` with `--include-ignored`. `lint`: clippy `-D warnings`, `scripts/check-unwraps.sh`, `cargo fmt --check`. `security`: cargo-deny `check advisories sources`. Rust 1.99, `SQLX_OFFLINE=true`, Ubuntu 26.04, no system packages. The benchmarks of `tests/performance_tests.rs` are ignored (IMP-046). |
-| `build-and-push-docker.yml` | Push and PR to `main` | Builds `deploy/Dockerfile` and pushes it to GHCR. Deployments do not use this image (Fly builds its own). |
-| `deploy-staging.yml` "Deploy to Staging" | `workflow_run` after a successful "Build and Test" on a push to `main` from this repository (or manual on `main`) | Run name `Deploy to Staging <sha>`. Destroys any previous staging app and database, creates both, attaches the database, imports the secrets, deploys the tested commit, runs the smoke tests (`/health/live`, `/health/ready`), then always destroys the app and database. |
-| `deploy-production.yml` "Deploy to Production" | Manual, `main` only | Environment `production` with a required reviewer. Gate: a successful "Build and Test" push run for the commit and a successful run named `Deploy to Staging <sha>`. `flyctl deploy --config deploy/fly.toml --remote-only`, then `/health/live` and `/health/ready` (6 tries, 10 s apart), then a Telegram notification of the result. |
+| `build-test.yml` "Build and Test" | Push and PR to `main` | `build`: Postgres 16 service, `cargo build`, `cargo test --all-targets`, doc tests, `db_tests` with `--include-ignored`. `lint`: clippy `-D warnings`, `scripts/check-unwraps.sh`, `cargo fmt --check`. `security`: cargo-deny `check advisories sources`. `image` (pushes to `main` only, after the three others): Buildx with the GitHub Actions layer cache, pushes `ghcr.io/basileduplessis/justingredients:sha-<commit>`; dependencies are compiled in their own layer, rebuilt only when `Cargo.toml` or `Cargo.lock` change. Rust 1.99, `SQLX_OFFLINE=true`, Ubuntu 26.04, no system packages. The benchmarks of `tests/performance_tests.rs` are ignored (IMP-046). |
+| `deploy-staging.yml` "Deploy to Staging" | `workflow_run` after a successful "Build and Test" on a push to `main` from this repository (or manual on `main`) | Run name `Deploy to Staging <sha>`. `flyctl deploy --image ghcr.io/…:sha-<sha>` on the permanent staging app (no build), then the smoke tests (`/health/live`, `/health/ready`). Staging keeps running afterwards. |
+| `deploy-production.yml` "Deploy to Production" | Manual, `main` only | Environment `production` with a required reviewer. Gate: a successful "Build and Test" push run for the commit and a successful run named `Deploy to Staging <sha>`. Records the running image (`fly image show`, by digest), deploys the image staging ran (`--image ghcr.io/…:sha-<sha>`, no build), waits for `/health/live` and `/health/ready` (`scripts/check-health.sh`, 6 tries 10 s apart); on failure deploys the recorded image again and checks it. Telegram notification: deployed, rolled back, or failed. |
 | `uptime.yml` "Production Uptime" | Every 10 minutes (and manual) | `GET /health/ready` on production, 3 tries 20 s apart; Telegram alert on failure. GitHub may delay scheduled runs and disables them after 60 days without activity. |
 
 ## Monitoring
@@ -102,7 +105,25 @@ Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` 
   `cargo test --lib` (about a minute); CI runs every other test.
 - Deploy: push to `main`, wait for green CI and staging, then run "Deploy to Production" and
   approve it.
-- Rollback: the pipeline has none (the production workflow deploys the head of `main`; planned
-  in Task 5.4). There is no extraction fallback: going back to Tesseract means reverting the
-  Phase 5 commits.
+- Try a change before production: after a push, the test bot runs it on staging.
+- Rollback: automatic when a production deployment does not come up healthy. By hand: deploy an
+  older image, `fly deploy --config deploy/fly.toml -a just-ingredients --image
+  ghcr.io/basileduplessis/justingredients:sha-<commit>` (or a `registry.fly.io` image from
+  `fly releases --image`). There is no extraction fallback: going back to Tesseract means
+  reverting the Phase 5 commits.
 - Status and logs: `fly status -a just-ingredients`, `fly logs -a just-ingredients`.
+
+## Staging Setup
+Done once by hand (the workflows never create or destroy staging):
+
+```bash
+fly apps create just-ingredients-staging --org personal
+fly postgres create --name just-ingredients-staging-db --region cdg --org personal \
+  --vm-size shared-cpu-1x --volume-size 1 --initial-cluster-size 1
+fly postgres attach just-ingredients-staging-db --app just-ingredients-staging
+fly secrets set --stage --app just-ingredients-staging \
+  TELEGRAM_BOT_TOKEN="<test bot token>" GEMINI_API_KEY="<staging key>"
+```
+
+The test bot then answers from staging all the time: running the bot locally with the same
+token would steal its updates.

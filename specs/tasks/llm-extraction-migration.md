@@ -426,7 +426,12 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: image size before/after; container starts on staging.
 
 ### Task 5.4: Target CI/CD pipeline
-- [ ] Done
+- [x] Done (2026-10-27, partly, kept in the existing workflow files): the image is built once by
+  "Build and Test" (job `image`, GHCR `sha-<commit>`, layer cache, dependency layer), staging is
+  a permanent app deployed with `--image`, production deploys the same image and rolls back to
+  the previous digest when it does not come up healthy; versioned light pre-push hook. Not done:
+  a Gemini call in the smoke tests, `cargo sqlx prepare --check`, `[lints.clippy]` denies, deleting
+  `build-and-push-docker.yml` (duplicate build, needs the user's `git rm`).
 - Description: implement the target pipeline described in "CI/CD Audit": one `ci.yml`
   (lint, test with Postgres, deny, single image build with cache pushed by commit SHA) and one
   `deploy.yml` (staging then production deploying the same image digest, smoke tests including a

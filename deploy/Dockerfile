@@ -15,12 +15,25 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.lock ./
+
+# Dependencies first, against placeholder sources: this layer is reused (CI layer cache) as long
+# as Cargo.toml and Cargo.lock do not change, so a code change only rebuilds the crate itself.
+RUN mkdir -p src examples \
+    && echo 'fn main() {}' > src/main.rs \
+    && touch src/lib.rs \
+    && echo 'fn main() {}' > examples/recipe_parser.rs \
+    && cargo build --release \
+    && rm -rf src examples
+
 COPY src ./src
 COPY config ./config
 COPY locales ./locales
 COPY .sqlx ./.sqlx
 
-RUN cargo build --release \
+# COPY keeps the files' times, which can be older than the placeholder build: touch them so
+# cargo rebuilds the crate.
+RUN touch src/main.rs src/lib.rs \
+    && cargo build --release \
     && strip --strip-unneeded target/release/just-ingredients
 
 FROM debian:trixie-slim AS runtime

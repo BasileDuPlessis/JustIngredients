@@ -1,7 +1,9 @@
 name: Deploy to Production
 
 # Manual deployment of main's head commit. The commit must have passed Build and Test on a
-# push and been deployed to staging successfully first.
+# push and been deployed to staging successfully first. Production runs the very image staging
+# ran (built once by Build and Test); if it does not come up healthy, the image that was
+# running before is deployed again.
 on:
   workflow_dispatch:
 
@@ -16,11 +18,14 @@ concurrency:
 jobs:
   deploy-production:
     if: github.ref == 'refs/heads/main'
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 30
     environment: production
     env:
+      # Deploy token of the production app only (environment secret)
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      APP: just-ingredients
+      IMAGE: ghcr.io/basileduplessis/justingredients
       PRODUCTION_URL: https://just-ingredients.fly.dev
     steps:
     # Staging runs are matched on their run name, which carries the deployed commit: the
@@ -49,19 +54,33 @@ jobs:
     - name: Setup flyctl
       uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
-    - name: Deploy to production
-      run: flyctl deploy --config deploy/fly.toml --remote-only --app just-ingredients
+    - name: Remember the running image for a rollback
+      id: previous
+      # Never blocks the deploy: without a readable image there is just no rollback
+      run: |
+        image=$(flyctl image show --app "$APP" --json \
+          | jq -r 'if type == "array" then .[0] else . end | "\(.Registry)/\(.Repository)@\(.Digest)"') \
+          || image=""
+        case "$image" in
+          */*@sha256:*) echo "Running image: $image" ;;
+          *) echo "::warning::Could not read the running image: no automatic rollback"; image="" ;;
+        esac
+        echo "image=$image" >> "$GITHUB_OUTPUT"
+
+    - name: Deploy the image tested on staging
+      run: flyctl deploy --config deploy/fly.toml --app "$APP" --image "$IMAGE:sha-$GITHUB_SHA"
 
     - name: Post-deployment validation
+      run: ./scripts/check-health.sh "$PRODUCTION_URL"
+
+    - name: Roll back to the previous image
+      id: rollback
+      if: failure() && steps.previous.outputs.image != ''
+      env:
+        PREVIOUS_IMAGE: ${{ steps.previous.outputs.image }}
       run: |
-        for _ in 1 2 3 4 5 6; do
-          if curl -fsS --max-time 10 "$PRODUCTION_URL/health/live" \
-            && curl -fsS --max-time 10 "$PRODUCTION_URL/health/ready"; then
-            exit 0
-          fi
-          sleep 10
-        done
-        exit 1
+        flyctl deploy --config deploy/fly.toml --app "$APP" --image "$PREVIOUS_IMAGE"
+        ./scripts/check-health.sh "$PRODUCTION_URL"
 
     - name: Notify deployment result
       if: always()
@@ -69,11 +88,15 @@ jobs:
         TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
         TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         JOB_STATUS: ${{ job.status }}
+        ROLLBACK: ${{ steps.rollback.outcome }}
       run: |
+        run_url="$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
         if [ "$JOB_STATUS" = "success" ]; then
           text="✅ JustIngredients ${GITHUB_SHA::7} deployed to production."
+        elif [ "$ROLLBACK" = "success" ]; then
+          text="⚠️ JustIngredients ${GITHUB_SHA::7} failed in production; the previous image is back: $run_url"
         else
-          text="❌ JustIngredients ${GITHUB_SHA::7} production deployment failed: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+          text="❌ JustIngredients ${GITHUB_SHA::7} production deployment failed: $run_url"
         fi
         curl -fsS -X POST "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
           --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
