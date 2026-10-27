@@ -59,7 +59,7 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 ## Messages and Commands
 | Input | Behaviour |
 |---|---|
-| Any text starting with `/` | A command, in every dialogue state (`commands::route_text`): a running action ends first (dialogue exited, its recorded messages deleted, no home message), then the command runs. |
+| Any text starting with `/` | A command, in every dialogue state (`commands::route_text`): a running action ends first (dialogue exited, its recorded messages deleted; the previous home message stays and no new one is sent), then the command runs. |
 | `/liste`, `/list`, `/recipes` | First page of the recipe list. |
 | `/start` | Welcome message. |
 | `/aide`, `/help` | Help message. |
@@ -153,7 +153,9 @@ typed paths; they are equal in private chats (IMP-024).
 - cancelling: the review (button or typed word), the processing message, the name prompt, the
   quantity questions;
 - a saved recipe: rename (also when it fails), delete confirmed or cancelled, ingredient editing
-  confirmed or cancelled.
+  confirmed or cancelled (also when the recipe was deleted meanwhile). A delete confirmed or
+  cancelled while another action runs (e.g. a rename prompt is open) sends no home message, so
+  the running action keeps its prompts.
 
 Content (`home::render_home`, pure): 🏠 title, the number of recipes, a hint to send a photo
 and the menu commands (`/liste`, `/aide` or `/list`, `/help`). Buttons: the 3 newest recipes
@@ -201,7 +203,7 @@ state).
   `use-buttons-instruction`.
 - **Delete**: confirmation with `confirm_delete_recipe:<id>:<card message id>` and
   `cancel_delete_recipe:<id>:<card message id>`; confirming deletes the recipe, its ingredients,
-  the confirmation and the card.
+  the confirmation and the card; cancelling deletes the confirmation only (the card stays).
 - **Statistics**: recipe ingredient count and date, then the user's totals, recent activity and
   common units, with a button back to the recipe.
 - Name lookups and card ingredients are cached for 5 minutes per owner and not invalidated by

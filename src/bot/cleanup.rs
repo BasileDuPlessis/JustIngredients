@@ -50,22 +50,34 @@ impl Tracker {
         }
     }
 
-    /// Takes the messages to delete when an action ends: its prompts and replies and the
-    /// previous home message, except those too old to be deleted.
+    /// Takes the messages to delete when an action ends with a home message: its prompts and
+    /// replies and the previous home message, except those too old to be deleted.
     pub fn take_for_cleanup(&mut self, chat: ChatId, now: Instant) -> Vec<MessageId> {
+        self.take(chat, now, true)
+    }
+
+    /// Takes the prompts and replies of an action ended without a home message (by a command):
+    /// the previous home message stays.
+    pub fn take_action_messages(&mut self, chat: ChatId, now: Instant) -> Vec<MessageId> {
+        self.take(chat, now, false)
+    }
+
+    fn take(&mut self, chat: ChatId, now: Instant, with_home: bool) -> Vec<MessageId> {
         let Some(messages) = self.chats.get_mut(&chat) else {
             return Vec::new();
         };
         let recent =
             |(id, at): (MessageId, Instant)| (now.duration_since(at) < MAX_AGE).then_some(id);
-        let mut ids: Vec<MessageId> = messages
-            .home
-            .take()
-            .into_iter()
-            .filter_map(recent)
-            .collect();
+        let home = if with_home {
+            messages.home.take()
+        } else {
+            None
+        };
+        let mut ids: Vec<MessageId> = home.into_iter().filter_map(recent).collect();
         ids.extend(messages.transient.drain(..).filter_map(recent));
-        self.chats.remove(&chat);
+        if messages.home.is_none() {
+            self.chats.remove(&chat);
+        }
         ids
     }
 
@@ -97,9 +109,20 @@ pub async fn send_transient(bot: &Bot, chat: ChatId, text: String) -> anyhow::Re
     Ok(sent)
 }
 
-/// Deletes the recorded messages of the chat; failures are only logged.
+/// Deletes the messages of the action that ends and the previous home message, before a new
+/// home message is sent; failures are only logged.
 pub async fn delete_tracked(bot: &Bot, chat: ChatId) {
     let ids = with_tracker(|tracker| tracker.take_for_cleanup(chat, Instant::now()));
+    delete(bot, chat, ids).await;
+}
+
+/// Deletes the messages of an action that a command ends; the previous home message stays.
+pub async fn delete_action_messages(bot: &Bot, chat: ChatId) {
+    let ids = with_tracker(|tracker| tracker.take_action_messages(chat, Instant::now()));
+    delete(bot, chat, ids).await;
+}
+
+async fn delete(bot: &Bot, chat: ChatId, ids: Vec<MessageId>) {
     for batch in ids.chunks(DELETE_BATCH) {
         if let Err(e) = bot.delete_messages(chat, batch.to_vec()).await {
             debug!(error = %e, count = batch.len(), "Could not delete the messages of the action");
@@ -146,6 +169,16 @@ mod tests {
         tracker.set_home(CHAT, MessageId(8), now);
         tracker.set_home(CHAT, MessageId(12), now);
         assert_eq!(tracker.take_for_cleanup(CHAT, now), vec![MessageId(12)]);
+    }
+
+    #[test]
+    fn an_action_ended_by_a_command_keeps_the_previous_home() {
+        let mut tracker = Tracker::default();
+        let now = Instant::now();
+        tracker.set_home(CHAT, MessageId(1), now);
+        tracker.track(CHAT, MessageId(5), now);
+        assert_eq!(tracker.take_action_messages(CHAT, now), vec![MessageId(5)]);
+        assert_eq!(tracker.take_for_cleanup(CHAT, now), vec![MessageId(1)]);
     }
 
     #[test]

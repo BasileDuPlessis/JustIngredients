@@ -530,6 +530,7 @@ pub async fn handle_delete_recipe_confirmation(
     pool: Arc<PgPool>,
     from: &User,
     localization: &Arc<crate::localization::LocalizationManager>,
+    dialogue: &RecipeDialogue,
 ) -> Result<()> {
     let language_code = &from.language_code;
     let telegram_id = from.id.0 as i64;
@@ -710,29 +711,16 @@ pub async fn handle_delete_recipe_confirmation(
                     }
                 }
             }
-
-            // Also delete the original recipe message
-            if let Some(original_msg_id) = original_message_id {
-                match bot
-                    .delete_message(chat_id, teloxide::types::MessageId(original_msg_id))
-                    .await
-                {
-                    Ok(_) => (),
-                    Err(e) => {
-                        crate::errors::error_logging::log_internal_error(
-                            &e,
-                            "handle_delete_recipe_confirmation",
-                            "Failed to delete original recipe message",
-                            Some(chat_id.0),
-                        );
-                    }
-                }
-            }
+            // The recipe card stays: nothing was deleted
         }
         _ => return Ok(()),
     }
 
-    send_home(bot, &pool, chat_id, localization, language_code.as_deref()).await;
+    // A delete done in the middle of another action (a rename, a review) leaves that action
+    // running: its home message would hide the prompts the action still waits on
+    if !dialogue.get().await?.is_some_and(|state| state.is_action()) {
+        send_home(bot, &pool, chat_id, localization, language_code.as_deref()).await;
+    }
     Ok(())
 }
 

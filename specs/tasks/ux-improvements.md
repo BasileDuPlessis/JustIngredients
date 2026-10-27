@@ -165,7 +165,7 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   in both locales; the new key test failed on the first two before they were added.
 
 ### Review gate RU1
-- [ ] Done
+- [x] Done (2026-10-27, see the Review Log)
 
 ## Phase U2: Recipe Creation
 
@@ -261,3 +261,4 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 ## Review Log
 | Gate | Date | Commits | Findings | Outcome |
 |---|---|---|---|---|
+| RU1 | 2026-10-27 | `80a6941`, `503f4c9`, `04b6430`, `e1515ba`, `f3ac39a` (U1.3–U1.7) | 1 bug: a delete confirmed or cancelled during another action (rename, quantity question) sent the home message and deleted that action's prompts while it kept running. 4 nits: a command during an action also deleted the previous home message; saved-recipe editing ended without a home message when the recipe was gone; cancelling a delete also removed the card; a new `expect` outside tests. | Pass with fixes, all fixed in the RU1 fix commit. U1.1 part 2 (HTML) is not covered: still open. |

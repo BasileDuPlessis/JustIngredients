@@ -142,6 +142,7 @@ pub async fn callback_handler(
                 pool.clone(),
                 &q.from,
                 &localization,
+                &dialogue,
             )
             .await?;
         } else if data.starts_with("page:") {
@@ -291,6 +292,7 @@ pub async fn callback_handler_with_cache(
                 pool.clone(),
                 &q.from,
                 &localization,
+                &dialogue,
             )
             .await?;
         } else if data.starts_with("page:") {

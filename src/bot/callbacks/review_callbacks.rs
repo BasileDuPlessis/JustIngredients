@@ -575,12 +575,10 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         }
 
         // Send confirmation as a new message, then the home message
-        let chat_id = q
-            .message
-            .as_ref()
-            .expect("Callback query should have a message")
-            .chat()
-            .id;
+        let Some(chat_id) = q.message.as_ref().map(|message| message.chat().id) else {
+            dialogue.exit().await?;
+            return Ok(());
+        };
         // `workflow-recipe-saved` already starts with ✅
         let confirmation_message = format!(
             "{}\n\n📝 {}",

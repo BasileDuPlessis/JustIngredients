@@ -81,5 +81,12 @@ pub enum RecipeDialogueState {
     },
 }
 
+impl RecipeDialogueState {
+    /// Whether this state belongs to a running action (anything but `Start`).
+    pub fn is_action(&self) -> bool {
+        !matches!(self, Self::Start)
+    }
+}
+
 /// Type alias for our recipe dialogue
 pub type RecipeDialogue = Dialogue<RecipeDialogueState, InMemStorage<RecipeDialogueState>>;

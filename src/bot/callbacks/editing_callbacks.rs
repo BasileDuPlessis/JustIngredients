@@ -475,6 +475,16 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                     ),
                 )
                 .await?;
+            dialogue.exit().await?;
+            send_home(
+                ctx.bot,
+                pool,
+                message.chat().id,
+                ctx.localization,
+                language_code.as_deref(),
+            )
+            .await;
+            return Ok(());
         }
         dialogue.exit().await?;
         return Ok(());
@@ -874,8 +884,18 @@ async fn handle_cancel_saved_ingredients_button(
         let recipe = match crate::db::read_recipe_with_name(&pool, telegram_id, recipe_id).await? {
             Some(recipe) => recipe,
             None => {
-                // Recipe not found, just exit dialogue
+                // Recipe deleted meanwhile: the editing ends like a cancel
                 dialogue.exit().await?;
+                if let Some(message) = &q.message {
+                    send_home(
+                        bot,
+                        &pool,
+                        message.chat().id,
+                        localization,
+                        language_code.as_deref(),
+                    )
+                    .await;
+                }
                 return Ok(());
             }
         };

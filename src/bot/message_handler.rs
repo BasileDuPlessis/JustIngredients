@@ -61,14 +61,17 @@ async fn handle_text_message(
             .map(|s| s.as_str());
 
         let dialogue_state = dialogue.get().await?;
-        let in_action = !matches!(dialogue_state, None | Some(RecipeDialogueState::Start));
+        let in_action = dialogue_state
+            .as_ref()
+            .is_some_and(RecipeDialogueState::is_action);
 
         match route_text(text, in_action) {
             TextRoute::Command(command) => {
                 if in_action {
-                    // The command ends the running action, which leaves no message behind
+                    // The command ends the running action, which leaves no message behind;
+                    // the home message from before the action stays
                     dialogue.exit().await?;
-                    cleanup::delete_tracked(bot, msg.chat.id).await;
+                    cleanup::delete_action_messages(bot, msg.chat.id).await;
                 }
                 return handle_command(bot, msg, pool, localization, language_code, command).await;
             }
