@@ -29,7 +29,7 @@ are in English or French, following the Telegram app language.
 src/main.rs                 # Startup, extractor choice, dispatcher
 src/dialogue.rs             # RecipeDialogueState, RecipeDialogue
 src/localization.rs         # Fluent bundles (en, fr), language detection
-src/extraction/             # IngredientExtractor trait, Gemini and Tesseract backends, guard
+src/extraction/             # IngredientExtractor trait, Gemini client, guard (see llm-extraction.md)
 src/bot/
 ├── message_handler.rs      # MessageServices, routing of messages by type and dialogue state
 ├── cleanup.rs              # Messages of an action, deleted when it ends
@@ -90,16 +90,12 @@ the user's language.
 3. `ImageInput::prepare`: JPEG, PNG and WebP are sent as they are; other formats the `image`
    crate decodes (BMP, TIFF, GIF…) are converted to JPEG, one conversion at a time, with
    8,000 px and 96 MB decoding limits.
-4. `SharedExtractor` (`Arc<dyn IngredientExtractor>`), chosen at startup by
-   `EXTRACTION_BACKEND`:
-   - `gemini` (default): `GeminiExtractor`, model `GEMINI_MODEL` (default
-     `gemini-3.5-flash-lite`), prompt and JSON schema in `config/extraction/`, retries with
-     backoff, 20 s per attempt, 40 s per image (`GEMINI_TIMEOUT_SECS`), circuit breaker
-     (5 failed images, open 60 s). Access is checked at startup (failure only logged).
-   - `tesseract`: `TesseractExtractor`, the previous OCR pipeline, kept as a rollback.
-   - Both are wrapped in `GuardedExtractor`: `GEMINI_MAX_CONCURRENCY` slots (default 2; 1 for
-     Tesseract), a photo waiting more than 30 s for a slot gets the busy message, successful
-     results cached by SHA-256 of the image (100 entries, 24 h).
+4. `SharedExtractor` (`Arc<dyn IngredientExtractor>`): `GeminiExtractor` (model
+   `GEMINI_MODEL`, default `gemini-3.5-flash-lite`; retries, 20 s per attempt, 40 s per image,
+   circuit breaker) wrapped in `GuardedExtractor` (`GEMINI_MAX_CONCURRENCY` slots, default 2;
+   a photo waiting more than 30 s for a slot gets the busy message; successful results cached by
+   SHA-256 of the image, 100 entries, 24 h). Details: [Ingredient Extraction](llm-extraction.md).
+   There is no OCR fallback (Tesseract removed in migration Task 5.1).
 5. The processing message is edited with the result:
    - an error: the `error-extraction-*` message of the error (see [Errors](#errors));
    - `is_recipe = false`: `extraction-not-a-recipe`;
@@ -301,4 +297,4 @@ Source of truth: [UX Improvements](tasks/ux-improvements.md).
 - Phase U3: one list entry per recipe (newest first, 8 per page), simpler recipe card, one owner
   identity (IMP-024).
 - Phase U4: French-aware search from a command, the search button and free text.
-- Tesseract removal: Phase 5 of [LLM Extraction Migration](tasks/llm-extraction-migration.md).
+- Target CI/CD pipeline: Task 5.4 of [LLM Extraction Migration](tasks/llm-extraction-migration.md).

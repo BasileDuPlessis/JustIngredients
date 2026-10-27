@@ -1,12 +1,12 @@
 # Data Model for Ingredients Telegram Bot
 
 ## Overview
-This document defines the PostgreSQL database schema for the Ingredients Telegram bot. The schema supports user management, OCR text extraction, recipe organization, and ingredient parsing with full-text search capabilities.
+This document defines the PostgreSQL database schema for the Ingredients Telegram bot. The schema supports user management, the text extracted from recipe photos, recipe organization, and ingredient parsing with full-text search capabilities.
 
 ## Architecture Principles
 
 - **User Isolation**: Multi-user support with proper data segregation
-- **Audit Trail**: Full OCR text preservation for traceability
+- **Audit Trail**: The extracted text of each recipe is kept for traceability
 - **Performance**: Indexed queries with full-text search optimization
 - **Extensibility**: Flexible schema for future feature additions
 
@@ -28,15 +28,15 @@ Manages Telegram user accounts and preferences.
 - Unique index on `telegram_id`
 
 ### 2. Recipes Table
-Stores complete OCR-extracted text and recipe information for audit and search purposes.
+Stores the extracted text (Gemini transcription of the ingredient section; OCR text for recipes saved before 2026-10) and recipe information for audit and search purposes.
 
 | Column       | Type          | Constraints                    | Description                          |
 |--------------|---------------|-------------------------------|--------------------------------------|
 | id           | BIGSERIAL     | PRIMARY KEY                   | Recipe identifier                    |
 | telegram_id  | BIGINT        | NOT NULL                      | Telegram user ID (for filtering)     |
-| content      | TEXT          | NOT NULL                      | Full OCR-extracted text              |
+| content      | TEXT          | NOT NULL                      | Extracted text (transcription)       |
 | recipe_name  | VARCHAR(255)  | NULL                          | User-defined recipe name (blank by default) |
-| created_at   | TIMESTAMP     | DEFAULT CURRENT_TIMESTAMP     | OCR processing timestamp             |
+| created_at   | TIMESTAMP     | DEFAULT CURRENT_TIMESTAMP     | Creation timestamp                   |
 | content_tsv  | tsvector      | GENERATED ALWAYS AS (to_tsvector('english', content)) STORED | Full-text search vector |
 
 **Indexes:**
@@ -45,7 +45,7 @@ Stores complete OCR-extracted text and recipe information for audit and search p
 - Index on `telegram_id` for user filtering
 
 ### 3. Ingredients Table
-Stores parsed ingredient data with reference to parent recipe (OCR entry).
+Stores parsed ingredient data with reference to the parent recipe.
 
 | Column       | Type          | Constraints                    | Description                          |
 |--------------|---------------|-------------------------------|--------------------------------------|
@@ -102,12 +102,12 @@ ORDER BY rank DESC;
 
 ## Data Flow and Usage Patterns
 
-### OCR Processing Flow
+### Photo Processing Flow
 1. **Image Reception**: User sends image to Telegram bot
-2. **OCR Processing**: Tesseract extracts text from image
-3. **Recipe Creation**: Full text stored in `recipes` table
-4. **Parsing**: Text analyzed for ingredients and measurements
-5. **Ingredient Storage**: Parsed data stored in `ingredients` table
+2. **Extraction**: the Gemini vision API returns the ingredients and a transcription
+3. **Review**: the user checks and corrects the ingredients, then confirms
+4. **Recipe Creation**: transcription stored in `recipes` table
+5. **Ingredient Storage**: confirmed ingredients stored in `ingredients` table
 6. **User Association**: All data linked to authenticated user
 
 ### Query Patterns
@@ -180,7 +180,7 @@ VALUES (1, 1, 'flour', 2.0, 'cups');
 
 ### Data Volume Estimates
 - **Users**: Thousands to millions
-- **OCR Entries**: Millions (one per image)
+- **Recipes**: Millions (one per saved photo)
 - **Ingredients**: Tens of millions (multiple per entry)
 
 ## Migration and Schema Evolution
@@ -203,7 +203,7 @@ VALUES (1, 1, 'flour', 2.0, 'cups');
 - Telegram ID validation at API level
 
 ### Data Retention
-- Full OCR text preserved for audit trails
+- Full extracted text preserved for audit trails
 - Configurable retention policies
 - GDPR compliance considerations
 

@@ -141,9 +141,10 @@ curl https://just-ingredients.fly.dev/health/live
 - Ensure database is attached: `fly postgres list`
 - Check DATABASE_URL is set correctly
 
-**OCR failures:**
-- Verify Tesseract dependencies in deploy/Dockerfile
-- Check instance pooling configuration
+**Photos fail ("reading recipes is unavailable"):**
+- Check the startup log line "Gemini API access verified" (or the error after it)
+- Verify `GEMINI_API_KEY` is set: `fly secrets list --app just-ingredients`
+- See `specs/llm-extraction.md` for the error-to-message table
 
 **Telegram webhook errors:**
 - Confirm bot token is valid

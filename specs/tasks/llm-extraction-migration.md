@@ -405,7 +405,7 @@ March 2026 image meanwhile (restarts reuse it).
 ## Phase 5: Remove Tesseract
 
 ### Task 5.1: Delete OCR code and dependencies
-- [ ] Done
+- [x] Done (2026-10-27, `475e914`, at the user's request before the end of Task 4.3: 13,400 lines removed with `src/circuit_breaker.rs` and `ExtractionBackend`; `cargo tree` has no tesseract or leptonica crate. Leftover: OCR metric helpers used only by tests (IMP-048))
 - Description: delete `src/ocr.rs`, `src/ocr/`, `src/preprocessing/`, `src/error_correction.rs`,
   `src/instance_manager.rs`, `src/path_validation.rs`, `src/ocr_errors.rs`, most of
   `src/ocr_config.rs`, the hOCR recovery in `image_processing.rs`, `TesseractExtractor`,
@@ -420,7 +420,7 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: `text_processing_tests` for manual input still green.
 
 ### Task 5.3: Docker image and CI
-- [ ] Done
+- [x] Done (2026-10-27, `747b194`: no OCR packages in the image, no apt step in CI, test jobs on ubuntu-26.04)
 - Description: remove tesseract/leptonica/clang packages from the Dockerfile, remove apt steps
   from CI, move CI back to a current runner image.
 - How to validate: image size before/after; container starts on staging.
@@ -437,7 +437,7 @@ March 2026 image meanwhile (restarts reuse it).
   approval.
 
 ### Task 5.5: Documentation
-- [ ] Done
+- [x] Done (2026-10-27: `specs/llm-extraction.md` replaces the OCR specs; README rewritten (IMP-043), `docs/`, `specs/deployment.md`, `.github/copilot-instructions.md`, `.env.example` updated)
 - Description: replace `specs/ocr-processing.md` and `specs/ocr-text-cleaning.md` with
   `specs/llm-extraction.md`; update README, `docs/`, `specs/deployment.md`,
   `.github/copilot-instructions.md`.

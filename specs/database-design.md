@@ -11,7 +11,7 @@ The database design provides persistent storage for user data, recipes, and extr
 
 ### Functional Requirements
 - **User Management**: Store users with the Telegram language code seen at creation (replies use the language of each message, not this column)
-- **Recipe Storage**: Persist recipes with the extracted text (the Gemini transcription of the ingredient section, or the OCR text with the Tesseract fallback) and an optional name
+- **Recipe Storage**: Persist recipes with the extracted text (the Gemini transcription of the ingredient section; recipes saved before Phase 5 may hold OCR text) and an optional name
 - **Ingredient Storage**: Structured storage of parsed ingredients linked to recipes
 - **Full-Text Search**: `search_recipes` searches recipe content (not names) with the English configuration; no handler calls it
 - **Recipe Organization**: List, paginate, and query recipes per user
@@ -123,7 +123,7 @@ pub struct User {
 pub struct Recipe {
     pub id: i64,
     pub telegram_id: i64,       // Owner
-    pub content: Arc<String>,   // Extracted text (Gemini transcription or OCR text)
+    pub content: Arc<String>,   // Extracted text (Gemini transcription; older rows: OCR text)
     pub recipe_name: Option<Arc<String>>,
     pub created_at: DateTime<Utc>,
 }
@@ -193,7 +193,7 @@ CREATE TABLE users (
 CREATE TABLE recipes (
     id BIGSERIAL PRIMARY KEY,
     telegram_id BIGINT NOT NULL,
-    content TEXT NOT NULL,          -- Extracted text (transcription or OCR text)
+    content TEXT NOT NULL,          -- Extracted text (transcription; older rows: OCR text)
     recipe_name VARCHAR(255),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED

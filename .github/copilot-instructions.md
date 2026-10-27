@@ -19,14 +19,15 @@
 - **Version History**: Document changes within feature spec documents for major updates
 
 ### Current Active Specs
-- [OCR Processing] `specs/ocr-processing.md` - Text extraction and ingredient parsing (includes text cleaning)
+- [Ingredient Extraction] `specs/llm-extraction.md` - Gemini vision API, image preparation, errors
 - [Telegram Bot] `specs/telegram-bot.md` - User interface and conversation management
 - [Database Design] `specs/database-design.md` - Data persistence and full-text search
 - [Deployment] `specs/deployment.md` - Infrastructure and production operations
-- [OCR Refactor Strategy] `specs/tasks/ocr-refactor-strategy.md` - Completed modularization (all tasks done)
+- [UX Improvements] `specs/tasks/ux-improvements.md` - Current UX plan
+- [Improvement Backlog] `specs/tasks/improvement-backlog.md` - Verified code-quality items
 
 ## Project Overview
-Telegram bot that extracts ingredients from recipe images using OCR, stores in PostgreSQL with full-text search.
+Telegram bot that reads the ingredients of recipe photos with the Gemini vision API, lets the user review them, and stores recipes in PostgreSQL.
 
 **Key Features**: Smart measurement detection, multi-language support, real-time processing, user-scoped storage.
 
@@ -51,14 +52,14 @@ Telegram bot that extracts ingredients from recipe images using OCR, stores in P
 
 ### Core Modules
 - `main.rs` - App entry point with bot dispatcher
-- `bot.rs` - Telegram message handling and dialogue management
-- `ocr.rs` - OCR processing facade and submodules
+- `bot/` - Telegram message handling, dialogue, home message, cleanup, HTML rendering
+- `extraction/` - Gemini client, image preparation, guard (concurrency, cache), mapping
 - `db.rs` - PostgreSQL operations with FTS
 - `text_processing.rs` - Ingredient parsing and measurement detection
 
 ### Key Patterns
-- **Circuit Breaker**: Prevents OCR failure cascades
-- **Instance Pooling**: Reuses Tesseract instances for performance
+- **Circuit Breaker**: `extraction::breaker` stops calling Gemini after repeated failures
+- **Pure renderers**: messages and keyboards are built by pure, unit-tested functions; handlers stay thin
 - **Parameter Structs**: Functions >6 params use dedicated structs
 - **Async Everywhere**: Tokio runtime with timeouts
 - **Error Handling**: Domain-specific error enums with `std::error::Error` implementation
@@ -66,7 +67,7 @@ Telegram bot that extracts ingredients from recipe images using OCR, stores in P
 
 ### Error Handling Best Practices
 - **Never use `unwrap()`, `expect()`, or `panic!`** in production code
-- **Create specific error enums** for each module (e.g., `TestError`, `PreprocessingError`)
+- **Create specific error enums** for each module (e.g., `ExtractionError`, `AppError`)
 - **Implement `std::error::Error`** with proper `Display` and `source()` methods
 - **Test functions return `Result<(), TestError>`** to avoid panics in test code
 - **Use `?` operator** for error propagation instead of manual match statements

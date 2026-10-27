@@ -11,8 +11,7 @@ specs/
 ├── telegram-bot.md               # Feature: bot interface, dialogue, recipes
 ├── database-design.md            # Feature: data persistence
 ├── deployment.md                 # Feature: Fly.io, CI/CD, health checks, metrics
-├── ocr-processing.md             # Superseded: Tesseract pipeline (fallback only)
-├── ocr-text-cleaning.md          # Superseded: OCR artifact cleaning (fallback only)
+├── llm-extraction.md             # Feature: ingredient extraction with Gemini
 └── tasks/
     ├── llm-extraction-migration.md       # Tesseract → Gemini migration
     ├── ux-improvements.md                # UX plan (phases U0–U4)
@@ -26,13 +25,12 @@ specs/
 - [Database Design](database-design.md): schema, owner-scoped queries, migrations, cache.
 - [Deployment](deployment.md): container, Fly configuration, health endpoints, secrets, CI/CD,
   monitoring.
-- [OCR Processing](ocr-processing.md) (superseded): Tesseract pipeline, kept while the
-  `EXTRACTION_BACKEND=tesseract` fallback exists; deleted in migration Task 5.5.
-- [OCR Text Cleaning](ocr-text-cleaning.md) (superseded): same status.
+- [Ingredient Extraction](llm-extraction.md): Gemini client, image preparation, guard, errors,
+  metrics. It replaced the OCR specs (Tesseract removed in migration Task 5.1).
 
 ## Task Plans
 - [LLM Extraction Migration](tasks/llm-extraction-migration.md): Gemini extraction (in
-  production), Tesseract removal (Phase 5), target CI/CD pipeline.
+  production), Tesseract removal (Phase 5, done except the target CI/CD pipeline of Task 5.4).
 - [UX Improvements](tasks/ux-improvements.md): messages, navigation, recipe creation, recipe
   list, search.
 - [Measurement Standardization](tasks/measurement-standardization-tasks.md): canonical units

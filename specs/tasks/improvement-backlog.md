@@ -81,6 +81,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 | IMP-045 | Locale keys used in code are not checked against the `.ftl` files | P2 | S | Localization |
 | IMP-046 | Timing benchmarks run as blocking tests | P2 | M | Tests / CI |
 | IMP-047 | No per-user limit on paid extractions | P3 | S | Cost |
+| IMP-048 | OCR metric helpers kept only for the observability tests | P3 | S | Observability |
 
 ## Verification of Earlier Findings
 | # | Earlier finding | Result | Item |
@@ -976,3 +977,15 @@ they can be pulled into 1-hour micro-tasks without another review.
   before extraction, with a localized "daily limit reached" message; limit configurable.
 - Validation: unit test with a fake extractor: the N+1th photo of the day is refused without a call.
 
+### IMP-048: OCR metric helpers kept only for the observability tests
+- [ ] Done
+- Priority: P3. Effort: S. Area: Observability.
+- Related: LLM migration Task 5.1 (Tesseract removed on 2026-10-27).
+- Location: `src/observability/metrics.rs` (`record_ocr_metrics`, `record_ocr_performance_metrics`,
+  `OcrPerformanceMetricsParams`); about 30 calls in `tests/observability_tests.rs`,
+  `tests/observability_integration_tests.rs` and `tests/performance_tests.rs`.
+- Problem: nothing in the bot records `ocr_*` metrics any more; the helpers survive only because
+  the tests use them as a sample metric.
+- Proposed fix: switch the tests to a live metric (`record_db_metrics`, `record_telegram_message`)
+  and delete the helpers.
+- Validation: `git grep ocr_ -- src tests` is empty; tests green.
