@@ -1,9 +1,9 @@
 //! Cleanup of the messages an action leaves behind (UX plan, Task U1.5).
 //!
-//! While an action runs (creating, renaming or editing a recipe), the bot prompts and the user
-//! replies are recorded per chat. When the action ends, the home message deletes them, as well
-//! as the previous home message, so the chat keeps only the results (photo, ingredient list,
-//! saved or cancelled notice, recipe card) and one home message at the bottom.
+//! While an action runs (creating, renaming or editing a recipe), the bot prompts, the user
+//! replies and the reviewed photo are recorded per chat. When the action ends, the home message
+//! deletes them, as well as the previous home message, so the chat keeps only the results
+//! (ingredient list, saved or cancelled notice, recipe card) and one home message at the bottom.
 //!
 //! Only recorded messages are ever deleted. Like the dialogue state, the records live in memory
 //! and are lost on restart; the messages are then simply left in the chat.
