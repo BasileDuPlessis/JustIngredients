@@ -224,27 +224,19 @@ pub async fn download_and_process_image(
         .reply_markup(keyboard)
         .await?;
 
-    // Determine recipe name: use caption if valid, otherwise "Recipe"
-    // PHOTO CAPTION FEATURE: Automatically uses photo captions as recipe name candidates
-    let (recipe_name_candidate, recipe_name_from_caption) = match &caption {
-        Some(caption_text) if !caption_text.trim().is_empty() => {
-            // Validate the caption as a recipe name using existing validation logic
-            match crate::validation::validate_recipe_name(caption_text) {
-                Ok(validated_name) => {
-                    info!(user_id = %chat_id, recipe_name = %validated_name, "Using caption as recipe name");
-                    (validated_name.to_string(), Some(caption_text.clone()))
-                }
-                Err(_) => {
-                    warn!(user_id = %chat_id, caption = %caption_text, "Caption is invalid, using default recipe name");
-                    ("Recipe".to_string(), None)
-                }
+    // Determine recipe name: use the caption if it gives one, otherwise "Recipe" (and the name
+    // is asked after confirmation). PHOTO CAPTION FEATURE: captions name recipes directly.
+    let (recipe_name_candidate, recipe_name_from_caption) =
+        match caption.as_deref().and_then(recipe_name_from_caption) {
+            Some(name) => {
+                info!(user_id = %chat_id, recipe_name = %name, "Using caption as recipe name");
+                (name.clone(), Some(name))
             }
-        }
-        _ => {
-            debug!(user_id = %chat_id, "No caption provided, using default recipe name");
-            ("Recipe".to_string(), None)
-        }
-    };
+            None => {
+                debug!(user_id = %chat_id, "No usable caption, using default recipe name");
+                ("Recipe".to_string(), None)
+            }
+        };
 
     // Update dialogue state to review ingredients with caption-derived recipe name
     dialogue
@@ -260,6 +252,26 @@ pub async fn download_and_process_image(
 
     info!(user_id = %chat_id, "Ingredients review interface sent successfully");
     Ok(extracted_text)
+}
+
+/// Recipe name suggested by a photo caption. Links are removed: sharing a web page to Telegram
+/// puts its URL in the caption, and a URL is not a recipe name. `None` when nothing valid is left.
+pub fn recipe_name_from_caption(caption: &str) -> Option<String> {
+    let is_link = |word: &&str| {
+        let word = word.to_lowercase();
+        word.starts_with("http://") || word.starts_with("https://") || word.starts_with("www.")
+    };
+    let without_links = caption
+        .split_whitespace()
+        .filter(|word| !is_link(word))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let cleaned = without_links.trim_matches(|c: char| {
+        c.is_whitespace() || matches!(c, '-' | '–' | '—' | '|' | ':' | '·' | ',')
+    });
+    crate::validation::validate_recipe_name(cleaned)
+        .ok()
+        .map(str::to_string)
 }
 
 /// Locale key of the message shown to the user for an extraction failure.
@@ -574,6 +586,34 @@ pub fn process_ingredients_and_extract_matches(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn captions_lose_their_links() {
+        assert_eq!(
+            recipe_name_from_caption("Gâteau au chocolat https://www.marmiton.org/recettes/x.aspx")
+                .as_deref(),
+            Some("Gâteau au chocolat")
+        );
+        assert_eq!(
+            recipe_name_from_caption("https://www.marmiton.org/x.aspx - Tarte aux pommes")
+                .as_deref(),
+            Some("Tarte aux pommes")
+        );
+        assert_eq!(
+            recipe_name_from_caption("Crêpes").as_deref(),
+            Some("Crêpes")
+        );
+    }
+
+    #[test]
+    fn a_caption_that_is_only_a_link_gives_no_name() {
+        assert_eq!(
+            recipe_name_from_caption("https://www.marmiton.org/recettes/x.aspx"),
+            None
+        );
+        assert_eq!(recipe_name_from_caption("www.example.com"), None);
+        assert_eq!(recipe_name_from_caption("   "), None);
+    }
 
     #[test]
     fn every_extraction_error_has_a_message_in_both_languages() {

@@ -1011,6 +1011,18 @@ pub async fn has_duplicate_recipes(
     Ok(has_duplicates)
 }
 
+/// Distinct recipe names of a user, to resolve selection buttons that carry a name fingerprint.
+pub async fn get_user_recipe_names(pool: &PgPool, telegram_id: i64) -> Result<Vec<String>> {
+    let rows = sqlx::query(
+        "SELECT DISTINCT recipe_name FROM recipes WHERE telegram_id = $1 AND recipe_name IS NOT NULL",
+    )
+    .bind(telegram_id)
+    .fetch_all(pool)
+    .await
+    .context("Failed to get recipe names")?;
+    Ok(rows.into_iter().map(|row| row.get(0)).collect())
+}
+
 /// Get paginated list of recipe names for a user
 pub async fn get_user_recipes_paginated(
     pool: &PgPool,

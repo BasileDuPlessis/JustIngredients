@@ -212,7 +212,7 @@ pub fn create_recipes_pagination_keyboard(
             let button_text = truncate_text(recipe_name, 30);
             buttons.push(vec![InlineKeyboardButton::callback(
                 button_text,
-                format!("select_recipe:{}", recipe_name),
+                crate::bot::recipe_selection::recipe_selection_callback(recipe_name),
             )]);
         }
 

@@ -873,3 +873,31 @@ fn test_split_sql_statements_semicolon_in_string_and_comment() {
         Err(e) => panic!("Failed to split SQL: {}", e),
     }
 }
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_long_recipe_names_resolve_by_fingerprint_for_their_owner(pool: PgPool) -> Result<()> {
+    use just_ingredients::bot::recipe_selection::{
+        recipe_selection_callback, resolve_recipe_selection, MAX_CALLBACK_DATA_BYTES,
+    };
+    init_database_schema(&pool).await?;
+    let long_name =
+        "https://www.marmiton.org/recettes/recette_gateau-au-chocolat-fondant_166352.aspx";
+    let recipe_id = create_recipe(&pool, 111, "1 cup flour").await?;
+    update_recipe_name(&pool, 111, recipe_id, long_name).await?;
+
+    let data = recipe_selection_callback(long_name);
+    assert!(data.len() <= MAX_CALLBACK_DATA_BYTES);
+    assert_eq!(
+        resolve_recipe_selection(&pool, 111, &data)
+            .await?
+            .as_deref(),
+        Some(long_name)
+    );
+    assert_eq!(
+        resolve_recipe_selection(&pool, 222, &data).await?,
+        None,
+        "another user's fingerprint does not resolve"
+    );
+    Ok(())
+}

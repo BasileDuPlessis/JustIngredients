@@ -91,7 +91,7 @@ pub async fn callback_handler(
 
     // Handle general callbacks that work in any state
     if let Some(msg) = &q.message {
-        if data.starts_with("select_recipe:") {
+        if crate::bot::recipe_selection::is_recipe_selection(data) {
             recipe_callbacks::handle_recipe_selection(
                 &bot,
                 msg,
@@ -238,7 +238,7 @@ pub async fn callback_handler_with_cache(
 
     // Handle general callbacks that work in any state with caching
     if let Some(msg) = &q.message {
-        if data.starts_with("select_recipe:") {
+        if crate::bot::recipe_selection::is_recipe_selection(data) {
             handle_recipe_selection_cached(
                 &bot,
                 msg,
@@ -592,8 +592,12 @@ async fn handle_recipe_selection_cached(
     let language_code = &from.language_code;
     let telegram_id = from.id.0 as i64;
 
-    // Extract recipe name from callback data (format: "select_recipe:Recipe Name")
-    let recipe_name = data.strip_prefix("select_recipe:").unwrap_or("");
+    // Recipe name from the button: plain, or a fingerprint for names too long for Telegram
+    let recipe_name =
+        crate::bot::recipe_selection::resolve_recipe_selection(&pool, telegram_id, data)
+            .await?
+            .unwrap_or_default();
+    let recipe_name = recipe_name.as_str();
     debug!(recipe_name = %recipe_name, "Handling recipe selection with caching");
 
     // Extract chat id from the message

@@ -42,8 +42,12 @@ pub async fn handle_recipe_selection(
     let language_code = &from.language_code;
     let telegram_id = from.id.0 as i64;
 
-    // Extract recipe name from callback data (format: "select_recipe:Recipe Name")
-    let recipe_name = data.strip_prefix("select_recipe:").unwrap_or("");
+    // Recipe name from the button: plain, or a fingerprint for names too long for Telegram
+    let recipe_name =
+        crate::bot::recipe_selection::resolve_recipe_selection(&pool, telegram_id, data)
+            .await?
+            .unwrap_or_default();
+    let recipe_name = recipe_name.as_str();
     debug!(recipe_name = %recipe_name, "Handling recipe selection");
 
     // Extract chat id from the message
@@ -504,7 +508,7 @@ pub async fn handle_recipe_statistics(
             "⬅️ {}",
             t_lang(localization, "back-to-recipe", language_code.as_deref())
         ),
-        format!("select_recipe:{}", recipe_name),
+        crate::bot::recipe_selection::recipe_selection_callback(recipe_name),
     )]];
 
     bot.send_message(chat_id, stats_message)
