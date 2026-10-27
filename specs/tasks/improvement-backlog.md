@@ -910,7 +910,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: no deprecation annotations; smoke tests fail with a revoked bot token.
 
 ### IMP-043: README describes a pipeline that does not exist
-- [ ] Done
+- [x] Done (2026-10-27, with migration Task 5.5: README rewritten for the Gemini bot)
 - Priority: P3. Effort: S. Area: Docs.
 - Location: `README.md:89`, `README.md:122-127`.
 - Problem: the README claims automatic production deploys, deployments gated on tests and an
