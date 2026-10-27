@@ -14,8 +14,8 @@ pub enum AppError {
     Validation(String),
     /// Database operation errors
     Database(String),
-    /// OCR processing errors
-    Ocr(String),
+    /// Ingredient parser errors (measurement detector setup)
+    Parser(String),
     /// File system errors
     FileSystem(String),
     /// Network/communication errors
@@ -30,7 +30,7 @@ impl fmt::Display for AppError {
             AppError::Config(msg) => write!(f, "[CONFIG] {}", msg),
             AppError::Validation(msg) => write!(f, "[VALIDATION] {}", msg),
             AppError::Database(msg) => write!(f, "[DATABASE] {}", msg),
-            AppError::Ocr(msg) => write!(f, "[OCR] {}", msg),
+            AppError::Parser(msg) => write!(f, "[PARSER] {}", msg),
             AppError::FileSystem(msg) => write!(f, "[FILESYSTEM] {}", msg),
             AppError::Network(msg) => write!(f, "[NETWORK] {}", msg),
             AppError::Internal(msg) => write!(f, "[INTERNAL] {}", msg),
@@ -90,24 +90,6 @@ pub mod error_logging {
             recipe_name = ?recipe_name,
             ingredient_count = ?ingredient_count,
             "Recipe processing failed"
-        );
-    }
-
-    /// Log OCR processing errors with image and processing context
-    pub fn log_ocr_error(
-        error: &impl std::fmt::Display,
-        operation: &str,
-        user_id: Option<i64>,
-        image_size: Option<u64>,
-        processing_duration: Option<std::time::Duration>,
-    ) {
-        error!(
-            error = %error,
-            operation = %operation,
-            user_id = ?user_id,
-            image_size_bytes = ?image_size,
-            processing_duration_ms = ?processing_duration.map(|d| d.as_millis()),
-            "OCR processing failed"
         );
     }
 

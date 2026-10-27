@@ -11,8 +11,8 @@ and saves it as a recipe. Messages are in French or English, following the Teleg
 - **My recipes**: list, open, rename, edit the ingredients of, and delete saved recipes.
 - **Home message**: every finished action ends with a home message (number of recipes, the
   latest ones as buttons, the commands); the intermediate messages are deleted.
-- **Commands**: `/liste` (`/list`), `/aide` (`/help`), `/start`; `/cherche` (`/search`) comes
-  with search. They are in the Telegram command menu.
+- **Commands**: `/liste` (`/list`) and `/aide` (`/help`), in the Telegram command menu; `/start`
+  shows the welcome message; `/cherche` (`/search`) comes with search.
 
 ## Stack
 Rust (teloxide, long polling), PostgreSQL (sqlx), Gemini API (`gemini-3.5-flash-lite`),

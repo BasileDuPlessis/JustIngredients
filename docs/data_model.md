@@ -28,7 +28,7 @@ Manages Telegram user accounts and preferences.
 - Unique index on `telegram_id`
 
 ### 2. Recipes Table
-Stores the extracted text (Gemini transcription of the ingredient section; OCR text for recipes saved before 2026-10) and recipe information for audit and search purposes.
+Stores the extracted text (Gemini transcription of the ingredient section; OCR text for recipes saved before Gemini went live on 2026-10-27) and recipe information for audit and search purposes.
 
 | Column       | Type          | Constraints                    | Description                          |
 |--------------|---------------|-------------------------------|--------------------------------------|

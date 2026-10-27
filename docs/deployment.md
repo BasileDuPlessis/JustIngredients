@@ -7,6 +7,8 @@ This guide covers deploying JustIngredients to Fly.io from scratch, including da
 - [Fly.io account](https://fly.io/docs/getting-started/)
 - [Fly CLI installed](https://fly.io/docs/flyctl/install/)
 - Telegram bot token from [@BotFather](https://t.me/botfather)
+- Gemini API key from [Google AI Studio](https://aistudio.google.com/apikey) (paid tier): the bot
+  does not start without it
 
 ## Automated Deployment
 
@@ -19,8 +21,8 @@ cd JustIngredients
 
 # Set your bot token (will be prompted if not set)
 export TELEGRAM_BOT_TOKEN='your_bot_token_here'  # Optional: set beforehand or enter interactively
+export GEMINI_API_KEY='your_gemini_key_here'      # Optional: set beforehand or enter interactively
 
-# Run the deployment script
 # Run the deployment script
 ./scripts/deploy.sh
 ```
@@ -66,7 +68,7 @@ This automatically sets the `DATABASE_URL` environment variable.
 ### 5. Set Secrets
 
 ```bash
-fly secrets set TELEGRAM_BOT_TOKEN='your_bot_token_here' --app just-ingredients
+fly secrets set TELEGRAM_BOT_TOKEN='your_bot_token_here' GEMINI_API_KEY='your_gemini_key_here' --app just-ingredients
 ```
 
 ### 6. Deploy the Application
@@ -82,6 +84,8 @@ fly deploy --app just-ingredients
 The application supports the following environment variables (set automatically by Fly.io):
 
 - `TELEGRAM_BOT_TOKEN`: Your Telegram bot token (required)
+- `GEMINI_API_KEY`: Gemini API key (required); optional tuning: `GEMINI_MODEL`,
+  `GEMINI_TIMEOUT_SECS`, `GEMINI_THINKING_LEVEL`, `GEMINI_MAX_CONCURRENCY` (see `.env.example`)
 - `DATABASE_URL`: PostgreSQL connection string (set by database attachment)
 - `HEALTH_PORT`: Port for health checks (default: 8080)
 - `LOG_FORMAT`: Log format - `json` or `pretty` (default: pretty)

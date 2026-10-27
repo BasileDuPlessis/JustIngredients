@@ -1,6 +1,6 @@
 # Ingredient Extraction (Gemini) Specification
 
-> Describes the code as it is (2026-10-27, after migration Phase 5). It replaces the OCR specs:
+> Describes the code as it is (2026-10-27, after migration Tasks 5.1 to 5.5). It replaces the OCR specs:
 > the Tesseract pipeline was removed in [LLM Extraction Migration](tasks/llm-extraction-migration.md)
 > Task 5.1. How the photo flow uses it: [Telegram Bot](telegram-bot.md#photo-flow).
 
@@ -59,9 +59,11 @@ failure is logged as an error and the bot still starts (photos then fail with
 ## Reliability
 - One deadline per image (`GEMINI_TIMEOUT_SECS`), 20 s per attempt, 10 s to connect, responses
   over 1 MB refused.
-- Retries with backoff and jitter on network errors, timeouts, HTTP 429 (honouring
-  `Retry-After`, with a lower bound) and 5xx; never on other 4xx.
-- Circuit breaker: 5 failed images open it for 60 s, then one trial call (half-open).
+- Retries with backoff (1 s doubling to 8 s, 20 % jitter) on network errors, timeouts, HTTP 429
+  and 5xx; never on other 4xx. A `Retry-After` is a minimum delay; one over 8 s ends the
+  retries at once (the photo gets the busy message).
+- Circuit breaker: 5 images in a row ending in a transient failure (429, 5xx, timeout, network)
+  open it for 60 s, then one trial call (half-open); any other outcome resets the count.
 - `GuardedExtractor`: `GEMINI_MAX_CONCURRENCY` slots; a photo waiting more than 30 s for a slot
   gets `error-extraction-busy`. Successful results are cached by SHA-256 of the image (100
   entries, 24 h); "not a recipe" answers are not cached.

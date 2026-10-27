@@ -145,50 +145,6 @@ fn test_multi_language_end_to_end_workflow() {
     );
 }
 
-/// Test error handling in complete workflows
-#[test]
-fn test_error_handling_end_to_end_workflow() {
-    use just_ingredients::circuit_breaker::CircuitBreaker;
-    use just_ingredients::ocr_config::{OcrConfig, RecoveryConfig};
-    use std::time::Duration;
-
-    // Test circuit breaker integration in workflow
-    let config = RecoveryConfig {
-        circuit_breaker_threshold: 2,
-        circuit_breaker_reset_secs: 1,
-        ..Default::default()
-    };
-
-    let circuit_breaker = CircuitBreaker::new(config);
-
-    // Initially circuit should not be open
-    assert!(!circuit_breaker.is_open().unwrap());
-
-    // Simulate failures
-    circuit_breaker.record_failure().unwrap();
-    assert!(!circuit_breaker.is_open().unwrap()); // Not yet at threshold
-
-    circuit_breaker.record_failure().unwrap();
-    assert!(circuit_breaker.is_open().unwrap()); // Now open
-
-    // Simulate waiting for reset
-    std::thread::sleep(Duration::from_secs(2));
-
-    // Circuit should reset and allow requests again
-    assert!(!circuit_breaker.is_open().unwrap());
-
-    // Test OCR config validation
-    let ocr_config = OcrConfig::default();
-    assert!(!ocr_config.languages.is_empty());
-    assert!(ocr_config.max_file_size > 0);
-
-    // Test measurement detector error handling
-    let invalid_pattern_result = MeasurementDetector::with_pattern(r"[invalid regex");
-    assert!(invalid_pattern_result.is_err());
-
-    println!("✅ Error handling workflow: circuit breaker, config validation, and regex error handling all working");
-}
-
 /// Test concurrent user workflows simulation
 #[test]
 fn test_concurrent_user_workflows() {

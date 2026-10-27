@@ -25,7 +25,6 @@ use super::commands::{route_text, Command, TextRoute};
 use super::media_handlers::{handle_document_message, handle_photo_message};
 
 // Import image processing
-// use super::image_processing::process_ingredients_and_extract_matches;
 
 // Import dialogue manager functions
 use super::dialogue_manager::{

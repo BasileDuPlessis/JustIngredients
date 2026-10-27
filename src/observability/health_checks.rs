@@ -82,8 +82,6 @@ pub async fn start_health_metrics_recorder(
                 );
             }
 
-            // Perform OCR health check
-
             // Perform bot token health check
             if let Some(token) = &bot_token {
                 let check_start = std::time::Instant::now();

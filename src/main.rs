@@ -235,6 +235,12 @@ async fn main() -> Result<()> {
     let localization_manager = localization::create_localization_manager()?;
 
     // Ingredient extraction engine (Gemini)
+    if let Ok(backend) = env::var("EXTRACTION_BACKEND") {
+        warn!(
+            value = %backend,
+            "EXTRACTION_BACKEND is no longer read: the Tesseract fallback was removed, Gemini is used"
+        );
+    }
     let gemini = GeminiExtractor::new(&app_config.extraction.gemini)?;
     match gemini.verify_access().await {
         Ok(()) => info!(model = %app_config.extraction.gemini.model, "Gemini API access verified"),

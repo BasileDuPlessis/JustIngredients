@@ -213,8 +213,8 @@ pub type SharedExtractor = std::sync::Arc<dyn IngredientExtractor>;
 pub type ExtractionFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Extraction, ExtractionError>> + Send + 'a>>;
 
-/// Extracts ingredients from an image. Object safe, so the bot can hold an
-/// `Arc<dyn IngredientExtractor>` chosen from [`ExtractionConfig::backend`].
+/// Extracts ingredients from an image. Object safe, so the bot holds an
+/// `Arc<dyn IngredientExtractor>` (Gemini in production, fakes in tests).
 pub trait IngredientExtractor: Send + Sync + std::fmt::Debug {
     /// Short name for logs and metrics, e.g. `"gemini"`.
     fn name(&self) -> &'static str;

@@ -926,7 +926,7 @@ async fn handle_edit_error(
     // Invalid input, ask user to try again
     let error_msg = match error {
         AppError::Validation(msg) => msg,
-        AppError::Ocr(_msg) => "error-processing-failed".to_string(),
+        AppError::Parser(_msg) => "error-processing-failed".to_string(),
         _ => "edit-invalid-input".to_string(),
     };
     let error_message = format!(

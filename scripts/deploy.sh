@@ -65,8 +65,22 @@ else
     echo "✅ Using TELEGRAM_BOT_TOKEN from environment variable"
 fi
 
+# The bot reads recipes with Gemini and does not start without a key
+if [ -z "$GEMINI_API_KEY" ]; then
+    echo "🔑 Please enter your Gemini API key:"
+    echo "   Create it at https://aistudio.google.com/apikey (paid tier)"
+    read -s -p "GEMINI_API_KEY: " GEMINI_API_KEY
+    echo ""  # New line after hidden input
+    if [ -z "$GEMINI_API_KEY" ]; then
+        echo "❌ Gemini API key is required. Exiting."
+        exit 1
+    fi
+else
+    echo "✅ Using GEMINI_API_KEY from environment variable"
+fi
+
 echo "🔐 Setting secrets..."
-fly secrets set TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" --app "$APP_NAME"
+fly secrets set TELEGRAM_BOT_TOKEN="$TELEGRAM_BOT_TOKEN" GEMINI_API_KEY="$GEMINI_API_KEY" --app "$APP_NAME"
 
 # Deploy the app
 echo "🚀 Deploying the application..."

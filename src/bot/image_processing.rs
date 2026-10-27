@@ -10,9 +10,6 @@ use tracing::{debug, info, warn};
 // Import localization
 use crate::localization::t_lang;
 
-// Import text processing
-use crate::text_processing::{MeasurementDetector, MeasurementMatch};
-
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
@@ -305,40 +302,6 @@ fn is_operator_error(error: &ExtractionError) -> bool {
         } => message.contains("API key") || message.contains("API_KEY"),
         _ => false,
     }
-}
-
-/// Process extracted text and return measurement matches
-pub fn process_ingredients_and_extract_matches(
-    extracted_text: &str,
-    _language_code: Option<&str>,
-) -> Vec<MeasurementMatch> {
-    debug!(
-        text_length = extracted_text.len(),
-        "Processing extracted text for ingredients"
-    );
-
-    // Create measurement detector with default configuration
-    let detector = match MeasurementDetector::new() {
-        Ok(detector) => detector,
-        Err(e) => {
-            error_logging::log_internal_error(
-                &e,
-                "MeasurementDetector",
-                "create_measurement_detector",
-                None,
-            );
-            return Vec::new();
-        }
-    };
-
-    // Find all measurements in the text
-    let matches = detector.extract_ingredient_measurements(extracted_text);
-    info!(
-        matches_found = matches.len(),
-        "Measurement detection completed"
-    );
-
-    matches
 }
 
 #[cfg(test)]

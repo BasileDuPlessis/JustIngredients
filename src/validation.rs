@@ -324,7 +324,7 @@ pub fn parse_quantity(quantity_str: &str) -> Option<f64> {
 /// - `AppError::Validation("edit-no-ingredient-name")`: No ingredient name found after quantity
 /// - `AppError::Validation("edit-ingredient-name-too-long")`: Ingredient name exceeds 100 characters
 /// - `AppError::Validation("edit-invalid-quantity")`: Quantity is ≤ 0 or > 10,000
-/// - `AppError::Ocr`: Measurement detector initialization failed
+/// - `AppError::Parser`: Measurement detector initialization failed
 ///
 /// ## Thread Safety
 ///
@@ -360,7 +360,7 @@ pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, AppEr
 
     // Try to extract measurement using the detector
     let detector = MeasurementDetector::new()
-        .map_err(|e| AppError::Ocr(format!("Failed to create measurement detector: {}", e)))?;
+        .map_err(|e| AppError::Parser(format!("Failed to create measurement detector: {}", e)))?;
     let temp_text = format!("temp: {}", trimmed);
     let matches = detector.extract_ingredient_measurements(&temp_text);
 

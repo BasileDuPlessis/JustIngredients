@@ -81,7 +81,8 @@ they can be pulled into 1-hour micro-tasks without another review.
 | IMP-045 | Locale keys used in code are not checked against the `.ftl` files | P2 | S | Localization |
 | IMP-046 | Timing benchmarks run as blocking tests | P2 | M | Tests / CI |
 | IMP-047 | No per-user limit on paid extractions | P3 | S | Cost |
-| IMP-048 | OCR metric helpers kept only for the observability tests | P3 | S | Observability |
+| IMP-048 | OCR leftovers kept only for tests | P3 | S | Observability |
+| IMP-049 | About 40 locale keys are never used by the code | P3 | S | Localization |
 
 ## Verification of Earlier Findings
 | # | Earlier finding | Result | Item |
@@ -977,15 +978,32 @@ they can be pulled into 1-hour micro-tasks without another review.
   before extraction, with a localized "daily limit reached" message; limit configurable.
 - Validation: unit test with a fake extractor: the N+1th photo of the day is refused without a call.
 
-### IMP-048: OCR metric helpers kept only for the observability tests
+### IMP-048: OCR leftovers kept only for tests
 - [ ] Done
 - Priority: P3. Effort: S. Area: Observability.
 - Related: LLM migration Task 5.1 (Tesseract removed on 2026-10-27).
 - Location: `src/observability/metrics.rs` (`record_ocr_metrics`, `record_ocr_performance_metrics`,
-  `OcrPerformanceMetricsParams`); about 30 calls in `tests/observability_tests.rs`,
+  `OcrPerformanceMetricsParams`, `update_circuit_breaker_state` and its `circuit_breaker_state`
+  gauge, which the Gemini breaker never moves), `src/observability/tracing_mod.rs` (`ocr_span`),
+  `src/cache.rs` (`OcrResultCache`, `OcrCacheKey`, `OcrCacheValue` and the `ocr_cache` field and
+  TTL of `CacheManager`); about 60 calls in `tests/observability_tests.rs`,
   `tests/observability_integration_tests.rs` and `tests/performance_tests.rs`.
-- Problem: nothing in the bot records `ocr_*` metrics any more; the helpers survive only because
-  the tests use them as a sample metric.
-- Proposed fix: switch the tests to a live metric (`record_db_metrics`, `record_telegram_message`)
-  and delete the helpers.
+- Problem: nothing in the bot records `ocr_*` metrics or uses the OCR cache any more; these
+  survive only because tests use them as samples. R5 review, 2026-10-27.
+- Proposed fix: switch the tests to live metrics and spans (`record_db_metrics`,
+  `telegram_span`), delete the helpers and the OCR cache; publish the Gemini breaker state as a
+  gauge if a dashboard needs it.
 - Validation: `git grep ocr_ -- src tests` is empty; tests green.
+
+### IMP-049: About 40 locale keys are never used by the code
+- [ ] Done
+- Priority: P3. Effort: S. Area: Localization.
+- Location: `locales/en/main.ftl`, `locales/fr/main.ftl` (e.g. `help-step5`, `help-tip5`,
+  `success-extraction`, `caption-used`, `document-image`, `recipe-deleted`, `ingredients-updated`,
+  `delete-cancelled`).
+- Problem: 47 of 184 keys are never named in `src/` (the 5 `error-ocr-*` keys were removed with
+  Task 5.1); some are leftovers of removed flows, some may be read by tests. Translators maintain
+  text nobody sees.
+- Proposed fix: check each key against `src/` and `tests/`, delete the unused ones, and add the
+  reverse check (every key is used) to `tests/localization_tests.rs`.
+- Validation: the reverse locale test passes.

@@ -82,7 +82,7 @@ impl Default for GeminiConfig {
     }
 }
 
-/// Extraction settings: which backend runs, and the Gemini client settings.
+/// Extraction settings: the Gemini client settings.
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct ExtractionConfig {
     pub gemini: GeminiConfig,

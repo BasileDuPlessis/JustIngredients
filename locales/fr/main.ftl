@@ -45,15 +45,10 @@ home-all-recipes = 📚 Toutes mes recettes
 error-download-failed = Échec du téléchargement de l'image. Veuillez réessayer.
 error-unsupported-format = Format d'image non supporté. Veuillez utiliser les formats PNG, JPG, JPEG, BMP, TIFF ou TIF.
 error-no-text-found = Aucun texte n'a été trouvé dans l'image. Essayez avec une image plus claire contenant du texte visible.
-error-ocr-initialization = L'initialisation du moteur OCR a échoué. Veuillez réessayer plus tard.
-error-ocr-extraction = Échec de l'extraction du texte de l'image. Essayez avec une image différente.
-error-ocr-timeout = Le traitement OCR a expiré : {$msg}
-error-ocr-corruption = Le moteur OCR a rencontré une erreur interne. Veuillez réessayer.
-error-ocr-exhaustion = Les ressources système sont épuisées. Veuillez réessayer plus tard.
 error-validation = La validation de l'image a échoué : {$msg}
 error-image-load = Le format d'image n'est pas supporté ou l'image est corrompue. Essayez avec une image PNG, JPG ou BMP.
 
-# Ingredient extraction (Gemini or Tesseract)
+# Ingredient extraction (Gemini)
 error-extraction-unavailable = La lecture des recettes est momentanément indisponible. Réessayez dans quelques minutes.
 error-extraction-busy = Trop de photos en même temps. Réessayez dans une minute.
 error-extraction-unsupported-image = Ce fichier n'est pas une image que je sais lire. Envoyez une photo (JPEG, PNG ou WebP).
