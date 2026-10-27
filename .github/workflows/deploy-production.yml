@@ -1,7 +1,7 @@
 name: Deploy to Production
 
-# Manual deployment of the selected branch's head commit. The commit must have been
-# deployed to staging successfully first.
+# Manual deployment of main's head commit. The commit must have passed Build and Test on a
+# push and been deployed to staging successfully first.
 on:
   workflow_dispatch:
 
@@ -15,6 +15,7 @@ concurrency:
 
 jobs:
   deploy-production:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
@@ -22,13 +23,22 @@ jobs:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       PRODUCTION_URL: https://just-ingredients.fly.dev
     steps:
-    - name: Require a successful staging deployment of this commit
+    # Staging runs are matched on their run name, which carries the deployed commit: the
+    # run's own head SHA is the default-branch head when it started, not the tested commit.
+    - name: Require green CI and a successful staging deployment of this commit
       env:
         GH_TOKEN: ${{ github.token }}
       run: |
-        conclusion=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "Deploy to Staging" \
-          --commit "$GITHUB_SHA" --status success --limit 1 --json conclusion --jq '.[0].conclusion // ""')
-        if [ "$conclusion" != "success" ]; then
+        ci=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "Build and Test" --event push \
+          --commit "$GITHUB_SHA" --status success --limit 1 --json conclusion --jq 'length')
+        if [ "$ci" != "1" ]; then
+          echo "::error::Commit $GITHUB_SHA has no successful Build and Test run on push."
+          exit 1
+        fi
+        staging=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "Deploy to Staging" \
+          --status success --limit 50 --json displayTitle \
+          --jq "map(select(.displayTitle == \"Deploy to Staging $GITHUB_SHA\")) | length")
+        if [ "$staging" = "0" ]; then
           echo "::error::Commit $GITHUB_SHA has no successful staging deployment. Deploy it to staging first."
           exit 1
         fi
