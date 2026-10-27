@@ -19,8 +19,9 @@ pub async fn perform_readiness_checks(
         check_database_health(pool.as_ref()).await?;
     }
 
-    // Check that Telegram answered recently (heartbeat)
-    check_telegram_health()?;
+    // Ready means Telegram answered since the start, not just "still in the startup grace":
+    // a release that cannot reach Telegram then fails the deploy checks and is rolled back
+    check_telegram_confirmed()?;
 
     // Check bot token validity
     if let Some(token) = &bot_token {
@@ -138,7 +139,36 @@ fn telegram_reachable(last_ok: u64, started: Option<u64>, now: u64, stale_after:
     }
 }
 
-/// Fails when the Telegram heartbeat has not succeeded for [`TELEGRAM_STALE_AFTER`].
+/// Whether Telegram answered since the start and recently (`last_ok` within `stale_after`).
+/// No heartbeat started at all (tests, tools) counts as confirmed. All values in the same unit.
+fn telegram_confirmed(last_ok: u64, started: Option<u64>, now: u64, stale_after: u64) -> bool {
+    match started {
+        None => true,
+        Some(_) => last_ok > 0 && now.saturating_sub(last_ok) <= stale_after,
+    }
+}
+
+/// Readiness: fails until a Telegram call has succeeded, and when none did for
+/// [`TELEGRAM_STALE_AFTER`].
+pub fn check_telegram_confirmed() -> Result<()> {
+    let last_ok = LAST_TELEGRAM_OK.load(std::sync::atomic::Ordering::Relaxed);
+    let stale_after = u64::try_from(TELEGRAM_STALE_AFTER.as_millis()).unwrap_or(u64::MAX);
+    if telegram_confirmed(
+        last_ok,
+        HEARTBEAT_STARTED.get().copied(),
+        now_ms(),
+        stale_after,
+    ) {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!(
+            "Telegram has not answered yet or not recently"
+        ))
+    }
+}
+
+/// Liveness: fails when the Telegram heartbeat has not succeeded for [`TELEGRAM_STALE_AFTER`]
+/// (with the same grace after the start, so a slow start does not fail the machine checks).
 pub fn check_telegram_health() -> Result<()> {
     let last_ok = LAST_TELEGRAM_OK.load(std::sync::atomic::Ordering::Relaxed);
     let now = now_ms();
@@ -202,5 +232,19 @@ mod tests {
     #[test]
     fn without_a_heartbeat_telegram_is_not_judged() {
         assert!(telegram_reachable(0, None, 99_999, STALE));
+        assert!(telegram_confirmed(0, None, 99_999, STALE));
+    }
+
+    #[test]
+    fn readiness_needs_a_first_success() {
+        assert!(
+            !telegram_confirmed(0, Some(1_000), 1_001, STALE),
+            "just started, nothing confirmed yet"
+        );
+        assert!(telegram_confirmed(1_100, Some(1_000), 1_200, STALE));
+        assert!(
+            !telegram_confirmed(1_100, Some(1_000), 1_500, STALE),
+            "stale"
+        );
     }
 }

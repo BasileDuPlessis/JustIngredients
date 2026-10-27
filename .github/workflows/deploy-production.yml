@@ -2,8 +2,9 @@ name: Deploy to Production
 
 # Manual deployment of main's head commit. The commit must have passed Build and Test on a
 # push and been deployed to staging successfully first. Production runs the very image staging
-# ran (built once by Build and Test); if it does not come up healthy, the image that was
-# running before is deployed again.
+# ran (built once by Build and Test); if it does not come up healthy (live, and ready: database
+# and a first successful Telegram call), the image and configuration that were running before
+# are deployed again.
 on:
   workflow_dispatch:
 
@@ -54,17 +55,23 @@ jobs:
     - name: Setup flyctl
       uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
-    - name: Remember the running image for a rollback
+    - name: Remember the running release for a rollback
       id: previous
-      # Never blocks the deploy: without a readable image there is just no rollback
+      # Image digest of the running machine and the deployed configuration (not the one of this
+      # commit, which may be what breaks). Never blocks the deploy: without them there is just
+      # no rollback.
       run: |
-        image=$(flyctl image show --app "$APP" --json \
-          | jq -r 'if type == "array" then .[0] else . end | "\(.Registry)/\(.Repository)@\(.Digest)"') \
-          || image=""
+        image=$(flyctl machines list --app "$APP" --json \
+          | jq -r '([.[] | select(.state == "started")] + .)[0].image_ref
+                   | "\(.registry)/\(.repository)@\(.digest)"') || image=""
         case "$image" in
           */*@sha256:*) echo "Running image: $image" ;;
           *) echo "::warning::Could not read the running image: no automatic rollback"; image="" ;;
         esac
+        if [ -n "$image" ] && ! flyctl config save --app "$APP" --config "$RUNNER_TEMP/previous-fly.toml" --yes > /dev/null; then
+          echo "::warning::Could not save the running configuration: no automatic rollback"
+          image=""
+        fi
         echo "image=$image" >> "$GITHUB_OUTPUT"
 
     - name: Deploy the image tested on staging
@@ -79,7 +86,7 @@ jobs:
       env:
         PREVIOUS_IMAGE: ${{ steps.previous.outputs.image }}
       run: |
-        flyctl deploy --config deploy/fly.toml --app "$APP" --image "$PREVIOUS_IMAGE"
+        flyctl deploy --config "$RUNNER_TEMP/previous-fly.toml" --app "$APP" --image "$PREVIOUS_IMAGE"
         ./scripts/check-health.sh "$PRODUCTION_URL"
 
     - name: Notify deployment result

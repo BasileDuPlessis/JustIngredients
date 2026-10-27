@@ -83,6 +83,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 | IMP-047 | No per-user limit on paid extractions | P3 | S | Cost |
 | IMP-048 | OCR leftovers kept only for tests | P3 | S | Observability |
 | IMP-049 | About 40 locale keys are never used by the code | P3 | S | Localization |
+| IMP-050 | Deploys use the image tag, not its digest | P3 | S | CI/CD |
 
 ## Verification of Earlier Findings
 | # | Earlier finding | Result | Item |
@@ -993,6 +994,10 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Proposed fix: switch the tests to live metrics and spans (`record_db_metrics`,
   `telegram_span`), delete the helpers and the OCR cache; publish the Gemini breaker state as a
   gauge if a dashboard needs it.
+- Also left from OCR (follow-up review of Task 5.2, 2026-10-27): the quantity regex still accepts
+  `l` and `O` (`[lO\d]+/\d+` in `text_processing.rs`), so a typed "l/2 cup flour" is refused with
+  `edit-invalid-quantity` instead of being read as a name; `is_measurement_line` is only used by
+  its doc test.
 - Validation: `git grep ocr_ -- src tests` is empty; tests green.
 
 ### IMP-049: About 40 locale keys are never used by the code
@@ -1007,3 +1012,14 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Proposed fix: check each key against `src/` and `tests/`, delete the unused ones, and add the
   reverse check (every key is used) to `tests/localization_tests.rs`.
 - Validation: the reverse locale test passes.
+
+### IMP-050: Deploys use the image tag, not its digest
+- [ ] Done
+- Priority: P3. Effort: S. Area: CI/CD.
+- Location: `.github/workflows/deploy-staging.yml`, `deploy-production.yml` (`--image …:sha-<commit>`).
+- Problem: re-running the `image` job of "Build and Test" pushes a new digest under the same
+  `sha-<commit>` tag, so production could run an image staging never ran. Follow-up review of
+  Task 5.4, 2026-10-27.
+- Proposed fix: output the digest from the `image` job, record it in the staging run (e.g. in the
+  run name or an artifact) and deploy `…@sha256:<digest>` in both workflows.
+- Validation: the production run deploys the digest the staging run deployed.

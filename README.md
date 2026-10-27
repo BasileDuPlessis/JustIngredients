@@ -55,8 +55,9 @@ cargo test
   [improvement backlog](specs/tasks/improvement-backlog.md).
 
 ## Deployment
-Push to `main` → "Build and Test" → "Deploy to Staging" (temporary app, smoke tests) → run
-"Deploy to Production" by hand and approve the `production` environment. Details, secrets and
+Push to `main` → "Build and Test" (tests, then one image) → "Deploy to Staging" (permanent app
+with the test bot, smoke tests) → run "Deploy to Production" by hand and approve the
+`production` environment; it deploys the same image and rolls back if it is unhealthy. Details, secrets and
 health endpoints: [Deployment](specs/deployment.md).
 
 ## License
