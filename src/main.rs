@@ -279,6 +279,9 @@ async fn main() -> Result<()> {
 
     let bot = Bot::with_client(bot_token, client);
 
+    // Health checks report whether the bot can reach Telegram, not only that it runs
+    let _telegram_heartbeat = observability::start_telegram_heartbeat(bot.clone());
+
     info!("Bot initialized with 30s timeout, starting dispatcher");
 
     // Create shared dialogue storage

@@ -350,8 +350,17 @@ pub async fn start_metrics_server_with_health_checks(
                                             Ok::<_, std::convert::Infallible>(response)
                                         }
                                         (&hyper::Method::GET, "/health/live") => {
-                                            // Liveness probe - just check if the service is running
-                                            Ok(hyper::Response::new("OK".to_string()))
+                                            // Liveness: the process runs and can reach Telegram
+                                            match crate::observability::health_checks::check_telegram_health() {
+                                                Ok(()) => Ok(hyper::Response::new("OK".to_string())),
+                                                Err(error) => {
+                                                    let mut response =
+                                                        hyper::Response::new(error.to_string());
+                                                    *response.status_mut() =
+                                                        hyper::StatusCode::SERVICE_UNAVAILABLE;
+                                                    Ok(response)
+                                                }
+                                            }
                                         }
                                         (&hyper::Method::GET, "/health/ready") => {
                                             // Readiness probe - check if all dependencies are available

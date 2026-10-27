@@ -360,11 +360,16 @@ March 2026 image meanwhile (restarts reuse it).
   `extraction_cache_hits_total`). The per-user daily limit is IMP-047.
 
 ### Task 3.5: Health checks without Tesseract (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: replace `check_ocr_health` with a configuration check; readiness must not
   call the paid API. Make `/health/live` reflect the bot (moved from Task 0.11): track the last
   successful Telegram call instead of always answering "OK" (see IMP-039).
 - How to validate: `/health/ready` returns 200 without Tesseract installed.
+- Done: no Tesseract load in readiness or in the 60 s recorder; a Telegram heartbeat (`getMe` every
+  minute) makes `/health/live` and `/health/ready` answer 503 after 5 minutes without a successful
+  Telegram call (5-minute startup grace), so the uptime alert also fires when the bot runs but cannot
+  reach Telegram. Extraction health is not probed (startup validates the configuration; failures
+  show in `llm_requests_total`).
 
 ### Review gate R3
 - [ ] Done

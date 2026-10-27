@@ -185,13 +185,13 @@ mod tests {
         // We can't test actual functionality without dependencies, but we can verify compilation
 
         use just_ingredients::observability::{
-            check_bot_token_health, check_database_health, check_ocr_health,
+            check_bot_token_health, check_database_health, check_telegram_health,
             perform_readiness_checks,
         };
 
         // Verify function signatures are correct by checking they can be referenced
         let _check_db = check_database_health;
-        let _check_ocr = check_ocr_health;
+        let _check_telegram = check_telegram_health;
         let _check_token = check_bot_token_health;
         let _perform_checks = perform_readiness_checks;
 

@@ -52,12 +52,10 @@ mod tests {
             "Invalid bot token should fail health check"
         );
 
-        // Test OCR health check (may fail if Tesseract not available, but shouldn't panic)
-        let ocr_result = observability::check_ocr_health().await;
-        // OCR check result depends on system setup, but should not panic
+        // Without a running heartbeat (no bot), Telegram health is not judged
         assert!(
-            ocr_result.is_ok() || ocr_result.is_err(),
-            "OCR health check should complete"
+            observability::check_telegram_health().is_ok(),
+            "Telegram health check should pass without a heartbeat"
         );
 
         // Even without full initialization, basic metrics should still work
