@@ -435,8 +435,9 @@ March 2026 image meanwhile (restarts reuse it).
   "Build and Test" (job `image`, GHCR `sha-<commit>`, layer cache, dependency layer), staging is
   a permanent app deployed with `--image`, production deploys the same image and rolls back to
   the previous digest when it does not come up healthy; versioned light pre-push hook. Not done:
-  a Gemini call in the smoke tests, `cargo sqlx prepare --check`, `[lints.clippy]` denies, deleting
-  `build-and-push-docker.yml` (duplicate build, needs the user's `git rm`).
+  a Gemini call in the smoke tests, `cargo sqlx prepare --check`, `[lints.clippy]` denies, deploy by
+  digest (IMP-050). The duplicate `build-and-push-docker.yml` is deleted; the permanent staging app,
+  its database and secrets and one deploy token per environment were set up by the user.
 - Description: implement the target pipeline described in "CI/CD Audit": one `ci.yml`
   (lint, test with Postgres, deny, single image build with cache pushed by commit SHA) and one
   `deploy.yml` (staging then production deploying the same image digest, smoke tests including a
