@@ -145,10 +145,14 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   saved recipe (if kept) and the home message remain.
 
 ### Task U1.6: Commands always win (finding 18) (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: a message starting with `/` is a command in every dialogue state: it ends the current
   transaction (with the U1.5 cleanup) and runs; it is never taken as a name, quantity or ingredient.
 - How to validate: dialogue tests: `/aide` while naming a recipe shows the help and no recipe is saved.
+- Done (2026-10-27): `commands::route_text` (pure, tested) sends every `/` text to the commands,
+  in every state; a running action is exited and its recorded messages deleted first. `/liste`
+  no longer bypasses the dialogue. Unknown commands answer `unknown-command` with the menu.
+  Known limit: the interrupted review or edit message keeps its (now inactive) buttons.
 
 ### Task U1.7: Small message fixes (findings 17, 20) (<= 1 hour)
 - [ ] Done

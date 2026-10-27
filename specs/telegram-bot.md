@@ -59,12 +59,14 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 ## Messages and Commands
 | Input | Behaviour |
 |---|---|
-| `/liste`, `/list`, `/recipes` | Checked first, in any dialogue state (state unchanged): first page of the recipe list. |
-| `/start` | Only outside a dialogue: welcome message. |
-| `/aide`, `/help` | Only outside a dialogue: help message. |
-| `/cherche`, `/search` | Only outside a dialogue: "search is coming soon" (`search-coming-soon`); the words are parsed but not used yet. |
+| Any text starting with `/` | A command, in every dialogue state (`commands::route_text`): a running action ends first (dialogue exited, its recorded messages deleted, no home message), then the command runs. |
+| `/liste`, `/list`, `/recipes` | First page of the recipe list. |
+| `/start` | Welcome message. |
+| `/aide`, `/help` | Help message. |
+| `/cherche`, `/search` | "Search is coming soon" (`search-coming-soon`); the words are parsed but not used yet. |
+| Unknown `/command` | `unknown-command` and the menu commands. |
 | Other text, no dialogue | Echo "Received: <text>" plus a tip to send a photo (`text-response`, `text-tip`). No search. |
-| Text in a dialogue | Handled by the current state (see [Dialogue States](#dialogue-states)). Commands other than the list are not recognized there: while a name is expected, `/aide` is saved as the name. |
+| Other text in a dialogue | Handled by the current state (see [Dialogue States](#dialogue-states)). |
 | Photo | Largest size, caption used as recipe name candidate. Handled whatever the state: a successful extraction replaces the current dialogue with a new review. |
 | Document | Only `image/*` MIME types, caption ignored; otherwise `error-unsupported-format` or `error-no-mime-type`. |
 | Anything else | `unsupported-*` message. |

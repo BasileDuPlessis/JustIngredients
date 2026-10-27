@@ -17,9 +17,9 @@ use crate::extraction::SharedExtractor;
 use super::cleanup;
 use super::command_handlers::{
     handle_help_command, handle_recipes_command, handle_search_command, handle_start_command,
-    handle_unsupported_message,
+    handle_unknown_command, handle_unsupported_message,
 };
-use super::commands::{parse_command, Command};
+use super::commands::{route_text, Command, TextRoute};
 
 // Import media handlers
 use super::media_handlers::{handle_document_message, handle_photo_message};
@@ -60,13 +60,23 @@ async fn handle_text_message(
             .and_then(|user| user.language_code.as_ref())
             .map(|s| s.as_str());
 
-        // Check dialogue state first
         let dialogue_state = dialogue.get().await?;
+        let in_action = !matches!(dialogue_state, None | Some(RecipeDialogueState::Start));
 
-        // Replies typed during an action are deleted when it ends
-        if !matches!(dialogue_state, None | Some(RecipeDialogueState::Start)) {
-            cleanup::track(msg.chat.id, msg.id);
+        match route_text(text, in_action) {
+            TextRoute::Command(command) => {
+                if in_action {
+                    // The command ends the running action, which leaves no message behind
+                    dialogue.exit().await?;
+                    cleanup::delete_tracked(bot, msg.chat.id).await;
+                }
+                return handle_command(bot, msg, pool, localization, language_code, command).await;
+            }
+            // Replies typed during an action are deleted when it ends
+            TextRoute::ActionInput => cleanup::track(msg.chat.id, msg.id),
+            TextRoute::FreeText => {}
         }
+
         match dialogue_state {
             Some(RecipeDialogueState::WaitingForRecipeName {
                 extracted_text,
@@ -364,43 +374,46 @@ async fn handle_text_message(
             }
         }
 
-        match parse_command(text) {
-            Some(Command::Start) => {
-                handle_start_command(bot, msg, localization, language_code).await?
-            }
-            Some(Command::Help) => {
-                handle_help_command(bot, msg, localization, language_code).await?
-            }
-            Some(Command::List) => {
-                handle_recipes_command(bot, msg, pool, language_code, localization, None).await?
-            }
-            Some(Command::Search(_)) => {
-                handle_search_command(bot, msg, localization, language_code).await?
-            }
-            None => {
-                bot.send_message(
-                    msg.chat.id,
-                    format!(
-                        "{} {}",
-                        t_args_lang(
-                            localization,
-                            "text-response",
-                            &[("text", text)],
-                            language_code
-                        ),
-                        t_lang(localization, "text-tip", language_code)
-                    ),
-                )
-                .await?;
-            }
-        }
+        bot.send_message(
+            msg.chat.id,
+            format!(
+                "{} {}",
+                t_args_lang(
+                    localization,
+                    "text-response",
+                    &[("text", text)],
+                    language_code
+                ),
+                t_lang(localization, "text-tip", language_code)
+            ),
+        )
+        .await?;
     }
     Ok(())
 }
 
-/// Main message handler for Telegram bot interactions
-/// Main message handler for Telegram bot interactions
-/// Main message handler for Telegram bot interactions
+/// Runs a typed command; `None` is an unknown command.
+async fn handle_command(
+    bot: &Bot,
+    msg: &Message,
+    pool: Arc<PgPool>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+    language_code: Option<&str>,
+    command: Option<Command>,
+) -> Result<()> {
+    match command {
+        Some(Command::Start) => handle_start_command(bot, msg, localization, language_code).await,
+        Some(Command::Help) => handle_help_command(bot, msg, localization, language_code).await,
+        Some(Command::List) => {
+            handle_recipes_command(bot, msg, pool, language_code, localization, None).await
+        }
+        Some(Command::Search(_)) => {
+            handle_search_command(bot, msg, localization, language_code).await
+        }
+        None => handle_unknown_command(bot, msg, localization, language_code).await,
+    }
+}
+
 /// Main message handler for Telegram bot interactions
 ///
 /// Implements comprehensive message routing and dialogue state management.
@@ -441,7 +454,7 @@ async fn handle_text_message(
 /// ## State-Specific Message Handling
 ///
 /// ### Text Messages
-/// - **Start State**: Handle the commands (see `commands::parse_command`)
+/// - **Any State**: Commands win (see `commands::route_text`) and end the running action
 /// - **WaitingForRecipeName**: Process recipe name input with validation
 /// - **ReviewIngredients**: Handle ingredient review commands (edit/delete/confirm)
 /// - **EditingIngredient**: Process ingredient edit input
@@ -627,7 +640,7 @@ pub async fn message_handler_with_cache(
     let MessageServices {
         pool,
         localization,
-        cache,
+        cache: _,
         deduplicator,
         extractor,
     } = services;
@@ -643,31 +656,8 @@ pub async fn message_handler_with_cache(
 
     let start_time = std::time::Instant::now();
 
-    // The list command answers in every dialogue state, before the state handles the text
-    if let Some(text) = msg.text() {
-        if parse_command(text) == Some(Command::List) {
-            observability::record_telegram_message("text");
-            debug!(user_id = %msg.chat.id, "Handling list command with caching");
-            let language_code = msg
-                .from
-                .as_ref()
-                .and_then(|user| user.language_code.as_ref())
-                .map(|s| s.as_str());
-
-            return crate::bot::command_handlers::handle_recipes_command(
-                &bot,
-                &msg,
-                pool,
-                language_code,
-                &localization,
-                Some(&*cache),
-            )
-            .await;
-        }
-    }
-
-    // Other messages go to the regular dispatcher, which records its own message metrics.
-    // The duplicate check above already ran and must not run again.
+    // The regular dispatcher records its own message metrics. The duplicate check above
+    // already ran and must not run again.
     dispatch_message(bot, msg, pool, dialogue, localization, extractor).await?;
 
     let duration = start_time.elapsed();

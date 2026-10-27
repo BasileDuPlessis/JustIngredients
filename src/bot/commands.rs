@@ -45,6 +45,29 @@ pub fn parse_command(text: &str) -> Option<Command> {
     }
 }
 
+/// What a typed text is, given whether an action (a dialogue) is running.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum TextRoute {
+    /// Starts with `/`: a command (`None` when unknown). It always wins, even during an action:
+    /// it is never taken as a name, a quantity or an ingredient.
+    Command(Option<Command>),
+    /// An answer to the running action.
+    ActionInput,
+    /// Text outside any action.
+    FreeText,
+}
+
+/// Routes a typed text (pure, see [`TextRoute`]).
+pub fn route_text(text: &str, in_action: bool) -> TextRoute {
+    if text.starts_with('/') {
+        TextRoute::Command(parse_command(text))
+    } else if in_action {
+        TextRoute::ActionInput
+    } else {
+        TextRoute::FreeText
+    }
+}
+
 /// Commands of the menu for a supported language: command name and description key.
 ///
 /// `/cherche` joins the menu once search works (UX plan, Task U4.2).
@@ -143,6 +166,31 @@ mod tests {
         assert_eq!(parse_command("liste"), None);
         assert_eq!(parse_command("2 cups flour"), None);
         assert_eq!(parse_command(" /liste"), None);
+    }
+
+    #[test]
+    fn commands_win_over_the_running_action() {
+        assert_eq!(
+            route_text("/aide", true),
+            TextRoute::Command(Some(Command::Help))
+        );
+        assert_eq!(
+            route_text("/liste", true),
+            TextRoute::Command(Some(Command::List))
+        );
+        assert_eq!(route_text("/inconnue", true), TextRoute::Command(None));
+        assert_eq!(route_text("Tarte aux pommes", true), TextRoute::ActionInput);
+        assert_eq!(route_text("200 g farine", true), TextRoute::ActionInput);
+    }
+
+    #[test]
+    fn text_outside_an_action_is_free_text_unless_it_is_a_command() {
+        assert_eq!(
+            route_text("/start", false),
+            TextRoute::Command(Some(Command::Start))
+        );
+        assert_eq!(route_text("/foo", false), TextRoute::Command(None));
+        assert_eq!(route_text("bonjour", false), TextRoute::FreeText);
     }
 
     #[test]

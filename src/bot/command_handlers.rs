@@ -118,6 +118,22 @@ pub async fn handle_search_command(
     Ok(())
 }
 
+/// Handle a command the bot does not know: say so and list the commands
+pub async fn handle_unknown_command(
+    bot: &Bot,
+    msg: &Message,
+    localization: &Arc<crate::localization::LocalizationManager>,
+    language_code: Option<&str>,
+) -> Result<()> {
+    let message = format!(
+        "{}\n\n{}",
+        t_lang(localization, "unknown-command", language_code),
+        command_lines(localization, language_code)
+    );
+    bot.send_message(msg.chat.id, message).await?;
+    Ok(())
+}
+
 /// Handle the list command (`/liste`, `/list`, `/recipes`)
 pub async fn handle_recipes_command(
     bot: &Bot,

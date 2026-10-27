@@ -31,6 +31,7 @@ help-final = Besoin d'aide ? Envoyez-moi simplement une image ! 😊
 command-list = Mes recettes
 command-help = Aide et conseils
 search-coming-soon = La recherche arrive bientôt. En attendant, /liste affiche toutes vos recettes.
+unknown-command = Je ne connais pas cette commande. Voici celles que je connais :
 
 # Message d'accueil (fin de chaque action)
 home-title = 🏠 Accueil
