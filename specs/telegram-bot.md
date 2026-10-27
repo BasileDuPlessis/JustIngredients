@@ -169,10 +169,12 @@ Before sending it, `send_home` deletes what the action left behind (`bot::cleanu
   (recorded in `handle_text_message`) and the bot prompts sent with `cleanup::send_transient`:
   quantity questions and the "check the quantities" warning, "try again" answers (name, edit,
   quantity), `review-help`, `use-buttons-instruction`, the rename and add-ingredient prompts,
-  and the name prompt when the name is cancelled.
+  and the name prompt when the name is cancelled;
+- the user's photo or image document, recorded once its review starts: it stays while the
+  ingredients are reviewed and goes when the review ends (saved, cancelled or interrupted by a
+  command). A photo whose extraction fails is not recorded.
 
-Kept: the photo (the bot does not store it), the ingredient list, saved or cancelled notices,
-recipe cards and lists. Only recorded messages are deleted; records older than 48 h are skipped
+Kept: the ingredient list, saved or cancelled notices, recipe cards and lists. Only recorded messages are deleted; records older than 48 h are skipped
 (Telegram refuses them), at most 200 per chat, in memory (lost on restart, like the dialogue
 state).
 

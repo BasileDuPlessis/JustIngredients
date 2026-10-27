@@ -67,6 +67,7 @@ pub async fn handle_photo_message(
                     pool,
                     caption,
                     extractor: SharedExtractor::clone(extractor),
+                    photo_message_id: msg.id,
                 },
                 localization,
             )
@@ -122,6 +123,7 @@ pub async fn handle_document_message(
                         pool,
                         caption: None, // Documents don't have captions like photos do
                         extractor: SharedExtractor::clone(extractor),
+                        photo_message_id: msg.id,
                     },
                     localization,
                 )

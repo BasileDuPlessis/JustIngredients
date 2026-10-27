@@ -48,6 +48,7 @@ are easy to find, and messages read well. Validated by the user on 2026-10-27 fr
 | Nominal state | Hybrid: at the end of a transaction the intermediate messages (prompts, user replies, previews) are deleted, the result is kept (e.g. the saved recipe card), then the home message is posted. |
 | Commands | `/liste`, `/cherche`, `/aide`; English aliases `/list`, `/search`, `/help`; `/start` and `/recipes` still accepted. |
 | Free text | Any text sent outside a dialogue is a search in the user's recipes. |
+| Photo | Kept while its ingredients are reviewed, deleted with the other messages when the review ends (2026-10-27). |
 | Releases | One production deployment per feature, validated by the user in Telegram before the next one. Changed on 2026-10-27 (after v19): features are grouped, one deployment per phase (U1.3–U1.7 together after RU1). |
 
 ## Open Questions
@@ -135,9 +136,9 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   message is posted.
 - Done (2026-10-27): `bot::cleanup` records message ids per chat, outside the dialogue states
   (they are rebuilt at every transition): the user's texts in a dialogue and the prompts sent
-  with `send_transient`. `send_home` deletes them and the previous home message. Kept: photo
-  (the bot does not store it), ingredient list, saved or cancelled notice, recipe card. Manual
-  check pending in Telegram.
+  with `send_transient`. `send_home` deletes them and the previous home message. The photo is
+  kept during the review and deleted when it ends (user decision, 2026-10-27). Kept: ingredient
+  list, saved or cancelled notice, recipe card. Manual check pending in Telegram.
 - Note: the quantity question prompt id is still never stored in the dialogue state
   (`handle_quantity_correction_input` edits a copy returned by `dialogue.get()`); cleanup does not
   need it any more, the field can go with U2.5.

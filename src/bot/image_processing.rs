@@ -55,6 +55,8 @@ pub struct ImageProcessingParams<'a> {
     pub caption: Option<String>,
     /// Engine that reads the ingredients (Gemini or Tesseract, from `EXTRACTION_BACKEND`).
     pub extractor: SharedExtractor,
+    /// The user's photo or image document, deleted when the review ends.
+    pub photo_message_id: teloxide::types::MessageId,
 }
 
 /// Downloads a Telegram file into memory, rejecting files larger than the extraction limit
@@ -127,6 +129,7 @@ pub async fn download_and_process_image(
         pool: _pool,
         caption,
         extractor,
+        photo_message_id,
     } = params;
 
     let bytes = match download_file_bytes(bot, file_id).await {
@@ -249,6 +252,9 @@ pub async fn download_and_process_image(
             recipe_name_from_caption,
         })
         .await?;
+
+    // The photo stays while the ingredients are reviewed, then goes with the review's messages
+    crate::bot::cleanup::track(chat_id, photo_message_id);
 
     info!(user_id = %chat_id, "Ingredients review interface sent successfully");
     Ok(extracted_text)
