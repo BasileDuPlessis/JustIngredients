@@ -45,12 +45,21 @@ jobs:
     - name: Create staging app
       run: flyctl apps create "$STAGING_APP" --org personal
 
-    # The generated database password is printed on success, so stdout is discarded.
+    # Both commands print the generated database password on success, so stdout is discarded.
+    # attach reaches the new database over Fly's private network, which is not always
+    # reachable from the runner right after creation: retry instead of ignoring failures.
     - name: Create and attach staging database
       run: |
         flyctl postgres create --name "$STAGING_DB" --region cdg --org personal \
           --vm-size shared-cpu-1x --volume-size 1 --initial-cluster-size 1 > /dev/null
-        flyctl postgres attach "$STAGING_DB" --app "$STAGING_APP" --yes > /dev/null
+        for attempt in 1 2 3 4; do
+          if flyctl postgres attach "$STAGING_DB" --app "$STAGING_APP" --yes > /dev/null; then
+            exit 0
+          fi
+          echo "attach attempt $attempt failed, retrying in 30 s"
+          sleep 30
+        done
+        exit 1
 
     - name: Set staging secrets
       env:
