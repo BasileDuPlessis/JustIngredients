@@ -77,11 +77,11 @@ pub async fn download_file_bytes(bot: &Bot, file_id: teloxide::types::FileId) ->
 /// Rejects files larger than `max_file_size` bytes.
 fn ensure_file_size_allowed(size: u64, max_file_size: u64) -> Result<()> {
     if size > max_file_size {
-        return Err(anyhow::anyhow!(
-            "File too large: {} bytes (maximum allowed: {} bytes)",
+        return Err(ExtractionError::ImageTooLarge {
             size,
-            max_file_size
-        ));
+            max: max_file_size,
+        }
+        .into());
     }
     Ok(())
 }
@@ -135,12 +135,18 @@ pub async fn download_and_process_image(
             bytes
         }
         Err(e) => {
-            error_logging::log_network_error(&e, "download_image_file", None, None);
-            bot.send_message(
-                chat_id,
-                t_lang(localization, "error-download-failed", language_code),
-            )
-            .await?;
+            // Files over the limit are not a download failure: say why they are refused.
+            let message_key = match e.downcast_ref::<ExtractionError>() {
+                Some(too_large @ ExtractionError::ImageTooLarge { .. }) => {
+                    extraction_error_key(too_large)
+                }
+                _ => {
+                    error_logging::log_network_error(&e, "download_image_file", None, None);
+                    "error-download-failed"
+                }
+            };
+            bot.send_message(chat_id, t_lang(localization, message_key, language_code))
+                .await?;
             return Err(e);
         }
     };
@@ -266,6 +272,12 @@ pub fn extraction_error_key(error: &ExtractionError) -> &'static str {
         | ExtractionError::Recitation
         | ExtractionError::Truncated
         | ExtractionError::InvalidResponse(_) => "error-extraction-unreadable",
+        // A client error that is not ours to fix (e.g. a corrupt image refused by the API)
+        ExtractionError::Api { status, .. }
+            if *status < 500 && *status != 429 && !is_operator_error(error) =>
+        {
+            "error-extraction-unreadable"
+        }
         ExtractionError::Config(_)
         | ExtractionError::Timeout
         | ExtractionError::Network(_)
@@ -274,10 +286,21 @@ pub fn extraction_error_key(error: &ExtractionError) -> &'static str {
     }
 }
 
-/// Failures the operator must fix (configuration, invalid key or model), logged as errors.
+/// Failures the operator must fix (configuration, invalid key, unknown model), logged as errors.
 fn is_operator_error(error: &ExtractionError) -> bool {
-    matches!(error, ExtractionError::Config(_))
-        || matches!(error, ExtractionError::Api { status, .. } if *status < 500 && *status != 429)
+    match error {
+        ExtractionError::Config(_) => true,
+        ExtractionError::Api {
+            status: 401 | 403 | 404,
+            ..
+        } => true,
+        // Google answers 400 for an invalid key; other 400s are about the request content.
+        ExtractionError::Api {
+            status: 400,
+            message,
+        } => message.contains("API key") || message.contains("API_KEY"),
+        _ => false,
+    }
 }
 
 /// Attempts automated recovery of anomalous quantity measurements using targeted re-OCR
@@ -591,20 +614,46 @@ mod tests {
 
     #[test]
     fn only_configuration_problems_are_operator_errors() {
+        let api = |status: u16, message: &str| ExtractionError::Api {
+            status,
+            message: message.to_string(),
+        };
         assert!(is_operator_error(&ExtractionError::Config(String::new())));
-        assert!(is_operator_error(&ExtractionError::Api {
-            status: 400,
-            message: String::new()
-        }));
-        assert!(!is_operator_error(&ExtractionError::Api {
-            status: 429,
-            message: String::new()
-        }));
-        assert!(!is_operator_error(&ExtractionError::Api {
-            status: 503,
-            message: String::new()
-        }));
+        assert!(is_operator_error(&api(
+            400,
+            "INVALID_ARGUMENT: API key not valid"
+        )));
+        assert!(is_operator_error(&api(
+            404,
+            "NOT_FOUND: models/x is not found"
+        )));
+        assert!(!is_operator_error(&api(
+            400,
+            "INVALID_ARGUMENT: Unable to process input image"
+        )));
+        assert!(!is_operator_error(&api(429, "")));
+        assert!(!is_operator_error(&api(503, "")));
         assert!(!is_operator_error(&ExtractionError::Timeout));
+    }
+
+    #[test]
+    fn a_refused_image_is_unreadable_but_a_bad_key_is_unavailable() {
+        let api = |status: u16, message: &str| ExtractionError::Api {
+            status,
+            message: message.to_string(),
+        };
+        assert_eq!(
+            extraction_error_key(&api(400, "Unable to process input image")),
+            "error-extraction-unreadable"
+        );
+        assert_eq!(
+            extraction_error_key(&api(400, "API key not valid")),
+            "error-extraction-unavailable"
+        );
+        assert_eq!(
+            extraction_error_key(&api(503, "")),
+            "error-extraction-unavailable"
+        );
     }
 
     #[test]

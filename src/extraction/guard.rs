@@ -91,7 +91,11 @@ impl GuardedExtractor {
         }
 
         let extraction = self.inner.extract(image).await?;
-        self.store(hash, &extraction);
+        // Only useful answers are cached: "not a recipe" or no ingredient may be a model miss,
+        // and sending the same photo again must try again.
+        if extraction.is_recipe && !extraction.ingredients.is_empty() {
+            self.store(hash, &extraction);
+        }
         Ok(extraction)
     }
 
@@ -148,7 +152,7 @@ impl IngredientExtractor for GuardedExtractor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extraction::RecipeLanguage;
+    use crate::extraction::{ExtractedIngredient, RecipeLanguage};
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
 
@@ -159,6 +163,7 @@ mod tests {
         in_flight: AtomicUsize,
         max_in_flight: AtomicUsize,
         fail: bool,
+        not_a_recipe: bool,
         delay: Duration,
     }
 
@@ -178,10 +183,16 @@ mod tests {
                     Err(ExtractionError::Timeout)
                 } else {
                     Ok(Extraction {
-                        is_recipe: true,
+                        is_recipe: !self.not_a_recipe,
                         language: RecipeLanguage::Fr,
                         transcription: "sel".to_string(),
-                        ingredients: Vec::new(),
+                        ingredients: vec![ExtractedIngredient {
+                            name: "sel".to_string(),
+                            quantity: None,
+                            unit: None,
+                            needs_review: false,
+                            source_text: "sel".to_string(),
+                        }],
                     })
                 }
             })
@@ -214,6 +225,23 @@ mod tests {
             assert!(guarded.extract(&image(1)?).await.is_err());
         }
         assert_eq!(fake.calls.load(Ordering::SeqCst), 2);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn not_a_recipe_answers_are_not_cached() -> Result<(), ExtractionError> {
+        let fake = Arc::new(FakeExtractor {
+            not_a_recipe: true,
+            ..FakeExtractor::default()
+        });
+        let guarded = GuardedExtractor::new(fake.clone(), 2);
+        guarded.extract(&image(1)?).await?;
+        guarded.extract(&image(1)?).await?;
+        assert_eq!(
+            fake.calls.load(Ordering::SeqCst),
+            2,
+            "the photo is read again"
+        );
         Ok(())
     }
 

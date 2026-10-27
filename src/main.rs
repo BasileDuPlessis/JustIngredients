@@ -256,15 +256,29 @@ async fn main() -> Result<()> {
     let localization_manager = localization::create_localization_manager()?;
 
     // Ingredient extraction engine, chosen by EXTRACTION_BACKEND
-    let engine: SharedExtractor = match app_config.extraction.backend {
-        ExtractionBackend::Gemini => Arc::new(GeminiExtractor::new(&app_config.extraction.gemini)?),
-        ExtractionBackend::Tesseract => Arc::new(TesseractExtractor::default()),
+    let (engine, slots): (SharedExtractor, usize) = match app_config.extraction.backend {
+        ExtractionBackend::Gemini => {
+            let gemini = GeminiExtractor::new(&app_config.extraction.gemini)?;
+            match gemini.verify_access().await {
+                Ok(()) => {
+                    info!(model = %app_config.extraction.gemini.model, "Gemini API access verified")
+                }
+                Err(error) => tracing::error!(
+                    model = %app_config.extraction.gemini.model,
+                    error = %error,
+                    "Gemini API access check failed: photos will fail until the key or model is fixed"
+                ),
+            }
+            (
+                Arc::new(gemini),
+                app_config.extraction.gemini.max_concurrency,
+            )
+        }
+        // OCR runs one image at a time and blocks a runtime thread
+        ExtractionBackend::Tesseract => (Arc::new(TesseractExtractor::default()), 1),
     };
     // Concurrency limit and result cache in front of the engine (cost and memory protection)
-    let extractor: SharedExtractor = Arc::new(GuardedExtractor::new(
-        engine,
-        app_config.extraction.gemini.max_concurrency,
-    ));
+    let extractor: SharedExtractor = Arc::new(GuardedExtractor::new(engine, slots));
     info!(
         backend = extractor.name(),
         model = %app_config.extraction.gemini.model,

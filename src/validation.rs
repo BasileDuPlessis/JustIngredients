@@ -211,11 +211,30 @@ pub fn adjust_quantity_for_negative(measurement_match: &mut MeasurementMatch, te
 /// ```
 pub fn validate_quantity_range(measurement_match: &MeasurementMatch) -> Result<(), AppError> {
     if let Some(qty) = parse_quantity(&measurement_match.quantity) {
-        if qty <= 0.0 || qty > 10000.0 {
+        if qty <= 0.0 || qty > MAX_QUANTITY {
             return Err(AppError::Validation("edit-invalid-quantity".to_string()));
         }
     }
     Ok(())
+}
+
+/// Largest quantity accepted anywhere: validation, manual edits and extraction mapping.
+pub const MAX_QUANTITY: f64 = 10_000.0;
+
+/// Answers meaning "this ingredient has no quantity" to the quantity question.
+const NO_QUANTITY_ANSWERS: [&str; 6] = ["-", "none", "no", "aucune", "aucun", "sans"];
+
+/// Parses the answer to "type the quantity": `Some("")` for no quantity (`-`, `none`,
+/// `aucune`, …), `Some(quantity)` for a number in (0, [`MAX_QUANTITY`]] formatted like the
+/// database column, `None` for anything else.
+pub fn parse_quantity_answer(input: &str) -> Option<String> {
+    let answer = input.trim().to_lowercase();
+    if NO_QUANTITY_ANSWERS.contains(&answer.as_str()) {
+        return Some(String::new());
+    }
+    parse_quantity(&answer)
+        .filter(|quantity| quantity.is_finite() && *quantity > 0.0 && *quantity <= MAX_QUANTITY)
+        .map(crate::extraction::mapping::format_quantity)
 }
 
 /// Parse quantity string to f64 (handles fractions and decimals)
@@ -373,7 +392,8 @@ fn parse_without_measurement_detector(trimmed: &str) -> Result<MeasurementMatch,
     }
 
     Ok(MeasurementMatch {
-        quantity: "1".to_string(), // Default quantity
+        // No number typed ("sel"): no quantity, stored as NULL, like extraction results
+        quantity: String::new(),
         measurement: None,
         ingredient_name: trimmed.to_string(),
         line_number: 0,
@@ -422,6 +442,41 @@ fn parse_with_quantity(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quantity_answers_accept_a_range_or_no_quantity() {
+        for (answer, expected) in [
+            ("-", Some("")),
+            ("Aucune", Some("")),
+            ("none", Some("")),
+            ("2,5", Some("2.5")),
+            ("1/2", Some("0.5")),
+            ("10000", Some("10000")),
+            ("0", None),
+            ("-2", None),
+            ("1e9", None),
+            ("beaucoup", None),
+        ] {
+            assert_eq!(
+                parse_quantity_answer(answer).as_deref(),
+                expected,
+                "{answer}"
+            );
+        }
+    }
+
+    #[test]
+    fn typed_ingredients_keep_missing_and_large_quantities() -> Result<(), AppError> {
+        let salt = parse_ingredient_from_text("sel")?;
+        assert_eq!(salt.quantity, "", "no quantity typed, none stored");
+        let flour = parse_ingredient_from_text("1500 g farine")?;
+        assert_eq!(flour.quantity, "1500");
+        assert!(
+            !flour.requires_quantity_confirmation,
+            "1500 g is a normal quantity"
+        );
+        Ok(())
+    }
 
     #[test]
     fn test_validate_recipe_name() {

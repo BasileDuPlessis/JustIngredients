@@ -7,7 +7,7 @@
 //! | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | model id |
 //! | `GEMINI_TIMEOUT_SECS` | `40` | time budget for one image, retries included, 1–300 |
 //! | `GEMINI_THINKING_LEVEL` | `minimal` | `minimal`, `low`, `medium` or `high` |
-//! | `GEMINI_MAX_CONCURRENCY` | `4` | concurrent API calls, 1–32 |
+//! | `GEMINI_MAX_CONCURRENCY` | `2` | concurrent API calls, 1–32 (each holds up to ~25 MB) |
 //!
 //! Values are parsed at startup whatever the backend: a malformed `GEMINI_*` value stops the
 //! bot, while range checks only apply when the backend is `gemini`.
@@ -110,7 +110,7 @@ impl Default for GeminiConfig {
             model: DEFAULT_GEMINI_MODEL.to_string(),
             timeout_secs: 40,
             thinking_level: ThinkingLevel::Minimal,
-            max_concurrency: 4,
+            max_concurrency: 2,
         }
     }
 }

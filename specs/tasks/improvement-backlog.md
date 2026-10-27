@@ -213,6 +213,10 @@ they can be pulled into 1-hour micro-tasks without another review.
   2. `parse_ingredient_from_text("1500 g farine")` is `Ok`.
   3. Handler test: Confirm with a flagged ingredient enters `AwaitingQuantityCorrection`, and no row
      with quantity 0 is written.
+- Progress (2026-10-27, R3): the Confirm button refuses to save flagged quantities and lists them
+  (`quantities_to_check`, tested); the anomaly threshold is the validation maximum (10000), so
+  "1500 g" is kept and editable; typed quantity answers are range-checked. Remaining: anomalous
+  quantities (> 10000, letter mixes) are still replaced by `"0"` instead of kept and flagged.
 
 ### IMP-005: Quantity parsing is inconsistent; mixed numbers are saved as NULL
 - [ ] Done

@@ -82,7 +82,7 @@ fn convert_to_jpeg(bytes: &[u8]) -> Result<Vec<u8>, ExtractionError> {
         .decode()
         .map_err(|error| unsupported(format!("cannot decode image: {error}")))?;
     // JPEG has no alpha channel: flatten to RGB first.
-    let rgb = image::DynamicImage::ImageRgb8(decoded.to_rgb8());
+    let rgb = image::DynamicImage::ImageRgb8(decoded.into_rgb8());
     let mut jpeg = Vec::new();
     rgb.write_with_encoder(JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY))
         .map_err(|error| unsupported(format!("cannot encode JPEG: {error}")))?;

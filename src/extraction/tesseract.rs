@@ -90,12 +90,17 @@ impl TesseractExtractor {
         .await;
         let ingredients = matches
             .into_iter()
-            .map(|measurement| ExtractedIngredient {
-                quantity: parse_quantity(&measurement.quantity),
-                name: measurement.ingredient_name,
-                unit: measurement.measurement,
-                needs_review: measurement.requires_quantity_confirmation,
-                source_text: String::new(),
+            .map(|measurement| {
+                let quantity = parse_quantity(&measurement.quantity);
+                // A quantity was read but cannot be parsed (e.g. "1 1/2"): ask the user.
+                let unreadable = quantity.is_none() && !measurement.quantity.trim().is_empty();
+                ExtractedIngredient {
+                    quantity,
+                    name: measurement.ingredient_name,
+                    unit: measurement.measurement,
+                    needs_review: measurement.requires_quantity_confirmation || unreadable,
+                    source_text: String::new(),
+                }
             })
             .collect();
         // Text was found: show it when no ingredient is detected, as before.

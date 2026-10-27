@@ -10,7 +10,7 @@ use crate::units::normalize_measurement;
 pub const MAX_NAME_BYTES: usize = 100;
 
 /// Largest quantity accepted by validation (`validation::validate_quantity_range`).
-pub const MAX_QUANTITY: f64 = 10_000.0;
+pub use crate::validation::MAX_QUANTITY;
 
 /// Longest unit the `ingredients.unit VARCHAR(50)` column stores.
 pub const MAX_UNIT_CHARS: usize = 50;

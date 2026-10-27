@@ -145,6 +145,40 @@ impl GeminiExtractor {
         self
     }
 
+    /// Checks the key and the model with `GET /models/{model}`, which is free: an invalid key or a
+    /// retired model shows at startup instead of failing every photo.
+    ///
+    /// # Errors
+    ///
+    /// The API error ([`ExtractionError::Api`] with the status) or a transport error.
+    pub async fn verify_access(&self) -> Result<(), ExtractionError> {
+        let url = format!(
+            "{}/models/{}",
+            self.base_url.trim_end_matches('/'),
+            self.model
+        );
+        let response = self
+            .client
+            .get(url)
+            .timeout(CONNECT_TIMEOUT)
+            .header("x-goog-api-key", self.api_key.clone())
+            .send()
+            .await
+            .map_err(|error| request_error(&error))?;
+        let status = response.status();
+        let retry_after = retry_after(response.headers());
+        let body = read_limited(response).await?;
+        if status.is_success() {
+            Ok(())
+        } else {
+            Err(error_from_status(
+                status.as_u16(),
+                &String::from_utf8_lossy(&body),
+                retry_after,
+            ))
+        }
+    }
+
     async fn extract_image(&self, image: &ImageInput) -> Result<Extraction, ExtractionError> {
         let started = Instant::now();
         let permit = match self.breaker.try_acquire() {
@@ -573,6 +607,32 @@ mod tests {
         ));
         assert_eq!(requests(&server).await, 2, "no call while open");
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn access_check_reports_an_unknown_model() -> Result<(), ExtractionError> {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models/gemini-test"))
+            .and(header("x-goog-api-key", KEY))
+            .respond_with(ResponseTemplate::new(404).set_body_string(NOT_FOUND))
+            .mount(&server)
+            .await;
+        let error = extractor(&server)?.verify_access().await;
+        assert!(
+            matches!(error, Err(ExtractionError::Api { status: 404, .. })),
+            "{error:?}"
+        );
+
+        let ok_server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/models/gemini-test"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_string(r#"{"name": "models/gemini-test"}"#),
+            )
+            .mount(&ok_server)
+            .await;
+        extractor(&ok_server)?.verify_access().await
     }
 
     #[test]

@@ -1629,9 +1629,8 @@ impl MeasurementDetector {
 
         // Check for unrealistically large numbers (likely OCR errors)
         if let Ok(num) = quantity.parse::<f64>() {
-            // Flag numbers larger than 1000 for most cooking contexts
-            // (except for very small units like grams where 1000+ is reasonable)
-            if num > 1000.0 {
+            // Flag numbers above the accepted maximum (1500 g is a normal quantity)
+            if num > crate::validation::MAX_QUANTITY {
                 debug!(
                     "Quantity anomaly detected: unrealistically large number '{}'",
                     quantity

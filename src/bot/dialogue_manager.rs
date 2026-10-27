@@ -1555,11 +1555,12 @@ pub async fn handle_quantity_correction_input(
     }
 
     // Parse the quantity input
-    match crate::validation::parse_quantity(input) {
-        Some(parsed_quantity) => {
-            // Valid quantity - update the ingredient
+    // A number in the accepted range, or "-" for no quantity; 0, negative or huge numbers
+    // would be saved as they are or fail the database insert and lose the recipe.
+    match crate::validation::parse_quantity_answer(input) {
+        Some(corrected_quantity) => {
             if let Some(ingredient) = ingredients.get_mut(ingredient_index) {
-                ingredient.quantity = parsed_quantity.to_string();
+                ingredient.quantity = corrected_quantity;
                 ingredient.requires_quantity_confirmation = false;
             }
 

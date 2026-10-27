@@ -31,7 +31,11 @@ fn measurement_text(ingredient: &MeasurementMatch) -> String {
 /// One ingredient as shown in the review list or on its buttons: "150 g → farine", or just
 /// "sel" without quantity, with ⚠️ when the quantity must be checked. `bold_measurement` wraps
 /// the quantity (and its warning) in `**` for the list, as before.
-fn ingredient_line(ingredient: &MeasurementMatch, name: &str, bold_measurement: bool) -> String {
+pub(crate) fn ingredient_line(
+    ingredient: &MeasurementMatch,
+    name: &str,
+    bold_measurement: bool,
+) -> String {
     let warning = if ingredient.requires_quantity_confirmation {
         "⚠️ "
     } else {

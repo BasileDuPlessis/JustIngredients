@@ -181,7 +181,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
 
         // Create focused editing prompt message
         let edit_prompt = format!(
-            "✏️ {}\n\n{}: **{} {} {}**\n\n{}",
+            "✏️ {}\n\n{}: {}\n\n{}",
             t_lang(
                 ctx.localization,
                 "edit-ingredient-title",
@@ -192,9 +192,8 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
                 "edit-ingredient-current",
                 dialogue_lang_code.as_deref()
             ),
-            ingredient.quantity,
-            ingredient.measurement.as_deref().unwrap_or(""),
-            ingredient.ingredient_name,
+            // Same rendering as the review list ("sel" without quantity, not "**  sel**")
+            crate::bot::ui_builder::ingredient_line(ingredient, &ingredient.ingredient_name, true),
             t_lang(
                 ctx.localization,
                 "edit-ingredient-instruction",
@@ -446,6 +445,16 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
     Ok(())
 }
 
+/// Names of the ingredients whose quantity must be checked before saving: flagged by the
+/// extractor, or out of the accepted range.
+fn quantities_to_check(ingredients: &[crate::text_processing::MeasurementMatch]) -> Vec<&str> {
+    ingredients
+        .iter()
+        .filter(|ingredient| ingredient.requires_quantity_confirmation)
+        .map(|ingredient| ingredient.ingredient_name.as_str())
+        .collect()
+}
+
 /// Handle confirm button in review ingredients state
 async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
     let ReviewIngredientsParams {
@@ -466,11 +475,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
 
     // Quantities the extractor was unsure about, or out of range, must be checked before
     // saving; saving them as they are would store a wrong or zero quantity (IMP-004).
-    let to_check: Vec<&str> = ingredients
-        .iter()
-        .filter(|ingredient| ingredient.requires_quantity_confirmation)
-        .map(|ingredient| ingredient.ingredient_name.as_str())
-        .collect();
+    let to_check = quantities_to_check(ingredients);
     if !to_check.is_empty() {
         if let Some(message) = q.message.as_ref() {
             ctx.bot
@@ -732,4 +737,33 @@ async fn handle_cancel_review_button(
     // End the dialogue
     dialogue.exit().await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::text_processing::MeasurementMatch;
+
+    fn ingredient(name: &str, flagged: bool) -> MeasurementMatch {
+        MeasurementMatch {
+            quantity: "1".to_string(),
+            measurement: None,
+            ingredient_name: name.to_string(),
+            line_number: 0,
+            start_pos: 0,
+            end_pos: 0,
+            requires_quantity_confirmation: flagged,
+        }
+    }
+
+    #[test]
+    fn confirm_lists_only_flagged_ingredients() {
+        let ingredients = [
+            ingredient("farine", false),
+            ingredient("beurre", true),
+            ingredient("sucre", true),
+        ];
+        assert_eq!(quantities_to_check(&ingredients), vec!["beurre", "sucre"]);
+        assert!(quantities_to_check(&ingredients[..1]).is_empty());
+    }
 }

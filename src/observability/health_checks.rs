@@ -2,7 +2,7 @@
 //!
 //! This module provides:
 //! - Database connectivity checks
-//! - OCR engine availability checks
+//! - Telegram reachability (heartbeat)
 //! - Bot token validation checks
 //! - Comprehensive readiness checks
 
@@ -19,7 +19,7 @@ pub async fn perform_readiness_checks(
         check_database_health(pool.as_ref()).await?;
     }
 
-    // Check OCR engine availability
+    // Check that Telegram answered recently (heartbeat)
     check_telegram_health()?;
 
     // Check bot token validity
@@ -106,26 +106,32 @@ pub const TELEGRAM_STALE_AFTER: std::time::Duration = std::time::Duration::from_
 /// How often the heartbeat calls `getMe`.
 const TELEGRAM_HEARTBEAT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
-/// Unix seconds of the last successful Telegram call (0: none yet).
+/// Milliseconds since process start (+1) of the last successful Telegram call; 0: none yet.
 static LAST_TELEGRAM_OK: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-/// When the heartbeat started, for the startup grace period.
+/// Milliseconds since process start when the heartbeat started, for the startup grace period.
 static HEARTBEAT_STARTED: std::sync::OnceLock<u64> = std::sync::OnceLock::new();
+/// Monotonic reference: health decisions must not move with wall-clock adjustments.
+static PROCESS_START: std::sync::OnceLock<std::time::Instant> = std::sync::OnceLock::new();
 
-fn unix_now() -> u64 {
-    std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|elapsed| elapsed.as_secs())
-        .unwrap_or_default()
+fn now_ms() -> u64 {
+    let elapsed = PROCESS_START
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis();
+    u64::try_from(elapsed).unwrap_or(u64::MAX)
 }
 
 /// Records a successful Telegram API call.
 pub fn record_telegram_success() {
-    LAST_TELEGRAM_OK.store(unix_now(), std::sync::atomic::Ordering::Relaxed);
+    LAST_TELEGRAM_OK.store(
+        now_ms().saturating_add(1),
+        std::sync::atomic::Ordering::Relaxed,
+    );
 }
 
 /// Whether Telegram counts as reachable at `now`: a success within `stale_after`, or no success
-/// yet but still within `stale_after` of the start (unix seconds). No heartbeat started at all
-/// (tests, tools) counts as reachable.
+/// yet but still within `stale_after` of the start. No heartbeat started at all (tests, tools)
+/// counts as reachable. All values in the same unit.
 fn telegram_reachable(last_ok: u64, started: Option<u64>, now: u64, stale_after: u64) -> bool {
     match started {
         None => true,
@@ -137,17 +143,19 @@ fn telegram_reachable(last_ok: u64, started: Option<u64>, now: u64, stale_after:
 /// Fails when the Telegram heartbeat has not succeeded for [`TELEGRAM_STALE_AFTER`].
 pub fn check_telegram_health() -> Result<()> {
     let last_ok = LAST_TELEGRAM_OK.load(std::sync::atomic::Ordering::Relaxed);
-    if telegram_reachable(
-        last_ok,
-        HEARTBEAT_STARTED.get().copied(),
-        unix_now(),
-        TELEGRAM_STALE_AFTER.as_secs(),
-    ) {
-        Ok(())
+    let now = now_ms();
+    let stale_after = u64::try_from(TELEGRAM_STALE_AFTER.as_millis()).unwrap_or(u64::MAX);
+    if telegram_reachable(last_ok, HEARTBEAT_STARTED.get().copied(), now, stale_after) {
+        return Ok(());
+    }
+    if last_ok == 0 {
+        Err(anyhow::anyhow!(
+            "Telegram API unreachable: no successful call since startup"
+        ))
     } else {
         Err(anyhow::anyhow!(
             "Telegram API unreachable: last successful call {}s ago",
-            unix_now().saturating_sub(last_ok)
+            now.saturating_sub(last_ok) / 1000
         ))
     }
 }
@@ -156,7 +164,7 @@ pub fn check_telegram_health() -> Result<()> {
 /// (network, revoked token), not only whether the process runs.
 pub fn start_telegram_heartbeat(bot: teloxide::Bot) -> tokio::task::JoinHandle<()> {
     use teloxide::requests::Requester;
-    let _ = HEARTBEAT_STARTED.set(unix_now());
+    let _ = HEARTBEAT_STARTED.set(now_ms());
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(TELEGRAM_HEARTBEAT_INTERVAL);
         loop {
