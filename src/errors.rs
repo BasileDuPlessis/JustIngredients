@@ -52,7 +52,6 @@ impl From<sqlx::Error> for AppError {
     }
 }
 
-
 /// Result type alias for convenience
 pub type AppResult<T> = Result<T, AppError>;
 
