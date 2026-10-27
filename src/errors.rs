@@ -52,11 +52,6 @@ impl From<sqlx::Error> for AppError {
     }
 }
 
-impl From<crate::ocr_errors::OcrError> for AppError {
-    fn from(err: crate::ocr_errors::OcrError) -> Self {
-        AppError::Ocr(err.to_string())
-    }
-}
 
 /// Result type alias for convenience
 pub type AppResult<T> = Result<T, AppError>;

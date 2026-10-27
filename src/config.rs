@@ -8,7 +8,6 @@
 use crate::errors::{AppError, AppResult};
 use crate::extraction::ExtractionConfig;
 use crate::observability_config::ObservabilityConfig;
-use crate::ocr_config::OcrConfig;
 use crate::text_processing::{MeasurementConfig, MeasurementUnitsConfig};
 use serde::{Deserialize, Serialize};
 use std::env;
@@ -245,15 +244,13 @@ pub struct AppConfig {
     pub database: DatabaseConfig,
     /// Server configuration
     pub server: ServerConfig,
-    /// OCR processing configuration
-    pub ocr: OcrConfig,
     /// Observability configuration
     pub observability: ObservabilityConfig,
     /// Text processing configuration
     pub text_processing: MeasurementConfig,
     /// Measurement units configuration
     pub measurement_units: MeasurementUnitsConfig,
-    /// Ingredient extraction backend and Gemini client configuration
+    /// Ingredient extraction (Gemini client) configuration
     pub extraction: ExtractionConfig,
 }
 
@@ -328,9 +325,6 @@ impl AppConfig {
             .to_lowercase()
             == "true";
 
-        // Load OCR configuration (uses existing defaults and validation)
-        config.ocr = OcrConfig::default();
-
         // Load observability configuration (uses existing defaults and validation)
         config.observability = ObservabilityConfig::default();
 
@@ -340,7 +334,7 @@ impl AppConfig {
         // Load measurement units configuration (from file)
         config.measurement_units = crate::text_processing::load_measurement_units_config();
 
-        // Load extraction configuration (backend and Gemini client)
+        // Load extraction configuration (Gemini client)
         config.extraction = ExtractionConfig::from_env()?;
 
         Ok(config)
@@ -351,7 +345,6 @@ impl AppConfig {
         self.bot.validate()?;
         self.database.validate()?;
         self.server.validate()?;
-        self.ocr.validate()?;
         self.observability.validate()?;
         self.text_processing.validate()?;
         self.measurement_units.validate()?;
@@ -362,12 +355,10 @@ impl AppConfig {
     /// Get a summary of the current configuration for logging
     pub fn summary(&self) -> String {
         format!(
-            "Configuration: bot_token=[REDACTED], db_url=[REDACTED], health_port={}, metrics_port={}, ocr_languages={}, observability_enabled={}, extraction_backend={}, gemini_model={}",
+            "Configuration: bot_token=[REDACTED], db_url=[REDACTED], health_port={}, metrics_port={}, observability_enabled={}, gemini_model={}",
             self.server.health_port,
             self.server.metrics_port,
-            self.ocr.languages,
             self.observability.enable_metrics_export,
-            self.extraction.backend,
             self.extraction.gemini.model
         )
     }
@@ -379,7 +370,6 @@ impl Default for AppConfig {
             bot: BotConfig::default(),
             database: DatabaseConfig::default(),
             server: ServerConfig::default(),
-            ocr: OcrConfig::default(),
             observability: ObservabilityConfig::default(),
             text_processing: MeasurementConfig::default(),
             measurement_units: crate::text_processing::load_measurement_units_config(),

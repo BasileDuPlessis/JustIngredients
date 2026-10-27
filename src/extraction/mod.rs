@@ -1,7 +1,7 @@
 //! # Ingredient Extraction
 //!
-//! Turns a recipe image into structured ingredients. The Gemini vision API replaces the
-//! Tesseract OCR pipeline (see `specs/tasks/llm-extraction-migration.md`).
+//! Turns a recipe image into structured ingredients with the Gemini vision API (it replaced the
+//! Tesseract OCR pipeline, see `specs/tasks/llm-extraction-migration.md`).
 //!
 //! The bot depends only on [`IngredientExtractor`], so it can be tested with a fake
 //! extractor and the backend can change without touching the handlers. [`mapping`] turns an
@@ -17,7 +17,6 @@ pub mod image;
 pub mod mapping;
 pub mod pricing;
 pub mod prompt;
-pub mod tesseract;
 
 use std::future::Future;
 use std::pin::Pin;
@@ -25,7 +24,7 @@ use std::time::Duration;
 
 use serde::Deserialize;
 
-pub use config::{ExtractionBackend, ExtractionConfig, GeminiConfig, ThinkingLevel};
+pub use config::{ExtractionConfig, GeminiConfig, ThinkingLevel};
 
 /// Image formats accepted by the extraction API.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

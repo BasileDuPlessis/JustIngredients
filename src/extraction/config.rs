@@ -1,22 +1,19 @@
-//! Configuration of the ingredient extraction backend, loaded from environment variables.
+//! Configuration of the ingredient extraction (Gemini), loaded from environment variables.
 //!
 //! | Variable | Default | Meaning |
 //! |---|---|---|
-//! | `EXTRACTION_BACKEND` | `gemini` | `gemini` or `tesseract` (OCR fallback until Phase 5) |
-//! | `GEMINI_API_KEY` | (none) | required when the backend is `gemini` |
+//! | `GEMINI_API_KEY` | (none) | required |
 //! | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | model id |
 //! | `GEMINI_TIMEOUT_SECS` | `40` | time budget for one image, retries included, 1–300 |
 //! | `GEMINI_THINKING_LEVEL` | `minimal` | `minimal`, `low`, `medium` or `high` |
 //! | `GEMINI_MAX_CONCURRENCY` | `2` | concurrent API calls, 1–32 (each holds up to ~25 MB) |
 //!
-//! Values are parsed at startup whatever the backend: a malformed `GEMINI_*` value stops the
-//! bot, while range checks only apply when the backend is `gemini`.
-//!
-//! With the default `gemini` backend the bot does not start without `GEMINI_API_KEY`.
+//! Values are parsed and checked at startup: the bot does not start without `GEMINI_API_KEY` or
+//! with a malformed or out-of-range `GEMINI_*` value. `EXTRACTION_BACKEND` is no longer read: the
+//! Tesseract fallback was removed (migration Phase 5).
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use std::fmt;
 use std::str::FromStr;
 
 use crate::errors::{AppError, AppResult};
@@ -24,36 +21,6 @@ use crate::secret::SecretString;
 
 /// Default Gemini model, chosen with `scripts/llm_benchmark` (2026-10-26).
 pub const DEFAULT_GEMINI_MODEL: &str = "gemini-3.5-flash-lite";
-
-/// Engine that extracts ingredients from photos.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ExtractionBackend {
-    Gemini,
-    Tesseract,
-}
-
-impl FromStr for ExtractionBackend {
-    type Err = AppError;
-
-    fn from_str(value: &str) -> Result<Self, Self::Err> {
-        match value.trim().to_ascii_lowercase().as_str() {
-            "gemini" => Ok(Self::Gemini),
-            "tesseract" => Ok(Self::Tesseract),
-            other => Err(AppError::Config(format!(
-                "EXTRACTION_BACKEND must be 'gemini' or 'tesseract', got '{other}'"
-            ))),
-        }
-    }
-}
-
-impl fmt::Display for ExtractionBackend {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(match self {
-            Self::Gemini => "gemini",
-            Self::Tesseract => "tesseract",
-        })
-    }
-}
 
 /// Gemini thinking level (`generationConfig.thinkingConfig.thinkingLevel`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -116,19 +83,9 @@ impl Default for GeminiConfig {
 }
 
 /// Extraction settings: which backend runs, and the Gemini client settings.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, Default, PartialEq)]
 pub struct ExtractionConfig {
-    pub backend: ExtractionBackend,
     pub gemini: GeminiConfig,
-}
-
-impl Default for ExtractionConfig {
-    fn default() -> Self {
-        Self {
-            backend: ExtractionBackend::Gemini,
-            gemini: GeminiConfig::default(),
-        }
-    }
 }
 
 impl ExtractionConfig {
@@ -144,10 +101,6 @@ impl ExtractionConfig {
         let get = |name: &str| lookup(name).filter(|value| !value.trim().is_empty());
 
         Ok(Self {
-            backend: get("EXTRACTION_BACKEND")
-                .map(|value| value.parse())
-                .transpose()?
-                .unwrap_or(defaults.backend),
             gemini: GeminiConfig {
                 // Pasted secrets often end with a newline, which would break the request header.
                 api_key: get("GEMINI_API_KEY")
@@ -171,16 +124,11 @@ impl ExtractionConfig {
         })
     }
 
-    /// Checks the values; the Gemini settings are only required when Gemini is the backend.
+    /// Checks the values.
     pub fn validate(&self) -> AppResult<()> {
-        if self.backend != ExtractionBackend::Gemini {
-            return Ok(());
-        }
         let gemini = &self.gemini;
         if gemini.api_key.is_empty() {
-            return Err(AppError::Config(
-                "GEMINI_API_KEY is required when EXTRACTION_BACKEND is 'gemini'".to_string(),
-            ));
+            return Err(AppError::Config("GEMINI_API_KEY is required".to_string()));
         }
         if !is_valid_model_id(&gemini.model) {
             return Err(AppError::Config(
@@ -238,7 +186,6 @@ mod tests {
     fn defaults_use_gemini_and_require_a_key() -> AppResult<()> {
         let config = load(&[])?;
         assert_eq!(config, ExtractionConfig::default());
-        assert_eq!(config.backend, ExtractionBackend::Gemini);
         assert_eq!(config.gemini.model, DEFAULT_GEMINI_MODEL);
         assert_eq!(config.gemini.thinking_level, ThinkingLevel::Minimal);
         assert!(config.validate().is_err(), "no GEMINI_API_KEY");
@@ -246,31 +193,21 @@ mod tests {
     }
 
     #[test]
-    fn tesseract_fallback_needs_no_key() -> AppResult<()> {
-        let config = load(&[("EXTRACTION_BACKEND", "tesseract")])?;
-        assert_eq!(config.backend, ExtractionBackend::Tesseract);
-        config.validate()
-    }
-
-    #[test]
-    fn gemini_backend_requires_an_api_key() -> AppResult<()> {
-        let config = load(&[("EXTRACTION_BACKEND", "gemini")])?;
-        assert!(config.validate().is_err());
-        let config = load(&[("EXTRACTION_BACKEND", "Gemini"), ("GEMINI_API_KEY", "k")])?;
+    fn a_leftover_backend_variable_is_ignored() -> AppResult<()> {
+        let config = load(&[("EXTRACTION_BACKEND", "tesseract"), ("GEMINI_API_KEY", "k")])?;
+        assert_eq!(config.gemini.api_key.expose(), "k");
         config.validate()
     }
 
     #[test]
     fn all_variables_are_read() -> AppResult<()> {
         let config = load(&[
-            ("EXTRACTION_BACKEND", "gemini"),
             ("GEMINI_API_KEY", "key"),
             ("GEMINI_MODEL", "gemini-3.8-flash"),
             ("GEMINI_TIMEOUT_SECS", "45"),
             ("GEMINI_THINKING_LEVEL", "LOW"),
             ("GEMINI_MAX_CONCURRENCY", "2"),
         ])?;
-        assert_eq!(config.backend, ExtractionBackend::Gemini);
         assert_eq!(config.gemini.api_key.expose(), "key");
         assert_eq!(config.gemini.model, "gemini-3.8-flash");
         assert_eq!(config.gemini.timeout_secs, 45);
@@ -281,18 +218,13 @@ mod tests {
 
     #[test]
     fn invalid_values_are_rejected() -> AppResult<()> {
-        assert!(load(&[("EXTRACTION_BACKEND", "openai")]).is_err());
         assert!(load(&[("GEMINI_TIMEOUT_SECS", "soon")]).is_err());
         assert!(load(&[("GEMINI_THINKING_LEVEL", "extreme")]).is_err());
         for (name, value) in [
             ("GEMINI_TIMEOUT_SECS", "0"),
             ("GEMINI_MAX_CONCURRENCY", "64"),
         ] {
-            let config = load(&[
-                ("EXTRACTION_BACKEND", "gemini"),
-                ("GEMINI_API_KEY", "k"),
-                (name, value),
-            ])?;
+            let config = load(&[("GEMINI_API_KEY", "k"), (name, value)])?;
             assert!(config.validate().is_err(), "{name}={value}");
         }
         Ok(())

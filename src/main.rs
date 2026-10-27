@@ -8,8 +8,7 @@ use just_ingredients::deduplication;
 use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
 use just_ingredients::extraction::gemini::GeminiExtractor;
 use just_ingredients::extraction::guard::GuardedExtractor;
-use just_ingredients::extraction::tesseract::TesseractExtractor;
-use just_ingredients::extraction::{ExtractionBackend, SharedExtractor};
+use just_ingredients::extraction::SharedExtractor;
 use just_ingredients::localization;
 use just_ingredients::observability;
 use std::env;
@@ -80,23 +79,6 @@ fn validate_environment_variables() -> Result<()> {
     }
 
     info!("Environment variables validated successfully");
-    Ok(())
-}
-
-/// Validate OCR configuration at startup
-fn validate_ocr_configuration() -> Result<()> {
-    // Force initialization of the lazy static to trigger validation
-    let config = just_ingredients::ocr_config::OcrConfig::default();
-
-    // Validate the configuration
-    config.validate().map_err(|e| {
-        anyhow::anyhow!(
-            "OCR configuration validation failed: {}. Please check your configuration values.",
-            e
-        )
-    })?;
-
-    info!("OCR configuration validated successfully");
     Ok(())
 }
 
@@ -227,9 +209,6 @@ async fn main() -> Result<()> {
     let deduplicator = crate::deduplication::create_shared_deduplicator(300, 10000); // 5 min TTL, 10k entries
     info!("Request deduplicator initialized for duplicate message prevention");
 
-    // Validate OCR configuration before initializing observability
-    validate_ocr_configuration()?;
-
     // Validate text processing configuration
     validate_text_processing_config()?;
 
@@ -255,30 +234,21 @@ async fn main() -> Result<()> {
     // Initialize localization manager
     let localization_manager = localization::create_localization_manager()?;
 
-    // Ingredient extraction engine, chosen by EXTRACTION_BACKEND
-    let (engine, slots): (SharedExtractor, usize) = match app_config.extraction.backend {
-        ExtractionBackend::Gemini => {
-            let gemini = GeminiExtractor::new(&app_config.extraction.gemini)?;
-            match gemini.verify_access().await {
-                Ok(()) => {
-                    info!(model = %app_config.extraction.gemini.model, "Gemini API access verified")
-                }
-                Err(error) => tracing::error!(
-                    model = %app_config.extraction.gemini.model,
-                    error = %error,
-                    "Gemini API access check failed: photos will fail until the key or model is fixed"
-                ),
-            }
-            (
-                Arc::new(gemini),
-                app_config.extraction.gemini.max_concurrency,
-            )
-        }
-        // OCR runs one image at a time and blocks a runtime thread
-        ExtractionBackend::Tesseract => (Arc::new(TesseractExtractor::default()), 1),
-    };
+    // Ingredient extraction engine (Gemini)
+    let gemini = GeminiExtractor::new(&app_config.extraction.gemini)?;
+    match gemini.verify_access().await {
+        Ok(()) => info!(model = %app_config.extraction.gemini.model, "Gemini API access verified"),
+        Err(error) => tracing::error!(
+            model = %app_config.extraction.gemini.model,
+            error = %error,
+            "Gemini API access check failed: photos will fail until the key or model is fixed"
+        ),
+    }
     // Concurrency limit and result cache in front of the engine (cost and memory protection)
-    let extractor: SharedExtractor = Arc::new(GuardedExtractor::new(engine, slots));
+    let extractor: SharedExtractor = Arc::new(GuardedExtractor::new(
+        Arc::new(gemini),
+        app_config.extraction.gemini.max_concurrency,
+    ));
     info!(
         backend = extractor.name(),
         model = %app_config.extraction.gemini.model,
