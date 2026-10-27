@@ -226,12 +226,15 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: table-driven tests (`g`, `gr`, `GR`, `g.`, `grammes`, `c. à s.`, `cl`).
 
 ### Task 1.2: Gemini configuration (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: `GeminiConfig` in `AppConfig`: `GEMINI_API_KEY` (required when backend is
   `gemini`), `GEMINI_MODEL` (default `gemini-3.5-flash-lite`), `GEMINI_TIMEOUT_SECS` (30),
   `GEMINI_THINKING_LEVEL` (`minimal`), `GEMINI_MAX_CONCURRENCY` (4), `EXTRACTION_BACKEND`.
   Redacted in `Debug` and `AppConfig::summary()`. Document in `.env.example`.
 - How to validate: tests for defaults, missing key, invalid values, redaction.
+- Done in `src/extraction/config.rs` and `src/secret.rs` (`SecretString`, redacted `Debug`).
+  `EXTRACTION_BACKEND` defaults to `tesseract` until Task 3.1 wires the Gemini path and flips the
+  default; requiring `GEMINI_API_KEY` earlier would stop production at startup.
 
 ### Task 1.3: Extraction domain types and trait (<= 1 hour)
 - [ ] Done
@@ -295,7 +298,8 @@ March 2026 image meanwhile (restarts reuse it).
 
 ### Task 3.1: Wire the extractor behind the backend switch (<= 1 hour)
 - [ ] Done
-- Description: replace the OCR call in `download_and_process_image`
+- Description: switch the `EXTRACTION_BACKEND` default to `gemini` (set `GEMINI_API_KEY` on Fly first,
+  Task 4.1). Replace the OCR call in `download_and_process_image`
   (`src/bot/image_processing.rs`) with `IngredientExtractor`; `TesseractExtractor` adapter keeps
   the old path available.
 - How to validate: bot tests with a fake extractor; manual test on staging with both backends.

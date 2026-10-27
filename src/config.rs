@@ -6,6 +6,7 @@
 //! a clean interface for accessing configuration throughout the application.
 
 use crate::errors::{AppError, AppResult};
+use crate::extraction::ExtractionConfig;
 use crate::observability_config::ObservabilityConfig;
 use crate::ocr_config::OcrConfig;
 use crate::text_processing::{MeasurementConfig, MeasurementUnitsConfig};
@@ -252,6 +253,8 @@ pub struct AppConfig {
     pub text_processing: MeasurementConfig,
     /// Measurement units configuration
     pub measurement_units: MeasurementUnitsConfig,
+    /// Ingredient extraction backend and Gemini client configuration
+    pub extraction: ExtractionConfig,
 }
 
 impl AppConfig {
@@ -337,6 +340,9 @@ impl AppConfig {
         // Load measurement units configuration (from file)
         config.measurement_units = crate::text_processing::load_measurement_units_config();
 
+        // Load extraction configuration (backend and Gemini client)
+        config.extraction = ExtractionConfig::from_env()?;
+
         Ok(config)
     }
 
@@ -349,17 +355,20 @@ impl AppConfig {
         self.observability.validate()?;
         self.text_processing.validate()?;
         self.measurement_units.validate()?;
+        self.extraction.validate()?;
         Ok(())
     }
 
     /// Get a summary of the current configuration for logging
     pub fn summary(&self) -> String {
         format!(
-            "Configuration: bot_token=[REDACTED], db_url=[REDACTED], health_port={}, metrics_port={}, ocr_languages={}, observability_enabled={}",
+            "Configuration: bot_token=[REDACTED], db_url=[REDACTED], health_port={}, metrics_port={}, ocr_languages={}, observability_enabled={}, extraction_backend={}, gemini_model={}",
             self.server.health_port,
             self.server.metrics_port,
             self.ocr.languages,
-            self.observability.enable_metrics_export
+            self.observability.enable_metrics_export,
+            self.extraction.backend,
+            self.extraction.gemini.model
         )
     }
 }
@@ -374,6 +383,7 @@ impl Default for AppConfig {
             observability: ObservabilityConfig::default(),
             text_processing: MeasurementConfig::default(),
             measurement_units: crate::text_processing::load_measurement_units_config(),
+            extraction: ExtractionConfig::default(),
         }
     }
 }
