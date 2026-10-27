@@ -1,60 +1,17 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use just_ingredients::db::*;
 use sqlx::PgPool;
-use std::env;
 
-/// Helper macro to skip tests when database is not available
-macro_rules! skip_if_no_db {
-    ($test_fn:expr) => {
-        match setup_test_db().await {
-            Ok(pool) => $test_fn(&pool).await,
-            Err(_) => {
-                eprintln!("Skipping test: Database not available");
-                Ok(())
-            }
-        }
-    };
-}
+/// Database tests run against a fresh database created by `#[sqlx::test]` for each test,
+/// so they can run in parallel and never touch the database `DATABASE_URL` points to.
+/// They are ignored by default (no Postgres needed for `cargo test`); CI runs them with
+/// `cargo test --test db_tests -- --include-ignored`.
 
-async fn setup_test_db() -> Result<PgPool> {
-    // Skip tests if no DATABASE_URL is provided
-    let database_url = match env::var("DATABASE_URL") {
-        Ok(url) => url,
-        Err(_) => {
-            eprintln!("Skipping database tests: DATABASE_URL not set");
-            return Err(anyhow::anyhow!("Test database not configured"));
-        }
-    };
-
-    let pool = PgPool::connect(&database_url)
-        .await
-        .context("Failed to connect to test database")?;
-
-    // Clean up any existing test data
-    sqlx::query("DROP TABLE IF EXISTS ingredients CASCADE")
-        .execute(&pool)
-        .await?;
-    sqlx::query("DROP TABLE IF EXISTS recipes CASCADE")
-        .execute(&pool)
-        .await?;
-    sqlx::query("DROP TABLE IF EXISTS users CASCADE")
-        .execute(&pool)
-        .await?;
-    // Also reset the migration state, otherwise the migration is considered applied
-    // and the tables dropped above are never recreated
-    sqlx::query("DROP TABLE IF EXISTS schema_migrations CASCADE")
-        .execute(&pool)
-        .await?;
-
-    // Initialize schema
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_user_operations(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
-
-    Ok(pool)
-}
-
-#[tokio::test]
-async fn test_user_operations() -> Result<()> {
-    skip_if_no_db!(test_user_operations_impl)
+    test_user_operations_impl(&pool).await
 }
 
 async fn test_user_operations_impl(pool: &PgPool) -> Result<()> {
@@ -78,9 +35,11 @@ async fn test_user_operations_impl(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_recipe_operations() -> Result<()> {
-    skip_if_no_db!(test_recipe_operations_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_recipe_operations(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_recipe_operations_impl(&pool).await
 }
 
 async fn test_recipe_operations_impl(pool: &PgPool) -> Result<()> {
@@ -117,9 +76,11 @@ async fn test_recipe_operations_impl(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_ingredient_operations() -> Result<()> {
-    skip_if_no_db!(test_ingredient_operations_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_ingredient_operations(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_ingredient_operations_impl(&pool).await
 }
 
 async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
@@ -181,9 +142,11 @@ async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_full_text_search() -> Result<()> {
-    skip_if_no_db!(test_full_text_search_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_full_text_search(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_full_text_search_impl(&pool).await
 }
 
 async fn test_full_text_search_impl(pool: &PgPool) -> Result<()> {
@@ -208,9 +171,11 @@ async fn test_full_text_search_impl(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_get_user_recipes_paginated() -> Result<()> {
-    skip_if_no_db!(test_get_user_recipes_paginated_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_get_user_recipes_paginated(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_get_user_recipes_paginated_impl(&pool).await
 }
 
 async fn test_get_user_recipes_paginated_impl(pool: &PgPool) -> Result<()> {
@@ -255,9 +220,11 @@ async fn test_get_user_recipes_paginated_impl(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_get_recipes_by_name() -> Result<()> {
-    skip_if_no_db!(test_get_recipes_by_name_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_get_recipes_by_name(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_get_recipes_by_name_impl(&pool).await
 }
 
 async fn test_get_recipes_by_name_impl(pool: &PgPool) -> Result<()> {
@@ -312,9 +279,11 @@ async fn test_get_recipes_by_name_impl(pool: &PgPool) -> Result<()> {
     Ok(())
 }
 
-#[tokio::test]
-async fn test_has_duplicate_recipes() -> Result<()> {
-    skip_if_no_db!(test_has_duplicate_recipes_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_has_duplicate_recipes(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_has_duplicate_recipes_impl(&pool).await
 }
 
 async fn test_has_duplicate_recipes_impl(pool: &PgPool) -> Result<()> {
@@ -380,9 +349,11 @@ async fn create_recipe_with_ingredient(
     Ok((recipe_id, ingredient_id))
 }
 
-#[tokio::test]
-async fn test_recipe_reads_are_scoped_by_owner() -> Result<()> {
-    skip_if_no_db!(test_recipe_reads_are_scoped_by_owner_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_recipe_reads_are_scoped_by_owner(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_recipe_reads_are_scoped_by_owner_impl(&pool).await
 }
 
 async fn test_recipe_reads_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
@@ -421,9 +392,11 @@ async fn test_recipe_reads_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()>
     Ok(())
 }
 
-#[tokio::test]
-async fn test_recipe_writes_are_scoped_by_owner() -> Result<()> {
-    skip_if_no_db!(test_recipe_writes_are_scoped_by_owner_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_recipe_writes_are_scoped_by_owner(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_recipe_writes_are_scoped_by_owner_impl(&pool).await
 }
 
 async fn test_recipe_writes_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
@@ -472,9 +445,11 @@ async fn test_recipe_writes_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()
     Ok(())
 }
 
-#[tokio::test]
-async fn test_ingredient_operations_are_scoped_by_owner() -> Result<()> {
-    skip_if_no_db!(test_ingredient_operations_are_scoped_by_owner_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_ingredient_operations_are_scoped_by_owner(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_ingredient_operations_are_scoped_by_owner_impl(&pool).await
 }
 
 async fn test_ingredient_operations_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
@@ -531,9 +506,11 @@ async fn test_ingredient_operations_are_scoped_by_owner_impl(pool: &PgPool) -> R
     Ok(())
 }
 
-#[tokio::test]
-async fn test_update_recipe_ingredients_is_scoped_by_owner() -> Result<()> {
-    skip_if_no_db!(test_update_recipe_ingredients_is_scoped_by_owner_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_update_recipe_ingredients_is_scoped_by_owner(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_update_recipe_ingredients_is_scoped_by_owner_impl(&pool).await
 }
 
 async fn test_update_recipe_ingredients_is_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
@@ -559,9 +536,11 @@ async fn test_update_recipe_ingredients_is_scoped_by_owner_impl(pool: &PgPool) -
     Ok(())
 }
 
-#[tokio::test]
-async fn test_recipe_ingredients_cache_is_scoped_by_owner() -> Result<()> {
-    skip_if_no_db!(test_recipe_ingredients_cache_is_scoped_by_owner_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_recipe_ingredients_cache_is_scoped_by_owner(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_recipe_ingredients_cache_is_scoped_by_owner_impl(&pool).await
 }
 
 async fn test_recipe_ingredients_cache_is_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
@@ -583,9 +562,11 @@ async fn test_recipe_ingredients_cache_is_scoped_by_owner_impl(pool: &PgPool) ->
     Ok(())
 }
 
-#[tokio::test]
-async fn test_schema_validation() -> Result<()> {
-    skip_if_no_db!(test_schema_validation_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_schema_validation(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_schema_validation_impl(&pool).await
 }
 
 async fn test_schema_validation_impl(pool: &PgPool) -> Result<()> {
@@ -601,16 +582,22 @@ async fn test_schema_validation_impl(pool: &PgPool) -> Result<()> {
     assert!(result.is_err());
     assert!(result.unwrap_err().to_string().contains("ingredients"));
 
-    // Recreate the table and test again
+    // Recreate the table and test again. The migration is recorded as applied, so reset the
+    // migration state first, otherwise init_database_schema has nothing to apply.
+    sqlx::query("DROP TABLE IF EXISTS schema_migrations CASCADE")
+        .execute(pool)
+        .await?;
     init_database_schema(pool).await?;
     validate_database_schema(pool).await?;
 
     Ok(())
 }
 
-#[tokio::test]
-async fn test_migration_system() -> Result<()> {
-    skip_if_no_db!(test_migration_system_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_migration_system(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_migration_system_impl(&pool).await
 }
 
 async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
@@ -628,7 +615,8 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
         .execute(pool)
         .await?;
 
-    // Test initial state - no migrations applied
+    // Test initial state - no migrations applied (the tracking table exists but is empty)
+    migrations::init_migrations_table(pool).await?;
     let version = migrations::get_current_version(pool).await?;
     assert_eq!(version, 0);
 
@@ -642,17 +630,19 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
     // Verify that tables were created
     validate_database_schema(pool).await?;
 
-    // Test rollback (if down migrations are available)
-    // Note: Current migration doesn't have a down script, so this will fail gracefully
-    let rollback_result = migrations::rollback_to_version(pool, 0).await;
-    assert!(rollback_result.is_err()); // Should fail because no down migration
+    // Roll back with the down script of migration 1: version 0, tables removed
+    migrations::rollback_to_version(pool, 0).await?;
+    assert_eq!(migrations::get_current_version(pool).await?, 0);
+    assert!(validate_database_schema(pool).await.is_err());
 
     Ok(())
 }
 
-#[tokio::test]
-async fn test_schema_validation_details() -> Result<()> {
-    skip_if_no_db!(test_schema_validation_details_impl)
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_schema_validation_details(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_schema_validation_details_impl(&pool).await
 }
 
 async fn test_schema_validation_details_impl(pool: &PgPool) -> Result<()> {

@@ -6,9 +6,29 @@ on:
   pull_request:
     branches: [ main ]
 
+permissions:
+  contents: read
+
+concurrency:
+  group: build-test-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # sqlx macros check queries against .sqlx/ instead of a live database at compile time
+  SQLX_OFFLINE: true
+
 jobs:
   build:
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
     - uses: actions/checkout@v4
 
@@ -23,11 +43,18 @@ jobs:
 
     - name: Build
       run: cargo build
-      env:
-        SQLX_OFFLINE: true  # Prevent database connections during build
 
     - name: Run tests
-      run: cargo test --lib -- --test-threads=8
+      run: cargo test --all-targets
+
+    - name: Run doc tests
+      run: cargo test --doc
+
+    # Each database test gets its own database created by #[sqlx::test].
+    - name: Run database tests
+      run: cargo test --test db_tests -- --include-ignored
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
@@ -37,6 +64,7 @@ jobs:
 
   lint:
     runs-on: ubuntu-24.04
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v4
 
@@ -44,6 +72,9 @@ jobs:
       uses: dtolnay/rust-toolchain@1.99
       with:
         components: clippy, rustfmt
+
+    - name: Cache dependencies
+      uses: Swatinem/rust-cache@v2
 
     - name: Install system dependencies
       run: sudo apt-get update && sudo apt-get install -y libleptonica-dev libtesseract-dev tesseract-ocr
@@ -59,6 +90,7 @@ jobs:
 
   security:
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v4
 
