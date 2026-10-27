@@ -955,7 +955,8 @@ they can be pulled into 1-hour micro-tasks without another review.
   noisy runners. `test_multi_line_vs_single_line_performance` (relative degradation < 5%) failed in
   CI run for `54a06df` at 39.5% and once in the local pre-push hook; it is now `#[ignore]`d.
   `tests/integration_tests.rs` has the same kind of test: `test_adaptive_preprocessing_performance_comparison`
-  (high-quality preprocessing < 300 ms) failed the CI run for `80a6941` at 307 ms.
+  (high-quality preprocessing < 300 ms) failed the CI runs for `80a6941` and `dcaa6b0` at 307 ms;
+  it is now `#[ignore]`d too.
 - Proposed fix: move the benchmarks to `benches/` (criterion) or a non-blocking scheduled CI job,
   keep only functional assertions in `tests/`, and delete the OCR benchmarks in Phase 5.
 - Validation: `cargo test --all-targets` contains no wall-clock assertions; the benchmark job
