@@ -75,7 +75,7 @@ jobs:
         echo "image=$image" >> "$GITHUB_OUTPUT"
 
     - name: Deploy the image tested on staging
-      run: flyctl deploy --config deploy/fly.toml --app "$APP" --image "$IMAGE:sha-$GITHUB_SHA"
+      run: flyctl deploy --ha=false --config deploy/fly.toml --app "$APP" --image "$IMAGE:sha-$GITHUB_SHA"
 
     - name: Post-deployment validation
       run: ./scripts/check-health.sh "$PRODUCTION_URL"
@@ -86,7 +86,7 @@ jobs:
       env:
         PREVIOUS_IMAGE: ${{ steps.previous.outputs.image }}
       run: |
-        flyctl deploy --config "$RUNNER_TEMP/previous-fly.toml" --app "$APP" --image "$PREVIOUS_IMAGE"
+        flyctl deploy --ha=false --config "$RUNNER_TEMP/previous-fly.toml" --app "$APP" --image "$PREVIOUS_IMAGE"
         ./scripts/check-health.sh "$PRODUCTION_URL"
 
     - name: Notify deployment result

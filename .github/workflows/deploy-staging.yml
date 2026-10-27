@@ -50,9 +50,11 @@ jobs:
     - name: Setup flyctl
       uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
+    # One machine only: two bots polling the same token steal each other's updates
+    # (Fly creates two machines on the first deploy of an app unless told otherwise)
     - name: Deploy the tested image
       run: |
-        flyctl deploy --config deploy/fly-staging.toml --app "$STAGING_APP" \
+        flyctl deploy --ha=false --config deploy/fly-staging.toml --app "$STAGING_APP" \
           --image "$IMAGE:sha-$DEPLOY_SHA"
 
   smoke-tests:
