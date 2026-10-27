@@ -161,6 +161,10 @@ pub enum ExtractionError {
     /// The model declined to answer (e.g. safety block); the reason is the API's.
     #[error("extraction refused by the model: {0}")]
     Blocked(String),
+    /// The model stopped because the answer repeated copyrighted text word for word
+    /// (`RECITATION`), which can happen when transcribing a cookbook page.
+    #[error("extraction stopped: the answer recited protected text")]
+    Recitation,
     /// The response hit the output token limit before the JSON was complete.
     #[error("extraction output was cut off before the end")]
     Truncated,
@@ -184,6 +188,7 @@ impl ExtractionError {
             Self::Network(_) => "network",
             Self::Api { .. } => "api_error",
             Self::Blocked(_) => "blocked",
+            Self::Recitation => "recitation",
             Self::Truncated => "truncated",
             Self::InvalidResponse(_) => "invalid_response",
             Self::CircuitOpen => "circuit_open",

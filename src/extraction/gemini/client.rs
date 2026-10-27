@@ -1,11 +1,13 @@
-//! Gemini client: one `generateContent` call per image, with retries on temporary failures
-//! and a circuit breaker that stops calling the service while it is down.
+//! Gemini client: one `generateContent` call per image, with retries on temporary failures,
+//! one deadline per image, and a circuit breaker that stops calling the service while it is
+//! down.
 
 use std::time::{Duration, Instant};
 
-use reqwest::header::{HeaderMap, RETRY_AFTER};
+use bytes::Bytes;
+use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, RETRY_AFTER};
 use serde_json::value::RawValue;
-use tracing::{info, warn};
+use tracing::{info, warn, Instrument};
 
 use super::types::{
     error_from_status, GenerateContentRequest, GenerateContentResponse, UsageMetadata,
@@ -20,36 +22,46 @@ use crate::extraction::{
 };
 use crate::observability::{record_llm_request, record_llm_usage};
 use crate::retry::{retry_with_backoff, Backoff, RetryDecision};
-use crate::secret::SecretString;
 
 /// Production endpoint of the Gemini API.
 pub const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
 
-/// Retries for one image: 1 s doubling up to 8 s, none starting later than 20 s after the
-/// first attempt, so a user waits at most about one timeout plus 20 s.
+/// Retry schedule: 1 s doubling up to 8 s, shortened by up to 20% at random. Retries stop at
+/// the image deadline (`GeminiConfig::timeout_secs`), which replaces `max_elapsed`.
 pub const DEFAULT_BACKOFF: Backoff = Backoff {
     initial_delay: Duration::from_secs(1),
     max_delay: Duration::from_secs(8),
-    max_elapsed: Duration::from_secs(20),
+    max_elapsed: Duration::from_secs(40),
+    jitter: 0.2,
 };
+
+/// Longest single attempt; a normal call takes about 2 s. Keeps room for a retry within the
+/// image deadline.
+pub const ATTEMPT_TIMEOUT: Duration = Duration::from_secs(20);
 
 /// Consecutive failed images before the breaker opens, and how long it stays open.
 pub const BREAKER_FAILURE_THRESHOLD: u32 = 5;
 pub const BREAKER_OPEN_DURATION: Duration = Duration::from_secs(60);
 
-/// Connection setup timeout, within the total timeout of `GeminiConfig::timeout_secs`.
+/// Connection setup timeout.
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Largest response body read: an answer is a few KB, an error body less.
+const MAX_RESPONSE_BYTES: usize = 1024 * 1024;
 
 /// Extracts ingredients with the Gemini API.
 #[derive(Debug)]
 pub struct GeminiExtractor {
     client: reqwest::Client,
-    api_key: SecretString,
+    /// `x-goog-api-key` value, marked sensitive so it is never printed.
+    api_key: HeaderValue,
     model: String,
     thinking_level: ThinkingLevel,
     base_url: String,
     schema: Box<RawValue>,
     backoff: Backoff,
+    /// Time allowed for one image, retries included.
+    deadline: Duration,
     breaker: CircuitBreaker,
 }
 
@@ -58,6 +70,7 @@ struct CallOutput {
     extraction: Extraction,
     usage: UsageMetadata,
     model_version: Option<String>,
+    finish_reason: Option<String>,
 }
 
 impl GeminiExtractor {
@@ -65,27 +78,31 @@ impl GeminiExtractor {
     ///
     /// # Errors
     ///
-    /// [`ExtractionError::Config`] when the key is missing, the model id is invalid, or the
-    /// HTTP client cannot be built.
+    /// [`ExtractionError::Config`] when the key is missing or not a valid header value, the
+    /// model id is invalid, or the HTTP client cannot be built.
     pub fn new(config: &GeminiConfig) -> Result<Self, ExtractionError> {
         if config.api_key.is_empty() {
             return Err(ExtractionError::Config(
                 "GEMINI_API_KEY is not set".to_string(),
             ));
         }
+        let mut api_key = HeaderValue::from_str(config.api_key.expose()).map_err(|_| {
+            ExtractionError::Config("GEMINI_API_KEY contains invalid characters".to_string())
+        })?;
+        api_key.set_sensitive(true);
         if !is_valid_model_id(&config.model) {
             return Err(ExtractionError::Config(format!(
                 "invalid GEMINI_MODEL '{}'",
                 config.model
             )));
         }
-        let timeout = Duration::from_secs(config.timeout_secs);
         let client = reqwest::Client::builder()
-            .timeout(timeout)
-            .connect_timeout(CONNECT_TIMEOUT.min(timeout))
+            .connect_timeout(CONNECT_TIMEOUT)
+            // The key header would follow a redirect to another host: never follow.
+            .redirect(reqwest::redirect::Policy::none())
             .build()
             .map_err(|error| {
-                ExtractionError::Config(format!("HTTP client: {}", error.without_url()))
+                ExtractionError::Config(format!("HTTP client: {}", describe(&error)))
             })?;
         let schema = response_schema().map_err(|error| {
             ExtractionError::Config(format!("invalid response schema: {error}"))
@@ -93,12 +110,13 @@ impl GeminiExtractor {
 
         Ok(Self {
             client,
-            api_key: config.api_key.clone(),
+            api_key,
             model: config.model.clone(),
             thinking_level: config.thinking_level,
             base_url: DEFAULT_BASE_URL.to_string(),
             schema,
             backoff: DEFAULT_BACKOFF,
+            deadline: Duration::from_secs(config.timeout_secs),
             breaker: CircuitBreaker::new(BREAKER_FAILURE_THRESHOLD, BREAKER_OPEN_DURATION),
         })
     }
@@ -109,9 +127,15 @@ impl GeminiExtractor {
         self
     }
 
-    /// Replaces the retry schedule.
+    /// Replaces the retry schedule (its `max_elapsed` is replaced by the image deadline).
     pub fn with_backoff(mut self, backoff: Backoff) -> Self {
         self.backoff = backoff;
+        self
+    }
+
+    /// Replaces the time allowed for one image.
+    pub fn with_deadline(mut self, deadline: Duration) -> Self {
+        self.deadline = deadline;
         self
     }
 
@@ -122,12 +146,36 @@ impl GeminiExtractor {
     }
 
     async fn extract_image(&self, image: &ImageInput) -> Result<Extraction, ExtractionError> {
-        let permit = self.breaker.try_acquire()?;
         let started = Instant::now();
-        let mut attempts = 0u32;
+        let permit = match self.breaker.try_acquire() {
+            Ok(permit) => permit,
+            Err(error) => {
+                record_llm_request(&self.model, error.kind(), started.elapsed(), 0);
+                warn!(model = %self.model, "Gemini circuit open: image rejected without calling the API");
+                return Err(error);
+            }
+        };
 
+        // Built once per image and shared by the attempts: the base64 image is the bulk of it.
+        let request = GenerateContentRequest::new(
+            image,
+            EXTRACTION_PROMPT,
+            &self.schema,
+            self.thinking_level,
+        );
+        let body = Bytes::from(serde_json::to_vec(&request).map_err(|error| {
+            ExtractionError::InvalidResponse(format!("cannot serialize the request: {error}"))
+        })?);
+        drop(request);
+
+        let deadline = started + self.deadline;
+        let backoff = Backoff {
+            max_elapsed: self.deadline,
+            ..self.backoff
+        };
+        let mut attempts = 0u32;
         let result = retry_with_backoff(
-            self.backoff,
+            backoff,
             |error: &ExtractionError| match error {
                 ExtractionError::RateLimited {
                     retry_after: Some(delay),
@@ -146,7 +194,7 @@ impl GeminiExtractor {
             },
             || {
                 attempts += 1;
-                self.call_once(image)
+                self.call_once(body.clone(), deadline)
             },
         )
         .await;
@@ -158,22 +206,16 @@ impl GeminiExtractor {
         }
 
         let elapsed = started.elapsed();
-        let elapsed_ms = elapsed.as_millis();
         let retries = attempts.saturating_sub(1);
         match result {
             Ok(output) => {
                 record_llm_request(&self.model, "success", elapsed, retries);
-                record_llm_usage(
-                    &self.model,
-                    output.usage.prompt_token_count,
-                    output.usage.output_tokens(),
-                    estimated_cost_micro_usd(&self.model, &output.usage),
-                );
                 info!(
                     model = %self.model,
                     model_version = output.model_version.as_deref().unwrap_or("unknown"),
+                    finish_reason = output.finish_reason.as_deref().unwrap_or("unknown"),
                     attempts,
-                    elapsed_ms,
+                    elapsed_ms = elapsed.as_millis(),
                     input_tokens = output.usage.prompt_token_count,
                     output_tokens = output.usage.output_tokens(),
                     ingredients = output.extraction.ingredients.len(),
@@ -183,19 +225,27 @@ impl GeminiExtractor {
             }
             Err(error) => {
                 record_llm_request(&self.model, error.kind(), elapsed, retries);
-                warn!(model = %self.model, attempts, elapsed_ms, error = %error, "Gemini extraction failed");
+                warn!(
+                    model = %self.model,
+                    attempts,
+                    elapsed_ms = elapsed.as_millis(),
+                    error = %error,
+                    "Gemini extraction failed"
+                );
                 Err(error)
             }
         }
     }
 
-    async fn call_once(&self, image: &ImageInput) -> Result<CallOutput, ExtractionError> {
-        let request = GenerateContentRequest::new(
-            image,
-            EXTRACTION_PROMPT,
-            &self.schema,
-            self.thinking_level,
-        );
+    async fn call_once(
+        &self,
+        body: Bytes,
+        deadline: Instant,
+    ) -> Result<CallOutput, ExtractionError> {
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(ExtractionError::Timeout);
+        }
         let url = format!(
             "{}/models/{}:generateContent",
             self.base_url.trim_end_matches('/'),
@@ -204,36 +254,41 @@ impl GeminiExtractor {
         let response = self
             .client
             .post(url)
+            .timeout(remaining.min(ATTEMPT_TIMEOUT))
             // The key travels in a header, never in the URL, so it cannot end up in errors.
-            .header("x-goog-api-key", self.api_key.expose())
-            .json(&request)
+            .header("x-goog-api-key", self.api_key.clone())
+            .header(CONTENT_TYPE, "application/json")
+            .body(body)
             .send()
             .await
-            .map_err(request_error)?;
+            .map_err(|error| request_error(&error))?;
 
         let status = response.status();
+        let retry_after = retry_after(response.headers());
+        let bytes = read_limited(response).await?;
         if !status.is_success() {
-            let retry_after = retry_after(response.headers());
-            let body = response.text().await.unwrap_or_default();
-            return Err(error_from_status(status.as_u16(), &body, retry_after));
+            let text = String::from_utf8_lossy(&bytes);
+            return Err(error_from_status(status.as_u16(), &text, retry_after));
         }
 
-        let body: GenerateContentResponse = response.json().await.map_err(|error| {
-            if error.is_timeout() {
-                ExtractionError::Timeout
-            } else {
-                ExtractionError::InvalidResponse(format!(
-                    "unreadable response body: {}",
-                    error.without_url()
-                ))
-            }
+        let parsed: GenerateContentResponse = serde_json::from_slice(&bytes).map_err(|error| {
+            ExtractionError::InvalidResponse(format!("response is not the expected JSON: {error}"))
         })?;
-        let usage = body.usage_metadata.unwrap_or_default();
-        let model_version = body.model_version.clone();
+        // Billed even when the answer is then rejected (truncated, blocked, invalid).
+        let usage = parsed.usage_metadata.unwrap_or_default();
+        record_llm_usage(
+            &self.model,
+            usage.prompt_token_count,
+            usage.output_tokens(),
+            estimated_cost_micro_usd(&self.model, &usage),
+        );
+        let model_version = parsed.model_version.clone();
+        let finish_reason = parsed.finish_reason().map(str::to_string);
         Ok(CallOutput {
-            extraction: body.into_extraction()?,
+            extraction: parsed.into_extraction()?,
             usage,
             model_version,
+            finish_reason,
         })
     }
 }
@@ -244,16 +299,53 @@ impl IngredientExtractor for GeminiExtractor {
     }
 
     fn extract<'a>(&'a self, image: &'a ImageInput) -> ExtractionFuture<'a> {
-        Box::pin(self.extract_image(image))
+        let span = tracing::info_span!(
+            "gemini_extract",
+            model = %self.model,
+            image_bytes = image.bytes().len()
+        );
+        Box::pin(self.extract_image(image).instrument(span))
     }
 }
 
-fn request_error(error: reqwest::Error) -> ExtractionError {
+/// Reads the body, failing past [`MAX_RESPONSE_BYTES`]. Read errors (connection reset,
+/// timeout) are transport errors, retried like a failed request.
+async fn read_limited(mut response: reqwest::Response) -> Result<Vec<u8>, ExtractionError> {
+    let mut body = Vec::new();
+    while let Some(chunk) = response
+        .chunk()
+        .await
+        .map_err(|error| request_error(&error))?
+    {
+        if body.len() + chunk.len() > MAX_RESPONSE_BYTES {
+            return Err(ExtractionError::InvalidResponse(format!(
+                "response larger than {MAX_RESPONSE_BYTES} bytes"
+            )));
+        }
+        body.extend_from_slice(&chunk);
+    }
+    Ok(body)
+}
+
+fn request_error(error: &reqwest::Error) -> ExtractionError {
     if error.is_timeout() {
         ExtractionError::Timeout
     } else {
-        ExtractionError::Network(error.without_url().to_string())
+        ExtractionError::Network(describe(error))
     }
+}
+
+/// reqwest's `Display` only says "error sending request"; add the causes. The request URL
+/// carries no credentials (the key is a header), and reqwest prints it only in `Debug`.
+fn describe(error: &reqwest::Error) -> String {
+    let mut message = error.to_string();
+    let mut source = std::error::Error::source(error);
+    while let Some(cause) = source {
+        message.push_str(": ");
+        message.push_str(&cause.to_string());
+        source = cause.source();
+    }
+    message
 }
 
 /// `Retry-After` in seconds; the HTTP-date form is not used by the Gemini API.
@@ -271,6 +363,8 @@ fn retry_after(headers: &HeaderMap) -> Option<Duration> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::secret::SecretString;
+    use metrics_util::debugging::{DebugValue, DebuggingRecorder};
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -285,21 +379,22 @@ mod tests {
         initial_delay: Duration::from_millis(10),
         max_delay: Duration::from_millis(50),
         max_elapsed: Duration::from_secs(2),
+        jitter: 0.0,
     };
 
-    fn extractor(
-        server: &MockServer,
-        timeout_secs: u64,
-    ) -> Result<GeminiExtractor, ExtractionError> {
-        let config = GeminiConfig {
+    fn config() -> GeminiConfig {
+        GeminiConfig {
             api_key: SecretString::new(KEY),
             model: MODEL.to_string(),
-            timeout_secs,
             ..GeminiConfig::default()
-        };
-        Ok(GeminiExtractor::new(&config)?
+        }
+    }
+
+    fn extractor(server: &MockServer) -> Result<GeminiExtractor, ExtractionError> {
+        Ok(GeminiExtractor::new(&config())?
             .with_base_url(server.uri())
-            .with_backoff(FAST))
+            .with_backoff(FAST)
+            .with_deadline(Duration::from_secs(5)))
     }
 
     fn image() -> Result<ImageInput, ExtractionError> {
@@ -325,7 +420,7 @@ mod tests {
             .mount(&server)
             .await;
 
-        let extraction = extractor(&server, 5)?.extract(&image()?).await?;
+        let extraction = extractor(&server)?.extract(&image()?).await?;
         assert_eq!(extraction.ingredients.len(), 7);
         let request = server.received_requests().await.unwrap_or_default();
         assert!(!request[0].url.as_str().contains(KEY), "key not in the URL");
@@ -347,17 +442,17 @@ mod tests {
             .mount(&server)
             .await;
 
-        let extraction = extractor(&server, 5)?.extract(&image()?).await?;
+        let extraction = extractor(&server)?.extract(&image()?).await?;
         assert!(extraction.is_recipe);
         assert_eq!(requests(&server).await, 3);
         Ok(())
     }
 
     #[tokio::test]
-    async fn rate_limits_honor_retry_after() -> Result<(), ExtractionError> {
+    async fn rate_limits_wait_at_least_retry_after() -> Result<(), ExtractionError> {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "0"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "1"))
             .up_to_n_times(1)
             .with_priority(1)
             .mount(&server)
@@ -368,46 +463,83 @@ mod tests {
             .mount(&server)
             .await;
 
-        extractor(&server, 5)?.extract(&image()?).await?;
+        let extractor = extractor(&server)?.with_backoff(Backoff {
+            max_delay: Duration::from_secs(2),
+            ..FAST
+        });
+        let started = Instant::now();
+        extractor.extract(&image()?).await?;
+        assert!(
+            started.elapsed() >= Duration::from_secs(1),
+            "waited for Retry-After"
+        );
         assert_eq!(requests(&server).await, 2);
         Ok(())
     }
 
     #[tokio::test]
-    async fn client_errors_are_not_retried() -> Result<(), ExtractionError> {
+    async fn client_errors_are_not_retried_and_do_not_open_the_breaker(
+    ) -> Result<(), ExtractionError> {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(404).set_body_string(NOT_FOUND))
             .mount(&server)
             .await;
 
-        let error = extractor(&server, 5)?.extract(&image()?).await;
-        assert!(
-            matches!(error, Err(ExtractionError::Api { status: 404, .. })),
-            "{error:?}"
+        let extractor =
+            extractor(&server)?.with_breaker(CircuitBreaker::new(1, Duration::from_secs(60)));
+        for _ in 0..2 {
+            let error = extractor.extract(&image()?).await;
+            assert!(
+                matches!(error, Err(ExtractionError::Api { status: 404, .. })),
+                "{error:?}"
+            );
+        }
+        assert_eq!(
+            requests(&server).await,
+            2,
+            "one request each, breaker still closed"
         );
-        assert_eq!(requests(&server).await, 1);
         Ok(())
     }
 
     #[tokio::test]
-    async fn slow_responses_time_out() -> Result<(), ExtractionError> {
+    async fn malformed_success_bodies_are_invalid_responses() -> Result<(), ExtractionError> {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("<html>not json</html>"))
+            .mount(&server)
+            .await;
+
+        let error = extractor(&server)?.extract(&image()?).await;
+        assert!(
+            matches!(error, Err(ExtractionError::InvalidResponse(_))),
+            "{error:?}"
+        );
+        assert_eq!(requests(&server).await, 1, "not retried");
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn slow_responses_stop_at_the_image_deadline() -> Result<(), ExtractionError> {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .respond_with(
                 ResponseTemplate::new(200)
                     .set_body_string(SUCCESS)
-                    .set_delay(Duration::from_secs(3)),
+                    .set_delay(Duration::from_secs(5)),
             )
             .mount(&server)
             .await;
 
-        let extractor = extractor(&server, 1)?.with_backoff(Backoff {
-            max_elapsed: Duration::from_millis(500),
-            ..FAST
-        });
+        let extractor = extractor(&server)?.with_deadline(Duration::from_secs(1));
+        let started = Instant::now();
         let error = extractor.extract(&image()?).await;
         assert!(matches!(error, Err(ExtractionError::Timeout)), "{error:?}");
+        assert!(
+            started.elapsed() < Duration::from_secs(3),
+            "deadline respected"
+        );
         Ok(())
     }
 
@@ -419,9 +551,12 @@ mod tests {
             .mount(&server)
             .await;
 
-        let extractor = extractor(&server, 5)?
+        // A first retry delay longer than the deadline: one attempt per image.
+        let extractor = extractor(&server)?
+            .with_deadline(Duration::from_millis(500))
             .with_backoff(Backoff {
-                max_elapsed: Duration::ZERO,
+                initial_delay: Duration::from_secs(1),
+                max_delay: Duration::from_secs(1),
                 ..FAST
             })
             .with_breaker(CircuitBreaker::new(2, Duration::from_secs(60)));
@@ -441,31 +576,67 @@ mod tests {
     }
 
     #[test]
-    fn missing_key_and_bad_model_are_rejected() {
+    fn breaker_rejections_are_counted() -> Result<(), Box<dyn std::error::Error>> {
+        let recorder = DebuggingRecorder::new();
+        let snapshotter = recorder.snapshotter();
+        let breaker = CircuitBreaker::new(1, Duration::from_secs(60));
+        breaker.try_acquire()?.failure();
+        let extractor = GeminiExtractor::new(&config())?.with_breaker(breaker);
+        let image = image()?;
+
+        let result = metrics::with_local_recorder(&recorder, || {
+            tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map(|runtime| runtime.block_on(extractor.extract(&image)))
+        })?;
+        assert!(matches!(result, Err(ExtractionError::CircuitOpen)));
+
+        let recorded = snapshotter
+            .snapshot()
+            .into_vec()
+            .into_iter()
+            .any(|(key, _, _, value)| {
+                key.key().name() == "llm_requests_total"
+                    && key
+                        .key()
+                        .labels()
+                        .any(|l| l.key() == "outcome" && l.value() == "circuit_open")
+                    && value == DebugValue::Counter(1)
+            });
+        assert!(recorded, "rejection recorded with outcome circuit_open");
+        Ok(())
+    }
+
+    #[test]
+    fn invalid_configuration_is_rejected() {
         let no_key = GeminiConfig::default();
         assert!(matches!(
             GeminiExtractor::new(&no_key),
             Err(ExtractionError::Config(_))
         ));
         let bad_model = GeminiConfig {
-            api_key: SecretString::new(KEY),
             model: "../models/x".to_string(),
-            ..GeminiConfig::default()
+            ..config()
         };
         assert!(matches!(
             GeminiExtractor::new(&bad_model),
+            Err(ExtractionError::Config(_))
+        ));
+        let bad_key = GeminiConfig {
+            api_key: SecretString::new("key\u{7f}with control"),
+            ..config()
+        };
+        assert!(matches!(
+            GeminiExtractor::new(&bad_key),
             Err(ExtractionError::Config(_))
         ));
     }
 
     #[test]
     fn debug_output_does_not_contain_the_key() -> Result<(), ExtractionError> {
-        let config = GeminiConfig {
-            api_key: SecretString::new(KEY),
-            ..GeminiConfig::default()
-        };
-        let printed = format!("{:?}", GeminiExtractor::new(&config)?);
-        assert!(!printed.contains(KEY));
+        let printed = format!("{:?}", GeminiExtractor::new(&config())?);
+        assert!(!printed.contains(KEY), "{printed}");
         Ok(())
     }
 }

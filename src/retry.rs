@@ -10,7 +10,7 @@ use std::future::Future;
 use std::time::{Duration, Instant};
 
 /// Exponential backoff schedule.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Backoff {
     /// Delay before the first retry.
     pub initial_delay: Duration,
@@ -18,6 +18,9 @@ pub struct Backoff {
     pub max_delay: Duration,
     /// Give up when the next retry would start after this much time since the first attempt.
     pub max_elapsed: Duration,
+    /// Random reduction of each delay, from 0.0 (none) to 1.0, so that clients failing at the
+    /// same time do not retry at the same time.
+    pub jitter: f64,
 }
 
 impl Backoff {
@@ -37,7 +40,8 @@ pub enum RetryDecision {
     Stop,
     /// Retry after the backoff delay.
     Retry,
-    /// Retry after this delay (e.g. from `Retry-After`), capped at `max_delay`.
+    /// Retry after at least this delay (e.g. from `Retry-After`); stop if the server asks to
+    /// wait longer than `max_delay`.
     RetryAfter(Duration),
 }
 
@@ -67,10 +71,15 @@ where
             Err(error) => error,
         };
         retry += 1;
+        let backoff_delay = jittered(backoff.delay_before_retry(retry), backoff.jitter);
         let delay = match decide(&error) {
             RetryDecision::Stop => return Err(error),
-            RetryDecision::Retry => backoff.delay_before_retry(retry),
-            RetryDecision::RetryAfter(delay) => delay.min(backoff.max_delay),
+            RetryDecision::Retry => backoff_delay,
+            // Never sooner than the server allows, never sooner than our own backoff.
+            RetryDecision::RetryAfter(server) if server <= backoff.max_delay => {
+                server.max(backoff_delay)
+            }
+            RetryDecision::RetryAfter(_) => return Err(error),
         };
         if started.elapsed() + delay > backoff.max_elapsed {
             return Err(error);
@@ -78,6 +87,15 @@ where
         on_retry(retry, delay, &error);
         tokio::time::sleep(delay).await;
     }
+}
+
+/// Reduces `delay` by a random fraction of up to `jitter` (clamped to 0..=1).
+fn jittered(delay: Duration, jitter: f64) -> Duration {
+    let jitter = jitter.clamp(0.0, 1.0);
+    if jitter == 0.0 {
+        return delay;
+    }
+    delay.mul_f64(1.0 - jitter * rand::random::<f64>())
 }
 
 #[cfg(test)]
@@ -88,6 +106,7 @@ mod tests {
         initial_delay: Duration::from_millis(5),
         max_delay: Duration::from_millis(20),
         max_elapsed: Duration::from_millis(500),
+        jitter: 0.0,
     };
 
     #[test]
@@ -96,6 +115,7 @@ mod tests {
             initial_delay: Duration::from_secs(1),
             max_delay: Duration::from_secs(30),
             max_elapsed: Duration::from_secs(600),
+            jitter: 0.0,
         };
         let delays: Vec<u64> = (1..=7)
             .map(|retry| backoff.delay_before_retry(retry).as_secs())
@@ -164,12 +184,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn server_delays_are_honored_but_capped() {
+    async fn server_delays_are_a_minimum() {
         let mut delays = Vec::new();
         let mut attempts = 0;
+        let backoff = Backoff {
+            initial_delay: Duration::from_millis(15),
+            ..FAST
+        };
         let _: Result<(), &str> = retry_with_backoff(
-            FAST,
-            |_| RetryDecision::RetryAfter(Duration::from_secs(60)),
+            backoff,
+            |_| RetryDecision::RetryAfter(Duration::ZERO),
             |_, delay, _| delays.push(delay),
             || {
                 attempts += 1;
@@ -178,6 +202,39 @@ mod tests {
             },
         )
         .await;
-        assert_eq!(delays, vec![FAST.max_delay]);
+        assert_eq!(
+            delays,
+            vec![Duration::from_millis(15)],
+            "Retry-After: 0 is not a tight loop"
+        );
+    }
+
+    #[tokio::test]
+    async fn server_delays_beyond_max_delay_stop_at_once() {
+        let mut attempts = 0;
+        let started = Instant::now();
+        let result: Result<(), &str> = retry_with_backoff(
+            FAST,
+            |_| RetryDecision::RetryAfter(Duration::from_secs(60)),
+            |_, _, _| {},
+            || {
+                attempts += 1;
+                async { Err("come back in a minute") }
+            },
+        )
+        .await;
+        assert_eq!(result, Err("come back in a minute"));
+        assert_eq!(attempts, 1);
+        assert!(started.elapsed() < Duration::from_millis(100));
+    }
+
+    #[test]
+    fn jitter_only_shortens_delays() {
+        let delay = Duration::from_millis(100);
+        assert_eq!(jittered(delay, 0.0), delay);
+        for _ in 0..100 {
+            let jittered = jittered(delay, 0.5);
+            assert!(jittered <= delay && jittered >= delay / 2, "{jittered:?}");
+        }
     }
 }

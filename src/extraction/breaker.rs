@@ -83,6 +83,17 @@ impl CircuitBreaker {
         }
     }
 
+    /// Ends the open period now, as if `open_duration` had elapsed (tests).
+    #[cfg(test)]
+    fn expire_open_period(&self) {
+        let mut state = self.lock();
+        if let State::Open { .. } = *state {
+            *state = State::Open {
+                until: Instant::now(),
+            };
+        }
+    }
+
     fn lock(&self) -> MutexGuard<'_, State> {
         // The state is a plain value: a panic while holding the lock cannot corrupt it.
         self.state.lock().unwrap_or_else(PoisonError::into_inner)
@@ -158,7 +169,9 @@ impl Drop for Permit<'_> {
 mod tests {
     use super::*;
 
-    const OPEN_FOR: Duration = Duration::from_millis(30);
+    // Long enough that no CI pause can close the breaker during a test; tests that need the
+    // open period to end call expire_open_period.
+    const OPEN_FOR: Duration = Duration::from_secs(60);
 
     fn fail(breaker: &CircuitBreaker) -> Result<(), ExtractionError> {
         breaker.try_acquire().map(Permit::failure)
@@ -193,7 +206,7 @@ mod tests {
     fn half_open_lets_one_trial_through() -> Result<(), ExtractionError> {
         let breaker = CircuitBreaker::new(1, OPEN_FOR);
         fail(&breaker)?;
-        std::thread::sleep(OPEN_FOR + Duration::from_millis(10));
+        breaker.expire_open_period();
 
         let trial = breaker.try_acquire()?;
         assert!(matches!(
@@ -212,7 +225,7 @@ mod tests {
         for _ in 0..3 {
             fail(&breaker)?;
         }
-        std::thread::sleep(OPEN_FOR + Duration::from_millis(10));
+        breaker.expire_open_period();
         fail(&breaker)?;
         assert!(breaker.is_open(), "one failed trial is enough");
         Ok(())
@@ -222,7 +235,7 @@ mod tests {
     fn an_abandoned_trial_frees_the_slot() -> Result<(), ExtractionError> {
         let breaker = CircuitBreaker::new(1, OPEN_FOR);
         fail(&breaker)?;
-        std::thread::sleep(OPEN_FOR + Duration::from_millis(10));
+        breaker.expire_open_period();
         drop(breaker.try_acquire()?);
         breaker.try_acquire()?.success();
         assert!(!breaker.is_open());

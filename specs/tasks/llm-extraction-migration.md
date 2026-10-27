@@ -229,7 +229,7 @@ March 2026 image meanwhile (restarts reuse it).
 ### Task 1.2: Gemini configuration (<= 1 hour)
 - [x] Done
 - Description: `GeminiConfig` in `AppConfig`: `GEMINI_API_KEY` (required when backend is
-  `gemini`), `GEMINI_MODEL` (default `gemini-3.5-flash-lite`), `GEMINI_TIMEOUT_SECS` (30),
+  `gemini`), `GEMINI_MODEL` (default `gemini-3.5-flash-lite`), `GEMINI_TIMEOUT_SECS` (40, budget for one image including retries),
   `GEMINI_THINKING_LEVEL` (`minimal`), `GEMINI_MAX_CONCURRENCY` (4), `EXTRACTION_BACKEND`.
   Redacted in `Debug` and `AppConfig::summary()`. Document in `.env.example`.
 - How to validate: tests for defaults, missing key, invalid values, redaction.
@@ -305,7 +305,7 @@ March 2026 image meanwhile (restarts reuse it).
 - Done: `tests/gemini_live.rs`; first run on 2026-10-27: 7/7 ingredients, quantities and units, 2.1 s.
 
 ### Review gate R2
-- [ ] Done
+- [x] Done
 
 ## Phase 3: Bot Integration
 
@@ -460,3 +460,4 @@ Target pipeline (Task 5.4):
 |---|---|---|---|---|
 | R0 | 2026-10-27 | `9c9c970..9ce3e40` (14 commits) | 3 should-fix: fork PRs could trigger the staging deploy via `workflow_run`; production gate bypassable by a manual staging run; retry test did not exercise the retry loop. 4 nits: missing locale key (fixed, IMP-045 added), handler-level dedup test (IMP-031), owner identity split between `chat.id` and `from.id` (IMP-024, do before Phase 3), adjacent `i64` owner/recipe parameters (IMP-038). Independent run: fmt, clippy, 441 tests + 43 doc tests, 26/26 DB tests. | Passed with fixes: the 3 should-fix items and the locale key fixed in the commits following `9ce3e40`. |
 | R1 | 2026-10-27 | `54a06df..16148c4` (5 commits) | 5 should-fix: schema keys sorted by `serde_json::Value` (bot would send another field order than the benchmark), units > 50 chars and quantities >= 1e7 not storable, API key not trimmed, null quantities display badly (moved to Task 3.2), truncation test not covering the char boundary. Nits: T/t, French spoon spellings, `quart` vs "un quart", alias collision test, 429 transient, rounding before range check, prompt/unit-list sync test, docs, UTF-8 in the benchmark. | Passed with fixes: all fixed in the next commit except the display item (Task 3.2) and `source_text` (Task 3.2). |
+| R2 | 2026-10-27 | `d4437bb..74e385c` (6 commits) | 6 should-fix: Retry-After had no lower bound (tight re-upload loop on `Retry-After: 0`); 30 s attempt timeout longer than the 20 s retry budget (timeouts never retried, up to ~50 s per photo); breaker rejections not recorded; token usage dropped on truncated/blocked/invalid 200s; memory: request rebuilt per retry (~3.7x the image) and unbounded concurrent conversions; timing-sensitive breaker tests, no test that 4xx do not trip the breaker, no malformed-200 test. Nits: body read errors not retried, error causes lost, redirects followed with the key header, unbounded bodies, RetryInfo ignored, no jitter/span, prefix pricing, RECITATION lumped into Blocked. | Passed with fixes: all fixed in the next commit (one deadline per image with per-attempt timeouts, body serialized once, conversions one at a time and to JPEG, jitter, span, exact pricing, `Recitation`); live test re-run green. |

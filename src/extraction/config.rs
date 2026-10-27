@@ -5,7 +5,7 @@
 //! | `EXTRACTION_BACKEND` | `tesseract` | `gemini` or `tesseract` |
 //! | `GEMINI_API_KEY` | (none) | required when the backend is `gemini` |
 //! | `GEMINI_MODEL` | `gemini-3.5-flash-lite` | model id |
-//! | `GEMINI_TIMEOUT_SECS` | `30` | total timeout of one API call, 1–300 |
+//! | `GEMINI_TIMEOUT_SECS` | `40` | time budget for one image, retries included, 1–300 |
 //! | `GEMINI_THINKING_LEVEL` | `minimal` | `minimal`, `low`, `medium` or `high` |
 //! | `GEMINI_MAX_CONCURRENCY` | `4` | concurrent API calls, 1–32 |
 //!
@@ -109,7 +109,7 @@ impl Default for GeminiConfig {
         Self {
             api_key: SecretString::default(),
             model: DEFAULT_GEMINI_MODEL.to_string(),
-            timeout_secs: 30,
+            timeout_secs: 40,
             thinking_level: ThinkingLevel::Minimal,
             max_concurrency: 4,
         }

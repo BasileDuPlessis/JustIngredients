@@ -20,6 +20,7 @@ pub const DEFAULT_CONNECT_BACKOFF: Backoff = Backoff {
     initial_delay: Duration::from_secs(1),
     max_delay: Duration::from_secs(30),
     max_elapsed: Duration::from_secs(600),
+    jitter: 0.0,
 };
 
 /// Describes a connection URL for logs: host, port and database name, never the credentials.
@@ -48,7 +49,7 @@ pub fn is_transient_connect_error(error: &sqlx::Error) -> bool {
     }
 }
 
-/// Creates the pool from `config`, retrying transient failures according to `policy`.
+/// Creates the pool from `config`, retrying transient failures according to `backoff`.
 ///
 /// # Errors
 ///
@@ -147,6 +148,7 @@ mod tests {
             initial_delay: Duration::from_millis(5),
             max_delay: Duration::from_millis(20),
             max_elapsed: Duration::from_millis(500),
+            jitter: 0.0,
         }
     }
 

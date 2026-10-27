@@ -154,6 +154,11 @@ impl UsageMetadata {
 }
 
 impl GenerateContentResponse {
+    /// Why the first candidate stopped (`STOP`, `MAX_TOKENS`, `SAFETY`, …), for logs.
+    pub fn finish_reason(&self) -> Option<&str> {
+        self.candidates.first()?.finish_reason.as_deref()
+    }
+
     /// Interprets the response: the model's JSON answer, or why there is none.
     ///
     /// # Errors
@@ -173,6 +178,7 @@ impl GenerateContentResponse {
         match candidate.finish_reason.as_deref() {
             None | Some("STOP") => {}
             Some("MAX_TOKENS") => return Err(ExtractionError::Truncated),
+            Some("RECITATION") => return Err(ExtractionError::Recitation),
             Some(reason) => return Err(ExtractionError::Blocked(reason.to_string())),
         }
 
@@ -205,6 +211,30 @@ struct ErrorBody {
 struct ErrorDetail {
     message: String,
     status: Option<String>,
+    /// `google.rpc` details; `RetryInfo.retryDelay` ("7s") says when to retry a 429.
+    #[serde(default)]
+    details: Vec<serde_json::Value>,
+}
+
+impl ErrorDetail {
+    fn retry_delay(&self) -> Option<std::time::Duration> {
+        self.details
+            .iter()
+            .filter(|detail| {
+                detail["@type"]
+                    .as_str()
+                    .is_some_and(|kind| kind.ends_with("google.rpc.RetryInfo"))
+            })
+            .find_map(|detail| {
+                let seconds: f64 = detail["retryDelay"]
+                    .as_str()?
+                    .strip_suffix('s')?
+                    .parse()
+                    .ok()?;
+                (seconds.is_finite() && seconds >= 0.0)
+                    .then(|| std::time::Duration::from_secs_f64(seconds))
+            })
+    }
 }
 
 /// Longest API error message kept in [`ExtractionError::Api`].
@@ -216,15 +246,18 @@ pub fn error_from_status(
     body: &str,
     retry_after: Option<std::time::Duration>,
 ) -> ExtractionError {
+    let parsed = serde_json::from_str::<ErrorBody>(body).ok();
     if status == 429 {
-        return ExtractionError::RateLimited { retry_after };
+        return ExtractionError::RateLimited {
+            retry_after: retry_after.or_else(|| parsed.as_ref()?.error.retry_delay()),
+        };
     }
-    let message = match serde_json::from_str::<ErrorBody>(body) {
-        Ok(parsed) => match parsed.error.status {
+    let message = match parsed {
+        Some(parsed) => match parsed.error.status {
             Some(code) => format!("{code}: {}", parsed.error.message),
             None => parsed.error.message,
         },
-        Err(_) => "unexpected error body".to_string(),
+        None => "unexpected error body".to_string(),
     };
     ExtractionError::Api {
         status,
@@ -355,6 +388,31 @@ mod tests {
             matches!(&invalid, ExtractionError::Api { status: 400, message } if message.contains("Thinking level")),
             "{invalid:?}"
         );
+    }
+
+    #[test]
+    fn recitation_and_retry_delay_in_the_body_are_recognized() -> Result<(), serde_json::Error> {
+        let recitation = response(r#"{"candidates": [{"finishReason": "RECITATION"}]}"#)?;
+        assert_eq!(recitation.finish_reason(), Some("RECITATION"));
+        assert!(matches!(
+            recitation.into_extraction(),
+            Err(ExtractionError::Recitation)
+        ));
+
+        let body = r#"{"error": {"code": 429, "message": "Quota exceeded", "status": "RESOURCE_EXHAUSTED",
+            "details": [{"@type": "type.googleapis.com/google.rpc.RetryInfo", "retryDelay": "7s"}]}}"#;
+        assert!(matches!(
+            error_from_status(429, body, None),
+            ExtractionError::RateLimited { retry_after: Some(d) } if d.as_secs() == 7
+        ));
+        assert!(
+            matches!(
+                error_from_status(429, body, Some(std::time::Duration::from_secs(2))),
+                ExtractionError::RateLimited { retry_after: Some(d) } if d.as_secs() == 2
+            ),
+            "the header wins"
+        );
+        Ok(())
     }
 
     #[test]

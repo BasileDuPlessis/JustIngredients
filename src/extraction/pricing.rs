@@ -45,13 +45,12 @@ const PRICES: &[(&str, ModelPrice)] = &[
     ),
 ];
 
-/// Price of `model`, matching the longest known prefix (`gemini-3.5-flash-lite-preview`
-/// uses the `gemini-3.5-flash-lite` price).
+/// Price of `model`. Exact match only: a prefix match would price a future
+/// `gemini-3.6-flash-lite` as `gemini-3.6-flash`. Unknown models record tokens, not cost.
 pub fn price_for(model: &str) -> Option<ModelPrice> {
     PRICES
         .iter()
-        .filter(|(prefix, _)| model.starts_with(prefix))
-        .max_by_key(|(prefix, _)| prefix.len())
+        .find(|(id, _)| *id == model)
         .map(|(_, price)| *price)
 }
 
@@ -69,11 +68,14 @@ mod tests {
     use super::*;
 
     #[test]
-    fn longest_prefix_wins() {
+    fn only_exact_model_ids_are_priced() {
+        assert!(price_for("gemini-3.5-flash-lite").is_some());
         assert_eq!(
-            price_for("gemini-3.5-flash-lite-preview"),
-            price_for("gemini-3.5-flash-lite")
+            price_for("gemini-3.6-flash-lite"),
+            None,
+            "not priced as gemini-3.6-flash"
         );
+        assert_eq!(price_for("gemini-3.5-flash-lite-preview"), None);
         assert_eq!(price_for("unknown-model"), None);
     }
 

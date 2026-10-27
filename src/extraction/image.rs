@@ -1,12 +1,16 @@
 //! Preparation of downloaded images for extraction: JPEG, PNG and WebP are sent as they are,
-//! other formats the `image` crate can decode (BMP, TIFF, GIF, …) are re-encoded as PNG.
+//! other formats the `image` crate can decode (BMP, TIFF, GIF, …) are re-encoded as JPEG
+//! (photos re-encoded as PNG often exceed the size limit).
 //!
-//! Decoding runs on the blocking thread pool and is bounded, so a crafted file (huge
-//! dimensions in a tiny file) cannot exhaust the 256 MB machine.
+//! Decoding runs on the blocking thread pool, one conversion at a time, with bounded
+//! dimensions and allocation, so a crafted file (huge dimensions in a tiny file) or several
+//! conversions at once cannot exhaust the 256 MB machine.
 
 use std::io::Cursor;
 
-use image::{ImageFormat, ImageReader, Limits};
+use image::codecs::jpeg::JpegEncoder;
+use image::{ImageReader, Limits};
+use tokio::sync::Semaphore;
 
 use crate::extraction::{ExtractionError, ImageInput, ImageMime};
 
@@ -17,8 +21,14 @@ pub const MAX_IMAGE_BYTES: u64 = 10 * 1024 * 1024;
 const MAX_DIMENSION: u32 = 8_000;
 const MAX_DECODE_ALLOC: u64 = 96 * 1024 * 1024;
 
+/// JPEG quality for converted images: text stays sharp, files stay small.
+const JPEG_QUALITY: u8 = 90;
+
+/// One conversion at a time: each holds the input, the decoded pixels and the output.
+static CONVERSIONS: Semaphore = Semaphore::const_new(1);
+
 impl ImageInput {
-    /// Prepares downloaded bytes for extraction, converting unsupported formats to PNG.
+    /// Prepares downloaded bytes for extraction, converting unsupported formats to JPEG.
     ///
     /// # Errors
     ///
@@ -30,13 +40,16 @@ impl ImageInput {
         if ImageMime::sniff(&bytes).is_some() {
             return Self::from_bytes(bytes);
         }
-        let png = tokio::task::spawn_blocking(move || convert_to_png(&bytes))
+        let _permit = CONVERSIONS.acquire().await.map_err(|_| {
+            ExtractionError::UnsupportedImage("image conversion unavailable".to_string())
+        })?;
+        let jpeg = tokio::task::spawn_blocking(move || convert_to_jpeg(&bytes))
             .await
             .map_err(|error| {
                 ExtractionError::UnsupportedImage(format!("image conversion failed: {error}"))
             })??;
-        ensure_size(png.len())?;
-        Self::from_bytes(png)
+        ensure_size(jpeg.len())?;
+        Self::from_bytes(jpeg)
     }
 }
 
@@ -51,7 +64,7 @@ fn ensure_size(len: usize) -> Result<(), ExtractionError> {
     Ok(())
 }
 
-fn convert_to_png(bytes: &[u8]) -> Result<Vec<u8>, ExtractionError> {
+fn convert_to_jpeg(bytes: &[u8]) -> Result<Vec<u8>, ExtractionError> {
     let unsupported = |reason: String| ExtractionError::UnsupportedImage(reason);
     let mut reader = ImageReader::new(Cursor::new(bytes))
         .with_guessed_format()
@@ -68,17 +81,18 @@ fn convert_to_png(bytes: &[u8]) -> Result<Vec<u8>, ExtractionError> {
     let decoded = reader
         .decode()
         .map_err(|error| unsupported(format!("cannot decode image: {error}")))?;
-    let mut png = Cursor::new(Vec::new());
-    decoded
-        .write_to(&mut png, ImageFormat::Png)
-        .map_err(|error| unsupported(format!("cannot encode PNG: {error}")))?;
-    Ok(png.into_inner())
+    // JPEG has no alpha channel: flatten to RGB first.
+    let rgb = image::DynamicImage::ImageRgb8(decoded.to_rgb8());
+    let mut jpeg = Vec::new();
+    rgb.write_with_encoder(JpegEncoder::new_with_quality(&mut jpeg, JPEG_QUALITY))
+        .map_err(|error| unsupported(format!("cannot encode JPEG: {error}")))?;
+    Ok(jpeg)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use image::{ImageBuffer, Rgb};
+    use image::{ImageBuffer, ImageFormat, Rgb};
 
     fn encode(format: ImageFormat) -> Result<Vec<u8>, image::ImageError> {
         let pixels: ImageBuffer<Rgb<u8>, Vec<u8>> =
@@ -103,10 +117,10 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn other_formats_are_converted_to_png() -> Result<(), Box<dyn std::error::Error>> {
+    async fn other_formats_are_converted_to_jpeg() -> Result<(), Box<dyn std::error::Error>> {
         for format in [ImageFormat::Bmp, ImageFormat::Tiff, ImageFormat::Gif] {
             let image = ImageInput::prepare(encode(format)?).await?;
-            assert_eq!(image.mime(), ImageMime::Png, "{format:?}");
+            assert_eq!(image.mime(), ImageMime::Jpeg, "{format:?}");
             let decoded = image::load_from_memory(image.bytes())?;
             assert_eq!((decoded.width(), decoded.height()), (4, 3));
         }
