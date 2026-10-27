@@ -22,8 +22,10 @@ use crate::bot::ui_builder::{
 };
 
 // Import HandlerContext
+use crate::bot::callbacks::ingredient_menu::show_ingredient_keyboard;
 use crate::bot::cleanup::send_transient;
 use crate::bot::home::send_home;
+use crate::bot::ui_builder::{edit_instruction_key, parse_ingredient_action, IngredientAction};
 use crate::bot::HandlerContext;
 
 // Import callback types module
@@ -48,7 +50,18 @@ pub async fn handle_editing_saved_ingredients_callbacks(
     }) = dialogue_state
     {
         if q.message.is_some() {
-            if data.starts_with("edit_") {
+            let action = parse_ingredient_action(data);
+            if let Some(action @ (IngredientAction::Menu(_) | IngredientAction::Back)) = action {
+                show_ingredient_keyboard(
+                    bot,
+                    q,
+                    &current_matches,
+                    action,
+                    language_code.as_deref(),
+                    localization,
+                )
+                .await?;
+            } else if let Some(IngredientAction::Edit(..)) = action {
                 handle_edit_saved_ingredient_button(SavedIngredientsParams {
                     ctx: &HandlerContext {
                         bot,
@@ -146,15 +159,11 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
         ..
     } = params;
 
-    let data = data.unwrap_or("");
     let current_matches =
         current_matches_slice.expect("Current matches slice should be provided for edit callback");
-
-    let index: usize = data
-        .strip_prefix("edit_")
-        .expect("Edit callback data should start with 'edit_'")
-        .parse()
-        .unwrap_or(0);
+    let Some(IngredientAction::Edit(field, index)) = data.and_then(parse_ingredient_action) else {
+        return Ok(());
+    };
     if index < current_matches.len() {
         // Record user engagement metric for ingredient editing
         crate::observability::record_user_engagement_metrics(
@@ -166,7 +175,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
 
         let ingredient = &current_matches[index];
         let edit_prompt = format!(
-            "✏️ {}\n\n{}: {} {} {}\n\n{}",
+            "✏️ {}\n\n{}: {}\n\n{}",
             t_lang(
                 ctx.localization,
                 "edit-ingredient-title",
@@ -177,12 +186,11 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
                 "edit-ingredient-current",
                 language_code.as_deref()
             ),
-            ingredient.quantity,
-            ingredient.measurement.as_deref().unwrap_or(""),
-            ingredient.ingredient_name,
+            // Same rendering as the list ("sel" without quantity, not "  sel")
+            crate::bot::ui_builder::ingredient_line(ingredient, &ingredient.ingredient_name),
             t_lang(
                 ctx.localization,
-                "edit-ingredient-instruction",
+                edit_instruction_key(field),
                 language_code.as_deref()
             )
         );
@@ -240,6 +248,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
                 original_ingredients: original_ingredients.to_vec(),
                 current_matches: current_matches.to_vec(),
                 editing_index: index,
+                field,
                 language_code: language_code.clone(),
                 message_id,
                 original_message_id: Some(

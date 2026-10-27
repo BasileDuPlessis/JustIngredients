@@ -1,7 +1,59 @@
 //! Ingredient editing module for converting between database and editing formats
 
 use crate::db::Ingredient;
+use crate::dialogue::IngredientField;
+use crate::errors::AppError;
 use crate::text_processing::MeasurementMatch;
+use crate::validation::{parse_ingredient_from_text, parse_quantity_answer};
+
+/// Longest ingredient name accepted, in characters (same limit as a typed line).
+const MAX_INGREDIENT_NAME_CHARS: usize = 100;
+
+/// The ingredient after the user's answer to an edit prompt: the whole line is parsed again,
+/// or only the quantity or the name is replaced. Errors carry the locale key to show.
+pub fn apply_edit(
+    field: IngredientField,
+    current: Option<&MeasurementMatch>,
+    input: &str,
+) -> Result<MeasurementMatch, AppError> {
+    match (field, current) {
+        (IngredientField::Quantity, Some(current)) => with_quantity(current, input),
+        (IngredientField::Name, Some(current)) => with_name(current, input),
+        _ => parse_ingredient_from_text(input),
+    }
+}
+
+/// Replaces the quantity only (`-`, "aucune"… for none); a corrected quantity needs no further
+/// check, so the ⚠️ flag is cleared.
+pub fn with_quantity(
+    current: &MeasurementMatch,
+    input: &str,
+) -> Result<MeasurementMatch, AppError> {
+    let quantity = parse_quantity_answer(input)
+        .ok_or_else(|| AppError::Validation("edit-invalid-quantity".to_string()))?;
+    Ok(MeasurementMatch {
+        quantity,
+        requires_quantity_confirmation: false,
+        ..current.clone()
+    })
+}
+
+/// Replaces the name only.
+pub fn with_name(current: &MeasurementMatch, input: &str) -> Result<MeasurementMatch, AppError> {
+    let name = input.split_whitespace().collect::<Vec<_>>().join(" ");
+    if name.is_empty() {
+        return Err(AppError::Validation("edit-empty".to_string()));
+    }
+    if name.chars().count() > MAX_INGREDIENT_NAME_CHARS {
+        return Err(AppError::Validation(
+            "edit-ingredient-name-too-long".to_string(),
+        ));
+    }
+    Ok(MeasurementMatch {
+        ingredient_name: name,
+        ..current.clone()
+    })
+}
 
 /// Convert database ingredients to measurement matches for editing
 ///
@@ -12,7 +64,11 @@ pub fn ingredients_to_measurement_matches(ingredients: &[Ingredient]) -> Vec<Mea
         .iter()
         .enumerate()
         .map(|(i, ing)| MeasurementMatch {
-            quantity: ing.quantity.map_or("1".to_string(), |q| q.to_string()),
+            // No quantity ("sel") stays empty: "1" would show "1 sel" and could be saved
+            quantity: ing
+                .quantity
+                .map(crate::extraction::mapping::format_quantity)
+                .unwrap_or_default(),
             measurement: ing.unit.clone(),
             ingredient_name: ing.name.clone(),
             line_number: i, // Use array index as line number
@@ -110,6 +166,65 @@ mod tests {
             created_at: Utc::now(),
             updated_at: Utc::now(),
         }
+    }
+
+    fn line(quantity: &str, unit: Option<&str>, name: &str, flagged: bool) -> MeasurementMatch {
+        MeasurementMatch {
+            quantity: quantity.to_string(),
+            measurement: unit.map(str::to_string),
+            ingredient_name: name.to_string(),
+            line_number: 0,
+            start_pos: 0,
+            end_pos: 0,
+            requires_quantity_confirmation: flagged,
+        }
+    }
+
+    #[test]
+    fn a_new_quantity_keeps_unit_and_name_and_clears_the_flag() {
+        let edited = with_quantity(&line("0", Some("g"), "farine", true), "250").expect("valid");
+        assert_eq!(edited, line("250", Some("g"), "farine", false));
+        let none = with_quantity(&line("2", None, "sel", false), "-").expect("valid");
+        assert_eq!(none.quantity, "");
+        for invalid in ["0", "-3", "beaucoup", "1e9"] {
+            assert!(
+                matches!(with_quantity(&line("2", None, "sel", false), invalid),
+                    Err(AppError::Validation(key)) if key == "edit-invalid-quantity"),
+                "{invalid}"
+            );
+        }
+    }
+
+    #[test]
+    fn a_new_name_keeps_quantity_and_unit() {
+        let edited =
+            with_name(&line("200", Some("g"), "farin", true), "  farine   de blé ").expect("valid");
+        assert_eq!(edited, line("200", Some("g"), "farine de blé", true));
+        assert!(matches!(with_name(&line("1", None, "x", false), "   "),
+            Err(AppError::Validation(key)) if key == "edit-empty"));
+        assert!(
+            matches!(with_name(&line("1", None, "x", false), &"a".repeat(101)),
+            Err(AppError::Validation(key)) if key == "edit-ingredient-name-too-long")
+        );
+    }
+
+    #[test]
+    fn apply_edit_parses_the_whole_line_by_default() {
+        let current = line("1", None, "sel", false);
+        let edited = apply_edit(IngredientField::Line, Some(&current), "3 eggs").expect("valid");
+        assert_eq!(edited.ingredient_name, "eggs");
+        let quantity_only =
+            apply_edit(IngredientField::Quantity, Some(&current), "2").expect("valid");
+        assert_eq!(quantity_only.ingredient_name, "sel");
+        // Without the current ingredient (index out of range) the line is parsed
+        assert!(apply_edit(IngredientField::Name, None, "2 cups flour").is_ok());
+    }
+
+    #[test]
+    fn saved_ingredients_without_quantity_stay_without_quantity() {
+        let matches =
+            ingredients_to_measurement_matches(&[create_test_ingredient(1, "sel", None, None)]);
+        assert_eq!(matches[0].quantity, "");
     }
 
     #[test]

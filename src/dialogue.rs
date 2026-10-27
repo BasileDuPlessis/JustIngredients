@@ -7,6 +7,18 @@ use teloxide::dispatching::dialogue::{Dialogue, InMemStorage};
 // Import database types for editing saved ingredients
 use crate::db::Ingredient;
 
+/// What a typed answer replaces in the ingredient being edited.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum IngredientField {
+    /// The whole line ("3 cups flour"), parsed again.
+    #[default]
+    Line,
+    /// Only the quantity (a number, or `-` for none); the unit and name stay.
+    Quantity,
+    /// Only the name; the quantity and unit stay.
+    Name,
+}
+
 /// Represents the conversation state for recipe name dialogue
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub enum RecipeDialogueState {
@@ -29,6 +41,9 @@ pub enum RecipeDialogueState {
         recipe_name: String,
         ingredients: Vec<MeasurementMatch>,
         editing_index: usize,
+        /// What the typed answer replaces
+        #[serde(default)]
+        field: IngredientField,
         language_code: Option<String>,
         message_id: Option<i32>, // ID of the review message to edit after editing
         original_message_id: Option<i32>, // ID of the original recipe display message to replace during focused editing
@@ -59,6 +74,9 @@ pub enum RecipeDialogueState {
         original_ingredients: Vec<Ingredient>, // Keep original for comparison
         current_matches: Vec<MeasurementMatch>, // Working copy for editing
         editing_index: usize,                  // Which ingredient is being edited
+        /// What the typed answer replaces
+        #[serde(default)]
+        field: IngredientField,
         language_code: Option<String>,
         message_id: Option<i32>,
         original_message_id: Option<i32>, // ID of the original recipe display message to replace during focused editing

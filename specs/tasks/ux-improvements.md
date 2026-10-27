@@ -187,16 +187,24 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   titled and an untitled page. The benchmark was not rerun (it only scores ingredients).
 
 ### Task U2.2: One button per ingredient (finding 4) (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: the review keyboard shows one button per ingredient (full label, Telegram limit
   instead of 20 characters) that opens a small menu: change quantity, change name, delete, back.
 - How to validate: keyboard tests (15 ingredients → 15 + action buttons, callback data ≤ 64 bytes).
+- Done (2026-10-27): one `item_<i>` button per ingredient (full line, cut beyond 60 characters)
+  opens a menu in the same message (quantity, name, whole line, delete, back), for both the review
+  and saved-recipe editing; `parse_ingredient_action` and keyboard tests (15 ingredients → 15 + 2
+  rows, callback data ≤ 64 bytes).
 
 ### Task U2.3: Field-level editing (finding 5) (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: "change quantity" asks only the quantity (`parse_quantity_answer`, `-` for none);
   "change name" asks only the name; retyping the whole line still works.
 - How to validate: dialogue tests for both paths and the flag cleared.
+- Done (2026-10-27): `IngredientField` (`Line`, `Quantity`, `Name`) in both editing states;
+  `ingredient_editing::apply_edit`, `with_quantity` (clears the ⚠️ flag) and `with_name`, unit
+  tested. Also fixed: saved ingredients without quantity were turned into "1" when editing a saved
+  recipe.
 
 ### Task U2.4: Honest processing message (finding 6) (<= 1 hour)
 - [ ] Done

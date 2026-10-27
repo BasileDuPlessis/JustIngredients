@@ -127,6 +127,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
         recipe_name: "Test Recipe".to_string(),
         ingredients: ingredients.clone(),
         editing_index: 0,
+        field: just_ingredients::dialogue::IngredientField::Line,
         language_code: Some("en".to_string()),
         message_id: Some(123),
         original_message_id: Some(456), // Original recipe display message ID
@@ -139,6 +140,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             recipe_name,
             ingredients: ingr,
             editing_index,
+            field: _,
             language_code,
             message_id,
             original_message_id,
@@ -343,6 +345,7 @@ fn test_dialogue_state_transitions_with_original_message_id() {
         recipe_name: "Test Recipe".to_string(),
         ingredients: ingredients.clone(),
         editing_index: 0,
+        field: just_ingredients::dialogue::IngredientField::Line,
         language_code: Some("en".to_string()),
         message_id: Some(123),
         original_message_id: Some(456),
@@ -355,6 +358,7 @@ fn test_dialogue_state_transitions_with_original_message_id() {
         recipe_name,
         ingredients: ingr,
         editing_index,
+        field: _,
         language_code,
         message_id,
         original_message_id,
@@ -403,6 +407,7 @@ fn test_dialogue_state_transitions_with_original_message_id() {
         original_ingredients: saved_ingredients.clone(),
         current_matches: ingredients.clone(),
         editing_index: 1,
+        field: just_ingredients::dialogue::IngredientField::Line,
         language_code: Some("en".to_string()),
         message_id: Some(789),
         original_message_id: Some(101112), // Original recipe display message ID
@@ -414,6 +419,7 @@ fn test_dialogue_state_transitions_with_original_message_id() {
         original_ingredients,
         current_matches,
         editing_index,
+        field: _,
         language_code,
         message_id,
         original_message_id,
@@ -455,6 +461,7 @@ fn test_review_to_editing_ingredient_transition() {
         recipe_name: "Test Recipe".to_string(),
         ingredients: ingredients.clone(),
         editing_index: 0,
+        field: just_ingredients::dialogue::IngredientField::Line,
         language_code: Some("en".to_string()),
         message_id: Some(1001),          // New editing prompt message ID
         original_message_id: Some(1000), // Should track the original message ID
@@ -516,6 +523,7 @@ fn test_saved_ingredients_to_editing_transition() {
         original_ingredients: saved_ingredients.clone(),
         current_matches: current_matches.clone(),
         editing_index: 0,
+        field: just_ingredients::dialogue::IngredientField::Line,
         language_code: Some("en".to_string()),
         message_id: Some(2001),          // New editing prompt message ID
         original_message_id: Some(2000), // Should track the original message ID

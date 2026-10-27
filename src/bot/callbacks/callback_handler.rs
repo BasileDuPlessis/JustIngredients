@@ -349,12 +349,11 @@ async fn handle_editing_ingredient_callbacks(
     if let Some(RecipeDialogueState::EditingIngredient {
         recipe_name,
         ingredients,
-        editing_index: _,
         language_code,
-        message_id: _,
         original_message_id,
         extracted_text,
         recipe_name_from_caption,
+        ..
     }) = dialogue_state
     {
         if data == "cancel_ingredient_editing" {
@@ -449,10 +448,9 @@ async fn handle_editing_saved_ingredient_callbacks(
         recipe_id,
         original_ingredients,
         current_matches,
-        editing_index: _,
         language_code,
-        message_id: _,
         original_message_id,
+        ..
     }) = dialogue_state
     {
         if data == "cancel_ingredient_editing" {

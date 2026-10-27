@@ -182,6 +182,7 @@ async fn handle_text_message(
                 recipe_name,
                 ingredients,
                 editing_index,
+                field,
                 language_code: dialogue_lang_code,
                 message_id,
                 original_message_id: _original_message_id,
@@ -204,6 +205,7 @@ async fn handle_text_message(
                         recipe_name,
                         ingredients,
                         editing_index,
+                        field,
                         ctx: &HandlerContext {
                             bot,
                             localization,
@@ -286,6 +288,7 @@ async fn handle_text_message(
                 original_ingredients,
                 current_matches,
                 editing_index,
+                field,
                 language_code: dialogue_lang_code,
                 message_id,
                 original_message_id,
@@ -314,6 +317,7 @@ async fn handle_text_message(
                         },
                         message_id,
                         editing_index,
+                        field,
                         original_message_id,
                         user_input_message_id: Some(msg.id.0), // Add user's input message ID for reply functionality
                     },

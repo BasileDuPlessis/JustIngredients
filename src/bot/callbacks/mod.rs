@@ -7,10 +7,12 @@
 //! - `workflow_callbacks`: Workflow transitions and navigation
 //! - `review_callbacks`: ReviewIngredients dialogue state handlers
 //! - `editing_callbacks`: EditingSavedIngredients dialogue state handlers
+//! - `ingredient_menu`: Ingredient buttons and menu shared by both editing flows
 
 pub mod callback_handler;
 pub mod callback_types;
 pub mod editing_callbacks;
+pub mod ingredient_menu;
 pub mod recipe_callbacks;
 pub mod review_callbacks;
 pub mod workflow_callbacks;

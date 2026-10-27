@@ -229,6 +229,13 @@ ingredient-added = Ingrédient ajouté avec succès !
 edit-ingredient-title = Modifier l'ingrédient
 edit-ingredient-current = Actuel
 edit-ingredient-instruction = Entrez le nouveau texte d'ingrédient (ex: "3 tasses de blé entier") :
+ingredient-menu-quantity = 🔢 Quantité
+ingredient-menu-name = 🏷️ Nom
+ingredient-menu-line = ✏️ Toute la ligne
+ingredient-menu-delete = 🗑️ Supprimer
+ingredient-menu-back = ⬅️ Retour
+edit-quantity-instruction = Tapez la nouvelle quantité (ou - s'il n'y en a pas) :
+edit-name-instruction = Tapez le nouveau nom de l'ingrédient :
 
 # Messages de légende photo
 caption-used = 📝 Utilisation de la légende de la photo comme nom de recette : "{$caption}"

@@ -112,14 +112,20 @@ A ⚠️ prefix marks `requires_quantity_confirmation`: `needs_review` from the 
 outside (0, `MAX_QUANTITY`], not storable in `DECIMAL(10,3)`, or unit cut to 50 characters
 (`extraction/mapping.rs`).
 
-Keyboard (`create_ingredient_review_keyboard`): per ingredient ✏️ `edit_<i>` and 🗑️
-`delete_<i>` (label cut at 20 characters), then ✅ `confirm`, ❌ `cancel_review`, and ➕
-`add_ingredient`.
+Keyboard (`create_ingredient_review_keyboard`): one button per ingredient, labelled with its full
+line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cancel_review`, and ➕
+`add_ingredient`. The same keyboard is used when editing a saved recipe.
 
-- `edit_<i>`: the review message becomes a focused prompt with only a Cancel button
-  (`cancel_ingredient_editing`); state `EditingIngredient`. The user retypes the whole line
-  ("3 cups flour"), parsed by `parse_ingredient_from_text`; an edited line is no longer flagged.
-  "cancel", "stop" or "back" (or the button) restore the review.
+- `item_<i>`: the keyboard of the same message becomes the ingredient's menu
+  (`create_ingredient_menu_keyboard`, `callbacks::ingredient_menu`): 👉 the line (`noop`),
+  🔢 `qty_<i>`, 🏷️ `name_<i>`, ✏️ `edit_<i>`, 🗑️ `delete_<i>`, ⬅️ `back_review` (list keyboard
+  again).
+- `qty_<i>`, `name_<i>`, `edit_<i>`: the message becomes a focused prompt with only a Cancel
+  button (`cancel_ingredient_editing`); state `EditingIngredient` with `field` `Quantity`, `Name`
+  or `Line` (`ingredient_editing::apply_edit`). A quantity answer is a number in range or `-`
+  for none (`parse_quantity_answer`) and clears the ⚠️ flag; a name answer replaces only the name
+  (1–100 characters); a line answer ("3 cups flour") is parsed by `parse_ingredient_from_text`
+  and is no longer flagged. "cancel", "stop" or "back" (or the button) restore the review.
 - `delete_<i>`: removes the line. When none is left, the message offers `add_more` (asks for
   another photo and resets the state to `Start`; the review is dropped) and `cancel_empty`.
 - `confirm`: **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
@@ -198,8 +204,10 @@ state).
 - **Rename**: prompt, state `RenamingRecipe`, typed name saved with `update_recipe_name`
   (cancel words answer `rename-cancelled`); an empty or too long name is refused and the prompt
   stays open.
-- **Edit ingredients**: state `EditingSavedIngredients` with the review keyboard. ✏️ opens
-  `EditingSavedIngredient` (typed line, `cancel_ingredient_editing`), ➕ `add_ingredient` opens
+- **Edit ingredients**: state `EditingSavedIngredients` with the review keyboard and the same
+  ingredient menu; 🔢, 🏷️ and ✏️ open `EditingSavedIngredient` (typed quantity, name or line,
+  `cancel_ingredient_editing`). Saved ingredients without quantity stay without quantity (they
+  were shown and could be saved as "1"). ➕ `add_ingredient` opens
   `AddingIngredientToSavedRecipe` (typed line), 🗑️ removes, ✅ `confirm` writes the differences
   (update, create, delete), ❌ `cancel_review` drops them. Typed text outside the prompts answers
   `use-buttons-instruction`.
@@ -217,7 +225,7 @@ handlers below, which work in any state. The query is always answered.
 
 | Data | Handled in | Action |
 |---|---|---|
-| `edit_<i>`, `delete_<i>`, `confirm`, `cancel_review` | `ReviewIngredients`, `EditingSavedIngredients` | Review or saved-recipe editing (above) |
+| `item_<i>`, `back_review`, `qty_<i>`, `name_<i>`, `edit_<i>`, `delete_<i>`, `confirm`, `cancel_review` | `ReviewIngredients`, `EditingSavedIngredients` | Review or saved-recipe editing (above) |
 | `add_more` | `ReviewIngredients` | Ask for another photo, state `Start` |
 | `add_ingredient` | `EditingSavedIngredients` | Add a line to a saved recipe (no effect during a review) |
 | `cancel_ingredient_editing` | `EditingIngredient`, `EditingSavedIngredient` | Leave the focused edit prompt |
@@ -241,12 +249,12 @@ of the message that opened it.
 |---|---|---|
 | `Start` (default) | `add_more`; also no state | Commands and echo |
 | `ReviewIngredients` | Successful extraction; end of an edit | "confirm"/"ok"/"yes"/"save", "cancel"/"stop", else help |
-| `EditingIngredient` | `edit_<i>` in a review | Whole ingredient line |
+| `EditingIngredient` | `qty_<i>`, `name_<i>` or `edit_<i>` in a review | Quantity, name or whole line (`field`) |
 | `AwaitingQuantityCorrection` | Typed "confirm" with flagged lines | Quantity or `-` |
 | `WaitingForRecipeNameAfterConfirm` | `confirm` without a caption name | Recipe name |
 | `RenamingRecipe` | `recipe_action:rename` | New name |
 | `EditingSavedIngredients` | `recipe_action:edit_ingredients` | Refused (use the buttons) |
-| `EditingSavedIngredient` | `edit_<i>` on a saved recipe | Whole ingredient line |
+| `EditingSavedIngredient` | `qty_<i>`, `name_<i>` or `edit_<i>` on a saved recipe | Quantity, name or whole line (`field`) |
 | `AddingIngredientToSavedRecipe` | `add_ingredient` on a saved recipe | New ingredient line |
 | `WaitingForRecipeName` | Never entered (only tests build it) | Recipe name |
 

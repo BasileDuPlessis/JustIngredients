@@ -406,19 +406,11 @@ mod tests {
             // Should have 4 rows: 2 ingredient rows + 1 confirm/cancel row + 1 add ingredient row
             assert_eq!(keyboard.len(), 4);
 
-            // First row: Edit and Delete buttons for first ingredient
-            assert_eq!(keyboard[0].len(), 2);
-            assert!(keyboard[0][0].text.contains("✏️"));
-            assert!(keyboard[0][0].text.contains("flour"));
-            assert!(keyboard[0][1].text.contains("🗑️"));
-            assert!(keyboard[0][1].text.contains("flour"));
-
-            // Second row: Edit and Delete buttons for second ingredient
-            assert_eq!(keyboard[1].len(), 2);
-            assert!(keyboard[1][0].text.contains("✏️"));
-            assert!(keyboard[1][0].text.contains("eggs"));
-            assert!(keyboard[1][1].text.contains("🗑️"));
-            assert!(keyboard[1][1].text.contains("eggs"));
+            // One button per ingredient (its full line), which opens the ingredient's menu
+            assert_eq!(keyboard[0].len(), 1);
+            assert_eq!(keyboard[0][0].text, "2 cups → flour");
+            assert_eq!(keyboard[1].len(), 1);
+            assert_eq!(keyboard[1][0].text, "3 → eggs");
 
             // Third row: Confirm and Cancel buttons
             assert_eq!(keyboard[2].len(), 2);
@@ -480,9 +472,11 @@ mod tests {
             inline_keyboard: keyboard,
         } = keyboard;
         {
-            // Should truncate long names
-            assert!(keyboard[0][0].text.contains("..."));
-            assert!(keyboard[0][0].text.len() <= 30); // Should be reasonably short
+            // The full line fits: only lines over 60 characters are shortened
+            assert_eq!(
+                keyboard[0][0].text,
+                "1 cup → very_long_ingredient_name_that_should_be_truncated"
+            );
         }
     }
 

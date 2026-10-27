@@ -7,6 +7,7 @@ use crate::localization::t_lang;
 use std::sync::Arc;
 
 // Import text processing types
+use crate::dialogue::IngredientField;
 use crate::text_processing::MeasurementMatch;
 
 // Import common UI components
@@ -127,33 +128,17 @@ pub fn create_ingredient_review_keyboard(
         "create_ingredient_review_keyboard",
         ingredients.len(),
         || {
-            let mut buttons = Vec::new();
-
-            // Create Edit and Delete buttons for each ingredient
-            for (i, ingredient) in ingredients.iter().enumerate() {
-                let ingredient_display = if ingredient.ingredient_name.is_empty() {
-                    format!(
-                        "❓ {}",
-                        t_lang(localization, "unknown-ingredient", language_code)
-                    )
-                } else {
-                    ingredient.ingredient_name.clone()
-                };
-
-                let display_text = ingredient_line(ingredient, &ingredient_display);
-                let button_text = truncate_text(&display_text, 20);
-
-                buttons.push(vec![
-                    InlineKeyboardButton::callback(
-                        format!("✏️ {}", button_text),
-                        format!("edit_{}", i),
-                    ),
-                    InlineKeyboardButton::callback(
-                        format!("🗑️ {}", button_text),
-                        format!("delete_{}", i),
-                    ),
-                ]);
-            }
+            // One button per ingredient: it opens the ingredient's menu
+            let mut buttons: Vec<Vec<InlineKeyboardButton>> = ingredients
+                .iter()
+                .enumerate()
+                .map(|(i, ingredient)| {
+                    vec![InlineKeyboardButton::callback(
+                        ingredient_button_label(ingredient, language_code, localization),
+                        format!("item_{i}"),
+                    )]
+                })
+                .collect();
 
             // Add Confirm and Cancel buttons at the bottom
             buttons.push(vec![
@@ -186,6 +171,96 @@ pub fn create_ingredient_review_keyboard(
             InlineKeyboardMarkup::new(buttons)
         },
     )
+}
+
+/// Longest ingredient label on a button, in characters (Telegram shortens longer ones itself).
+const BUTTON_LABEL_MAX_CHARS: usize = 60;
+
+/// An ingredient as written on its button: the review line, shortened if very long.
+fn ingredient_button_label(
+    ingredient: &MeasurementMatch,
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> String {
+    let name = if ingredient.ingredient_name.is_empty() {
+        format!(
+            "❓ {}",
+            t_lang(localization, "unknown-ingredient", language_code)
+        )
+    } else {
+        ingredient.ingredient_name.clone()
+    };
+    truncate_text(&ingredient_line(ingredient, &name), BUTTON_LABEL_MAX_CHARS)
+}
+
+/// What a button of the ingredient list or of an ingredient's menu asks for.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IngredientAction {
+    /// Open the menu of ingredient `i` (`item_<i>`).
+    Menu(usize),
+    /// Edit a field of ingredient `i`: `edit_<i>` (whole line), `qty_<i>`, `name_<i>`.
+    Edit(IngredientField, usize),
+    /// Delete ingredient `i` (`delete_<i>`).
+    Delete(usize),
+    /// Back from a menu to the ingredient list (`back_review`).
+    Back,
+}
+
+/// Reads the callback data of an ingredient button.
+pub fn parse_ingredient_action(data: &str) -> Option<IngredientAction> {
+    if data == "back_review" {
+        return Some(IngredientAction::Back);
+    }
+    let (prefix, index) = data.split_once('_')?;
+    let index: usize = index.parse().ok()?;
+    match prefix {
+        "item" => Some(IngredientAction::Menu(index)),
+        "edit" => Some(IngredientAction::Edit(IngredientField::Line, index)),
+        "qty" => Some(IngredientAction::Edit(IngredientField::Quantity, index)),
+        "name" => Some(IngredientAction::Edit(IngredientField::Name, index)),
+        "delete" => Some(IngredientAction::Delete(index)),
+        _ => None,
+    }
+}
+
+/// Menu of one ingredient: its line (inactive), change quantity, change name, retype the line,
+/// delete, back to the list.
+pub fn create_ingredient_menu_keyboard(
+    ingredient: &MeasurementMatch,
+    index: usize,
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> InlineKeyboardMarkup {
+    let button = |key: &str, data: String| {
+        InlineKeyboardButton::callback(t_lang(localization, key, language_code), data)
+    };
+    InlineKeyboardMarkup::new(vec![
+        vec![InlineKeyboardButton::callback(
+            format!(
+                "👉 {}",
+                ingredient_button_label(ingredient, language_code, localization)
+            ),
+            "noop",
+        )],
+        vec![
+            button("ingredient-menu-quantity", format!("qty_{index}")),
+            button("ingredient-menu-name", format!("name_{index}")),
+        ],
+        vec![
+            button("ingredient-menu-line", format!("edit_{index}")),
+            button("ingredient-menu-delete", format!("delete_{index}")),
+        ],
+        vec![button("ingredient-menu-back", "back_review".to_string())],
+    ])
+}
+
+/// Locale key of the instruction shown when a field of an ingredient is edited.
+pub fn edit_instruction_key(field: IngredientField) -> &'static str {
+    match field {
+        IngredientField::Line => "edit-ingredient-instruction",
+        IngredientField::Quantity => "edit-quantity-instruction",
+        IngredientField::Name => "edit-name-instruction",
+    }
 }
 
 /// Create inline keyboard for OCR processing with cancel option
@@ -509,6 +584,112 @@ mod tests {
             crate::localization::create_localization_manager().expect("localization");
         let summary = render_recipe_summary("A & B", &[named("sel")], Some("fr"), &localization);
         assert_eq!(summary.as_str(), "📝 <b>A &amp; B</b>\n\n1. 2 g → sel\n");
+    }
+
+    fn callbacks(keyboard: &InlineKeyboardMarkup) -> Vec<Vec<String>> {
+        keyboard
+            .inline_keyboard
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|button| match &button.kind {
+                        teloxide::types::InlineKeyboardButtonKind::CallbackData(data) => {
+                            data.clone()
+                        }
+                        other => panic!("unexpected button {other:?}"),
+                    })
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn the_review_has_one_button_per_ingredient_then_the_actions() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let ingredients: Vec<MeasurementMatch> =
+            (0..15).map(|i| named(&format!("ingrédient {i}"))).collect();
+        let keyboard = create_ingredient_review_keyboard(&ingredients, Some("fr"), &localization);
+        let rows = callbacks(&keyboard);
+        assert_eq!(rows.len(), 15 + 2, "15 ingredients, confirm/cancel, add");
+        for (i, row) in rows.iter().take(15).enumerate() {
+            assert_eq!(row, &vec![format!("item_{i}")]);
+        }
+        assert_eq!(
+            rows[15],
+            vec!["confirm".to_string(), "cancel_review".to_string()]
+        );
+        assert!(rows.iter().flatten().all(|data| data.len() <= 64));
+        let label = &keyboard.inline_keyboard[0][0].text;
+        assert_eq!(
+            label, "2 g → ingrédient 0",
+            "full line, no 20-character cut"
+        );
+    }
+
+    #[test]
+    fn long_ingredient_labels_are_shortened() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let keyboard = create_ingredient_review_keyboard(
+            &[named(&"farine ".repeat(30))],
+            Some("fr"),
+            &localization,
+        );
+        assert!(keyboard.inline_keyboard[0][0].text.chars().count() <= BUTTON_LABEL_MAX_CHARS);
+    }
+
+    #[test]
+    fn the_ingredient_menu_offers_every_action() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let keyboard =
+            create_ingredient_menu_keyboard(&named("farine"), 7, Some("fr"), &localization);
+        assert_eq!(
+            callbacks(&keyboard),
+            vec![
+                vec!["noop".to_string()],
+                vec!["qty_7".to_string(), "name_7".to_string()],
+                vec!["edit_7".to_string(), "delete_7".to_string()],
+                vec!["back_review".to_string()],
+            ]
+        );
+        assert!(keyboard.inline_keyboard[0][0].text.contains("farine"));
+        assert!(keyboard
+            .inline_keyboard
+            .iter()
+            .flatten()
+            .all(|button| !button.text.contains("Missing translation")));
+    }
+
+    #[test]
+    fn ingredient_buttons_parse_back() {
+        use IngredientAction::*;
+        assert_eq!(parse_ingredient_action("item_3"), Some(Menu(3)));
+        assert_eq!(
+            parse_ingredient_action("edit_3"),
+            Some(Edit(IngredientField::Line, 3))
+        );
+        assert_eq!(
+            parse_ingredient_action("qty_12"),
+            Some(Edit(IngredientField::Quantity, 12))
+        );
+        assert_eq!(
+            parse_ingredient_action("name_0"),
+            Some(Edit(IngredientField::Name, 0))
+        );
+        assert_eq!(parse_ingredient_action("delete_4"), Some(Delete(4)));
+        assert_eq!(parse_ingredient_action("back_review"), Some(Back));
+        for other in [
+            "confirm",
+            "cancel_review",
+            "add_ingredient",
+            "item_x",
+            "qty_",
+            "noop",
+        ] {
+            assert_eq!(parse_ingredient_action(other), None, "{other}");
+        }
     }
 
     #[test]

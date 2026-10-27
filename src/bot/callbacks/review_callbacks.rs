@@ -22,10 +22,13 @@ use crate::localization::{t_args_lang, t_lang};
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI components for the focused editing interface
+use crate::bot::callbacks::ingredient_menu::show_ingredient_keyboard;
 use crate::bot::cleanup::{self, send_transient};
 use crate::bot::create_ingredient_review_keyboard;
 use crate::bot::home::send_home;
-use crate::bot::ui_builder::render_review;
+use crate::bot::ui_builder::{
+    edit_instruction_key, parse_ingredient_action, render_review, IngredientAction,
+};
 use crate::bot::ui_components::create_ingredient_editing_keyboard;
 
 // Import HandlerContext
@@ -57,7 +60,18 @@ pub async fn handle_review_ingredients_callbacks(
     }) = dialogue_state
     {
         if q.message.is_some() {
-            if data.starts_with("edit_") {
+            let action = parse_ingredient_action(data);
+            if let Some(action @ (IngredientAction::Menu(_) | IngredientAction::Back)) = action {
+                show_ingredient_keyboard(
+                    bot,
+                    q,
+                    &ingredients,
+                    action,
+                    dialogue_lang_code.as_deref(),
+                    localization,
+                )
+                .await?;
+            } else if let Some(IngredientAction::Edit(..)) = action {
                 handle_edit_button(ReviewIngredientsParams {
                     ctx: &HandlerContext {
                         bot,
@@ -169,14 +183,11 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
         ..
     } = params;
 
-    let data = data.unwrap_or("");
     let ingredients =
         ingredients_slice.expect("Ingredients slice should be provided for edit callback");
-    let index: usize = data
-        .strip_prefix("edit_")
-        .expect("Edit callback data should start with 'edit_'")
-        .parse()
-        .unwrap_or(0);
+    let Some(IngredientAction::Edit(field, index)) = data.and_then(parse_ingredient_action) else {
+        return Ok(());
+    };
     if index < ingredients.len() {
         // Record user engagement metric for ingredient editing
         crate::observability::record_user_engagement_metrics(
@@ -205,7 +216,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
             crate::bot::ui_builder::ingredient_line(ingredient, &ingredient.ingredient_name),
             t_lang(
                 ctx.localization,
-                "edit-ingredient-instruction",
+                edit_instruction_key(field),
                 dialogue_lang_code.as_deref()
             )
         );
@@ -260,6 +271,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
                 recipe_name: recipe_name.to_string(),
                 ingredients: ingredients.to_vec(),
                 editing_index: index,
+                field,
                 language_code: dialogue_lang_code.clone(),
                 message_id: Some(edited_message.id.0 as i32), // Track the editing prompt message
                 original_message_id: message_id, // Original recipe display message to replace

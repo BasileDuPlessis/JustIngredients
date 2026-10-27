@@ -16,7 +16,7 @@ use crate::errors::error_logging;
 use crate::text_processing::MeasurementMatch;
 
 // Import dialogue types
-use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
+use crate::dialogue::{IngredientField, RecipeDialogue, RecipeDialogueState};
 
 // Import validation functions
 use crate::validation::{parse_ingredient_from_text, parse_quantity, validate_recipe_name};
@@ -143,6 +143,8 @@ pub struct IngredientEditInputParams<'a> {
     pub recipe_name: String,
     pub ingredients: Vec<MeasurementMatch>,
     pub editing_index: usize,
+    /// What the typed answer replaces
+    pub field: IngredientField,
     pub ctx: &'a HandlerContext<'a>,
     pub message_id: Option<i32>,
     pub extracted_text: String,
@@ -173,6 +175,8 @@ pub struct SavedIngredientEditInputParams<'a> {
     pub ctx: &'a HandlerContext<'a>,
     pub message_id: Option<i32>,
     pub editing_index: usize,
+    /// What the typed answer replaces
+    pub field: IngredientField,
     pub original_message_id: Option<i32>, // ID of the original recipe display message to replace
     pub user_input_message_id: Option<i32>, // ID of the user's input message for reply functionality
 }
@@ -526,6 +530,7 @@ pub async fn handle_ingredient_edit_input(
         recipe_name,
         ingredients,
         editing_index,
+        field,
         ctx: handler_ctx,
         message_id,
         extracted_text,
@@ -551,7 +556,8 @@ pub async fn handle_ingredient_edit_input(
     }
 
     // Parse and validate the user input
-    let parse_result = parse_ingredient_from_text(edit_input);
+    let parse_result =
+        crate::ingredient_editing::apply_edit(field, ingredients.get(editing_index), edit_input);
     let result = if let Ok(new_ingredient) = parse_result {
         handle_edit_success(EditSuccessParams {
             ctx: handler_ctx,
@@ -1345,6 +1351,7 @@ pub async fn handle_saved_ingredient_edit_input(
         ctx: handler_ctx,
         message_id: _,
         editing_index,
+        field,
         original_message_id,
         user_input_message_id,
     } = params;
@@ -1371,7 +1378,11 @@ pub async fn handle_saved_ingredient_edit_input(
     }
 
     // Parse and validate the user input
-    match parse_ingredient_from_text(edit_input) {
+    match crate::ingredient_editing::apply_edit(
+        field,
+        current_matches.get(editing_index),
+        edit_input,
+    ) {
         Ok(new_ingredient) => {
             // Update the ingredient at the editing index
             if editing_index < current_matches.len() {
