@@ -2,12 +2,14 @@
 //!
 //! This module is split into several submodules for better organization:
 //! - `callbacks`: All callback query handling (organized into submodules)
+//! - `commands`: Command parsing and the Telegram command menu
 //! - `message_handler`: Handles incoming text, photo, and document messages
 //! - `ui_builder`: Creates keyboards and formats messages
 //! - `dialogue_manager`: Manages dialogue state transitions and validation
 
 pub mod callbacks;
 pub mod command_handlers;
+pub mod commands;
 pub mod dialogue_manager;
 pub mod image_processing;
 pub mod media_handlers;

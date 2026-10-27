@@ -32,7 +32,8 @@ src/localization.rs         # Fluent bundles (en, fr), language detection
 src/extraction/             # IngredientExtractor trait, Gemini and Tesseract backends, guard
 src/bot/
 ├── message_handler.rs      # MessageServices, routing of messages by type and dialogue state
-├── command_handlers.rs     # /start, /help, /recipes, unsupported messages
+├── commands.rs             # Command parsing, Telegram command menu
+├── command_handlers.rs     # Welcome, help, recipe list, search placeholder, unsupported messages
 ├── media_handlers.rs       # Photo and image document messages
 ├── image_processing.rs     # Download, extraction call, review message, error keys
 ├── dialogue_manager.rs     # Text input of each dialogue state, save to database
@@ -56,17 +57,22 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 ## Messages and Commands
 | Input | Behaviour |
 |---|---|
-| `/recipes` | Checked first with `starts_with("/recipes")`, in any dialogue state (state unchanged): first page of the recipe list. |
-| `/start` | Exact match, only outside a dialogue: welcome message. |
-| `/help` | Exact match, only outside a dialogue: help message. |
+| `/liste`, `/list`, `/recipes` | Checked first, in any dialogue state (state unchanged): first page of the recipe list. |
+| `/start` | Only outside a dialogue: welcome message. |
+| `/aide`, `/help` | Only outside a dialogue: help message. |
+| `/cherche`, `/search` | Only outside a dialogue: "search is coming soon" (`search-coming-soon`); the words are parsed but not used yet. |
 | Other text, no dialogue | Echo "Received: <text>" plus a tip to send a photo (`text-response`, `text-tip`). No search. |
-| Text in a dialogue | Handled by the current state (see [Dialogue States](#dialogue-states)). `/start` and `/help` are not recognized there: while a name is expected, `/help` is saved as the name. |
+| Text in a dialogue | Handled by the current state (see [Dialogue States](#dialogue-states)). Commands other than the list are not recognized there: while a name is expected, `/aide` is saved as the name. |
 | Photo | Largest size, caption used as recipe name candidate. Handled whatever the state: a successful extraction replaces the current dialogue with a new review. |
 | Document | Only `image/*` MIME types, caption ignored; otherwise `error-unsupported-format` or `error-no-mime-type`. |
 | Anything else | `unsupported-*` message. |
 
-There is no Telegram command menu (`setMyCommands` is never called). The welcome message lists
-`/start` and `/help`, the help message only `/start`; neither mentions `/recipes`.
+Commands are read by `commands::parse_command`: case-insensitive, an `@botname` suffix is
+ignored, words after the command are kept for search and ignored otherwise. At startup the bot
+sets the Telegram command menu (`setMyCommands`) in the background, a failure is only logged:
+`/liste` and `/aide` for French users, `/list` and `/help` for everyone else. `/cherche` joins
+the menu with search (UX Task U4.2). The welcome and help messages list the same commands, in
+the user's language.
 
 ## Photo Flow
 1. `download_file_bytes` downloads the file into memory, at most 10 MB (`MAX_IMAGE_BYTES`),
@@ -137,7 +143,7 @@ transaction. Owner id: the callback sender (`from.id`) on the caption path, the 
 typed paths; they are equal in private chats (IMP-024).
 
 ## My Recipes
-- **List** (`/recipes`, 📚 button): distinct recipe names of the chat id, alphabetical, 5 per
+- **List** (`/liste`, 📚 button): distinct recipe names of the chat id, alphabetical, 5 per
   page, one button per name (label cut at 30 characters). Callback data: `select_recipe:<name>`,
   or `select_recipe_h:<12 hex>` (SHA-256 fingerprint) when the first form exceeds 64 bytes,
   resolved among the user's own names (`recipe_selection.rs`). Pagination row: ⬅️ `page:<n>`,

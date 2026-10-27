@@ -15,8 +15,10 @@ use crate::extraction::SharedExtractor;
 
 // Import command handlers
 use super::command_handlers::{
-    handle_help_command, handle_recipes_command, handle_start_command, handle_unsupported_message,
+    handle_help_command, handle_recipes_command, handle_search_command, handle_start_command,
+    handle_unsupported_message,
 };
+use super::commands::{parse_command, Command};
 
 // Import media handlers
 use super::media_handlers::{handle_document_message, handle_photo_message};
@@ -355,34 +357,35 @@ async fn handle_text_message(
             }
         }
 
-        // Handle /start command
-        if text == "/start" {
-            return handle_start_command(bot, msg, localization, language_code).await;
-        }
-        // Handle /help command
-        else if text == "/help" {
-            return handle_help_command(bot, msg, localization, language_code).await;
-        }
-        // Handle /recipes command
-        else if text == "/recipes" {
-            return handle_recipes_command(bot, msg, pool, language_code, localization, None).await;
-        }
-        // Handle regular text messages
-        else {
-            bot.send_message(
-                msg.chat.id,
-                format!(
-                    "{} {}",
-                    t_args_lang(
-                        localization,
-                        "text-response",
-                        &[("text", text)],
-                        language_code
+        match parse_command(text) {
+            Some(Command::Start) => {
+                handle_start_command(bot, msg, localization, language_code).await?
+            }
+            Some(Command::Help) => {
+                handle_help_command(bot, msg, localization, language_code).await?
+            }
+            Some(Command::List) => {
+                handle_recipes_command(bot, msg, pool, language_code, localization, None).await?
+            }
+            Some(Command::Search(_)) => {
+                handle_search_command(bot, msg, localization, language_code).await?
+            }
+            None => {
+                bot.send_message(
+                    msg.chat.id,
+                    format!(
+                        "{} {}",
+                        t_args_lang(
+                            localization,
+                            "text-response",
+                            &[("text", text)],
+                            language_code
+                        ),
+                        t_lang(localization, "text-tip", language_code)
                     ),
-                    t_lang(localization, "text-tip", language_code)
-                ),
-            )
-            .await?;
+                )
+                .await?;
+            }
         }
     }
     Ok(())
@@ -431,7 +434,7 @@ async fn handle_text_message(
 /// ## State-Specific Message Handling
 ///
 /// ### Text Messages
-/// - **Start State**: Handle `/start`, `/help`, `/recipes` commands
+/// - **Start State**: Handle the commands (see `commands::parse_command`)
 /// - **WaitingForRecipeName**: Process recipe name input with validation
 /// - **ReviewIngredients**: Handle ingredient review commands (edit/delete/confirm)
 /// - **EditingIngredient**: Process ingredient edit input
@@ -633,11 +636,11 @@ pub async fn message_handler_with_cache(
 
     let start_time = std::time::Instant::now();
 
-    // Handle commands with caching support
+    // The list command answers in every dialogue state, before the state handles the text
     if let Some(text) = msg.text() {
-        if text.starts_with("/recipes") {
+        if parse_command(text) == Some(Command::List) {
             observability::record_telegram_message("text");
-            debug!(user_id = %msg.chat.id, "Handling /recipes command with caching");
+            debug!(user_id = %msg.chat.id, "Handling list command with caching");
             let language_code = msg
                 .from
                 .as_ref()

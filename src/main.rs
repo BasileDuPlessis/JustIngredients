@@ -17,7 +17,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use teloxide::dispatching::dialogue::InMemStorage;
 use teloxide::prelude::*;
-use tracing::info;
+use tracing::{info, warn};
 
 /// Validate environment variables at startup
 fn validate_environment_variables() -> Result<()> {
@@ -295,6 +295,18 @@ async fn main() -> Result<()> {
 
     // Health checks report whether the bot can reach Telegram, not only that it runs
     let _telegram_heartbeat = observability::start_telegram_heartbeat(bot.clone());
+
+    // The command menu only helps users find the commands: without it the bot still works
+    tokio::spawn({
+        let bot = bot.clone();
+        let localization = Arc::clone(&localization_manager);
+        async move {
+            match bot::commands::set_command_menu(&bot, &localization).await {
+                Ok(()) => info!("Telegram command menu set"),
+                Err(e) => warn!(error = %e, "Failed to set the Telegram command menu"),
+            }
+        }
+    });
 
     info!("Bot initialized with 30s timeout, starting dispatcher");
 

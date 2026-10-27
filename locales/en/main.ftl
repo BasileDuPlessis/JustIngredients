@@ -5,27 +5,23 @@ welcome-title = Welcome to Ingredients Bot!
 welcome-description = I'm your recipe assistant: send me a photo of an ingredient list and I'll turn it into a saved recipe. Here's what I can do:
 welcome-features =
     📸 Send me photos of ingredient lists, recipes, or any text you want to extract
-    � Add captions to automatically name your recipes
-    �📄 Send me image files (PNG, JPG, JPEG, BMP, TIFF, TIF)
+    🏷️ Add captions to automatically name your recipes
+    📄 Send me image files (PNG, JPG, JPEG, BMP, TIFF, TIF)
     🔍 I'll read the ingredients and let you check them before saving
     💾 All extracted text is stored for future reference
 welcome-commands = Commands:
-welcome-start = /start - Show this welcome message
-welcome-help = /help - Get help and usage instructions
 welcome-send-image = Just send me an image and I'll do the rest! 🚀
 
 help-title = 🆘 Ingredients Bot Help
 help-description = How to use me:
 help-step1 = 1. 📸 Send a photo of text you want to extract
-help-step2 = 2. � Add a caption to name your recipe (optional)
-help-step3 = 3. �📎 Or send an image file (PNG, JPG, JPEG, BMP, TIFF, TIF)
+help-step2 = 2. 🏷️ Add a caption to name your recipe (optional)
+help-step3 = 3. 📎 Or send an image file (PNG, JPG, JPEG, BMP, TIFF, TIF)
 help-step4 = 4. ⏳ I'll read the ingredients from the image
 help-step5 = 5. 📝 You'll receive the extracted text and can review/edit ingredients
 help-formats = Supported formats: PNG, JPG, JPEG, BMP, TIFF, TIF
 help-limits = File size limit: 10 MB
 help-commands = Commands:
-help-start = /start - Welcome message
-help-help = /help - This help message
 help-tips = Tips:
 help-tip1 = • Use clear, well-lit images
 help-tip2 = • Ensure text is readable and not too small
@@ -33,6 +29,11 @@ help-tip3 = • Avoid blurry or distorted images
 help-tip4 = • Add a caption to automatically name your recipe
 help-tip5 = • Supported languages: English + French
 help-final = Need help? Just send me an image! 😊
+
+# Commands (Telegram menu, welcome and help messages)
+command-list = My recipes
+command-help = Help and tips
+search-coming-soon = Search is coming soon. Meanwhile, /list shows all your recipes.
 
 # Error messages
 error-download-failed = Failed to download the image. Please try again.

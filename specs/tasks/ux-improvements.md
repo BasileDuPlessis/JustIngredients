@@ -107,10 +107,14 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 - How to validate: localization test that no message value starts with `[`; existing tests updated.
 
 ### Task U1.3: Short commands and the Telegram menu (finding 15) (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: `/liste`, `/cherche`, `/aide`, English aliases `/list`, `/search`, `/help`, `/start` and `/recipes`
   kept for compatibility; `setMyCommands` at startup for `fr` and `en` so the menu button lists them.
 - How to validate: command parsing tests; menu visible in the Telegram app after deploy.
+- Done (2026-10-27): `bot::commands` parses the commands (case-insensitive, `@botname` ignored)
+  and sets the menu (`/liste` `/aide` in French, `/list` `/help` otherwise); welcome and help list
+  them. `/cherche` answers "coming soon" and joins the menu in U4.2. Also fixed: three broken
+  characters (U+FFFD) in the English welcome and help, now caught by the localization test.
 
 ### Task U1.4: Home message (findings 14, 15) (<= 1 hour)
 - [ ] Done

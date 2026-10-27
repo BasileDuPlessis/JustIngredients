@@ -9,8 +9,6 @@ welcome-features =
     🔍 Je lirai les ingrédients et vous les ferai vérifier avant l'enregistrement
     💾 Tout texte extrait est stocké pour référence future
 welcome-commands = Commandes :
-welcome-start = /start - Afficher ce message de bienvenue
-welcome-help = /help - Obtenir de l'aide et des instructions d'utilisation
 welcome-send-image = Envoyez-moi simplement une image et je m'occupe du reste ! 🚀
 
 help-title = 🆘 Aide d'Ingredients Bot
@@ -22,14 +20,17 @@ help-step4 = 4. 📝 Vous recevrez le texte extrait
 help-formats = Formats supportés : PNG, JPG, JPEG, BMP, TIFF, TIF
 help-limits = Limite de taille de fichier : 10 Mo
 help-commands = Commandes :
-help-start = /start - Message de bienvenue
-help-help = /help - Ce message d'aide
 help-tips = Conseils :
 help-tip1 = • Utilisez des images claires et bien éclairées
 help-tip2 = • Assurez-vous que le texte est lisible et pas trop petit
 help-tip3 = • Évitez les images floues ou déformées
 help-tip4 = • Langues supportées : Anglais + Français
 help-final = Besoin d'aide ? Envoyez-moi simplement une image ! 😊
+
+# Commandes (menu Telegram, messages d'accueil et d'aide)
+command-list = Mes recettes
+command-help = Aide et conseils
+search-coming-soon = La recherche arrive bientôt. En attendant, /liste affiche toutes vos recettes.
 
 # Messages d'erreur
 error-download-failed = Échec du téléchargement de l'image. Veuillez réessayer.
@@ -78,7 +79,7 @@ unsupported-description = Ce que je peux faire :
 unsupported-feature1 = 📸 Envoyer des photos de texte à extraire
 unsupported-feature2 = 📄 Envoyer des fichiers image (PNG, JPG, JPEG, BMP, TIFF, TIF)
 unsupported-feature3 = 💬 Envoyer /start pour voir le message de bienvenue
-unsupported-feature4 = ❓ Envoyer /help pour des instructions détaillées
+unsupported-feature4 = ❓ Envoyer /aide pour des instructions détaillées
 unsupported-final = Essayez d'envoyer une image avec du texte ! 📝
 
 # Réponses texte régulières

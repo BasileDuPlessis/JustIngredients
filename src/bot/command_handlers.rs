@@ -13,6 +13,7 @@ use crate::localization::t_lang;
 use crate::db::get_user_recipes_paginated;
 
 // Import UI builder functions
+use super::commands::command_lines;
 use super::ui_builder::create_recipes_pagination_keyboard;
 
 // Import HandlerContext
@@ -39,13 +40,12 @@ pub async fn handle_start_command(
     }
 
     let welcome_message = format!(
-        "👋 {}\n\n{}\n\n{}\n\n{}\n{}\n{}\n\n{}",
+        "👋 {}\n\n{}\n\n{}\n\n{}\n{}\n\n{}",
         t_lang(localization, "welcome-title", language_code),
         t_lang(localization, "welcome-description", language_code),
         t_lang(localization, "welcome-features", language_code),
         t_lang(localization, "welcome-commands", language_code),
-        t_lang(localization, "welcome-start", language_code),
-        t_lang(localization, "welcome-help", language_code),
+        command_lines(localization, language_code),
         t_lang(localization, "welcome-send-image", language_code)
     );
     bot.send_message(msg.chat.id, welcome_message).await?;
@@ -77,8 +77,11 @@ pub async fn handle_help_command(
         t_lang(localization, "help-step3", language_code),
         t_lang(localization, "help-step4", language_code),
         t_lang(localization, "help-formats", language_code),
-        t_lang(localization, "help-commands", language_code),
-        t_lang(localization, "help-start", language_code),
+        format!(
+            "{}\n{}",
+            t_lang(localization, "help-commands", language_code),
+            command_lines(localization, language_code)
+        ),
         t_lang(localization, "help-tips", language_code),
         t_lang(localization, "help-tip1", language_code),
         t_lang(localization, "help-tip2", language_code),
@@ -91,7 +94,31 @@ pub async fn handle_help_command(
     Ok(())
 }
 
-/// Handle the /recipes command
+/// Handle the search command (`/cherche`, `/search`): search is not available yet
+pub async fn handle_search_command(
+    bot: &Bot,
+    msg: &Message,
+    localization: &Arc<crate::localization::LocalizationManager>,
+    language_code: Option<&str>,
+) -> Result<()> {
+    if let Some(user) = msg.from.as_ref() {
+        crate::observability::record_user_engagement_metrics(
+            user.id.0 as i64,
+            crate::observability::UserAction::RecipeSearch,
+            None, // No session duration for individual actions
+            language_code,
+        );
+    }
+
+    bot.send_message(
+        msg.chat.id,
+        t_lang(localization, "search-coming-soon", language_code),
+    )
+    .await?;
+    Ok(())
+}
+
+/// Handle the list command (`/liste`, `/list`, `/recipes`)
 pub async fn handle_recipes_command(
     bot: &Bot,
     msg: &Message,
@@ -100,7 +127,7 @@ pub async fn handle_recipes_command(
     localization: &Arc<crate::localization::LocalizationManager>,
     _cache: Option<&std::sync::Mutex<crate::cache::CacheManager>>,
 ) -> Result<()> {
-    debug!(user_id = %msg.chat.id, "Handling /recipes command");
+    debug!(user_id = %msg.chat.id, "Handling list command");
 
     // Get paginated recipes for the user
     // Note: For now, we don't cache recipe lists since they change frequently

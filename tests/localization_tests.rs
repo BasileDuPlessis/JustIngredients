@@ -275,8 +275,9 @@ mod tests {
     }
 }
 
-/// User messages read as plain sentences: no technical "[CODE]" prefix and no literal
-/// Markdown "**" (messages are sent without parse mode, so it would show as is).
+/// User messages read as plain sentences: no technical "[CODE]" prefix, no literal Markdown
+/// "**" (messages are sent without parse mode, so it would show as is) and no broken character
+/// (U+FFFD, left by a bad encoding).
 #[test]
 fn user_messages_have_no_technical_prefix_or_markdown() {
     for (language, source) in [
@@ -291,6 +292,10 @@ fn user_messages_have_no_technical_prefix_or_markdown() {
                 );
             }
             assert!(!line.contains("**"), "{language}: literal ** in: {line}");
+            assert!(
+                !line.contains('\u{FFFD}'),
+                "{language}: broken character in: {line}"
+            );
         }
     }
 }
