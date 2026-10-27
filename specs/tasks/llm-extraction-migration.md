@@ -244,7 +244,7 @@ March 2026 image meanwhile (restarts reuse it).
   quantity > 10000 flagged).
 
 ### Task 1.4: Prompt and schema as shared assets (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: move the prompt and schema from the benchmark script to `config/extraction/`;
   the script and Rust (`include_str!`) both read them.
 - How to validate: benchmark still at 100%; Rust test that the schema parses as JSON.

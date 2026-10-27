@@ -11,6 +11,7 @@
 
 pub mod config;
 pub mod mapping;
+pub mod prompt;
 
 use std::future::Future;
 use std::pin::Pin;
