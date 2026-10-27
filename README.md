@@ -36,8 +36,9 @@ each other's updates.
 ## Configuration
 Required: `TELEGRAM_BOT_TOKEN`, `DATABASE_URL`, `GEMINI_API_KEY`. Optional, with defaults:
 `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECS`, `GEMINI_THINKING_LEVEL`, `GEMINI_MAX_CONCURRENCY`,
-`METRICS_AUTH_TOKEN`, ports, database pool and observability settings. All of them are listed
-with their defaults in [`.env.example`](.env.example).
+`METRICS_AUTH_TOKEN`, `METRICS_BIND_ALL_INTERFACES`, ports, database pool and
+`MEASUREMENT_UNITS_CONFIG_PATH`; see [`.env.example`](.env.example). Some observability variables
+listed there are not read yet (IMP-051, [Deployment](specs/deployment.md)).
 
 ## Development
 ```bash

@@ -39,6 +39,7 @@ src/bot/
 ├── image_processing.rs     # Download, extraction call, review message, error keys
 ├── dialogue_manager.rs     # Text input of each dialogue state, save to database
 ├── home.rs                 # Home message sent at the end of every action
+├── html.rs                 # Html type (escaped text, <b>, <pre>), send_html / edit_html
 ├── ui_builder.rs           # Review list and keyboards, recipe list and card keyboards
 ├── ui_components.rs        # Buttons, pagination row, focused edit keyboard
 ├── recipe_selection.rs     # Callback data of recipe list buttons (64-byte limit)
@@ -183,8 +184,9 @@ Before sending it, `send_home` deletes what the action left behind (`bot::cleanu
 - the review message (ingredient list), recorded when the review is confirmed (✅ button or
   typed "confirm"): after saving, the confirmation and the home message remain.
 
-Kept: saved or cancelled notices (a review cancelled before confirming keeps its list edited to
-`review-cancelled`), recipe cards and lists. Only recorded messages are deleted; records older than 48 h are skipped
+Kept: saved or cancelled notices, recipe cards and lists. A review cancelled with ❌ before
+confirming keeps its list edited to `review-cancelled`; typing "cancel" or "stop" sends a new
+notice and leaves the list with inactive buttons (U2.5). Only recorded messages are deleted; records older than 48 h are skipped
 (Telegram refuses them), at most 200 per chat, in memory (lost on restart, like the dialogue
 state).
 
@@ -221,7 +223,9 @@ state).
 
 ## Callback Data
 `callback_handler_with_cache` first runs the handler of the current state, then the prefix
-handlers below, which work in any state. The query is always answered.
+handlers below, which work in any state. The query is answered at the end, unless a handler
+fails first (its error returns before the answer, and the button keeps spinning until Telegram
+gives up).
 
 | Data | Handled in | Action |
 |---|---|---|
@@ -238,7 +242,8 @@ handlers below, which work in any state. The query is always answered.
 | `workflow_list_recipes`, `workflow_search_recipes` | any | Recipe list (home "all my recipes" button), search placeholder; `workflow_add_another` is handled but never sent |
 | `cancel_processing` | any | Processing message replaced by `processing-cancelled`, dialogue ended |
 
-`cancel_empty` and `noop` are sent but have no handler. In `ReviewIngredients`, `workflow_*`
+`cancel_empty` and `noop` are sent but have no handler; `add_more`, offered when the last line of
+a saved recipe is deleted, has no handler in `EditingSavedIngredients` either (U2.5). In `ReviewIngredients`, `workflow_*`
 data is handled twice (by the state handler and by the prefix handler).
 
 ## Dialogue States

@@ -53,7 +53,7 @@ failure is logged as an error and the bot still starts (photos then fail with
   inventing one), `language` (`fr`, `en`, `other`), `transcription` (ingredient
   section, one line per ingredient), `ingredients[]` with `name`, `quantity` (number or null),
   `unit` (string or null), `needs_review`, `source_text`.
-- `mapping::to_measurement_matches`: canonical units, names cut to the database limit, quantities
+- `mapping::to_measurement_matches`: canonical units, names cut to 100 bytes (the validation limit), quantities
   outside (0, `MAX_QUANTITY`] or not storable in `DECIMAL(10,3)` and `needs_review` lines are
   flagged ⚠️ (`requires_quantity_confirmation`) for the review's quantity guard.
 
@@ -67,7 +67,7 @@ failure is logged as an error and the bot still starts (photos then fail with
   open it for 60 s, then one trial call (half-open); any other outcome resets the count.
 - `GuardedExtractor`: `GEMINI_MAX_CONCURRENCY` slots; a photo waiting more than 30 s for a slot
   gets `error-extraction-busy`. Successful results are cached by SHA-256 of the image (100
-  entries, 24 h); "not a recipe" answers are not cached.
+  entries, 24 h); "not a recipe" answers and answers without ingredients are not cached.
 
 ## Errors
 `ExtractionError` messages never contain the key or a URL with credentials. User messages come

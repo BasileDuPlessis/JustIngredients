@@ -85,7 +85,7 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 - How to validate: no link in `specs/` points to a missing file.
 
 ### Review gate RU0
-- [ ] Done
+- [x] Done (2026-10-27, see the Review Log)
 
 ## Phase U1: Display and Navigation Foundations
 
@@ -218,6 +218,9 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   title); ➕ Add ingredient works in the first review; remove `cancel_empty`, the duplicate
   `workflow_*` dispatch and the unused `WaitingForRecipeName` state.
 - How to validate: dialogue tests for typed and button confirm; grep shows no unhandled callback.
+- Found by RU0 (2026-10-27): typed "cancel"/"stop" in a review leaves the list with inactive
+  buttons; `add_more` is offered after deleting the last line of a saved recipe but has no handler
+  there; `noop` has no handler (harmless, the query is answered).
 
 ### Review gate RU2
 - [ ] Done
@@ -282,4 +285,5 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 ## Review Log
 | Gate | Date | Commits | Findings | Outcome |
 |---|---|---|---|---|
+| RU0 | 2026-10-27 | specs at `fd59224` (done late, after U1 and migration Phase 5) | All commands, states, callback prefixes and message keys of the specs exist in `src/bot/`; all 33 relative links resolve. 18 wrong or missing claims: deployment (observability variables never read, deleted repository token, rate limit per TCP peer, CI trigger, `--ha=false`), database design (newest-first query, unused functions, compile-time checks, startup schema check, delete not transactional, two metrics, `update_recipe_ingredients` owner id), bot (typed cancel, `add_more` without handler, query not answered on handler error, `html.rs`), extraction (100-byte names, empty answers not cached), README (variables). | Pass with fixes: all fixed in the specs; code issues to IMP-051 and IMP-052, dead buttons to U2.5. |
 | RU1 | 2026-10-27 | `80a6941`, `503f4c9`, `04b6430`, `e1515ba`, `f3ac39a` (U1.3–U1.7) | 1 bug: a delete confirmed or cancelled during another action (rename, quantity question) sent the home message and deleted that action's prompts while it kept running. 4 nits: a command during an action also deleted the previous home message; saved-recipe editing ended without a home message when the recipe was gone; cancelling a delete also removed the card; a new `expect` outside tests. | Pass with fixes, all fixed in the RU1 fix commit. U1.1 part 2 (HTML) is not covered: still open. |

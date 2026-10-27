@@ -59,9 +59,9 @@ Note: `recipes.telegram_id` holds the Telegram user id by value (no foreign key 
 ### Data Flow
 1. **User Registration**: `get_or_create_user()` when a recipe is saved or an ingredient is added (not on `/start`)
 2. **Recipe Creation**: `create_recipe()` stores the extracted text under `telegram_id`
-3. **Ingredient Storage**: one `create_ingredient()` per line on save; edits of a saved recipe use `update_ingredient()`, `create_ingredient()` and `delete_ingredient()` (`update_recipe_ingredients()` exists but the bot does not call it). The save is not one transaction.
+3. **Ingredient Storage**: one `create_ingredient()` per line on save; edits of a saved recipe use `update_ingredient()`, `create_ingredient()` and `delete_ingredient()` (`update_recipe_ingredients()` exists but the bot does not call it; it would also store the Telegram id as `ingredients.user_id`, IMP-052). The save is not one transaction.
 4. **Recipe Naming**: `update_recipe_name()` sets human-readable name
-5. **Lookups**: the recipe list reads distinct names (`get_user_recipes_paginated`), a selected name is matched exactly (`recipe_name = $2`); no full-text query is used
+5. **Lookups**: the recipe list reads distinct names (`get_user_recipes_paginated`), a selected name is matched exactly (`recipe_name = $2`); the home message reads the newest named recipes with their total (`get_user_recipes_newest_first`, `ORDER BY created_at DESC, id DESC`, returns `RecipeSummary { id, name, created_at }`); no full-text query is used
 
 ## API Design
 
@@ -70,17 +70,18 @@ Note: `recipes.telegram_id` holds the Telegram user id by value (no foreign key 
 // User management
 pub async fn get_or_create_user(pool: &PgPool, telegram_id: i64, language_code: Option<&str>) -> Result<User>
 pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<Option<User>>
-pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>>
+pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>> // not called by the bot
 
-// Cached user lookups (5-minute TTL)
+// Cached user lookups (5-minute TTL), none called by the bot
 pub async fn get_or_create_user_cached(pool, telegram_id, language_code, cache) -> Result<User>
 pub async fn get_user_by_telegram_id_cached(pool, telegram_id, cache) -> Result<Option<User>>
+pub async fn get_user_by_id_cached(pool, user_id, cache) -> Result<Option<User>>
 
 // Recipe CRUD (owner-scoped: rows of another telegram_id behave as missing)
 pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Result<i64>
-pub async fn read_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Option<Recipe>>
-pub async fn update_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64, new_content: &str) -> Result<bool>
-pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<bool> // also deletes its ingredients
+pub async fn read_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Option<Recipe>> // not called by the bot
+pub async fn update_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64, new_content: &str) -> Result<bool> // not called by the bot
+pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<bool> // also deletes its ingredients, two statements, not one transaction
 pub async fn update_recipe_name(pool: &PgPool, telegram_id: i64, recipe_id: i64, recipe_name: &str) -> Result<bool>
 pub async fn read_recipe_with_name(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Option<Recipe>>
 
@@ -90,15 +91,16 @@ pub async fn get_recipes_by_name(pool: &PgPool, telegram_id: i64, recipe_name: &
 pub async fn get_recipes_by_name_cached(pool, telegram_id, recipe_name, cache) -> Result<Vec<Recipe>>
 pub async fn get_user_recipe_names(pool: &PgPool, telegram_id: i64) -> Result<Vec<String>>
 pub async fn get_user_recipes_paginated(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<String>, i64)> // distinct names A-Z, total
-pub async fn has_duplicate_recipes(pool: &PgPool, telegram_id: i64, recipe_name: &str) -> Result<bool>
+pub async fn get_user_recipes_newest_first(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<RecipeSummary>, i64)> // named recipes, newest first, total (home message)
+pub async fn has_duplicate_recipes(pool: &PgPool, telegram_id: i64, recipe_name: &str) -> Result<bool> // not called by the bot
 pub async fn get_user_recipe_statistics(pool: &PgPool, telegram_id: i64) -> Result<RecipeStatistics>
 
 // Ingredient CRUD (owner-scoped through the ingredient's recipe, except where noted)
 pub async fn create_ingredient(pool: &PgPool, user_id: i64, recipe_id: Option<i64>, name: &str, quantity: Option<f64>, unit: Option<&str>, raw_text: &str) -> Result<i64> // user_id = users.id; callers check recipe ownership
-pub async fn read_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64) -> Result<Option<Ingredient>>
+pub async fn read_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64) -> Result<Option<Ingredient>> // not called by the bot
 pub async fn update_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64, name: Option<&str>, quantity: Option<f64>, unit: Option<&str>) -> Result<bool>
 pub async fn delete_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64) -> Result<bool>
-pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> // by users.id
+pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> // by users.id, not called by the bot
 pub async fn get_recipe_ingredients(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Vec<Ingredient>>
 pub async fn get_recipe_ingredients_cached(pool, telegram_id, recipe_id, cache) -> Result<Vec<Ingredient>>
 pub async fn update_recipe_ingredients(pool: &PgPool, telegram_id: i64, recipe_id: i64, ingredients: &[MeasurementMatch]) -> Result<()>
@@ -161,7 +163,7 @@ pub async fn get_current_version(pool: &PgPool) -> Result<i32>
 pub async fn rollback_to_version(pool: &PgPool, target_version: i32) -> Result<()>
 ```
 
-Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There is one migration today (version 1, `create_initial_tables`).
+Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There is one migration today (version 1, `create_initial_tables`). Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch.
 
 ### Constraints
 - **Data Types**: Appropriate PostgreSQL types for performance
@@ -170,7 +172,8 @@ Migrations are applied at startup via `init_database_schema()`. Each migration i
 - **Text Encoding**: UTF-8 support for international content
 
 ### Dependencies
-- **sqlx**: Compile-time SQL query checking
+- **sqlx**: only `create_recipe` uses `query!`, checked at compile time against `.sqlx/`; every
+  other query is checked when it runs
 - **tokio**: Async database operations
 - **chrono**: Date/time handling
 - **serde**: Data serialization
@@ -274,7 +277,8 @@ ORDER BY created_at DESC;
 ## Monitoring & Observability
 
 ### Metrics
-- `db_operations_total{operation}`, `db_operation_duration_seconds`, `db_rows_affected`,
+- `db_operations_total{operation}`, `db_operation_duration_seconds`, `db_rows_affected{operation}`,
+  `db_query_complexity{operation}`,
   `db_performance_class_total{operation,class}` (fast < 10 ms, medium < 100 ms, slow), recorded
   by `create_recipe`, `create_ingredient`, `update_recipe_ingredients` and `get_recipes_by_name`
 - No connection pool or database size metrics

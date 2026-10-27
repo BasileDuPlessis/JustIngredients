@@ -84,6 +84,8 @@ they can be pulled into 1-hour micro-tasks without another review.
 | IMP-048 | OCR leftovers kept only for tests | P3 | S | Observability |
 | IMP-049 | About 40 locale keys are never used by the code | P3 | S | Localization |
 | IMP-050 | Deploys use the image tag, not its digest | P3 | S | CI/CD |
+| IMP-051 | Observability and HTTP settings of `.env.example` are never read | P3 | S | Config |
+| IMP-052 | `update_recipe_ingredients` writes the Telegram id as `ingredients.user_id` | P3 | S | Database |
 
 ## Verification of Earlier Findings
 | # | Earlier finding | Result | Item |
@@ -1023,3 +1025,27 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Proposed fix: output the digest from the `image` job, record it in the staging run (e.g. in the
   run name or an artifact) and deploy `…@sha256:<digest>` in both workflows.
 - Validation: the production run deploys the digest the staging run deployed.
+
+### IMP-051: Observability and HTTP settings of `.env.example` are never read
+- [ ] Done
+- Priority: P3. Effort: S. Area: Config.
+- Location: `src/config.rs` (`config.observability = ObservabilityConfig::default()`),
+  `src/main.rs` (HTTP client timeout 30 s, deduplicator 300 s / 10,000 entries),
+  `src/observability/tracing_mod.rs` (pretty logs in "development").
+- Problem: `ENVIRONMENT`, `OTLP_ENDPOINT`, `ENABLE_TRACE_SAMPLING`, `TRACE_SAMPLING_RATIO`,
+  `ENABLE_METRICS_EXPORT`, `SERVICE_VERSION`, `HTTP_CLIENT_TIMEOUT_SECS` and
+  `REQUEST_DEDUPLICATION_TTL_SECS` are documented in `.env.example` but have no effect;
+  `LOG_FORMAT=json` cannot switch logs to JSON. Found by review gate RU0, 2026-10-27.
+- Proposed fix: load `ObservabilityConfig::from_env()` and use the parsed HTTP and deduplication
+  settings, or delete the variables from `.env.example`.
+- Validation: unit tests of the config loading; `LOG_FORMAT=json` gives JSON logs.
+
+### IMP-052: `update_recipe_ingredients` writes the Telegram id as `ingredients.user_id`
+- [ ] Done
+- Priority: P3. Effort: S. Area: Database.
+- Location: `src/db.rs` (`update_recipe_ingredients` binds `recipe.telegram_id` as `user_id`).
+- Problem: `ingredients.user_id` is the internal `users.id`; the function is not called by the bot
+  today, but using it would mix the two ids. Found by review gate RU0, 2026-10-27.
+- Proposed fix: delete the function (saved-recipe edits use `update_ingredient`,
+  `create_ingredient` and `delete_ingredient`) or bind the user's `users.id`.
+- Validation: DB test, or `git grep update_recipe_ingredients` empty.

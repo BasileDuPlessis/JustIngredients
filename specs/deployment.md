@@ -7,7 +7,8 @@
 ## Overview
 The bot runs as one Fly.io machine (app `just-ingredients`, region `cdg`) with a Fly Postgres
 database. It receives Telegram updates by long polling, so the only HTTP traffic is health
-checks and metrics. GitHub Actions tests every push and builds one image per commit of `main`;
+checks and metrics. GitHub Actions tests every push and pull request to `main` and builds one image per commit of
+`main`;
 that image goes to a permanent staging app (with the test bot), then to production when a
 deployment is started by hand and approved.
 
@@ -48,7 +49,8 @@ deployment is started by hand and approved.
 ## HTTP Endpoints
 One server on `HEALTH_PORT` (8080), bound to all interfaces only when
 `METRICS_BIND_ALL_INTERFACES=true` (localhost otherwise), limited to 10 requests per minute per
-client IP. Code: `src/observability/metrics.rs`, `src/observability/health_checks.rs`.
+TCP peer, checked before routing: behind Fly's proxy callers likely share one limit, and health
+checks count toward it. Code: `src/observability/metrics.rs`, `src/observability/health_checks.rs`.
 
 | Endpoint | Behaviour |
 |---|---|
@@ -68,19 +70,28 @@ Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` 
   `just-ingredients-staging-db`), `TELEGRAM_BOT_TOKEN` of the test bot, `GEMINI_API_KEY`.
   `METRICS_AUTH_TOKEN` is not set there.
 - **GitHub environment secrets**: `FLY_API_TOKEN` in `staging` and in `production`, each a deploy
-  token of its own app (`fly tokens create deploy -a <app>`); a repository-level `FLY_API_TOKEN`
-  is only a fallback while they are missing.
+  token of its own app (`fly tokens create deploy -a <app>`); there is no repository-level token
+  (deleted on 2026-10-27).
 - **GitHub repository secrets**: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for the production
   deploy notification and the uptime alert.
-- Optional variables with defaults: `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECS`, `GEMINI_THINKING_LEVEL`, `GEMINI_MAX_CONCURRENCY`, database pool and
-  observability settings; see `.env.example`.
+- Optional variables with defaults: `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECS`, `GEMINI_THINKING_LEVEL`,
+  `GEMINI_MAX_CONCURRENCY`, `HEALTH_PORT`, `METRICS_PORT`, `METRICS_AUTH_TOKEN`,
+  `METRICS_BIND_ALL_INTERFACES`, `DATABASE_MAX_CONNECTIONS`, `DATABASE_MIN_CONNECTIONS`,
+  `DATABASE_CONNECT_TIMEOUT_SECS`, `MEASUREMENT_UNITS_CONFIG_PATH`, `OBSERVABILITY_LOG_LEVEL`,
+  `RUST_LOG`; see `.env.example`.
+- Not read although `.env.example` lists them (IMP-051): `AppConfig` uses
+  `ObservabilityConfig::default()`, so `ENVIRONMENT`, `OTLP_ENDPOINT`, `ENABLE_TRACE_SAMPLING`,
+  `TRACE_SAMPLING_RATIO`, `ENABLE_METRICS_EXPORT` and `SERVICE_VERSION` have no effect; the
+  environment is always "development", so logs are always pretty and `LOG_FORMAT` changes nothing.
+  `HTTP_CLIENT_TIMEOUT_SECS` is fixed at 30 s in `main.rs`; `REQUEST_DEDUPLICATION_TTL_SECS` is
+  parsed but the deduplicator keeps 300 s and 10,000 entries.
 
 ## CI/CD (`.github/workflows/`)
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `build-test.yml` "Build and Test" | Push and PR to `main` | `build`: Postgres 16 service, `cargo build`, `cargo test --all-targets`, doc tests, `db_tests` with `--include-ignored`. `lint`: clippy `-D warnings`, `scripts/check-unwraps.sh`, `cargo fmt --check`. `security`: cargo-deny `check advisories sources`. `image` (pushes to `main` only, after the three others): Buildx with the GitHub Actions layer cache, pushes `ghcr.io/basileduplessis/justingredients:sha-<commit>`; dependencies are compiled in their own layer, rebuilt only when `Cargo.toml` or `Cargo.lock` change. Rust 1.99, `SQLX_OFFLINE=true`, Ubuntu 26.04, no system packages. The benchmarks of `tests/performance_tests.rs` are ignored (IMP-046). |
 | `deploy-staging.yml` "Deploy to Staging" | `workflow_run` after a successful "Build and Test" on a push to `main` from this repository (or manual on `main`) | Run name `Deploy to Staging <sha>`. `flyctl deploy --ha=false --image ghcr.io/…:sha-<sha>` on the permanent staging app (no build; one machine, since two pollers of one bot token steal each other's updates), then the smoke tests (`/health/live`, `/health/ready`). Staging keeps running afterwards. |
-| `deploy-production.yml` "Deploy to Production" | Manual, `main` only | Environment `production` with a required reviewer. Gate: a successful "Build and Test" push run for the commit and a successful run named `Deploy to Staging <sha>`. Records the running release: image digest (`fly machines list`) and deployed configuration (`fly config save`). Deploys the image staging ran (`--image ghcr.io/…:sha-<sha>`, no build), waits for `/health/live` and `/health/ready` (`scripts/check-health.sh`, 6 tries 10 s apart); on failure deploys the recorded image with the recorded configuration and checks it. Telegram notification: deployed, rolled back, or failed. |
+| `deploy-production.yml` "Deploy to Production" | Manual, `main` only | Environment `production` with a required reviewer. Gate: a successful "Build and Test" push run for the commit and a successful run named `Deploy to Staging <sha>`. Records the running release: image digest (`fly machines list`) and deployed configuration (`fly config save`). Deploys the image staging ran (`--ha=false --image ghcr.io/…:sha-<sha>`, no build), waits for `/health/live` and `/health/ready` (`scripts/check-health.sh`, 6 tries 10 s apart); on failure deploys the recorded image with the recorded configuration and checks it. Telegram notification: deployed, rolled back, or failed. |
 | `uptime.yml` "Production Uptime" | Every 10 minutes (and manual) | `GET /health/ready` on production, 3 tries 20 s apart; Telegram alert on failure. GitHub may delay scheduled runs and disables them after 60 days without activity. |
 
 ## Monitoring
