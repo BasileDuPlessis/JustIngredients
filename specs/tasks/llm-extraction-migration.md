@@ -256,7 +256,7 @@ March 2026 image meanwhile (restarts reuse it).
 ## Phase 2: Gemini Client
 
 ### Task 2.1: Request/response types (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: serde types for `generateContent` (inline image, generation config, usage
   metadata, finish reason, prompt feedback). Response text parsed into `Extraction`.
 - How to validate: fixture tests from recorded responses in `tests/fixtures/gemini/`

@@ -15,6 +15,7 @@ anyhow = "1.0.100"
 thiserror = "1.0"
 tempfile = "3.23.0"
 reqwest = { version = "0.12", features = ["json"] }
+base64 = "0.22" # Image encoding for the Gemini API
 leptess = "0.14" # Rust binding for Tesseract and Leptonica
 image = "0.25"    # For image handling if needed
 rand = "0.9.2" # For random jitter in retry delays

@@ -1,0 +1,35 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "parts": [
+          {
+            "text": "{\n  \"is_recipe\": true,\n  \"language\": \"en\",\n  \"transcription\": \"1 cup old-fashioned rolled oats\\n8 tablespoons unsalted butter, cold and cubed (See note.)\\n½ cup all-purpose flour\\n½ cup brown sugar\\n¼ cup granulated sugar\\n½ teaspoon salt\\n½ teaspoon ground cinnamon\",\n  \"ingredients\": [\n    {\n      \"name\": \"old-fashioned rolled oats\",\n      \"quantity\": 1,\n      \"unit\": \"cup\",\n      \"needs_review\": false,\n      \"source_text\": \"1 cup old-fashioned rolled oats\"\n    },\n    {\n      \"name\": \"unsalted butter\",\n      \"quantity\": 8,\n      \"unit\": \"tbsp\",\n      \"needs_review\": false,\n      \"source_text\": \"8 tablespoons unsalted butter, cold and cubed (See note.)\"\n    },\n    {\n      \"name\": \"all-purpose flour\",\n      \"quantity\": 0.5,\n      \"unit\": \"cup\",\n      \"needs_review\": false,\n      \"source_text\": \"½ cup all-purpose flour\"\n    },\n    {\n      \"name\": \"brown sugar\",\n      \"quantity\": 0.5,\n      \"unit\": \"cup\",\n      \"needs_review\": false,\n      \"source_text\": \"½ cup brown sugar\"\n    },\n    {\n      \"name\": \"granulated sugar\",\n      \"quantity\": 0.25,\n      \"unit\": \"cup\",\n      \"needs_review\": false,\n      \"source_text\": \"¼ cup granulated sugar\"\n    },\n    {\n      \"name\": \"salt\",\n      \"quantity\": 0.5,\n      \"unit\": \"tsp\",\n      \"needs_review\": false,\n      \"source_text\": \"½ teaspoon salt\"\n    },\n    {\n      \"name\": \"ground cinnamon\",\n      \"quantity\": 0.5,\n      \"unit\": \"tsp\",\n      \"needs_review\": false,\n      \"source_text\": \"½ teaspoon ground cinnamon\"\n    }\n  ]\n}",
+            "thoughtSignature": "EmAKXgFpFH0T9EAtiAY2StI8gX4vQBcBvMhdBHL7qtj2S722cHI1OKeeVaTAS23fOcWJu+z7lprSY8S4jlt9debjIY3DMs1ZicKbdpFhPQhyRMdP8IE234LNy3HWqmnhRHE="
+          }
+        ],
+        "role": "model"
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "usageMetadata": {
+    "promptTokenCount": 1561,
+    "candidatesTokenCount": 492,
+    "totalTokenCount": 2053,
+    "promptTokensDetails": [
+      {
+        "modality": "TEXT",
+        "tokenCount": 488
+      },
+      {
+        "modality": "IMAGE",
+        "tokenCount": 1073
+      }
+    ],
+    "serviceTier": "standard"
+  },
+  "modelVersion": "gemini-3.5-flash-lite",
+  "responseId": "73DgasLjKZHlxN8Pgd-BuAU"
+}
