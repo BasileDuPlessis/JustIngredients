@@ -377,16 +377,21 @@ March 2026 image meanwhile (restarts reuse it).
 ## Phase 4: Rollout
 
 ### Task 4.1: Secrets (user action)
-- [ ] Done
+- [x] Done
 - Description: `fly secrets set GEMINI_API_KEY=... -a just-ingredients-staging` and
   `-a just-ingredients`; GitHub secret for the staging workflow. Also set `METRICS_AUTH_TOKEN`
   (random value) on both apps so `/metrics` and its cost data are not public.
 
 ### Task 4.2: Staging then production
-- [ ] Done
+- [x] Done
 - Description: deploy staging, end-to-end test with the staging bot (separate token), then
   production through the manual workflow.
 - How to validate: recipe photo → review → save on production.
+- Done 2026-10-27: secrets staged with `fly secrets set --stage` (applied by the deploy); v16 (`cc2152d`)
+  deployed, photo → review → save confirmed by the user on production. Hotfix v17 (`1bf3ed4`): the
+  recipe list put full names in callback data, so a long name (a URL from a caption) broke its page
+  with `BUTTON_DATA_INVALID`; names over 64 bytes now use a fingerprint and captions lose their
+  links. Confirmed working by the user. Staging is still destroyed after each run (Task 5.4).
 
 ### Task 4.3: One week of observation
 - [ ] Done
