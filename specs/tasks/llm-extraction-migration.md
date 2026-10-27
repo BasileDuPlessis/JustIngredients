@@ -237,7 +237,7 @@ March 2026 image meanwhile (restarts reuse it).
   default; requiring `GEMINI_API_KEY` earlier would stop production at startup.
 
 ### Task 1.3: Extraction domain types and trait (<= 1 hour)
-- [ ] Done
+- [x] Done
 - Description: `src/extraction/mod.rs` and `mapping.rs` (types, trait, `ExtractionError`,
   mapping to `MeasurementMatch` with canonical units and validation).
 - How to validate: mapping tests (decimal quantities, null quantity, unknown unit, long name,
