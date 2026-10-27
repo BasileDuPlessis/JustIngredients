@@ -3,7 +3,7 @@ use just_ingredients::bot;
 use just_ingredients::cache::CacheManager;
 use just_ingredients::config::AppConfig;
 use just_ingredients::db;
-use just_ingredients::db_connection::{self, ConnectRetryPolicy};
+use just_ingredients::db_connection::{self, DEFAULT_CONNECT_BACKOFF};
 use just_ingredients::deduplication;
 use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
 use just_ingredients::localization;
@@ -204,8 +204,7 @@ async fn main() -> Result<()> {
 
     // Create the connection pool, waiting for the database if it is restarting
     let pool =
-        db_connection::connect_with_retry(&app_config.database, ConnectRetryPolicy::default())
-            .await?;
+        db_connection::connect_with_retry(&app_config.database, DEFAULT_CONNECT_BACKOFF).await?;
 
     // Initialize database schema
     db::init_database_schema(&pool).await?;

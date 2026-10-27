@@ -6,43 +6,21 @@
 
 use std::future::Future;
 use std::str::FromStr;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions};
 use tracing::{info, warn};
 
 use crate::config::DatabaseConfig;
+use crate::retry::{retry_with_backoff, Backoff, RetryDecision};
 
-/// Retry schedule used while the database is unreachable at startup.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct ConnectRetryPolicy {
-    /// Delay before the first retry.
-    pub initial_delay: Duration,
-    /// Upper bound for the delay between two attempts.
-    pub max_delay: Duration,
-    /// Give up once this much time has passed since the first attempt.
-    pub max_elapsed: Duration,
-}
-
-impl Default for ConnectRetryPolicy {
-    fn default() -> Self {
-        Self {
-            initial_delay: Duration::from_secs(1),
-            max_delay: Duration::from_secs(30),
-            max_elapsed: Duration::from_secs(600),
-        }
-    }
-}
-
-impl ConnectRetryPolicy {
-    /// Delay before retry number `retry` (1-based): doubles each time, capped at `max_delay`.
-    pub fn delay_before_retry(&self, retry: u32) -> Duration {
-        let factor = 2u32.saturating_pow(retry.saturating_sub(1));
-        self.initial_delay
-            .saturating_mul(factor)
-            .min(self.max_delay)
-    }
-}
+/// Retry schedule while the database is unreachable at startup: 1 s doubling up to 30 s,
+/// for at most 10 minutes (a Postgres restart on Fly takes a few minutes).
+pub const DEFAULT_CONNECT_BACKOFF: Backoff = Backoff {
+    initial_delay: Duration::from_secs(1),
+    max_delay: Duration::from_secs(30),
+    max_elapsed: Duration::from_secs(600),
+};
 
 /// Describes a connection URL for logs: host, port and database name, never the credentials.
 pub fn describe_database_target(url: &str) -> String {
@@ -75,10 +53,10 @@ pub fn is_transient_connect_error(error: &sqlx::Error) -> bool {
 /// # Errors
 ///
 /// Returns the last connection error when it is not transient, or when retrying longer would
-/// exceed `policy.max_elapsed`.
+/// exceed `backoff.max_elapsed`.
 pub async fn connect_with_retry(
     config: &DatabaseConfig,
-    policy: ConnectRetryPolicy,
+    backoff: Backoff,
 ) -> Result<PgPool, sqlx::Error> {
     let connect_options = PgConnectOptions::from_str(&config.url)?;
     let pool_options = PgPoolOptions::new()
@@ -89,68 +67,55 @@ pub async fn connect_with_retry(
         .idle_timeout(config.idle_timeout_secs.map(Duration::from_secs));
     let target = describe_database_target(&config.url);
 
-    retry_transient(policy, &target, || {
+    retry_transient(backoff, &target, || {
         pool_options.clone().connect_with(connect_options.clone())
     })
     .await
 }
 
-/// Runs `attempt` until it succeeds, retrying transient errors with the backoff of `policy`.
-///
-/// Stops at the first non-transient error, or when the next retry would end after
-/// `policy.max_elapsed`.
+/// Runs `attempt` until it succeeds, retrying transient errors with `backoff`.
 async fn retry_transient<T, F, Fut>(
-    policy: ConnectRetryPolicy,
+    backoff: Backoff,
     target: &str,
-    mut attempt: F,
+    attempt: F,
 ) -> Result<T, sqlx::Error>
 where
     F: FnMut() -> Fut,
     Fut: Future<Output = Result<T, sqlx::Error>>,
 {
-    let started = Instant::now();
-    let mut retry = 0;
-
-    loop {
-        match attempt().await {
-            Ok(value) => {
-                info!(database = %target, retries = retry, "Connected to database");
-                return Ok(value);
+    let mut retries = 0;
+    let result = retry_with_backoff(
+        backoff,
+        |error| {
+            if is_transient_connect_error(error) {
+                RetryDecision::Retry
+            } else {
+                RetryDecision::Stop
             }
-            Err(error) => {
-                retry += 1;
-                let delay = policy.delay_before_retry(retry);
-                if !is_transient_connect_error(&error)
-                    || started.elapsed() + delay > policy.max_elapsed
-                {
-                    return Err(error);
-                }
-                warn!(
-                    database = %target,
-                    retry,
-                    retry_in_ms = delay.as_millis(),
-                    error = %error,
-                    "Database unavailable, retrying"
-                );
-                tokio::time::sleep(delay).await;
-            }
-        }
+        },
+        |retry, delay, error| {
+            retries = retry;
+            warn!(
+                database = %target,
+                retry,
+                retry_in_ms = delay.as_millis(),
+                error = %error,
+                "Database unavailable, retrying"
+            );
+        },
+        attempt,
+    )
+    .await;
+    if result.is_ok() {
+        info!(database = %target, retries, "Connected to database");
     }
+    result
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn delay_doubles_and_is_capped() {
-        let policy = ConnectRetryPolicy::default();
-        let delays: Vec<u64> = (1..=7)
-            .map(|retry| policy.delay_before_retry(retry).as_secs())
-            .collect();
-        assert_eq!(delays, vec![1, 2, 4, 8, 16, 30, 30]);
-        assert_eq!(policy.delay_before_retry(u32::MAX), policy.max_delay);
-    }
+    use std::time::Instant;
 
     #[test]
     fn database_target_never_contains_credentials() {
@@ -177,8 +142,8 @@ mod tests {
         )));
     }
 
-    fn fast_policy() -> ConnectRetryPolicy {
-        ConnectRetryPolicy {
+    fn fast_policy() -> Backoff {
+        Backoff {
             initial_delay: Duration::from_millis(5),
             max_delay: Duration::from_millis(20),
             max_elapsed: Duration::from_millis(500),
