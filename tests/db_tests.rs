@@ -173,55 +173,6 @@ async fn test_full_text_search_impl(pool: &PgPool) -> Result<()> {
 
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
-async fn test_get_user_recipes_paginated(pool: PgPool) -> Result<()> {
-    init_database_schema(&pool).await?;
-    test_get_user_recipes_paginated_impl(&pool).await
-}
-
-async fn test_get_user_recipes_paginated_impl(pool: &PgPool) -> Result<()> {
-    // Create recipes with names
-    let recipe1_id = create_recipe(pool, 12345, "flour 2 cups").await?;
-    update_recipe_name(pool, 12345, recipe1_id, "Chocolate Cake").await?;
-
-    let recipe2_id = create_recipe(pool, 12345, "butter 100g").await?;
-    update_recipe_name(pool, 12345, recipe2_id, "Apple Pie").await?;
-
-    let recipe3_id = create_recipe(pool, 12345, "sugar 1 cup").await?;
-    update_recipe_name(pool, 12345, recipe3_id, "Banana Bread").await?;
-
-    // Create recipe for different user
-    let recipe4_id = create_recipe(pool, 67890, "milk 250ml").await?;
-    update_recipe_name(pool, 67890, recipe4_id, "Pancakes").await?;
-
-    // Test pagination: limit 2, offset 0
-    let (recipes, total) = get_user_recipes_paginated(pool, 12345, 2, 0).await?;
-    assert_eq!(total, 3);
-    assert_eq!(recipes.len(), 2);
-    assert!(recipes.contains(&"Apple Pie".to_string()));
-    assert!(recipes.contains(&"Banana Bread".to_string()));
-
-    // Test pagination: limit 2, offset 2
-    let (recipes, total) = get_user_recipes_paginated(pool, 12345, 2, 2).await?;
-    assert_eq!(total, 3);
-    assert_eq!(recipes.len(), 1);
-    assert_eq!(recipes[0], "Chocolate Cake");
-
-    // Test with different user
-    let (recipes, total) = get_user_recipes_paginated(pool, 67890, 10, 0).await?;
-    assert_eq!(total, 1);
-    assert_eq!(recipes.len(), 1);
-    assert_eq!(recipes[0], "Pancakes");
-
-    // Test with no recipes
-    let (recipes, total) = get_user_recipes_paginated(pool, 99999, 10, 0).await?;
-    assert_eq!(total, 0);
-    assert_eq!(recipes.len(), 0);
-
-    Ok(())
-}
-
-#[sqlx::test(migrations = false)]
-#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn test_save_recipe_is_all_or_nothing(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
     let ingredients = [
@@ -442,65 +393,6 @@ async fn test_get_user_recipes_newest_first(pool: PgPool) -> Result<()> {
     assert!(get_user_recipes_newest_first(&pool, 12345, 0, 0)
         .await
         .is_err());
-    Ok(())
-}
-
-#[sqlx::test(migrations = false)]
-#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
-async fn test_get_recipes_by_name(pool: PgPool) -> Result<()> {
-    init_database_schema(&pool).await?;
-    test_get_recipes_by_name_impl(&pool).await
-}
-
-async fn test_get_recipes_by_name_impl(pool: &PgPool) -> Result<()> {
-    // Create multiple recipes with the same name
-    let recipe1_id = create_recipe(pool, 12345, "flour 2 cups sugar 1 cup").await?;
-    update_recipe_name(pool, 12345, recipe1_id, "Chocolate Cake").await?;
-
-    let recipe2_id = create_recipe(pool, 12345, "butter 100g eggs 2").await?;
-    update_recipe_name(pool, 12345, recipe2_id, "Chocolate Cake").await?;
-
-    let recipe3_id = create_recipe(pool, 12345, "milk 250ml vanilla 1 tsp").await?;
-    update_recipe_name(pool, 12345, recipe3_id, "Vanilla Pudding").await?;
-
-    // Create recipe with same name for different user
-    let recipe4_id = create_recipe(pool, 67890, "flour 1 cup").await?;
-    update_recipe_name(pool, 67890, recipe4_id, "Chocolate Cake").await?;
-
-    // Test getting multiple recipes with same name
-    let recipes = get_recipes_by_name(pool, 12345, "Chocolate Cake").await?;
-    assert_eq!(recipes.len(), 2);
-
-    // Verify the recipes are returned in descending creation order (most recent first)
-    assert_eq!(recipes[0].id, recipe2_id); // Second recipe created (most recent)
-    assert_eq!(recipes[1].id, recipe1_id); // First recipe created
-    assert_eq!(
-        recipes[0].recipe_name.as_ref().unwrap().as_ref(),
-        "Chocolate Cake"
-    );
-    assert_eq!(
-        recipes[1].recipe_name.as_ref().unwrap().as_ref(),
-        "Chocolate Cake"
-    );
-
-    // Test getting single recipe
-    let recipes = get_recipes_by_name(pool, 12345, "Vanilla Pudding").await?;
-    assert_eq!(recipes.len(), 1);
-    assert_eq!(recipes[0].id, recipe3_id);
-    assert_eq!(
-        recipes[0].recipe_name.as_ref().unwrap().as_ref(),
-        "Vanilla Pudding"
-    );
-
-    // Test getting recipes for different user
-    let recipes = get_recipes_by_name(pool, 67890, "Chocolate Cake").await?;
-    assert_eq!(recipes.len(), 1);
-    assert_eq!(recipes[0].id, recipe4_id);
-
-    // Test getting non-existent recipe name
-    let recipes = get_recipes_by_name(pool, 12345, "Non-existent Recipe").await?;
-    assert_eq!(recipes.len(), 0);
-
     Ok(())
 }
 
@@ -1044,34 +936,6 @@ fn test_split_sql_statements_semicolon_in_string_and_comment() {
         }
         Err(e) => panic!("Failed to split SQL: {}", e),
     }
-}
-
-#[sqlx::test(migrations = false)]
-#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
-async fn test_long_recipe_names_resolve_by_fingerprint_for_their_owner(pool: PgPool) -> Result<()> {
-    use just_ingredients::bot::recipe_selection::{
-        recipe_selection_callback, resolve_recipe_selection, MAX_CALLBACK_DATA_BYTES,
-    };
-    init_database_schema(&pool).await?;
-    let long_name =
-        "https://www.marmiton.org/recettes/recette_gateau-au-chocolat-fondant_166352.aspx";
-    let recipe_id = create_recipe(&pool, 111, "1 cup flour").await?;
-    update_recipe_name(&pool, 111, recipe_id, long_name).await?;
-
-    let data = recipe_selection_callback(long_name);
-    assert!(data.len() <= MAX_CALLBACK_DATA_BYTES);
-    assert_eq!(
-        resolve_recipe_selection(&pool, 111, &data)
-            .await?
-            .as_deref(),
-        Some(long_name)
-    );
-    assert_eq!(
-        resolve_recipe_selection(&pool, 222, &data).await?,
-        None,
-        "another user's fingerprint does not resolve"
-    );
-    Ok(())
 }
 
 #[sqlx::test(migrations = false)]

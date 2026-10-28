@@ -13,8 +13,8 @@ use crate::text_processing::MeasurementMatch;
 // Import common UI components
 use super::html::Html;
 use super::ui_components::{
-    create_add_button, create_back_button, create_localized_button_with_emoji,
-    create_pagination_buttons, truncate_text, with_ui_metrics_sync,
+    create_add_button, create_back_button, create_localized_button_with_emoji, truncate_text,
+    with_ui_metrics_sync,
 };
 
 /// Quantity and unit as shown to the user ("150 g", "2", "pincée"), empty when the
@@ -292,91 +292,6 @@ pub fn edit_instruction_key(field: IngredientField) -> &'static str {
     }
 }
 
-/// Create inline keyboard for paginated recipe list
-pub fn create_recipes_pagination_keyboard(
-    recipes: &[String],
-    current_page: usize,
-    total_count: i64,
-    limit: i64,
-    language_code: Option<&str>,
-    localization: &Arc<crate::localization::LocalizationManager>,
-) -> InlineKeyboardMarkup {
-    with_ui_metrics_sync("create_recipes_pagination_keyboard", recipes.len(), || {
-        let mut buttons = Vec::new();
-
-        // Add recipe buttons
-        for recipe_name in recipes {
-            let button_text = truncate_text(recipe_name, 30);
-            buttons.push(vec![InlineKeyboardButton::callback(
-                button_text,
-                crate::bot::recipe_selection::recipe_selection_callback(recipe_name),
-            )]);
-        }
-
-        // Calculate total pages
-        let total_pages = (total_count as usize).div_ceil(limit as usize);
-
-        // Add navigation buttons if there are multiple pages
-        if total_pages > 1 {
-            let nav_buttons =
-                create_pagination_buttons(localization, current_page, total_pages, language_code);
-            buttons.push(nav_buttons);
-        }
-
-        InlineKeyboardMarkup::new(buttons)
-    })
-}
-
-/// Create inline keyboard for selecting specific recipe instance from duplicates
-pub fn create_recipe_instances_keyboard(
-    recipe_data: &[(crate::db::Recipe, Vec<crate::db::Ingredient>)],
-    language_code: Option<&str>,
-    localization: &Arc<crate::localization::LocalizationManager>,
-) -> InlineKeyboardMarkup {
-    with_ui_metrics_sync(
-        "create_recipe_instances_keyboard",
-        recipe_data.len(),
-        || {
-            let mut buttons = Vec::new();
-
-            // Add buttons for each recipe instance
-            for (recipe, ingredients) in recipe_data {
-                let created_at =
-                    format_recipe_date(recipe.created_at, language_code, true, localization);
-
-                // Create ingredient preview (first 3 ingredients)
-                let ingredient_preview = if ingredients.is_empty() {
-                    t_lang(localization, "no-ingredients-found", language_code)
-                } else {
-                    let preview_names: Vec<String> = ingredients
-                        .iter()
-                        .take(3)
-                        .map(|ing| ing.name.clone())
-                        .collect();
-                    preview_names.join(", ")
-                };
-
-                let button_text = format!("📅 {} • {}", created_at, ingredient_preview);
-                let final_button_text = truncate_text(&button_text, 50);
-
-                buttons.push(vec![InlineKeyboardButton::callback(
-                    final_button_text,
-                    format!("recipe_instance:{}", recipe.id),
-                )]);
-            }
-
-            // Add back button
-            buttons.push(vec![create_back_button(
-                localization,
-                "back_to_recipes".to_string(),
-                language_code,
-            )]);
-
-            InlineKeyboardMarkup::new(buttons)
-        },
-    )
-}
-
 /// Create inline keyboard for recipe details actions
 pub fn create_recipe_details_keyboard(
     recipe_id: i64,
@@ -409,19 +324,8 @@ pub fn create_recipe_details_keyboard(
                     format!("recipe_action:delete:{}", recipe_id),
                     language_code,
                 ),
-                create_localized_button_with_emoji(
-                    localization,
-                    "📊",
-                    "recipe-statistics",
-                    format!("recipe_action:statistics:{}", recipe_id),
-                    language_code,
-                ),
+                create_back_button(localization, "back_to_recipes".to_string(), language_code),
             ],
-            vec![create_back_button(
-                localization,
-                "back_to_recipes".to_string(),
-                language_code,
-            )],
         ];
 
         InlineKeyboardMarkup::new(buttons)
@@ -447,7 +351,8 @@ pub fn paris_time(at: chrono::DateTime<chrono::Utc>) -> chrono::NaiveDateTime {
 }
 
 /// A recipe date in the user's language and Paris time: "27 octobre 2026 à 21:36" or
-/// "October 27, 2026 at 21:36"; `short` gives "27 oct. 2026 21:36" or "Oct 27, 2026 21:36".
+/// "October 27, 2026 at 21:36"; `short` gives the day only, for list buttons: "27 oct. 2026" or
+/// "Oct 27, 2026".
 pub fn format_recipe_date(
     at: chrono::DateTime<chrono::Utc>,
     language_code: Option<&str>,
@@ -486,14 +391,9 @@ pub fn format_recipe_date(
             FR_MONTHS[month],
             local.year()
         ),
-        ("fr", true) => format!(
-            "{} {} {} {time}",
-            local.day(),
-            FR_SHORT[month],
-            local.year()
-        ),
+        ("fr", true) => format!("{} {} {}", local.day(), FR_SHORT[month], local.year()),
         (_, false) => format!("{} at {time}", local.format("%B %-d, %Y")),
-        (_, true) => format!("{} {time}", local.format("%b %-d, %Y")),
+        (_, true) => local.format("%b %-d, %Y").to_string(),
     }
 }
 
@@ -749,7 +649,7 @@ mod tests {
         );
         assert_eq!(
             format_recipe_date(at, Some("fr-FR"), true, &localization),
-            "27 oct. 2026 21:36"
+            "27 oct. 2026"
         );
         assert_eq!(
             format_recipe_date(at, Some("en"), false, &localization),
@@ -757,7 +657,7 @@ mod tests {
         );
         assert_eq!(
             format_recipe_date(at, None, true, &localization),
-            "Oct 27, 2026 21:36"
+            "Oct 27, 2026"
         );
     }
 

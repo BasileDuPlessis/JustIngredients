@@ -16,9 +16,7 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 use super::recipe_callbacks;
 
 // Import UI builder functions
-use crate::bot::ui_builder::{
-    create_recipe_details_keyboard, create_recipe_instances_keyboard, render_recipe_card,
-};
+use crate::bot::ui_builder::{create_recipe_details_keyboard, render_recipe_card};
 
 // Import database functions
 // (using cached versions where available)
@@ -37,148 +35,6 @@ use crate::observability;
 
 // Import localization
 use crate::localization::t_lang;
-
-/// Handle callback queries from inline keyboards
-pub async fn callback_handler(
-    bot: Bot,
-    q: teloxide::types::CallbackQuery,
-    pool: Arc<PgPool>,
-    dialogue: RecipeDialogue,
-    localization: Arc<crate::localization::LocalizationManager>,
-) -> Result<()> {
-    let span = crate::observability::telegram_span("callback_handler", Some(q.from.id.0 as i64));
-    // Instrumented, not entered: an entered span would tag other tasks across .await
-    async {
-        let start_time = std::time::Instant::now();
-
-        // Check dialogue state
-        let dialogue_state = dialogue.get().await?;
-        debug!(user_id = %q.from.id, dialogue_state = ?dialogue_state, "Retrieved dialogue state");
-
-        let data = q.data.as_deref().unwrap_or("");
-
-        let result = match dialogue_state {
-            Some(RecipeDialogueState::ReviewIngredients { .. }) => {
-                review_callbacks::handle_review_ingredients_callbacks(
-                    &bot,
-                    &q,
-                    data,
-                    pool.clone(),
-                    &dialogue,
-                    &localization,
-                )
-                .await
-            }
-            Some(RecipeDialogueState::EditingSavedIngredients { .. }) => {
-                editing_callbacks::handle_editing_saved_ingredients_callbacks(
-                    &bot,
-                    &q,
-                    data,
-                    pool.clone(),
-                    &dialogue,
-                    &localization,
-                )
-                .await
-            }
-            Some(RecipeDialogueState::EditingIngredient { .. }) => {
-                handle_editing_ingredient_callbacks(&bot, &q, data, &dialogue, &localization).await
-            }
-            Some(RecipeDialogueState::EditingSavedIngredient { .. }) => {
-                handle_editing_saved_ingredient_callbacks(&bot, &q, data, &dialogue, &localization)
-                    .await
-            }
-            _ => Ok(()), // No state-specific handling needed
-        };
-
-        // Handle general callbacks that work in any state
-        if let Some(msg) = &q.message {
-            if crate::bot::recipe_selection::is_recipe_selection(data) {
-                recipe_callbacks::handle_recipe_selection(
-                    &bot,
-                    msg,
-                    data,
-                    pool.clone(),
-                    &q.from,
-                    &localization,
-                )
-                .await?;
-            } else if data.starts_with("recipe_instance:") {
-                recipe_callbacks::handle_recipe_instance_selection(
-                    &bot,
-                    msg,
-                    data,
-                    pool.clone(),
-                    &q.from,
-                    &localization,
-                )
-                .await?;
-            } else if data.starts_with("recipe_action:") {
-                recipe_callbacks::handle_recipe_action(
-                    &bot,
-                    msg,
-                    data,
-                    pool.clone(),
-                    &dialogue,
-                    &q.from,
-                    &localization,
-                )
-                .await?;
-            } else if data == "back_to_recipes" {
-                workflow_callbacks::handle_back_to_recipes(
-                    &bot,
-                    msg,
-                    pool.clone(),
-                    &q.from.language_code,
-                    &localization,
-                )
-                .await?;
-            } else if data.starts_with("confirm_delete_recipe")
-                || data.starts_with("cancel_delete_recipe")
-            {
-                recipe_callbacks::handle_delete_recipe_confirmation(
-                    &bot,
-                    msg,
-                    data,
-                    pool.clone(),
-                    &q.from,
-                    &localization,
-                    &dialogue,
-                )
-                .await?;
-            } else if data.starts_with("page:") {
-                workflow_callbacks::handle_recipes_pagination(
-                    &bot,
-                    msg,
-                    data,
-                    pool,
-                    &q.from.language_code,
-                    &localization,
-                )
-                .await?;
-            } else if data.starts_with("workflow_") {
-                workflow_callbacks::handle_workflow_button(
-                    &bot,
-                    &q,
-                    data,
-                    &pool,
-                    &dialogue,
-                    &localization,
-                )
-                .await?;
-            }
-        }
-
-        // Answer the callback query to remove the loading state
-        bot.answer_callback_query(q.id).await?;
-
-        let duration = start_time.elapsed();
-        observability::record_request_metrics("telegram_callback", 200, duration);
-
-        result
-    }
-    .instrument(span)
-    .await
-}
 
 /// Cache-enabled callback handler for improved performance
 ///
@@ -246,17 +102,7 @@ pub async fn callback_handler_with_cache(
         // show a rename or an edit at once, and the database answers in a few milliseconds.
         let prefix_result: Result<()> = async {
             if let Some(msg) = &q.message {
-                if crate::bot::recipe_selection::is_recipe_selection(data) {
-                    handle_recipe_selection_by_name(
-                        &bot,
-                        msg,
-                        data,
-                        pool.clone(),
-                        &q.from,
-                        &localization,
-                    )
-                    .await?;
-                } else if data.starts_with("recipe_instance:") {
+                if data.starts_with("recipe_instance:") {
                     handle_recipe_selection_by_id(
                         &bot,
                         msg,
@@ -370,12 +216,22 @@ fn needs_editing_dialogue(data: &str) -> bool {
 /// Buttons older versions sent and nothing handles any more, e.g. the Cancel of a processing
 /// message left when the bot restarted during an extraction.
 const RETIRED_BUTTONS: [&str; 1] = ["cancel_processing"];
+/// Same, for data with a parameter: lists grouped by name (U3.1) and the card's statistics (U3.2).
+const RETIRED_PREFIXES: [&str; 3] = [
+    "select_recipe:",
+    "select_recipe_h:",
+    "recipe_action:statistics:",
+];
 
 /// A review or edit button that cannot act: no review or edit is running (the bot restarted
 /// since, dialogues being kept in memory, or a newer action replaced it), or it is on an older
 /// list than the running one. Retired buttons are always stale.
 fn is_stale_button(data: &str, state: Option<&RecipeDialogueState>, pressed: Option<i32>) -> bool {
-    if RETIRED_BUTTONS.contains(&data) {
+    if RETIRED_BUTTONS.contains(&data)
+        || RETIRED_PREFIXES
+            .iter()
+            .any(|prefix| data.starts_with(prefix))
+    {
         return true;
     }
     if !needs_editing_dialogue(data) {
@@ -612,114 +468,6 @@ async fn handle_editing_saved_ingredient_callbacks(
     Ok(())
 }
 
-/// Cache-enabled recipe selection handler
-///
-/// `from` is the sender of the callback query (`q.from`): the owner of every recipe read here.
-async fn handle_recipe_selection_by_name(
-    bot: &Bot,
-    msg: &MaybeInaccessibleMessage,
-    data: &str,
-    pool: Arc<PgPool>,
-    from: &User,
-    localization: &Arc<crate::localization::LocalizationManager>,
-) -> Result<()> {
-    let language_code = &from.language_code;
-    let telegram_id = from.id.0 as i64;
-
-    // Recipe name from the button: plain, or a fingerprint for names too long for Telegram
-    let recipe_name =
-        crate::bot::recipe_selection::resolve_recipe_selection(&pool, telegram_id, data)
-            .await?
-            .unwrap_or_default();
-    let recipe_name = recipe_name.as_str();
-    debug!(recipe_name = %recipe_name, "Handling recipe selection with caching");
-
-    // Extract chat id from the message
-    let chat_id = match msg {
-        MaybeInaccessibleMessage::Regular(msg) => msg.chat.id,
-        MaybeInaccessibleMessage::Inaccessible(_) => {
-            // Can't respond to inaccessible messages
-            return Ok(());
-        }
-    };
-
-    // Query for all recipes with this name for the user using cached function
-    let recipes = crate::db::get_recipes_by_name(&pool, telegram_id, recipe_name).await?;
-
-    match recipes.len() {
-        0 => {
-            // This shouldn't happen if the recipe exists in the list, but handle gracefully
-            let message = format!(
-                "❌ {}\n\n{}",
-                t_lang(localization, "recipe-not-found", language_code.as_deref()),
-                t_lang(
-                    localization,
-                    "recipe-not-found-help",
-                    language_code.as_deref()
-                )
-            );
-            bot.send_message(chat_id, message).await?;
-        }
-        1 => {
-            // Single recipe - show details directly
-            let recipe = &recipes[0];
-            let ingredients =
-                crate::db::get_recipe_ingredients(&pool, telegram_id, recipe.id).await?;
-
-            let message = render_recipe_card(
-                recipe
-                    .recipe_name
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or("Unnamed Recipe"),
-                recipe.created_at,
-                &ingredients,
-                language_code.as_deref(),
-                localization,
-            );
-
-            let keyboard =
-                create_recipe_details_keyboard(recipe.id, language_code.as_deref(), localization);
-
-            send_html(bot, chat_id, message)
-                .reply_markup(keyboard)
-                .await?;
-        }
-        _ => {
-            // Multiple recipes with same name - show disambiguation UI
-            let message = format!(
-                "📚 {}\n\n{}",
-                recipe_name,
-                t_lang(
-                    localization,
-                    "select-recipe-instance",
-                    language_code.as_deref()
-                )
-            );
-
-            // Fetch ingredients for each recipe to show previews using cached function
-            let mut recipe_data = Vec::new();
-            for recipe in &recipes {
-                let ingredients =
-                    crate::db::get_recipe_ingredients(&pool, telegram_id, recipe.id).await?;
-                recipe_data.push((recipe.clone(), ingredients));
-            }
-
-            let keyboard = create_recipe_instances_keyboard(
-                &recipe_data,
-                language_code.as_deref(),
-                localization,
-            );
-
-            bot.send_message(chat_id, message)
-                .reply_markup(keyboard)
-                .await?;
-        }
-    }
-
-    Ok(())
-}
-
 /// Cache-enabled recipe instance selection handler
 ///
 /// `from` is the sender of the callback query (`q.from`): the owner of every recipe read here.
@@ -870,6 +618,13 @@ mod tests {
 
     #[test]
     fn retired_buttons_are_always_stale() {
+        for data in [
+            "select_recipe:Tarte",
+            "select_recipe_h:abcd",
+            "recipe_action:statistics:3",
+        ] {
+            assert!(is_stale_button(data, None, None), "{data}");
+        }
         assert!(is_stale_button("cancel_processing", None, None));
         assert!(is_stale_button(
             "cancel_processing",

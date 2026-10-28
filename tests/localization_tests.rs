@@ -148,7 +148,6 @@ mod tests {
 
         // Test recipe details and action messages
         let messages = vec![
-            "recipe-details-title",
             "recipe-actions",
             "edit-recipe-name",
             "delete-recipe",

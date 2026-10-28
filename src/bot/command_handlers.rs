@@ -10,12 +10,10 @@ use tracing::debug;
 use crate::localization::t_lang;
 
 // Import database functions
-use crate::db::get_user_recipes_paginated;
 
 // Import UI builder functions
 use super::commands::command_lines;
 use super::html::{send_html, Html};
-use super::ui_builder::create_recipes_pagination_keyboard;
 
 // Import HandlerContext
 // use super::HandlerContext;
@@ -174,47 +172,18 @@ pub async fn handle_recipes_command(
     pool: Arc<PgPool>,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
-    _cache: Option<&std::sync::Mutex<crate::cache::CacheManager>>,
 ) -> Result<()> {
     debug!(user_id = %msg.chat.id, "Handling list command");
-
-    // Get paginated recipes for the user
-    // Note: For now, we don't cache recipe lists since they change frequently
-    // But we could cache user lookups if needed
-    let (recipes, total_count) = get_user_recipes_paginated(&pool, msg.chat.id.0, 5, 0).await?;
-
-    if recipes.is_empty() {
-        // No recipes found
-        let no_recipes_message = format!(
-            "📚 {}\n\n{}",
-            t_lang(localization, "no-recipes-found", language_code),
-            t_lang(localization, "no-recipes-suggestion", language_code)
-        );
-        bot.send_message(msg.chat.id, no_recipes_message).await?;
-    } else {
-        // Create the message text
-        let recipes_message = format!(
-            "📚 {}\n\n{}",
-            t_lang(localization, "your-recipes", language_code),
-            t_lang(localization, "select-recipe", language_code)
-        );
-
-        // Create the pagination keyboard
-        let keyboard = create_recipes_pagination_keyboard(
-            &recipes,
-            0,
-            total_count,
-            5,
-            language_code,
-            localization,
-        );
-
-        bot.send_message(msg.chat.id, recipes_message)
-            .reply_markup(keyboard)
-            .await?;
-    }
-
-    Ok(())
+    super::recipe_list::show_recipe_list(
+        bot,
+        &pool,
+        msg.chat.id,
+        0,
+        None,
+        language_code,
+        localization,
+    )
+    .await
 }
 
 /// Messages from a group: recipes belong to one person, so the bot only works in private chats.

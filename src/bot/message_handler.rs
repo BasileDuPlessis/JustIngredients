@@ -362,7 +362,7 @@ async fn handle_command(
         Some(Command::Start) => handle_start_command(bot, msg, localization, language_code).await,
         Some(Command::Help) => handle_help_command(bot, msg, localization, language_code).await,
         Some(Command::List) => {
-            handle_recipes_command(bot, msg, pool, language_code, localization, None).await
+            handle_recipes_command(bot, msg, pool, language_code, localization).await
         }
         Some(Command::Search(_)) => {
             handle_search_command(bot, msg, localization, language_code).await

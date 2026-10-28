@@ -165,28 +165,16 @@ caption-recipe-saved = Recette sauvegardée sous : "{$recipe_name}"
 
 # Messages de gestion des recettes dupliquées
 multiple-recipes-found = {$count} recettes trouvées avec ce nom :
-select-recipe-instance = Sélectionnez quelle recette consulter :
 recipe-created = Créé : {$date}
-recipe-details-title = 📖 Détails de la recette
 recipe-actions = Que souhaitez-vous faire ?
 edit-recipe-name = Renommer la recette
 edit-ingredients = Modifier les ingrédients
 delete-recipe = Supprimer la recette
 back-to-recipes = Retour aux recettes
-recipe-statistics = Statistiques de recette
-recipe-statistics-title = Statistiques de Recette
 recipe-details = Détails de la Recette
 ingredients-count = Ingrédients
 created-date = Créé
-your-statistics = Vos Statistiques
-total-recipes = Total Recettes
-total-ingredients = Total Ingrédients
 avg-ingredients-per-recipe = Moy. Ingrédients/Recette
-recent-activity = Activité Récente
-recipes-today = Recettes Aujourd'hui
-recipes-this-week = Recettes Cette Semaine
-favorite-units = Unités Préférées
-back-to-recipe = Retour à la Recette
 
 # Messages de gestion de recette
 rename-recipe-title = Renommer la recette

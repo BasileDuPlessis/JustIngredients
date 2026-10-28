@@ -170,28 +170,16 @@ caption-recipe-saved = Recipe saved as: "{$recipe_name}"
 
 # Duplicate recipe handling messages
 multiple-recipes-found = Found {$count} recipes with this name:
-select-recipe-instance = Select which recipe to view:
 recipe-created = Created: {$date}
-recipe-details-title = 📖 Recipe Details
 recipe-actions = What would you like to do?
 edit-recipe-name = Rename Recipe
 edit-ingredients = Edit Ingredients
 delete-recipe = Delete Recipe
 back-to-recipes = Back to Recipes
-recipe-statistics = Recipe Statistics
-recipe-statistics-title = Recipe Statistics
 recipe-details = Recipe Details
 ingredients-count = Ingredients
 created-date = Created
-your-statistics = Your Statistics
-total-recipes = Total Recipes
-total-ingredients = Total Ingredients
 avg-ingredients-per-recipe = Avg Ingredients/Recipe
-recent-activity = Recent Activity
-recipes-today = Recipes Today
-recipes-this-week = Recipes This Week
-favorite-units = Favorite Units
-back-to-recipe = Back to Recipe
 
 # Recipe management messages
 rename-recipe-title = Rename Recipe

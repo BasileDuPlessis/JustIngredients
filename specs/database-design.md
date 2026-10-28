@@ -61,7 +61,7 @@ Note: `recipes.telegram_id` holds the Telegram user id by value (no foreign key 
 2. **Recipe Creation**: `create_recipe()` stores the extracted text under `telegram_id`
 3. **Ingredient Storage**: a new recipe is saved by `save_recipe()` in one transaction (user upsert with `ON CONFLICT (telegram_id)`, recipe with its name, one insert per ingredient; nothing is written if one fails). The edit of a saved recipe is applied by `apply_ingredient_changes()` in one transaction (updates write the exact values, so a quantity or unit can be cleared; additions; deletions).
 4. **Recipe Naming**: `update_recipe_name()` sets human-readable name
-5. **Lookups**: the recipe list reads distinct names (`get_user_recipes_paginated`), a selected name is matched exactly (`recipe_name = $2`); the home message reads the newest named recipes with their total (`get_user_recipes_newest_first`, `ORDER BY created_at DESC, id DESC`, returns `RecipeSummary { id, name, created_at }`); no full-text query is used
+5. **Lookups**: the recipe list and the home message read the user's named recipes newest first with their total (`get_user_recipes_newest_first`, `ORDER BY created_at DESC, id DESC`, served by `recipes_telegram_id_created_at_idx`, returns `RecipeSummary { id, name, created_at }`); a recipe is opened by id (`read_recipe_with_name`); no full-text query is used
 
 ## API Design
 
@@ -87,12 +87,8 @@ pub async fn read_recipe_with_name(pool: &PgPool, telegram_id: i64, recipe_id: i
 
 // Recipe search & listing
 pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Result<Vec<Recipe>> // not called by the bot
-pub async fn get_recipes_by_name(pool: &PgPool, telegram_id: i64, recipe_name: &str) -> Result<Vec<Recipe>> // exact name
-pub async fn get_user_recipe_names(pool: &PgPool, telegram_id: i64) -> Result<Vec<String>>
-pub async fn get_user_recipes_paginated(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<String>, i64)> // distinct names A-Z, total
-pub async fn get_user_recipes_newest_first(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<RecipeSummary>, i64)> // named recipes, newest first, total (home message)
+pub async fn get_user_recipes_newest_first(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<RecipeSummary>, i64)> // named recipes, newest first, total (recipe list, home message)
 pub async fn has_duplicate_recipes(pool: &PgPool, telegram_id: i64, recipe_name: &str) -> Result<bool> // not called by the bot
-pub async fn get_user_recipe_statistics(pool: &PgPool, telegram_id: i64) -> Result<RecipeStatistics>
 
 // Transactional writes of the bot
 pub async fn save_recipe(pool: &PgPool, telegram_id: i64, language_code: Option<&str>, content: &str, name: &str, ingredients: &[NewIngredient<'_>]) -> Result<SavedRecipe> // recipe_id, user_id
@@ -141,12 +137,6 @@ pub struct Ingredient {
     pub unit: Option<String>,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
-}
-
-pub struct RecipeStatistics {
-    pub total_recipes: i64,
-    pub total_ingredients: i64,
-    // ... per-user aggregate stats
 }
 ```
 
@@ -255,10 +245,10 @@ SELECT id, telegram_id, content, recipe_name, created_at FROM recipes
 WHERE telegram_id = $1 AND content_tsv @@ plainto_tsquery('english', $2)
 ORDER BY created_at DESC;
 
--- get_recipes_by_name: exact name, used when a name is picked in the recipe list
-SELECT id, telegram_id, content, recipe_name, created_at FROM recipes
-WHERE telegram_id = $1 AND recipe_name = $2
-ORDER BY created_at DESC;
+-- get_user_recipes_newest_first: recipe list and home message
+SELECT id, recipe_name, created_at FROM recipes
+WHERE telegram_id = $1 AND recipe_name IS NOT NULL
+ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3;
 ```
 
 ## Testing Strategy
@@ -284,8 +274,7 @@ ORDER BY created_at DESC;
 - `db_operations_total{operation}`, `db_operation_duration_seconds`, `db_rows_affected{operation}`,
   `db_query_complexity{operation}`,
   `db_performance_class_total{operation,class}` (fast < 10 ms, medium < 100 ms, slow), recorded
-  by `create_recipe`, `create_ingredient`, `save_recipe`, `apply_ingredient_changes` and
-  `get_recipes_by_name`
+  by `create_recipe`, `create_ingredient`, `save_recipe` and `apply_ingredient_changes`
 - No connection pool or database size metrics
 - Database health: `/health/ready` and the 60 s health recorder run `SELECT 1`
 

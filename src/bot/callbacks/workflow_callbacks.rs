@@ -14,10 +14,8 @@ use tracing::debug;
 use crate::localization::t_lang;
 
 // Import UI builder functions
-use crate::bot::ui_builder::create_recipes_pagination_keyboard;
 
 // Import database functions
-use crate::db::get_user_recipes_paginated;
 
 /// Handle back to recipes callback - simply deletes the current message
 pub async fn handle_back_to_recipes(
@@ -56,57 +54,26 @@ pub async fn handle_recipes_pagination(
     language_code: &Option<String>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    let page_str = data.strip_prefix("page:").unwrap_or("0");
-    let page: usize = page_str.parse().unwrap_or(0);
+    let page: usize = data
+        .strip_prefix("page:")
+        .and_then(|page| page.parse().ok())
+        .unwrap_or(0);
     debug!(page = %page, "Handling recipes pagination");
-
-    // Extract chat id from the message
-    let (chat_id, message_id) = match msg {
-        MaybeInaccessibleMessage::Regular(msg) => (msg.chat.id, msg.id),
-        MaybeInaccessibleMessage::Inaccessible(_) => {
-            // Can't respond to inaccessible messages
-            return Ok(());
-        }
-    };
-
-    // Calculate offset
-    let limit = 5i64;
-    let offset = (page as i64) * limit;
-
-    // Get paginated recipes
-    let (recipes, total_count) =
-        get_user_recipes_paginated(&pool, chat_id.0, limit, offset).await?;
-
-    if recipes.is_empty() {
-        // This shouldn't happen in normal pagination, but handle gracefully
-        let message = t_lang(localization, "no-recipes-found", language_code.as_deref());
-        bot.send_message(chat_id, message).await?;
+    // Can't respond to inaccessible messages
+    let MaybeInaccessibleMessage::Regular(msg) = msg else {
         return Ok(());
-    }
-
-    // Create updated message text
-    let recipes_message = format!(
-        "📚 {}\n\n{}",
-        t_lang(localization, "your-recipes", language_code.as_deref()),
-        t_lang(localization, "select-recipe", language_code.as_deref())
-    );
-
-    // Create updated keyboard
-    let keyboard = create_recipes_pagination_keyboard(
-        &recipes,
+    };
+    // The list message becomes the requested page
+    crate::bot::recipe_list::show_recipe_list(
+        bot,
+        &pool,
+        msg.chat.id,
         page,
-        total_count,
-        limit,
+        Some(msg.id),
         language_code.as_deref(),
         localization,
-    );
-
-    // Edit the original message
-    bot.edit_message_text(chat_id, message_id, recipes_message)
-        .reply_markup(keyboard)
-        .await?;
-
-    Ok(())
+    )
+    .await
 }
 
 /// Handle list recipes workflow callback
@@ -118,60 +85,20 @@ pub async fn handle_list_recipes(
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     debug!("Handling list recipes workflow");
-
-    // Extract chat id from the message
-    let chat_id = match msg {
-        MaybeInaccessibleMessage::Regular(msg) => msg.chat.id,
-        MaybeInaccessibleMessage::Inaccessible(_) => {
-            // Can't respond to inaccessible messages
-            return Ok(());
-        }
-    };
-
-    // Get user's recipes (first page)
-    let limit = 5i64;
-    let offset = 0i64;
-    let (recipes, total_count) =
-        get_user_recipes_paginated(&pool, chat_id.0, limit, offset).await?;
-
-    if recipes.is_empty() {
-        // No recipes found
-        let message = format!(
-            "📚 {}\n\n{}",
-            t_lang(localization, "your-recipes", language_code.as_deref()),
-            t_lang(
-                localization,
-                "no-recipes-suggestion",
-                language_code.as_deref()
-            )
-        );
-        bot.send_message(chat_id, message).await?;
+    // Can't respond to inaccessible messages
+    let MaybeInaccessibleMessage::Regular(msg) = msg else {
         return Ok(());
-    }
-
-    // Create message text
-    let recipes_message = format!(
-        "📚 {}\n\n{}",
-        t_lang(localization, "your-recipes", language_code.as_deref()),
-        t_lang(localization, "select-recipe", language_code.as_deref())
-    );
-
-    // Create keyboard
-    let keyboard = create_recipes_pagination_keyboard(
-        &recipes,
-        0, // current page
-        total_count,
-        limit,
+    };
+    crate::bot::recipe_list::show_recipe_list(
+        bot,
+        &pool,
+        msg.chat.id,
+        0,
+        None,
         language_code.as_deref(),
         localization,
-    );
-
-    // Send the message with keyboard
-    bot.send_message(chat_id, recipes_message)
-        .reply_markup(keyboard)
-        .await?;
-
-    Ok(())
+    )
+    .await
 }
 
 /// Handle workflow button callbacks (post-confirmation actions)

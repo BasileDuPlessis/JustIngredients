@@ -239,19 +239,29 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 ## Phase U3: My Recipes
 
 ### Task U3.1: One entry per recipe, newest first (findings 7, 8) (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-28): `bot/recipe_list.rs`, used by `/liste`, the home's 📚 button and the page
+  buttons; 8 per page, "name · date", `recipe_instance:<id>`. The name-grouped list, its
+  fingerprints (`recipe_selection.rs`) and the same-name screen are gone; their old buttons are
+  retired (stale). Removed with them: the unused legacy `callback_handler`,
+  `get_user_recipes_paginated`, `get_user_recipe_names`, `get_recipes_by_name`. Tested: the
+  existing `get_user_recipes_newest_first` DB test (owner, order, paging, same names) and keyboard
+  unit tests.
 - Description: list recipes by id (no grouping by name), newest first, 8 per page, label
   "name · date"; buttons carry the recipe id; the same-name "instances" screen disappears.
 - How to validate: DB test of the query (owner-scoped, order, paging); keyboard tests.
 
 ### Task U3.2: Recipe card (finding 9) (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-28): the card keeps rename, edit ingredients, delete and back; Statistics is
+  gone with `handle_recipe_statistics`, `get_user_recipe_statistics` and 11 locale keys, and the
+  📊 buttons of older cards are retired (stale).
 - Description: the card shows the ingredients and the actions rename, edit ingredients, delete,
   back; "Statistics" is removed (a `/stats` command can come later).
 - How to validate: card renderer tests.
 
 ### Task U3.3: One owner identity (finding 10, IMP-024) (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-28) by IMP-024: groups are politely refused (`private-chat-only`), so the chat
+  id is always the user id; buttons use `from.id`, text paths the chat id, which are equal. No DB
+  test with chat id ≠ user id: that case cannot reach the handlers any more.
 - Description: use the Telegram user id for listing and saving everywhere (private chats are
   unaffected: chat id = user id); decide whether groups are supported or politely refused.
 - How to validate: DB tests with chat id ≠ user id.

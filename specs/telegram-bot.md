@@ -52,12 +52,12 @@ src/bot/
 ├── html.rs                 # Html type (escaped text, <b>, <pre>), send_html / edit_html
 ├── ui_builder.rs           # Review list and keyboards, recipe list and card keyboards
 ├── ui_components.rs        # Buttons, pagination row, focused edit keyboard
-├── recipe_selection.rs     # Callback data of recipe list buttons (64-byte limit)
+├── recipe_list.rs          # Recipe list: one button per recipe, newest first, 8 per page
 └── callbacks/
     ├── callback_handler.rs    # Dispatch by dialogue state, then by data prefix
     ├── review_callbacks.rs    # ReviewIngredients buttons (edit, delete, confirm, cancel)
     ├── editing_callbacks.rs   # EditingSavedIngredients buttons
-    ├── recipe_callbacks.rs    # Recipe selection, card actions, delete confirmation, statistics
+    ├── recipe_callbacks.rs    # Card actions, delete confirmation
     ├── workflow_callbacks.rs  # Recipe list, pagination, "all my recipes" and older post-save buttons
     └── callback_types.rs      # Parameter structs
 ```
@@ -213,18 +213,19 @@ notice and leaves the list with inactive buttons (U2.5). Only recorded messages 
 state).
 
 ## My Recipes
-- **List** (`/liste`, 📚 button): distinct recipe names of the chat id, alphabetical, 5 per
-  page, one button per name (label cut at 30 characters). Callback data: `select_recipe:<name>`,
-  or `select_recipe_h:<12 hex>` (SHA-256 fingerprint) when the first form exceeds 64 bytes,
-  resolved among the user's own names (`recipe_selection.rs`). Pagination row: ⬅️ `page:<n>`,
-  "Page x of y" (`noop`, ignored), ➡️ `page:<n>`; it edits the list message.
-- **Selection** (owner = callback sender): no recipe → `recipe-not-found`; one → recipe card;
-  several with the same name → one button per recipe "📅 date • first 3 ingredients"
-  (`recipe_instance:<id>`) and ⬅️ `back_to_recipes`.
+- **List** (`/liste`, 📚 button, `recipe_list::show_recipe_list`): one button per named recipe
+  of the user, newest first, 8 per page, labelled "name · date" (name cut at 30 characters, day
+  in the user's language: "Tarte · 27 oct. 2026"); two recipes with the same name are two
+  entries. Callback data `recipe_instance:<id>`. Pagination row: ⬅️ `page:<n>`, "Page x of y"
+  (`noop`, ignored), ➡️ `page:<n>`; it edits the list message, and a page past the end (recipes
+  deleted meanwhile) shows the last one.
+- **Selection** (owner = callback sender): `recipe_instance:<id>` opens the card; a recipe that
+  is gone or another user's answers `recipe-not-found`. Older lists grouped by name
+  (`select_recipe:`, `select_recipe_h:`) are retired buttons.
 - **Recipe card**: name, creation date (user's language, Paris time: `format_recipe_date`), ingredients. Buttons:
-  ✏️ `recipe_action:rename:<id>`, 📝 `recipe_action:edit_ingredients:<id>`,
-  🗑️ `recipe_action:delete:<id>`, 📊 `recipe_action:statistics:<id>`, ⬅️ `back_to_recipes`
-  (deletes the card message).
+  ✏️ `recipe_action:rename:<id>`, 📝 `recipe_action:edit_ingredients:<id>`, then
+  🗑️ `recipe_action:delete:<id>`, ⬅️ `back_to_recipes` (deletes the card message). The 📊
+  statistics of older cards (`recipe_action:statistics:<id>`) are retired.
 - **Rename**: prompt, state `RenamingRecipe`, typed name saved with `update_recipe_name`
   (cancel words answer `rename-cancelled`); an empty or too long name is refused and the prompt
   stays open.
@@ -240,8 +241,6 @@ state).
 - **Delete**: confirmation with `confirm_delete_recipe:<id>:<card message id>` and
   `cancel_delete_recipe:<id>:<card message id>`; confirming deletes the recipe, its ingredients,
   the confirmation and the card; cancelling deletes the confirmation only (the card stays).
-- **Statistics**: recipe ingredient count and date, then the user's totals, recent activity and
-  common units, with a button back to the recipe.
 - Recipe lookups and card ingredients are read from the database each time (no cache), so a card
   opened right after a rename, edit or delete shows the new data.
 
@@ -259,9 +258,9 @@ loses its keyboard and is not passed to the state handler.
 | `item_<i>`, `back_review`, `qty_<i>`, `name_<i>`, `edit_<i>`, `delete_<i>`, `confirm`, `cancel_review` | `ReviewIngredients`, `EditingSavedIngredients` | Review or saved-recipe editing (above) |
 | `add_ingredient`, `add_more` (old messages) | `ReviewIngredients`, `EditingSavedIngredients` | Add a line (focused prompt in a review, `AddingIngredientToSavedRecipe` for a saved recipe) |
 | `cancel_ingredient_editing` | `EditingIngredient`, `EditingSavedIngredient` | Leave the focused edit prompt |
-| `select_recipe:`, `select_recipe_h:` | any | Open a recipe by name |
-| `recipe_instance:<id>` | any | Open a recipe by id (same-name list, home message) |
-| `recipe_action:<action>:<id>` | any | `rename`, `edit_ingredients`, `delete`, `statistics` |
+| `recipe_instance:<id>` | any | Open a recipe by id (recipe list, home message) |
+| `select_recipe:`, `select_recipe_h:`, `recipe_action:statistics:` | any | Retired (2026-10-28): stale button |
+| `recipe_action:<action>:<id>` | any | `rename`, `edit_ingredients`, `delete` |
 | `confirm_delete_recipe:`, `cancel_delete_recipe:` | any | Delete confirmation |
 | `back_to_recipes` | any | Delete the current message |
 | `page:<n>` | any | Recipe list page |
