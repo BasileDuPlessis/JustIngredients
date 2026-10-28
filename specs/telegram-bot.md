@@ -18,8 +18,9 @@ are in English or French, following the Telegram app language.
   `bot::callback_handler_with_cache`.
 - Updates of one chat are handled one at a time (teloxide default); different chats run
   concurrently.
-- Private chats only: a text, photo or document from a group or channel gets `private-chat-only`
-  (service messages get nothing), and a button pressed in a group answers it as a toast. So the
+- Private chats only: a command, photo or document from a group or channel gets
+  `private-chat-only` (other text and service messages get nothing, so a group where the bot sees
+  every message is not flooded), and a button pressed in a group answers it as a toast. So the
   chat id is always the user id.
 - Dialogue state: `InMemStorage<RecipeDialogueState>` keyed by chat id. It is lost on every
   restart or deploy.
@@ -134,19 +135,22 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
 - `qty_<i>`, `name_<i>`, `edit_<i>`: the message becomes a focused prompt with only a Cancel
   button (`cancel_ingredient_editing`); state `EditingIngredient` with `field` `Quantity`, `Name`
   or `Line` (`ingredient_editing::apply_edit`). A quantity answer is a number in range or `-`
-  for none (`parse_quantity_answer`) and clears the ⚠️ flag; a name answer replaces only the name
+  for none (`parse_quantity_answer`), optionally followed by a known unit that then replaces the
+  unit ("250 g", "250g"); anything else gets `edit-invalid-quantity-answer`. It clears the ⚠️ flag; a name answer replaces only the name
   (1–100 characters); a line answer ("3 cups flour") is parsed by `parse_ingredient_from_text`
   and is no longer flagged. A cancel word (see below) or the button restore the review.
 - `add_ingredient`: the same focused prompt (`add-ingredient-prompt`), state `EditingIngredient`
   with `editing_index` = the list's length; the parsed line becomes the last ingredient
   (`ingredient_editing::put_ingredient`).
 - `delete_<i>`: removes the line. When none is left, the message offers ➕ (`add_ingredient`,
-  same as above) and ❌ `cancel_review`. Old messages may still send `add_more`, handled like
+  same as above) and ❌ `cancel_review`; ➕ is on every review keyboard, also an empty one. Old messages may still send `add_more`, handled like
   `add_ingredient`.
 - `confirm` (and a typed confirm word, see below; both call `review_callbacks::confirm_review`):
-  **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
-  with their names and stays in the review until they are edited or deleted. Then the review
-  message is recorded for cleanup (deleted with the home message at the end) and:
+  an empty list gets `review-empty-confirm` (a recipe without ingredients could not be edited
+  later); **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
+  with their names and stays in the review until they are edited or deleted. The review list is
+  recorded for cleanup as soon as it is sent (with the photo), so a command that ends the review
+  deletes it too; a cancel keeps it as the `review-cancelled` notice. Then:
   - name from the caption or the page title: saved at once; the review loses its buttons; the
     saved recipe card follows (`home::send_saved_recipe`: ✅ bold name, ingredients, recipe card
     buttons), then the [home message](#home-message);
@@ -230,8 +234,9 @@ state).
   were shown and could be saved as "1"). ➕ `add_ingredient` opens
   `AddingIngredientToSavedRecipe` (typed line), 🗑️ removes, ✅ `confirm` writes the differences
   in one transaction (`db::apply_ingredient_changes`: exact values, so a quantity can be cleared),
-  ❌ `cancel_review` drops them. Typed text outside the prompts answers
-  `use-buttons-instruction`.
+  ❌ `cancel_review` (or a typed cancel word, both `editing_callbacks::cancel_saved_editing`)
+  drops them and shows the card again; ✅ on an emptied list gets `review-empty-confirm`. Other
+  typed text outside the prompts answers `use-buttons-instruction`.
 - **Delete**: confirmation with `confirm_delete_recipe:<id>:<card message id>` and
   `cancel_delete_recipe:<id>:<card message id>`; confirming deletes the recipe, its ingredients,
   the confirmation and the card; cancelling deletes the confirmation only (the card stays).
@@ -245,7 +250,9 @@ state).
 handlers below, which work in any state. The query is always answered, also when a handler
 failed (the error is logged). A review or edit button pressed while no review or edit is running
 (`is_stale_button`: the bot restarted since, dialogues being in memory, or a newer action replaced
-it) answers `button-expired` and loses its keyboard.
+it), or on a message older than the running review or edit (message ids grow within a chat, so
+the list of a previous photo cannot save or edit the current one), answers `button-expired`,
+loses its keyboard and is not passed to the state handler.
 
 | Data | Handled in | Action |
 |---|---|---|

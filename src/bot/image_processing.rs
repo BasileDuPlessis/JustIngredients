@@ -236,8 +236,10 @@ pub async fn download_and_process_image(
         })
         .await?;
 
-    // The photo stays while the ingredients are reviewed, then goes with the review's messages
+    // The photo and the list stay while the ingredients are reviewed, then go with the review's
+    // messages, also when a command ends the review (a cancel keeps the list as its notice)
     crate::bot::cleanup::track(chat_id, photo_message_id);
+    crate::bot::cleanup::track(chat_id, sent_message.id);
 
     debug!(user_id = %chat_id, "Ingredients review interface sent successfully");
     Ok(extracted_text)

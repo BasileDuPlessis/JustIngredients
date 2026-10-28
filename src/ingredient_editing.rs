@@ -49,18 +49,38 @@ pub fn apply_edit(
 }
 
 /// Replaces the quantity only (`-`, "aucune"… for none); a corrected quantity needs no further
-/// check, so the ⚠️ flag is cleared.
+/// check, so the ⚠️ flag is cleared. A known unit typed after the number ("250 g", "250g",
+/// "1/2 cup") replaces the unit too.
 pub fn with_quantity(
     current: &MeasurementMatch,
     input: &str,
 ) -> Result<MeasurementMatch, AppError> {
-    let quantity = parse_quantity_answer(input)
-        .ok_or_else(|| AppError::Validation("edit-invalid-quantity".to_string()))?;
+    let invalid = || AppError::Validation("edit-invalid-quantity-answer".to_string());
+    let (quantity, unit) = match parse_quantity_answer(input) {
+        Some(quantity) => (quantity, current.measurement.clone()),
+        None => {
+            let (number, unit) = split_known_unit(input).ok_or_else(invalid)?;
+            let quantity = parse_quantity_answer(number)
+                .filter(|quantity| !quantity.is_empty())
+                .ok_or_else(invalid)?;
+            (quantity, Some(unit))
+        }
+    };
     Ok(MeasurementMatch {
         quantity,
+        measurement: unit,
         requires_quantity_confirmation: false,
         ..current.clone()
     })
+}
+
+/// "250 g" → ("250", "g"): the number before the first letter, when what follows is a known
+/// unit (cleaned, as typed).
+fn split_known_unit(input: &str) -> Option<(&str, String)> {
+    let start = input.find(char::is_alphabetic)?;
+    let (number, unit) = input.split_at(start);
+    crate::units::canonicalize_unit(unit.trim())?;
+    Some((number.trim(), crate::units::clean_unit(unit)))
 }
 
 /// Replaces the name only.
@@ -210,13 +230,26 @@ mod tests {
         assert_eq!(edited, line("250", Some("g"), "farine", false));
         let none = with_quantity(&line("2", None, "sel", false), "-").expect("valid");
         assert_eq!(none.quantity, "");
-        for invalid in ["0", "-3", "beaucoup", "1e9"] {
+        for invalid in ["0", "-3", "beaucoup", "1e9", "250 farine", "g", "0 g"] {
             assert!(
                 matches!(with_quantity(&line("2", None, "sel", false), invalid),
-                    Err(AppError::Validation(key)) if key == "edit-invalid-quantity"),
+                    Err(AppError::Validation(key)) if key == "edit-invalid-quantity-answer"),
                 "{invalid}"
             );
         }
+    }
+
+    #[test]
+    fn a_quantity_typed_with_its_unit_replaces_both() {
+        let flour = line("0", Some("g"), "farine", true);
+        for answer in ["250 g", "250g", " 250 G "] {
+            let edited = with_quantity(&flour, answer).expect(answer);
+            assert_eq!(edited.quantity, "250", "{answer}");
+            assert_eq!(edited.measurement.as_deref(), Some("g"), "{answer}");
+        }
+        let edited = with_quantity(&line("1", None, "lait", false), "1/2 cup").expect("valid");
+        assert_eq!(edited.quantity, "0.5");
+        assert_eq!(edited.measurement.as_deref(), Some("cup"));
     }
 
     #[test]

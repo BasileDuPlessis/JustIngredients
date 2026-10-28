@@ -436,15 +436,16 @@ mod tests {
 
         let keyboard = create_ingredient_review_keyboard(&empty_ingredients, Some("en"), &manager);
 
-        // Should still have confirm/cancel row even with no ingredients
+        // Confirm/cancel, then ➕: the only way to fill an emptied list again
         let InlineKeyboardMarkup {
             inline_keyboard: keyboard,
         } = keyboard;
         {
-            assert_eq!(keyboard.len(), 1); // Just the confirm/cancel row
+            assert_eq!(keyboard.len(), 2);
             assert_eq!(keyboard[0].len(), 2);
             assert!(keyboard[0][0].text.contains("✅"));
             assert!(keyboard[0][1].text.contains("❌"));
+            assert!(keyboard[1][0].text.contains("➕"));
         }
     }
 

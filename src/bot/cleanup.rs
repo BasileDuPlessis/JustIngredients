@@ -50,6 +50,14 @@ impl Tracker {
         }
     }
 
+    /// Forgets a recorded message, which then stays in the chat (e.g. a review list turned into
+    /// the cancelled notice).
+    pub fn untrack(&mut self, chat: ChatId, id: MessageId) {
+        if let Some(messages) = self.chats.get_mut(&chat) {
+            messages.transient.retain(|(tracked, _)| *tracked != id);
+        }
+    }
+
     /// Takes the messages to delete when an action ends with a home message: its prompts and
     /// replies and the previous home message, except those too old to be deleted.
     pub fn take_for_cleanup(&mut self, chat: ChatId, now: Instant) -> Vec<MessageId> {
@@ -100,6 +108,11 @@ fn with_tracker<T>(f: impl FnOnce(&mut Tracker) -> T) -> T {
 /// Records a message of the current action, deleted when the action ends.
 pub fn track(chat: ChatId, id: MessageId) {
     with_tracker(|tracker| tracker.track(chat, id, Instant::now()));
+}
+
+/// Keeps a recorded message: it is no longer deleted when the action ends.
+pub fn untrack(chat: ChatId, id: MessageId) {
+    with_tracker(|tracker| tracker.untrack(chat, id));
 }
 
 /// Sends a prompt or a "try again" message of the current action, deleted when it ends.
@@ -158,6 +171,17 @@ mod tests {
         assert!(tracker.take_for_cleanup(CHAT, now).is_empty());
         // Other chats are untouched
         assert_eq!(tracker.take_for_cleanup(ChatId(7), now), vec![MessageId(9)]);
+    }
+
+    #[test]
+    fn an_untracked_message_stays() {
+        let mut tracker = Tracker::default();
+        let now = Instant::now();
+        tracker.track(CHAT, MessageId(5), now);
+        tracker.track(CHAT, MessageId(6), now);
+        tracker.untrack(CHAT, MessageId(5));
+        tracker.untrack(ChatId(7), MessageId(6));
+        assert_eq!(tracker.take_for_cleanup(CHAT, now), vec![MessageId(6)]);
     }
 
     #[test]

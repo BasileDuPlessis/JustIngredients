@@ -588,7 +588,7 @@ pub async fn handle_recipe_rename_input(
 
 /// Check if input is a cancellation command
 /// Words that cancel the running prompt, in English and French (input already lowercased).
-fn is_cancellation_command(input: &str) -> bool {
+pub(crate) fn is_cancellation_command(input: &str) -> bool {
     matches!(
         input,
         "cancel" | "stop" | "back" | "annuler" | "annule" | "retour" | "arrêter" | "arreter"
@@ -785,11 +785,16 @@ async fn handle_edit_error(
         AppError::Parser(_msg) => "error-processing-failed".to_string(),
         _ => "edit-invalid-input".to_string(),
     };
-    let error_message = format!(
-        "{}\n\n{}",
-        t_lang(localization, &error_msg, language_code),
-        t_lang(localization, "edit-try-again", language_code)
-    );
+    // "Try again with a valid ingredient format" only fits a whole typed line
+    let error_message = if error_msg == "edit-invalid-quantity-answer" {
+        t_lang(localization, &error_msg, language_code)
+    } else {
+        format!(
+            "{}\n\n{}",
+            t_lang(localization, &error_msg, language_code),
+            t_lang(localization, "edit-try-again", language_code)
+        )
+    };
     send_transient(bot, msg.chat.id, error_message).await?;
     // Stay in editing state for user to try again
     Ok(())

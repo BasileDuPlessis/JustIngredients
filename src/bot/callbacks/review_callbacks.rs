@@ -527,6 +527,17 @@ pub struct ReviewConfirmation<'a> {
 /// What ✅ and a typed "valider" both do. Flagged quantities must be checked first (the review
 /// stays open); then the recipe is saved under the known name, or the name is asked.
 pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
+    // A recipe without ingredients cannot be edited later: refuse it, the review stays open
+    if c.ingredients.is_empty() {
+        send_transient(
+            c.bot,
+            c.chat_id,
+            t_lang(c.localization, "review-empty-confirm", c.language_code),
+        )
+        .await?;
+        return Ok(());
+    }
+
     // Quantities the extractor was unsure about, or out of range, must be checked before
     // saving; saving them as they are would store a wrong or zero quantity (IMP-004).
     let to_check = quantities_to_check(c.ingredients);
@@ -567,7 +578,8 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
             t_lang(c.localization, "recipe-name-prompt", c.language_code),
             t_lang(c.localization, "recipe-name-prompt-hint", c.language_code)
         );
-        let prompt_msg = c.bot.send_message(c.chat_id, recipe_name_prompt).await?;
+        // Deleted with the review's messages, also when a command ends the action
+        let prompt_msg = send_transient(c.bot, c.chat_id, recipe_name_prompt).await?;
         c.dialogue
             .update(RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
                 ingredients: c.ingredients.to_vec(),
@@ -673,6 +685,10 @@ pub async fn cancel_review(
     language_code: Option<&str>,
 ) -> Result<()> {
     let cancelled = t_lang(localization, "review-cancelled", language_code);
+    // The list becomes the cancelled notice, which stays in the chat
+    if let Some(id) = review_message_id {
+        cleanup::untrack(chat_id, id);
+    }
     let edited = match review_message_id {
         Some(id) => bot
             .edit_message_text(chat_id, id, cancelled.clone())

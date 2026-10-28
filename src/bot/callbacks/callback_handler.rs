@@ -204,9 +204,12 @@ pub async fn callback_handler_with_cache(
         debug!(user_id = %q.from.id, dialogue_state = ?dialogue_state, "Retrieved dialogue state");
 
         let data = q.data.as_deref().unwrap_or("");
-        let stale = is_stale_button(data, dialogue_state.as_ref());
+        let pressed = q.message.as_ref().map(|message| message.id().0);
+        let stale = is_stale_button(data, dialogue_state.as_ref(), pressed);
 
-        let result = match dialogue_state {
+        // A stale button must not act on the current dialogue (an older list's ✅ would save
+        // the newer review)
+        let result = match dialogue_state.filter(|_| !stale) {
             Some(RecipeDialogueState::ReviewIngredients { .. }) => {
                 review_callbacks::handle_review_ingredients_callbacks(
                     &bot,
@@ -368,21 +371,48 @@ fn needs_editing_dialogue(data: &str) -> bool {
 /// message left when the bot restarted during an extraction.
 const RETIRED_BUTTONS: [&str; 1] = ["cancel_processing"];
 
-/// A review or edit button pressed while no review or edit is running: the bot restarted since
-/// (dialogues are kept in memory) or a newer action replaced it, so the button did nothing.
-/// Retired buttons are always stale.
-fn is_stale_button(data: &str, state: Option<&RecipeDialogueState>) -> bool {
-    RETIRED_BUTTONS.contains(&data)
-        || needs_editing_dialogue(data)
-            && !matches!(
-                state,
-                Some(
-                    RecipeDialogueState::ReviewIngredients { .. }
-                        | RecipeDialogueState::EditingSavedIngredients { .. }
-                        | RecipeDialogueState::EditingIngredient { .. }
-                        | RecipeDialogueState::EditingSavedIngredient { .. }
-                )
-            )
+/// A review or edit button that cannot act: no review or edit is running (the bot restarted
+/// since, dialogues being kept in memory, or a newer action replaced it), or it is on an older
+/// list than the running one. Retired buttons are always stale.
+fn is_stale_button(data: &str, state: Option<&RecipeDialogueState>, pressed: Option<i32>) -> bool {
+    if RETIRED_BUTTONS.contains(&data) {
+        return true;
+    }
+    if !needs_editing_dialogue(data) {
+        return false;
+    }
+    match state.and_then(editing_messages) {
+        None => true,
+        // Message ids grow within a chat: a list sent before the running one is older. A newer
+        // one (a message re-sent because an edit failed) is accepted.
+        Some(oldest) => {
+            matches!((pressed, oldest), (Some(pressed), Some(oldest)) if pressed < oldest)
+        }
+    }
+}
+
+/// For a running review or edit, the oldest of the messages its buttons are on (`None` inside
+/// when not recorded); `None` when no review or edit is running.
+fn editing_messages(state: &RecipeDialogueState) -> Option<Option<i32>> {
+    let oldest = |ids: &[Option<i32>]| ids.iter().flatten().min().copied();
+    match state {
+        RecipeDialogueState::ReviewIngredients { message_id, .. }
+        | RecipeDialogueState::EditingSavedIngredients { message_id, .. }
+        | RecipeDialogueState::AddingIngredientToSavedRecipe { message_id, .. } => {
+            Some(*message_id)
+        }
+        RecipeDialogueState::EditingIngredient {
+            message_id,
+            original_message_id,
+            ..
+        }
+        | RecipeDialogueState::EditingSavedIngredient {
+            message_id,
+            original_message_id,
+            ..
+        } => Some(oldest(&[*message_id, *original_message_id])),
+        _ => None,
+    }
 }
 
 /// Handle callbacks when in EditingIngredient dialogue state
@@ -785,22 +815,67 @@ mod tests {
             "cancel_review",
             "add_more",
         ] {
-            assert!(is_stale_button(data, None), "{data} after a restart");
+            assert!(is_stale_button(data, None, None), "{data} after a restart");
             assert!(
-                is_stale_button(data, Some(&RecipeDialogueState::Start)),
+                is_stale_button(data, Some(&RecipeDialogueState::Start), None),
                 "{data} with no action"
             );
             assert!(
-                !is_stale_button(data, Some(&review_state())),
+                !is_stale_button(data, Some(&review_state()), None),
                 "{data} in a review"
             );
         }
     }
 
     #[test]
+    fn buttons_of_an_older_list_are_stale() {
+        let review = RecipeDialogueState::ReviewIngredients {
+            recipe_name: "Recipe".to_string(),
+            ingredients: Vec::new(),
+            language_code: None,
+            message_id: Some(50),
+            extracted_text: String::new(),
+            recipe_name_from_caption: None,
+        };
+        assert!(
+            is_stale_button("confirm", Some(&review), Some(40)),
+            "older list"
+        );
+        assert!(!is_stale_button("confirm", Some(&review), Some(50)));
+        assert!(
+            !is_stale_button("confirm", Some(&review), Some(60)),
+            "a list re-sent after a failed edit"
+        );
+        assert!(
+            !is_stale_button("confirm", Some(&review_state()), Some(40)),
+            "id not recorded"
+        );
+        assert!(
+            !is_stale_button("page:2", Some(&review), Some(40)),
+            "not a review button"
+        );
+    }
+
+    #[test]
+    fn list_buttons_stay_active_while_adding_to_a_saved_recipe() {
+        let adding = RecipeDialogueState::AddingIngredientToSavedRecipe {
+            recipe_id: 1,
+            original_ingredients: Vec::new(),
+            current_matches: Vec::new(),
+            language_code: None,
+            message_id: Some(70),
+        };
+        assert!(!is_stale_button("item_0", Some(&adding), Some(70)));
+    }
+
+    #[test]
     fn retired_buttons_are_always_stale() {
-        assert!(is_stale_button("cancel_processing", None));
-        assert!(is_stale_button("cancel_processing", Some(&review_state())));
+        assert!(is_stale_button("cancel_processing", None, None));
+        assert!(is_stale_button(
+            "cancel_processing",
+            Some(&review_state()),
+            None
+        ));
     }
 
     #[test]
@@ -811,7 +886,7 @@ mod tests {
             "workflow_list_recipes",
             "noop",
         ] {
-            assert!(!is_stale_button(data, None), "{data}");
+            assert!(!is_stale_button(data, None, None), "{data}");
         }
     }
 }

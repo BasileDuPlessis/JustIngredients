@@ -218,13 +218,15 @@ pub async fn handle_recipes_command(
 }
 
 /// Messages from a group: recipes belong to one person, so the bot only works in private chats.
-/// Service messages (members joining, pinned messages) get no answer.
+/// Only commands, photos and documents get the answer: in a group where the bot sees every
+/// message (admin, or privacy mode off), ordinary chat and service messages get nothing.
 pub async fn handle_group_message(
     bot: &Bot,
     msg: &Message,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    if msg.text().is_none() && msg.photo().is_none() && msg.document().is_none() {
+    let is_command = msg.text().is_some_and(|text| text.starts_with('/'));
+    if !is_command && msg.photo().is_none() && msg.document().is_none() {
         return Ok(());
     }
     let language_code = msg

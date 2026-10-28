@@ -294,8 +294,25 @@ async fn handle_text_message(
                 )
                 .await;
             }
+            Some(RecipeDialogueState::EditingSavedIngredients {
+                language_code: dialogue_lang_code,
+                ..
+            }) if super::dialogue_manager::is_cancellation_command(&text.trim().to_lowercase()) => {
+                // Exactly what ❌ does: back to the recipe card as saved
+                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+                return super::callbacks::editing_callbacks::cancel_saved_editing(
+                    bot,
+                    localization,
+                    &pool,
+                    &dialogue,
+                    msg.chat.id,
+                    msg.chat.id.0,
+                    effective_language_code,
+                )
+                .await;
+            }
             Some(RecipeDialogueState::EditingSavedIngredients { .. }) => {
-                // Users should use buttons in this state, not type text
+                // Other text: users should use the buttons in this state
                 let effective_language_code = language_code; // No dialogue language code available
                 cleanup::send_transient(
                     bot,

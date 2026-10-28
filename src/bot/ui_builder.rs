@@ -189,15 +189,13 @@ pub fn create_ingredient_review_keyboard(
                 ),
             ]);
 
-            // Add "Add Ingredient" button if we're in editing mode (has more than just confirm/cancel)
-            if !ingredients.is_empty() {
-                buttons.push(vec![create_add_button(
-                    localization,
-                    "add-ingredient",
-                    "add_ingredient".to_string(),
-                    language_code,
-                )]);
-            }
+            // ➕ also on an empty list: it is the only way to fill it again
+            buttons.push(vec![create_add_button(
+                localization,
+                "add-ingredient",
+                "add_ingredient".to_string(),
+                language_code,
+            )]);
 
             InlineKeyboardMarkup::new(buttons)
         },

@@ -279,8 +279,8 @@ they can be pulled into 1-hour micro-tasks without another review.
      wrapper or `sqlx` logging).
 
 ### IMP-007: Buttons that do nothing, and stale buttons that act on the wrong recipe
-- [ ] Done
-- Status: Partly done (2026-10-28): a review or edit button with no dialogue left answers "this button is no longer active" and loses its keyboard; the query is always answered, even when a handler fails. Left: dead buttons of U2.5 and the message-id check (a button of an older list acting on the current one).
+- [x] Done
+- Status: Done (2026-10-28): stale buttons answer "button-expired" and lose their keyboard; the query is always answered; dead buttons removed in U2.5; a button on a message older than the running review or edit is stale and never reaches the state handler (RU2).
 - Priority: P1. Effort: M. Area: Bot callbacks.
 - Location: `src/bot/ui_builder.rs:131-138` (`add_ingredient` on every review keyboard),
   `src/bot/callbacks/review_callbacks.rs:57-131` (review routing), `src/bot/callbacks/review_callbacks.rs:316-335`

@@ -448,6 +448,24 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         .expect("Current matches slice should be provided for confirm callback");
     let pool = pool.expect("Database pool should be provided for confirm callback");
 
+    // Saving an empty list would delete every ingredient, and the recipe could not be edited
+    // again: refuse it, the editing stays open
+    if current_matches.is_empty() {
+        if let Some(message) = &q.message {
+            send_transient(
+                ctx.bot,
+                message.chat().id,
+                t_lang(
+                    ctx.localization,
+                    "review-empty-confirm",
+                    language_code.as_deref(),
+                ),
+            )
+            .await?;
+        }
+        return Ok(());
+    }
+
     // The recipe owner is the sender of the callback query, never a value from callback data
     let telegram_id = q.from.id.0 as i64;
 
@@ -760,108 +778,77 @@ async fn handle_cancel_saved_ingredients_button(
     localization: &Arc<crate::localization::LocalizationManager>,
     pool: Arc<PgPool>,
 ) -> Result<()> {
-    // Get current dialogue state to access recipe information
-    let dialogue_state = dialogue.get().await?;
+    let Some(message) = &q.message else {
+        return Ok(());
+    };
+    // The recipe owner is the sender of the callback query, never a value from callback data
+    cancel_saved_editing(
+        bot,
+        localization,
+        &pool,
+        dialogue,
+        message.chat().id,
+        q.from.id.0 as i64,
+        language_code.as_deref(),
+    )
+    .await
+}
+
+/// What ❌ and a typed cancel word both do while a saved recipe's ingredients are edited: the
+/// list goes back to the recipe card as saved (nothing written), the editing ends and the home
+/// message follows. A recipe deleted meanwhile just ends the editing.
+pub async fn cancel_saved_editing(
+    bot: &Bot,
+    localization: &Arc<crate::localization::LocalizationManager>,
+    pool: &PgPool,
+    dialogue: &RecipeDialogue,
+    chat_id: ChatId,
+    telegram_id: i64,
+    language_code: Option<&str>,
+) -> Result<()> {
     if let Some(RecipeDialogueState::EditingSavedIngredients {
         recipe_id,
-        message_id,
+        message_id: Some(message_id),
         ..
-    }) = dialogue_state
+    }) = dialogue.get().await?
     {
-        // The recipe owner is the sender of the callback query, never a value from callback data
-        let telegram_id = q.from.id.0 as i64;
+        if let Some(recipe) = crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await?
+        {
+            let ingredients =
+                crate::db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
+            let measurement_matches =
+                crate::ingredient_editing::ingredients_to_measurement_matches(&ingredients);
+            let recipe_name = recipe
+                .recipe_name
+                .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
+            let recipe_message = render_recipe_summary(
+                &recipe_name,
+                &measurement_matches,
+                language_code,
+                localization,
+            );
+            let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
 
-        // Fetch recipe details and ingredients from database
-        let recipe = match crate::db::read_recipe_with_name(&pool, telegram_id, recipe_id).await? {
-            Some(recipe) => recipe,
-            None => {
-                // Recipe deleted meanwhile: the editing ends like a cancel
-                dialogue.exit().await?;
-                if let Some(message) = &q.message {
-                    send_home(
-                        bot,
-                        &pool,
-                        message.chat().id,
-                        localization,
-                        language_code.as_deref(),
-                    )
-                    .await;
-                }
-                return Ok(());
-            }
-        };
-
-        let ingredients = crate::db::get_recipe_ingredients(&pool, telegram_id, recipe_id).await?;
-
-        // Convert ingredients to measurement matches for display
-        let measurement_matches =
-            crate::ingredient_editing::ingredients_to_measurement_matches(&ingredients);
-
-        // Create the recipe details message
-        let recipe_name = recipe
-            .recipe_name
-            .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
-        let recipe_message = render_recipe_summary(
-            &recipe_name,
-            &measurement_matches,
-            language_code.as_deref(),
-            localization,
-        );
-
-        let keyboard =
-            create_recipe_details_keyboard(recipe_id, language_code.as_deref(), localization);
-
-        // Edit the editing message back to the recipe details
-        if let Some(message_id) = message_id {
-            match edit_html(
-                bot,
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .chat()
-                    .id,
-                teloxide::types::MessageId(message_id),
-                recipe_message,
-            )
-            .reply_markup(keyboard)
-            .await
+            // Edit the editing message back to the recipe details
+            let message_id = teloxide::types::MessageId(message_id);
+            if let Err(e) = edit_html(bot, chat_id, message_id, recipe_message)
+                .reply_markup(keyboard)
+                .await
             {
-                Ok(_) => (),
-                Err(e) => {
-                    error_logging::log_internal_error(
-                        &e,
-                        "handle_cancel_saved_ingredients_button",
-                        "Failed to edit message back to recipe details when canceling ingredient editing",
-                        Some(q.from.id.0 as i64),
-                    );
-                    // Fallback: delete the message
-                    let _ = bot
-                        .delete_message(
-                            q.message
-                                .as_ref()
-                                .expect("Callback query should have a message")
-                                .chat()
-                                .id,
-                            teloxide::types::MessageId(message_id),
-                        )
-                        .await;
-                }
+                error_logging::log_internal_error(
+                    &e,
+                    "cancel_saved_editing",
+                    "Failed to edit message back to recipe details when canceling ingredient editing",
+                    Some(telegram_id),
+                );
+                // Fallback: delete the message
+                let _ = bot.delete_message(chat_id, message_id).await;
             }
         }
     }
 
-    // End the dialogue
     dialogue.exit().await?;
-    if let Some(message) = &q.message {
-        send_home(
-            bot,
-            &pool,
-            message.chat().id,
-            localization,
-            language_code.as_deref(),
-        )
-        .await;
-    }
+    send_home(bot, pool, chat_id, localization, language_code).await;
     Ok(())
 }
 
