@@ -403,8 +403,8 @@ mod tests {
             inline_keyboard: keyboard,
         } = keyboard;
         {
-            // Should have 4 rows: 2 ingredient rows + 1 confirm/cancel row + 1 add ingredient row
-            assert_eq!(keyboard.len(), 4);
+            // 2 ingredient rows, then ➕, ✅ and the single exit ❌ on their own rows
+            assert_eq!(keyboard.len(), 5);
 
             // One button per ingredient (its full line), which opens the ingredient's menu
             assert_eq!(keyboard[0].len(), 1);
@@ -412,15 +412,10 @@ mod tests {
             assert_eq!(keyboard[1].len(), 1);
             assert_eq!(keyboard[1][0].text, "3 → eggs");
 
-            // Third row: Confirm and Cancel buttons
-            assert_eq!(keyboard[2].len(), 2);
-            assert!(keyboard[2][0].text.contains("✅"));
-            assert!(keyboard[2][1].text.contains("❌"));
-
-            // Fourth row: Add Ingredient button
-            assert_eq!(keyboard[3].len(), 1);
-            assert!(keyboard[3][0].text.contains("➕"));
-            assert!(keyboard[3][0].text.contains("Add Ingredient"));
+            assert!(keyboard[2][0].text.contains("➕"));
+            assert!(keyboard[2][0].text.contains("Add Ingredient"));
+            assert!(keyboard[3][0].text.contains("✅"));
+            assert!(keyboard[4][0].text.contains("❌"));
         }
     }
 
@@ -436,16 +431,15 @@ mod tests {
 
         let keyboard = create_ingredient_review_keyboard(&empty_ingredients, Some("en"), &manager);
 
-        // Confirm/cancel, then ➕: the only way to fill an emptied list again
+        // ➕ (the only way to fill an emptied list again), ✅, then the single exit ❌ last
         let InlineKeyboardMarkup {
             inline_keyboard: keyboard,
         } = keyboard;
         {
-            assert_eq!(keyboard.len(), 2);
-            assert_eq!(keyboard[0].len(), 2);
-            assert!(keyboard[0][0].text.contains("✅"));
-            assert!(keyboard[0][1].text.contains("❌"));
-            assert!(keyboard[1][0].text.contains("➕"));
+            assert_eq!(keyboard.len(), 3);
+            assert!(keyboard[0][0].text.contains("➕"));
+            assert!(keyboard[1][0].text.contains("✅"));
+            assert!(keyboard[2][0].text.contains("❌"));
         }
     }
 

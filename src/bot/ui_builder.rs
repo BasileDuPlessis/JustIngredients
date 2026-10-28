@@ -160,6 +160,18 @@ pub fn recipes_list_button(
     )
 }
 
+/// The single exit of an action's message: "❌ Annuler" (`cancel_action`), which drops the action
+/// and goes back one step (U6.2).
+pub fn cancel_action_keyboard(
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::new(vec![vec![InlineKeyboardButton::callback(
+        format!("❌ {}", t_lang(localization, "cancel", language_code)),
+        "cancel_action",
+    )]])
+}
+
 /// Create inline keyboard for ingredient review
 pub fn create_ingredient_review_keyboard(
     ingredients: &[MeasurementMatch],
@@ -182,29 +194,26 @@ pub fn create_ingredient_review_keyboard(
                 })
                 .collect();
 
-            // Add Confirm and Cancel buttons at the bottom
-            buttons.push(vec![
-                create_localized_button_with_emoji(
-                    localization,
-                    "✅",
-                    "review-confirm",
-                    "confirm".to_string(),
-                    language_code,
-                ),
-                create_localized_button_with_emoji(
-                    localization,
-                    "❌",
-                    "cancel",
-                    "cancel_review".to_string(),
-                    language_code,
-                ),
-            ]);
-
-            // ➕ also on an empty list: it is the only way to fill it again
+            // ➕, then ✅ Valider, then the single exit ❌ Annuler on the last row (U6.2); ➕ also
+            // on an empty list: it is the only way to fill it again
             buttons.push(vec![create_add_button(
                 localization,
                 "add-ingredient",
                 "add_ingredient".to_string(),
+                language_code,
+            )]);
+            buttons.push(vec![create_localized_button_with_emoji(
+                localization,
+                "✅",
+                "review-confirm",
+                "confirm".to_string(),
+                language_code,
+            )]);
+            buttons.push(vec![create_localized_button_with_emoji(
+                localization,
+                "❌",
+                "cancel",
+                "cancel_review".to_string(),
                 language_code,
             )]);
 
@@ -709,13 +718,18 @@ mod tests {
             (0..15).map(|i| named(&format!("ingrédient {i}"))).collect();
         let keyboard = create_ingredient_review_keyboard(&ingredients, Some("fr"), &localization);
         let rows = callbacks(&keyboard);
-        assert_eq!(rows.len(), 15 + 2, "15 ingredients, confirm/cancel, add");
+        assert_eq!(rows.len(), 15 + 3, "15 ingredients, add, confirm, cancel");
         for (i, row) in rows.iter().take(15).enumerate() {
             assert_eq!(row, &vec![format!("item_{i}")]);
         }
         assert_eq!(
-            rows[15],
-            vec!["confirm".to_string(), "cancel_review".to_string()]
+            rows[15..].to_vec(),
+            vec![
+                vec!["add_ingredient".to_string()],
+                vec!["confirm".to_string()],
+                vec!["cancel_review".to_string()],
+            ],
+            "the single exit ❌ is the last row"
         );
         assert!(rows.iter().flatten().all(|data| data.len() <= 64));
         let label = &keyboard.inline_keyboard[0][0].text;

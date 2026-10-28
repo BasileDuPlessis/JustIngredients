@@ -66,6 +66,26 @@ pub async fn send_home_keeping(
     send_list(bot, pool, chat_id, localization, language_code).await;
 }
 
+/// "❌ Annuler" of an action started from a recipe card (rename, edit, delete): the action's
+/// messages go and the card is the bottom message again, with its buttons (U6.2). Without a
+/// recorded card (shown before U5.4), the list comes back instead.
+pub async fn back_to_card(
+    bot: &Bot,
+    pool: &sqlx::PgPool,
+    chat_id: ChatId,
+    recipe_id: i64,
+    card: Option<teloxide::types::MessageId>,
+    localization: &Arc<LocalizationManager>,
+    language_code: Option<&str>,
+) {
+    cleanup::delete_action_messages(bot, chat_id).await;
+    let keyboard =
+        super::ui_builder::create_recipe_details_keyboard(recipe_id, language_code, localization);
+    if !cleanup::reactivate_card(bot, chat_id, recipe_id, card, keyboard).await {
+        send_home(bot, pool, chat_id, localization, language_code).await;
+    }
+}
+
 /// Moves the recipe list to the bottom without ending anything: the messages above it stay
 /// (`/start` shows its welcome this way).
 pub async fn move_list_down(

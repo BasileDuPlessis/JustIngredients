@@ -369,7 +369,11 @@ single exit ("❌ Annuler" during an action, "📚 Liste des recettes" otherwise
   buttons, one list.
 
 ### Task U6.2: One exit per action (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29): rename, edit and delete retire the card (`cleanup::delete_lists`) and
+  their message ends with "❌ Annuler" (`cancel_action`, `cancel_review`, `cancel_delete_recipe`),
+  which goes back to the card (`home::back_to_card`, `cleanup::reactivate_card`); typed cancel
+  words do the same; the name prompt of a creation has "❌ Annuler"; keyboards end with ➕, ✅,
+  then ❌ on its own last row; the delete confirmation is "🗑️ Oui, supprimer" / "❌ Annuler".
 - Description: rename, edit and delete from the card turn it into history and show their
   message with "❌ Annuler" as the last button, which deletes it and makes the card active
   again; the name prompt of a creation gets "❌ Annuler"; ✅ Valider and ❌ Annuler are no longer

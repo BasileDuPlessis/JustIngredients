@@ -18,6 +18,50 @@ use crate::localization::t_lang;
 
 // Import database functions
 
+/// "❌ Annuler" of an action's message (`cancel_action`): nothing is saved and the chat goes back
+/// one step: to the card for a rename started from it, to the list for a creation (U6.2).
+pub async fn handle_cancel_action(
+    bot: &Bot,
+    msg: &MaybeInaccessibleMessage,
+    pool: Arc<PgPool>,
+    dialogue: &RecipeDialogue,
+    language_code: &Option<String>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    let MaybeInaccessibleMessage::Regular(msg) = msg else {
+        return Ok(());
+    };
+    let state = dialogue.get().await?;
+    if state.as_ref().is_some_and(|state| state.is_action()) {
+        dialogue.exit().await?;
+    }
+    match state {
+        Some(crate::dialogue::RecipeDialogueState::RenamingRecipe { recipe_id, .. }) => {
+            crate::bot::home::back_to_card(
+                bot,
+                &pool,
+                msg.chat.id,
+                recipe_id,
+                None,
+                localization,
+                language_code.as_deref(),
+            )
+            .await;
+        }
+        _ => {
+            crate::bot::home::send_home(
+                bot,
+                &pool,
+                msg.chat.id,
+                localization,
+                language_code.as_deref(),
+            )
+            .await;
+        }
+    }
+    Ok(())
+}
+
 /// "📚 Liste des recettes" (and the ⬅️ of older cards): the message it is on goes into the history
 /// without buttons (a card) or away (an answer, an older home message), a running action ends
 /// like with a command, and the recipe list comes back at the bottom (U6.1).

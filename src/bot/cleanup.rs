@@ -156,6 +156,41 @@ pub async fn record_active_card(chat: ChatId, id: MessageId, recipe_id: i64) {
     record_card_as(chat, id, recipe_id, ACTIVE_CARD).await;
 }
 
+/// Gives a history card of a recipe its buttons back and makes it the active card: `card`, or
+/// the newest recorded card of the recipe. Returns whether it worked.
+pub async fn reactivate_card(
+    bot: &Bot,
+    chat: ChatId,
+    recipe_id: i64,
+    card: Option<MessageId>,
+    keyboard: teloxide::types::InlineKeyboardMarkup,
+) -> bool {
+    let card = match card {
+        Some(card) => Some(card),
+        None => recipe_cards(chat, recipe_id)
+            .await
+            .last()
+            .map(|card| card.id),
+    };
+    let Some(card) = card else {
+        return false;
+    };
+    match bot
+        .edit_message_reply_markup(chat, card)
+        .reply_markup(keyboard)
+        .await
+    {
+        Ok(_) => {
+            record_active_card(chat, card, recipe_id).await;
+            true
+        }
+        Err(e) => {
+            debug!(error = %e, "Could not make the card active again");
+            false
+        }
+    }
+}
+
 /// A recorded card of a recipe.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct RecipeCard {

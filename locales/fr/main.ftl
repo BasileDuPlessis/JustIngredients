@@ -173,6 +173,7 @@ rename-recipe-instructions = Entrez le nouveau nom pour cette recette :
 current-recipe-name = Nom actuel
 delete-recipe-title = Supprimer la recette
 delete-recipe-confirmation = Êtes-vous sûr de vouloir supprimer cette recette ? Cette action ne peut pas être annulée.
+delete-confirm-button = 🗑️ Oui, supprimer
 recipe-deleted = Recette supprimée avec succès
 recipe-deleted-help = La recette et tous ses ingrédients ont été supprimés définitivement.
 delete-cancelled = Suppression de recette annulée

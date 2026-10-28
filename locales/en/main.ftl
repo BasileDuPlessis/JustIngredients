@@ -182,6 +182,7 @@ recipe-edited-line = 📝 “{$name}” updated
 recipe-deleted-line = 🗑️ “{$name}” deleted
 delete-recipe-title = Delete Recipe
 delete-recipe-confirmation = Are you sure you want to delete this recipe? This action cannot be undone.
+delete-confirm-button = 🗑️ Yes, delete
 recipe-deleted = Recipe deleted successfully
 recipe-deleted-help = The recipe and all its ingredients have been permanently removed.
 delete-cancelled = Recipe deletion cancelled

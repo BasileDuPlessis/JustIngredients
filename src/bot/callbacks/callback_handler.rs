@@ -117,6 +117,16 @@ pub async fn callback_handler_with_cache(
                         &localization,
                     )
                     .await?;
+                } else if data == "cancel_action" {
+                    workflow_callbacks::handle_cancel_action(
+                        &bot,
+                        msg,
+                        pool.clone(),
+                        &dialogue,
+                        &q.from.language_code,
+                        &localization,
+                    )
+                    .await?;
                 } else if data == "show_list" || data == "back_to_recipes" {
                     workflow_callbacks::handle_show_list(
                         &bot,

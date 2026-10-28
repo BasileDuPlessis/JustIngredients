@@ -438,12 +438,14 @@ pub async fn handle_recipe_rename_input(
 
     // Check for cancellation commands
     if is_cancellation_command(&input) {
-        // A cancel leaves nothing behind: the prompt goes and the list comes back
+        // A cancel leaves nothing behind: the prompt goes and the card is active again
         dialogue.exit().await?;
-        send_home(
+        super::home::back_to_card(
             bot,
             pool,
             msg.chat.id,
+            recipe_id,
+            None,
             handler_ctx.localization,
             handler_ctx.language_code,
         )

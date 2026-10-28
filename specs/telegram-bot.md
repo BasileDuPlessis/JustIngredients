@@ -245,6 +245,10 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   `back_to_recipes` of older cards and the old home's 📚 do the same). History cards never have
   buttons; a rename or an edit updates every card of the recipe in place (`refresh_cards`). The 📊
   statistics of older cards (`recipe_action:statistics:<id>`) are retired.
+- **Actions from the card** (U6.2): rename, edit and delete put the card into the history
+  without buttons and show their message at the bottom, whose last button is "❌ Annuler":
+  it deletes the action's messages and gives the card its buttons back (`home::back_to_card`);
+  typed cancel words do the same. Review and edit keyboards end with ➕, ✅, then ❌ alone.
 - **Rename**: prompt, state `RenamingRecipe`, typed name saved with `update_recipe_name`
   (a cancel word leaves nothing); an empty or too long name is refused and the prompt stays
   open. Names are unique per user: renaming to a taken name stores "X (2)" (`db::rename_recipe`),

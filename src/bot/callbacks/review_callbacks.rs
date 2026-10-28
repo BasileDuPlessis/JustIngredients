@@ -350,20 +350,24 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
                 )
             );
 
-            let keyboard = vec![vec![
-                teloxide::types::InlineKeyboardButton::callback(
+            // ➕ above the single exit ❌ (U6.2)
+            let keyboard = vec![
+                vec![teloxide::types::InlineKeyboardButton::callback(
                     t_lang(
                         ctx.localization,
                         "review-add-more",
                         dialogue_lang_code.as_deref(),
                     ),
                     "add_more",
-                ),
-                teloxide::types::InlineKeyboardButton::callback(
-                    t_lang(ctx.localization, "cancel", dialogue_lang_code.as_deref()),
+                )],
+                vec![teloxide::types::InlineKeyboardButton::callback(
+                    format!(
+                        "❌ {}",
+                        t_lang(ctx.localization, "cancel", dialogue_lang_code.as_deref())
+                    ),
                     "cancel_review",
-                ),
-            ]];
+                )],
+            ];
 
             // Edit the original message
             match ctx
@@ -577,8 +581,16 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
             t_lang(c.localization, "recipe-name-prompt", c.language_code),
             t_lang(c.localization, "recipe-name-prompt-hint", c.language_code)
         );
-        // Deleted with the review's messages, also when a command ends the action
-        let prompt_msg = send_transient(c.bot, c.chat_id, recipe_name_prompt).await?;
+        // Deleted with the review's messages; its only exit "❌ Annuler" drops the creation
+        let prompt_msg = c
+            .bot
+            .send_message(c.chat_id, recipe_name_prompt)
+            .reply_markup(crate::bot::ui_builder::cancel_action_keyboard(
+                c.language_code,
+                c.localization,
+            ))
+            .await?;
+        cleanup::track(c.chat_id, prompt_msg.id).await;
         c.dialogue
             .update(RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
                 ingredients: c.ingredients.to_vec(),

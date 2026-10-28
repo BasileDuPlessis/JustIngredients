@@ -94,7 +94,17 @@ pub async fn handle_recipe_action(
                         language_code.as_deref()
                     )
                 );
-                send_transient(bot, chat_id, message).await?;
+                // The card goes into the history; the question is the action at the bottom, its
+                // only exit "❌ Annuler" (back to the card)
+                crate::bot::cleanup::delete_lists(bot, chat_id).await;
+                let sent = bot
+                    .send_message(chat_id, message)
+                    .reply_markup(crate::bot::ui_builder::cancel_action_keyboard(
+                        language_code.as_deref(),
+                        localization,
+                    ))
+                    .await?;
+                crate::bot::cleanup::track(chat_id, sent.id).await;
 
                 // Transition to renaming state
                 dialogue
@@ -138,19 +148,21 @@ pub async fn handle_recipe_action(
                 )
             );
 
-            let keyboard = vec![vec![
-                teloxide::types::InlineKeyboardButton::callback(
-                    format!(
-                        "✅ {}",
-                        t_lang(localization, "confirm", language_code.as_deref())
+            // "🗑️ Oui, supprimer" above the single exit "❌ Annuler" (back to the card)
+            let keyboard = vec![
+                vec![teloxide::types::InlineKeyboardButton::callback(
+                    t_lang(
+                        localization,
+                        "delete-confirm-button",
+                        language_code.as_deref(),
                     ),
                     format!(
                         "confirm_delete_recipe:{}:{}",
                         recipe_id,
                         original_message_id.map(|id| id.0).unwrap_or(0)
                     ),
-                ),
-                teloxide::types::InlineKeyboardButton::callback(
+                )],
+                vec![teloxide::types::InlineKeyboardButton::callback(
                     format!(
                         "❌ {}",
                         t_lang(localization, "cancel", language_code.as_deref())
@@ -160,9 +172,10 @@ pub async fn handle_recipe_action(
                         recipe_id,
                         original_message_id.map(|id| id.0).unwrap_or(0)
                     ),
-                ),
-            ]];
-
+                )],
+            ];
+            // The card goes into the history while the confirmation is the bottom message
+            crate::bot::cleanup::delete_lists(bot, chat_id).await;
             // Deleted by its own buttons, or with the next action's messages if ignored
             let sent = bot
                 .send_message(chat_id, message)
@@ -315,21 +328,18 @@ pub async fn handle_delete_recipe_confirmation(
             }
         }
         "cancel_delete_recipe" => {
-            // Delete the confirmation message entirely
-            if let MaybeInaccessibleMessage::Regular(msg) = msg {
-                match bot.delete_message(chat_id, msg.id).await {
-                    Ok(_) => (),
-                    Err(e) => {
-                        crate::errors::error_logging::log_internal_error(
-                            &e,
-                            "handle_delete_recipe_confirmation",
-                            "Failed to delete confirmation message",
-                            Some(chat_id.0),
-                        );
-                    }
-                }
-            }
-            // The recipe card stays: nothing was deleted
+            // The confirmation goes and the card is the bottom message again
+            crate::bot::home::back_to_card(
+                bot,
+                &pool,
+                chat_id,
+                recipe_id,
+                original_message_id.map(teloxide::types::MessageId),
+                localization,
+                language_code.as_deref(),
+            )
+            .await;
+            return Ok(());
         }
         _ => return Ok(()),
     }
@@ -449,6 +459,8 @@ async fn handle_edit_ingredients_callback(
     let keyboard =
         create_ingredient_review_keyboard(&current_matches, language_code.as_deref(), localization);
 
+    // The card goes into the history; the editing view is the action at the bottom
+    crate::bot::cleanup::delete_lists(bot, chat_id).await;
     let sent_message = send_html(bot, chat_id, edit_message)
         .reply_markup(keyboard)
         .await?;

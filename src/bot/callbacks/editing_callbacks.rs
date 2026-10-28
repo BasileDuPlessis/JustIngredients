@@ -318,20 +318,24 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
                 )
             );
 
-            let keyboard = vec![vec![
-                teloxide::types::InlineKeyboardButton::callback(
+            // ➕ above the single exit ❌ (U6.2)
+            let keyboard = vec![
+                vec![teloxide::types::InlineKeyboardButton::callback(
                     t_lang(
                         ctx.localization,
                         "review-add-more",
                         language_code.as_deref(),
                     ),
                     "add_ingredient",
-                ),
-                teloxide::types::InlineKeyboardButton::callback(
-                    t_lang(ctx.localization, "cancel", language_code.as_deref()),
+                )],
+                vec![teloxide::types::InlineKeyboardButton::callback(
+                    format!(
+                        "❌ {}",
+                        t_lang(ctx.localization, "cancel", language_code.as_deref())
+                    ),
                     "cancel_review",
-                ),
-            ]];
+                )],
+            ];
 
             // Edit the original message
             match ctx
@@ -869,12 +873,24 @@ pub async fn cancel_saved_editing(
         let has_card = !crate::bot::cleanup::recipe_cards(chat_id, recipe_id)
             .await
             .is_empty();
-        let recipe = if has_card {
-            None
-        } else {
-            crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await?
-        };
-        if let Some(recipe) = recipe {
+        if has_card {
+            // "❌ Annuler" goes back one step: the editing view goes, the card is active again
+            dialogue.exit().await?;
+            crate::bot::home::back_to_card(
+                bot,
+                pool,
+                chat_id,
+                recipe_id,
+                None,
+                localization,
+                language_code,
+            )
+            .await;
+            return Ok(());
+        }
+        // Without a recorded card (shown before U5.4), the editing view turns back into the card
+        if let Some(recipe) = crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await?
+        {
             let ingredients =
                 crate::db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
             let measurement_matches =
