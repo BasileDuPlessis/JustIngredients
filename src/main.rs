@@ -295,6 +295,42 @@ async fn main() -> Result<()> {
 
     // Set up the dispatcher with shared connection and dialogue support
     let handler = dptree::entry()
+        // Recipes belong to one person: groups and channels only get a "private chats" answer
+        .branch(
+            Update::filter_message()
+                .filter(|msg: Message| !msg.chat.is_private())
+                .endpoint({
+                    let localization = Arc::clone(&localization_manager);
+                    move |bot: Bot, msg: Message| {
+                        let localization = Arc::clone(&localization);
+                        async move {
+                            bot::command_handlers::handle_group_message(&bot, &msg, &localization)
+                                .await
+                        }
+                    }
+                }),
+        )
+        .branch(
+            Update::filter_callback_query()
+                .filter(|q: CallbackQuery| {
+                    q.message.as_ref().is_some_and(|m| !m.chat().is_private())
+                })
+                .endpoint({
+                    let localization = Arc::clone(&localization_manager);
+                    move |bot: Bot, q: CallbackQuery| {
+                        let localization = Arc::clone(&localization);
+                        async move {
+                            let text = localization::t_lang(
+                                &localization,
+                                "private-chat-only",
+                                q.from.language_code.as_deref(),
+                            );
+                            bot.answer_callback_query(q.id).text(text).await?;
+                            anyhow::Ok(())
+                        }
+                    }
+                }),
+        )
         .branch(Update::filter_message().endpoint({
             let storage = dialogue_storage.clone();
             let services = bot::MessageServices {

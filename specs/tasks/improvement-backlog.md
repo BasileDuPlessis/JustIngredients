@@ -627,6 +627,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 
 ### IMP-024: User identity mixes `chat.id` and `from.id`; group chats share data
 - [ ] Done
+- Status: Partly done (2026-10-28): the dispatcher only serves private chats; groups and channels get `private-chat-only`, so `chat.id` equals `from.id` everywhere. Left: the `owner_id` newtype (cleanup, no longer a data leak).
 - Priority: P2. Effort: S. Area: Security / Bot.
 - Location: `src/bot/command_handlers.rs:108`, `src/bot/callbacks/workflow_callbacks.rs:78`,
   `src/bot/callbacks/workflow_callbacks.rs:135`, `src/bot/dialogue_manager.rs:389`,

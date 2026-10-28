@@ -36,6 +36,7 @@ command-help = Help and tips
 command-cancel = Cancel the current action
 search-coming-soon = Search is coming soon. Meanwhile, /list shows all your recipes.
 unknown-command = I don't know this command. Here are the ones I know:
+private-chat-only = I only work in private chats: message me directly.
 button-expired = This button is no longer active. Send the photo again, or open the recipe from the home message.
 
 # Home message (end of every action)

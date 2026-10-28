@@ -33,6 +33,7 @@ command-help = Aide et conseils
 command-cancel = Annuler l'action en cours
 search-coming-soon = La recherche arrive bientôt. En attendant, /liste affiche toutes vos recettes.
 unknown-command = Je ne connais pas cette commande. Voici celles que je connais :
+private-chat-only = Je fonctionne seulement en conversation privée : écrivez-moi directement.
 button-expired = Ce bouton n'est plus actif. Renvoyez la photo, ou ouvrez la recette depuis l'accueil.
 
 # Message d'accueil (fin de chaque action)

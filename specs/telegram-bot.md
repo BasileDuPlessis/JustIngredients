@@ -18,6 +18,9 @@ are in English or French, following the Telegram app language.
   `bot::callback_handler_with_cache`.
 - Updates of one chat are handled one at a time (teloxide default); different chats run
   concurrently.
+- Private chats only: a text, photo or document from a group or channel gets `private-chat-only`
+  (service messages get nothing), and a button pressed in a group answers it as a toast. So the
+  chat id is always the user id.
 - Dialogue state: `InMemStorage<RecipeDialogueState>` keyed by chat id. It is lost on every
   restart or deploy.
 - Duplicate deliveries of a message are dropped by `deduplication` (key: chat id + message id,

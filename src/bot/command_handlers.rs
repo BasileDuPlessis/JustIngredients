@@ -217,6 +217,29 @@ pub async fn handle_recipes_command(
     Ok(())
 }
 
+/// Messages from a group: recipes belong to one person, so the bot only works in private chats.
+/// Service messages (members joining, pinned messages) get no answer.
+pub async fn handle_group_message(
+    bot: &Bot,
+    msg: &Message,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    if msg.text().is_none() && msg.photo().is_none() && msg.document().is_none() {
+        return Ok(());
+    }
+    let language_code = msg
+        .from
+        .as_ref()
+        .and_then(|user| user.language_code.as_deref());
+    debug!(chat_id = %msg.chat.id, "Message from a group or channel, private chats only");
+    bot.send_message(
+        msg.chat.id,
+        t_lang(localization, "private-chat-only", language_code),
+    )
+    .await?;
+    Ok(())
+}
+
 /// Handle unsupported message types
 pub async fn handle_unsupported_message(
     bot: &Bot,
