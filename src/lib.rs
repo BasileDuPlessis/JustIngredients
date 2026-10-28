@@ -18,6 +18,7 @@ pub mod observability;
 pub mod observability_config;
 pub mod retry;
 pub mod secret;
+pub mod telegram_connection;
 pub mod text_processing;
 pub mod units;
 pub mod validation;

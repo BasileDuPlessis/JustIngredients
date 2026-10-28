@@ -931,7 +931,8 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: README matches `.github/workflows/`.
 
 ### IMP-044: Dispatcher panics when Telegram is unreachable or the token is invalid at startup
-- [ ] Done
+- [x] Done
+- Status: Done (2026-10-28): `telegram_connection::connect_with_retry` calls `getMe` with backoff before the dispatcher, a rejected token exits with one clear error, the dispatcher uses `try_dispatch_with_listener`. Checked locally with Telegram blocked (retries, no panic); the rejected-token path by unit tests. No alert: the deploy health check fails instead.
 - Priority: P2. Effort: S. Area: Reliability.
 - Location: `src/main.rs` (dispatcher start), teloxide 0.17 `dispatching/dispatcher.rs:385`.
 - Problem: observed while validating the Docker image (Task 0.4): with an invalid token the polling

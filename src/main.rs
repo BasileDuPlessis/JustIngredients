@@ -11,6 +11,7 @@ use just_ingredients::extraction::guard::GuardedExtractor;
 use just_ingredients::extraction::SharedExtractor;
 use just_ingredients::localization;
 use just_ingredients::observability;
+use just_ingredients::telegram_connection::{self, TELEGRAM_CONNECT_BACKOFF};
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
@@ -269,6 +270,9 @@ async fn main() -> Result<()> {
 
     let bot = Bot::with_client(bot_token, client);
 
+    // teloxide panics if its first getMe fails: check the token first, waiting for Telegram
+    telegram_connection::connect_with_retry(&bot, TELEGRAM_CONNECT_BACKOFF).await?;
+
     // Health checks report whether the bot can reach Telegram, not only that it runs
     let _telegram_heartbeat = observability::start_telegram_heartbeat(bot.clone());
 
@@ -331,11 +335,14 @@ async fn main() -> Result<()> {
             }
         }));
 
+    let listener = teloxide::update_listeners::polling_default(bot.clone()).await;
     Dispatcher::builder(bot, handler)
         .enable_ctrlc_handler()
         .build()
-        .dispatch()
-        .await;
-
-    Ok(())
+        .try_dispatch_with_listener(
+            listener,
+            LoggingErrorHandler::with_custom_text("An error from the update listener"),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("Telegram API unreachable when the dispatcher started: {e}"))
 }

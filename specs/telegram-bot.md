@@ -23,10 +23,15 @@ are in English or French, following the Telegram app language.
 - Duplicate deliveries of a message are dropped by `deduplication` (key: chat id + message id,
   5 minutes, 10,000 entries). Callback queries are not deduplicated.
 - Telegram client timeout 30 s. A heartbeat (`getMe` every minute) feeds the health checks.
+- Before the dispatcher starts, `telegram_connection::connect_with_retry` calls `getMe`: while
+  Telegram is unreachable it retries (1 s doubling up to 30 s, for 10 minutes, then exits and Fly
+  restarts it); a rejected token exits at once with `Telegram rejected TELEGRAM_BOT_TOKEN`. The
+  dispatcher uses `try_dispatch_with_listener`, so no startup path panics.
 
 ### Components
 ```
 src/main.rs                 # Startup, extractor choice, dispatcher
+src/telegram_connection.rs  # getMe with retry before the dispatcher starts
 src/dialogue.rs             # RecipeDialogueState, RecipeDialogue
 src/localization.rs         # Fluent bundles (en, fr), language detection
 src/extraction/             # IngredientExtractor trait, Gemini client, guard (see llm-extraction.md)

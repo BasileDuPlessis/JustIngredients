@@ -64,7 +64,8 @@ Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` 
 - **Production** (Fly secrets, set by hand with `fly secrets set`, never by CI):
   `DATABASE_URL` (Fly Postgres), `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`, `METRICS_AUTH_TOKEN`.
   The bot refuses to start without a well-formed `TELEGRAM_BOT_TOKEN` and `DATABASE_URL`, or
-  without `GEMINI_API_KEY`.
+  without `GEMINI_API_KEY`; it exits with `Telegram rejected TELEGRAM_BOT_TOKEN` when Telegram
+  refuses the token (the restart policy then restarts it, and a deploy fails its health check).
 - **Staging** (permanent app `just-ingredients-staging`, created once by hand, see
   [Staging Setup](#staging-setup)): Fly secrets `DATABASE_URL` (from `fly postgres attach` of
   `just-ingredients-staging-db`), `TELEGRAM_BOT_TOKEN` of the test bot, `GEMINI_API_KEY`.
