@@ -418,7 +418,8 @@ they can be pulled into 1-hour micro-tasks without another review.
   `cargo deny check advisories bans` passes in CI.
 
 ### IMP-013: Integration tests never compiled; CI runs `--lib` only; DB tests destructive
-- [ ] Done
+- [x] Done
+- Status: Done (2026-10-28): CI already ran `--all-targets`, doc tests and `db_tests` on `#[sqlx::test]` databases. `tests/integration/main.rs` now builds `bot_flow_tests` (15 tests pass); its 2 DB tests, which wrote to whatever `DATABASE_URL` pointed to and duplicated `db_tests`, and the unused `tests/test_helpers.rs` were removed. The file's tautological state tests are left to IMP-031.
 - Priority: P1. Effort: M. Area: Tests / CI.
 - Related: LLM migration (Task 0.2 covers CI. This item adds the details it needs.)
 - Location: `tests/integration/bot_flow_tests.rs`, `tests/integration/ocr_tests.rs` (20 tests, no

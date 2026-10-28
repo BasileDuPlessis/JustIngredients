@@ -3,7 +3,7 @@
 //! This module contains integration tests for bot interaction flows,
 //! dialogue workflows, and user experience scenarios.
 
-use just_ingredients::text_processing::{MeasurementConfig, MeasurementDetector};
+use just_ingredients::text_processing::MeasurementDetector;
 
 /// Test recipe naming dialogue workflow
 #[test]
@@ -307,11 +307,7 @@ fn test_caption_fallback_scenarios() {
             "Recipe",
             "Whitespace-only fallback",
         ),
-        (
-            Some("a".repeat(256)),
-            "Recipe",
-            "Too long caption fallback",
-        ),
+        (Some("a".repeat(256)), "Recipe", "Too long caption fallback"),
         (
             Some("Invalid!!!@#$%".to_string()),
             "Invalid!!!@#$%",
@@ -323,10 +319,7 @@ fn test_caption_fallback_scenarios() {
     for (caption, expected_name, description) in scenarios {
         let result = match &caption {
             Some(caption_text) if !caption_text.trim().is_empty() => {
-                match validate_recipe_name(caption_text) {
-                    Ok(validated) => validated,
-                    Err(_) => "Recipe",
-                }
+                validate_recipe_name(caption_text).unwrap_or("Recipe")
             }
             _ => "Recipe",
         };
@@ -397,8 +390,7 @@ fn test_caption_with_measurement_extraction() {
         // Process caption
         let recipe_name = match &caption {
             Some(caption_text) if !caption_text.trim().is_empty() => {
-                just_ingredients::validation::validate_recipe_name(caption_text)
-                    .unwrap_or("Recipe")
+                just_ingredients::validation::validate_recipe_name(caption_text).unwrap_or("Recipe")
             }
             _ => "Recipe",
         };
@@ -443,8 +435,7 @@ fn test_backward_compatibility_no_captions() {
     // Recipe name assignment (should use default "Recipe")
     let recipe_name = match &caption {
         Some(caption_text) if !caption_text.trim().is_empty() => {
-            just_ingredients::validation::validate_recipe_name(caption_text)
-                .unwrap_or("Recipe")
+            just_ingredients::validation::validate_recipe_name(caption_text).unwrap_or("Recipe")
         }
         _ => "Recipe",
     };
@@ -478,8 +469,7 @@ fn test_caption_multi_language_integration() {
 
     let recipe_name_en = match &english_caption {
         Some(caption_text) if !caption_text.trim().is_empty() => {
-            just_ingredients::validation::validate_recipe_name(caption_text)
-                .unwrap_or("Recipe")
+            just_ingredients::validation::validate_recipe_name(caption_text).unwrap_or("Recipe")
         }
         _ => "Recipe",
     };
@@ -491,8 +481,7 @@ fn test_caption_multi_language_integration() {
 
     let recipe_name_fr = match &french_caption {
         Some(caption_text) if !caption_text.trim().is_empty() => {
-            just_ingredients::validation::validate_recipe_name(caption_text)
-                .unwrap_or("Recipe")
+            just_ingredients::validation::validate_recipe_name(caption_text).unwrap_or("Recipe")
         }
         _ => "Recipe",
     };
@@ -508,8 +497,8 @@ fn test_caption_multi_language_integration() {
     assert_ne!(caption_used_en, caption_used_fr);
 
     // Test message formatting
-    let formatted_en = caption_used_en.replace("{$caption}", &recipe_name_en);
-    let formatted_fr = caption_used_fr.replace("{$caption}", &recipe_name_fr);
+    let formatted_en = caption_used_en.replace("{$caption}", recipe_name_en);
+    let formatted_fr = caption_used_fr.replace("{$caption}", recipe_name_fr);
 
     assert!(formatted_en.contains("Chocolate Chip Cookies"));
     assert!(formatted_fr.contains("Crêpes au Chocolat"));
@@ -652,336 +641,6 @@ fn test_caption_preservation_after_ingredient_deletion() {
     println!("✅ Caption preservation after ingredient deletion test passed - bug is fixed!");
 }
 
-/// Test database integration with real database operations
-#[tokio::test]
-async fn test_database_integration_full_workflow() -> Result<(), Box<dyn std::error::Error>> {
-    use just_ingredients::db;
-    use just_ingredients::text_processing::MeasurementDetector;
-    use std::sync::Arc;
-
-    // This test requires a test database - skip if DATABASE_URL not set for integration tests
-    // Skip test if DATABASE_URL is not set
-    let database_url = match std::env::var("DATABASE_URL") {
-        Ok(url) => url,
-        Err(_) => {
-            println!("⚠️ Skipping database integration test - DATABASE_URL not set");
-            return Ok(());
-        }
-    };
-
-    // Create a test database connection pool
-    let pool = match sqlx::postgres::PgPool::connect(&database_url).await {
-        Ok(pool) => Arc::new(pool),
-        Err(e) => {
-            println!(
-                "⚠️ Skipping database integration test - failed to connect: {}",
-                e
-            );
-            return Ok(());
-        }
-    };
-
-    // Initialize database schema
-    if let Err(e) = db::init_database_schema(&pool).await {
-        println!(
-            "⚠️ Skipping database integration test - failed to init schema: {}",
-            e
-        );
-        return Ok(());
-    }
-
-    // Test data
-    let telegram_id = 999999; // Use a test user ID
-    let recipe_content = "Test Recipe Content";
-    let detector = MeasurementDetector::new().unwrap();
-
-    // Step 1: Create or get a user
-    let user = match db::get_or_create_user(&pool, telegram_id, Some("en")).await {
-        Ok(user) => user,
-        Err(e) => {
-            panic!("Failed to create/get user: {}", e);
-        }
-    };
-
-    // Step 2: Create a recipe
-    let recipe_id = match db::create_recipe(&pool, telegram_id, recipe_content).await {
-        Ok(id) => id,
-        Err(e) => panic!("Failed to create recipe: {}", e);
-    };
-
-    // Step 3: Extract and create ingredients
-    let ocr_text = r#"
-    Test Recipe Ingredients:
-    2 cups flour
-    3 eggs
-    1 cup sugar
-    1 tsp vanilla
-    "#;
-
-    let measurements = detector.extract_ingredient_measurements(ocr_text);
-    assert!(!measurements.is_empty());
-
-    // Create ingredients in database
-    for measurement in &measurements {
-        let ingredient_id = match db::create_ingredient(
-            &pool,
-            user.id, // Use the actual user ID, not telegram_id
-            Some(recipe_id),
-            &measurement.ingredient_name,
-            measurement.quantity.parse().ok(),
-            measurement.measurement.as_deref(),
-            &format!("{} {}", measurement.quantity, measurement.ingredient_name),
-        )
-        .await
-        {
-            Ok(id) => id,
-            Err(e) => {
-                panic!(
-                    "Failed to create ingredient {}: {}",
-                    measurement.ingredient_name, e
-                );
-            }
-        };
-
-        // Verify ingredient was created
-        let retrieved = match db::read_ingredient(&pool, ingredient_id).await {
-            Ok(Some(ing)) => ing,
-            Ok(None) => panic!("Ingredient {} not found after creation", ingredient_id),
-            Err(e) => panic!("Failed to read ingredient {}: {}", ingredient_id, e);
-        };
-
-        assert_eq!(retrieved.name, measurement.ingredient_name);
-        assert_eq!(retrieved.recipe_id, Some(recipe_id));
-    }
-
-    // Step 3: Test full-text search
-    let search_results = match db::search_recipes(&pool, telegram_id, "flour").await {
-        Ok(results) => results,
-        Err(e) => panic!("Failed to search recipes: {}", e);
-    };
-
-    assert!(!search_results.is_empty());
-    assert!(search_results.iter().any(|r| r.id == recipe_id));
-
-    // Step 4: Test recipe listing with pagination
-    let (recipe_names, total) =
-        match db::get_user_recipes_paginated(&pool, telegram_id, 10, 0).await {
-            Ok(result) => result,
-            Err(e) => panic!("Failed to get paginated recipes: {}", e);
-        };
-
-    assert!(total >= 1);
-    assert!(!recipe_names.is_empty());
-
-    // Step 5: Test ingredient listing
-    let ingredients = match db::list_ingredients_by_user(&pool, telegram_id).await {
-        Ok(ings) => ings,
-        Err(e) => panic!("Failed to list ingredients: {}", e);
-    };
-
-    assert!(!ingredients.is_empty());
-    assert!(ingredients.len() >= measurements.len());
-
-    // Step 6: Test recipe reading with ingredients
-    let recipe_with_ingredients = match db::read_recipe_with_name(&pool, recipe_id).await {
-        Ok(Some(recipe)) => recipe,
-        Ok(None) => panic!("Recipe {} not found", recipe_id),
-        Err(e) => panic!("Failed to read recipe with ingredients: {}", e);
-    };
-
-    assert_eq!(recipe_with_ingredients.content, recipe_content);
-
-    // Cleanup: Delete test data (in reverse order to maintain foreign key constraints)
-    for ingredient in &ingredients {
-        if ingredient.user_id == telegram_id {
-            if let Err(e) = db::delete_ingredient(&pool, ingredient.id).await {
-                println!(
-                    "Warning: Failed to cleanup ingredient {}: {}",
-                    ingredient.id, e
-                );
-            }
-        }
-    }
-
-    if let Err(e) = db::delete_recipe(&pool, recipe_id).await {
-        println!("Warning: Failed to cleanup recipe {}: {}", recipe_id, e);
-    }
-
-    println!("✅ Database integration test passed - full CRUD workflow with search and pagination working");
-    Ok(())
-}
-
-/// Test saved ingredient editing workflow - create recipe, edit ingredient, verify saved
-#[tokio::test]
-async fn test_saved_ingredient_editing_workflow() -> Result<(), Box<dyn std::error::Error>> {
-    use just_ingredients::db;
-    use just_ingredients::text_processing::MeasurementDetector;
-    use std::sync::Arc;
-
-    // This test requires a test database - skip if DATABASE_URL not set for integration tests
-    let database_url = match std::env::var("DATABASE_URL") {
-        Ok(url) => url,
-        Err(_) => {
-            println!("⚠️ Skipping saved ingredient editing test - DATABASE_URL not set");
-            return Ok(());
-        }
-    };
-
-    // Create a test database connection pool
-    let pool = match sqlx::postgres::PgPool::connect(&database_url).await {
-        Ok(pool) => Arc::new(pool),
-        Err(e) => {
-            println!(
-                "⚠️ Skipping saved ingredient editing test - failed to connect: {}",
-                e
-            );
-            return Ok(());
-        }
-    };
-
-    // Initialize database schema
-    if let Err(e) = db::init_database_schema(&pool).await {
-        println!(
-            "⚠️ Skipping saved ingredient editing test - failed to init schema: {}",
-            e
-        );
-        return Ok(());
-    }
-
-    // Test data
-    let telegram_id = 888888; // Use a different test user ID
-    let detector = MeasurementDetector::new().unwrap();
-
-    // Step 1: Create user and recipe with ingredients
-    let user = db::get_or_create_user(&pool, telegram_id, Some("en")).await?;
-    let recipe_id = db::create_recipe(&pool, telegram_id, "Test Recipe for Editing").await?;
-    db::update_recipe_name(&pool, recipe_id, "Editable Recipe").await?;
-
-    // Create initial ingredients
-    let ocr_text = r#"
-    2 cups flour
-    3 eggs
-    1 cup sugar
-    "#;
-
-    let measurements = detector.extract_ingredient_measurements(ocr_text);
-    assert_eq!(measurements.len(), 3); // flour, eggs, sugar
-
-    let mut ingredient_ids = vec![];
-    for measurement in &measurements {
-        let ingredient_id = db::create_ingredient(
-            &pool,
-            user.id,
-            Some(recipe_id),
-            &measurement.ingredient_name,
-            measurement.quantity.parse().ok(),
-            measurement.measurement.as_deref(),
-            &format!("{} {}", measurement.quantity, measurement.ingredient_name),
-        )
-        .await?;
-        ingredient_ids.push(ingredient_id);
-    }
-
-    // Step 2: Get original ingredients from database
-    let original_ingredients = db::get_recipe_ingredients(&pool, recipe_id).await?;
-    assert_eq!(original_ingredients.len(), 3);
-
-    // Step 3: Simulate editing workflow - update eggs from 3 to 4
-    let eggs_ingredient = original_ingredients.iter()
-        .find(|ing| ing.name == "eggs")
-        .expect("Should find eggs ingredient");
-
-    // Update the ingredient directly (simulating what the edit workflow does)
-    let update_result = db::update_ingredient(
-        &pool,
-        eggs_ingredient.id,
-        Some("eggs"), // Same name
-        Some(4.0),    // Changed from 3.0 to 4.0
-        None,         // No unit
-    ).await?;
-
-    assert!(update_result, "Ingredient update should succeed");
-
-    // Step 4: Verify the ingredient was updated in the database
-    let updated_ingredients = db::get_recipe_ingredients(&pool, recipe_id).await?;
-    assert_eq!(updated_ingredients.len(), 3);
-
-    // Find the eggs ingredient and verify it was updated
-    let updated_eggs = updated_ingredients.iter()
-        .find(|ing| ing.name == "eggs")
-        .expect("Should find eggs ingredient");
-
-    assert_eq!(updated_eggs.quantity, Some(4.0)); // Should be updated to 4
-    assert_eq!(updated_eggs.name, "eggs");
-
-    // Verify other ingredients remain unchanged
-    let flour_ingredient = updated_ingredients.iter()
-        .find(|ing| ing.name == "flour")
-        .expect("Should find flour ingredient");
-    assert_eq!(flour_ingredient.quantity, Some(2.0));
-
-    let sugar_ingredient = updated_ingredients.iter()
-        .find(|ing| ing.name == "sugar")
-        .expect("Should find sugar ingredient");
-    assert_eq!(sugar_ingredient.quantity, Some(1.0));
-
-    // Step 5: Test ingredient deletion (part of editing workflow)
-    let sugar_id = sugar_ingredient.id;
-    let delete_result = db::delete_ingredient(&pool, sugar_id).await?;
-    assert!(delete_result, "Ingredient deletion should succeed");
-
-    // Verify ingredient was deleted
-    let ingredients_after_delete = db::get_recipe_ingredients(&pool, recipe_id).await?;
-    assert_eq!(ingredients_after_delete.len(), 2); // Should be 2 now
-
-    // Verify sugar is gone
-    let sugar_after_delete = ingredients_after_delete.iter()
-        .find(|ing| ing.name == "sugar");
-    assert!(sugar_after_delete.is_none(), "Sugar ingredient should be deleted");
-
-    // Step 6: Test adding new ingredient (part of editing workflow)
-    let new_measurement = detector.extract_ingredient_measurements("1 tsp vanilla");
-    assert_eq!(new_measurement.len(), 1);
-
-    let new_ingredient = &new_measurement[0];
-    let new_ingredient_id = db::create_ingredient(
-        &pool,
-        user.id,
-        Some(recipe_id),
-        &new_ingredient.ingredient_name,
-        new_ingredient.quantity.parse().ok(),
-        new_ingredient.measurement.as_deref(),
-        &format!("{} {}", new_ingredient.quantity, new_ingredient.ingredient_name),
-    )
-    .await?;
-
-    // Verify new ingredient was added
-    let ingredients_after_add = db::get_recipe_ingredients(&pool, recipe_id).await?;
-    assert_eq!(ingredients_after_add.len(), 3); // Back to 3 ingredients
-
-    // Verify vanilla was added
-    let vanilla_ingredient = ingredients_after_add.iter()
-        .find(|ing| ing.name == "vanilla")
-        .expect("Should find vanilla ingredient");
-    assert_eq!(vanilla_ingredient.quantity, Some(1.0));
-    assert_eq!(vanilla_ingredient.unit, Some("tsp".to_string()));
-
-    // Cleanup: Delete test data
-    let all_ingredients = db::get_recipe_ingredients(&pool, recipe_id).await?;
-    for ingredient in &all_ingredients {
-        if let Err(e) = db::delete_ingredient(&pool, ingredient.id).await {
-            println!("Warning: Failed to cleanup ingredient {}: {}", ingredient.id, e);
-        }
-    }
-
-    if let Err(e) = db::delete_recipe(&pool, recipe_id).await {
-        println!("Warning: Failed to cleanup recipe {}: {}", recipe_id, e);
-    }
-
-    println!("✅ Saved ingredient editing workflow test passed - ingredient successfully updated, deleted, and added in database");
-    Ok(())
-}
-
 /// Test initial recipe creation editing workflow with message replacement
 #[test]
 fn test_initial_recipe_creation_editing_workflow() {
@@ -1052,9 +711,11 @@ fn test_initial_recipe_creation_editing_workflow() {
         ingredients: ingredients.clone(),
         editing_index: 0, // Editing flour
         language_code: Some("en".to_string()),
-        message_id: Some(1001), // New editing prompt message ID
+        message_id: Some(1001),          // New editing prompt message ID
         original_message_id: Some(1000), // Tracks original recipe display message
         extracted_text: "2 cups flour\n3 eggs\n1 cup sugar".to_string(),
+        field: Default::default(),
+        recipe_name_from_caption: None,
     };
 
     // Verify editing state correctly tracks message IDs
@@ -1116,11 +777,12 @@ fn test_initial_recipe_creation_editing_workflow() {
 
     // Verify the flour ingredient was updated
     if let RecipeDialogueState::ReviewIngredients {
-        ingredients: ingr,
-        ..
+        ingredients: ingr, ..
     } = &updated_review_state
     {
-        let flour = ingr.iter().find(|ing| ing.ingredient_name.contains("flour"))
+        let flour = ingr
+            .iter()
+            .find(|ing| ing.ingredient_name.contains("flour"))
             .expect("Should find flour ingredient");
         assert_eq!(flour.quantity, "3");
         assert_eq!(flour.measurement, Some("cups".to_string()));
@@ -1141,11 +803,12 @@ fn test_initial_recipe_creation_editing_workflow() {
 
     // Verify cancel restored original ingredients
     if let RecipeDialogueState::ReviewIngredients {
-        ingredients: ingr,
-        ..
+        ingredients: ingr, ..
     } = &cancel_state
     {
-        let flour = ingr.iter().find(|ing| ing.ingredient_name == "flour")
+        let flour = ingr
+            .iter()
+            .find(|ing| ing.ingredient_name == "flour")
             .expect("Should find flour ingredient");
         assert_eq!(flour.quantity, "2"); // Original quantity
         assert_eq!(flour.ingredient_name, "flour"); // Original name
@@ -1159,9 +822,9 @@ fn test_initial_recipe_creation_editing_workflow() {
 /// Test saved recipe editing workflow with message replacement
 #[test]
 fn test_saved_recipe_editing_workflow() {
+    use just_ingredients::db::Ingredient;
     use just_ingredients::dialogue::RecipeDialogueState;
     use just_ingredients::text_processing::MeasurementMatch;
-    use just_ingredients::db::Ingredient;
 
     // Simulate the complete editing workflow for saved recipes
 
@@ -1243,8 +906,9 @@ fn test_saved_recipe_editing_workflow() {
         current_matches: current_matches.clone(),
         editing_index: 1, // Editing eggs (index 1)
         language_code: Some("en".to_string()),
-        message_id: Some(2001), // New editing prompt message ID
+        message_id: Some(2001),          // New editing prompt message ID
         original_message_id: Some(2000), // Tracks original recipe display message
+        field: Default::default(),
     };
 
     // Verify editing state correctly tracks message IDs
@@ -1300,7 +964,9 @@ fn test_saved_recipe_editing_workflow() {
         ..
     } = &updated_editing_state
     {
-        let eggs = matches.iter().find(|ing| ing.ingredient_name.contains("eggs"))
+        let eggs = matches
+            .iter()
+            .find(|ing| ing.ingredient_name.contains("eggs"))
             .expect("Should find eggs ingredient");
         assert_eq!(eggs.quantity, "4");
         assert_eq!(eggs.ingredient_name, "large eggs");
@@ -1323,7 +989,9 @@ fn test_saved_recipe_editing_workflow() {
         ..
     } = &cancel_state
     {
-        let eggs = matches.iter().find(|ing| ing.ingredient_name == "eggs")
+        let eggs = matches
+            .iter()
+            .find(|ing| ing.ingredient_name == "eggs")
             .expect("Should find eggs ingredient");
         assert_eq!(eggs.quantity, "3"); // Original quantity
         assert_eq!(eggs.ingredient_name, "eggs"); // Original name
@@ -1343,17 +1011,15 @@ fn test_message_editing_edge_cases() {
     // Test various edge cases for message editing functionality
 
     // Edge Case 1: Original message ID is None (fallback behavior)
-    let ingredients = vec![
-        MeasurementMatch {
-            quantity: "2".to_string(),
-            measurement: Some("cups".to_string()),
-            ingredient_name: "flour".to_string(),
-            line_number: 0,
-            start_pos: 0,
-            end_pos: 6,
-            requires_quantity_confirmation: false,
-        },
-    ];
+    let ingredients = vec![MeasurementMatch {
+        quantity: "2".to_string(),
+        measurement: Some("cups".to_string()),
+        ingredient_name: "flour".to_string(),
+        line_number: 0,
+        start_pos: 0,
+        end_pos: 6,
+        requires_quantity_confirmation: false,
+    }];
 
     let editing_state_no_original = RecipeDialogueState::EditingIngredient {
         recipe_name: "Test Recipe".to_string(),
@@ -1363,6 +1029,8 @@ fn test_message_editing_edge_cases() {
         message_id: Some(1001),
         original_message_id: None, // No original message ID
         extracted_text: "Test OCR text".to_string(),
+        field: Default::default(),
+        recipe_name_from_caption: None,
     };
 
     // Verify state handles None original_message_id gracefully
@@ -1377,30 +1045,26 @@ fn test_message_editing_edge_cases() {
     }
 
     // Edge Case 2: Message ID tracking in saved ingredient editing
-    let saved_ingredients = vec![
-        just_ingredients::db::Ingredient {
-            id: 1,
-            user_id: 100,
-            recipe_id: Some(200),
-            name: "flour".to_string(),
-            quantity: Some(2.0),
-            unit: Some("cups".to_string()),
-            created_at: chrono::Utc::now(),
-            updated_at: chrono::Utc::now(),
-        },
-    ];
+    let saved_ingredients = vec![just_ingredients::db::Ingredient {
+        id: 1,
+        user_id: 100,
+        recipe_id: Some(200),
+        name: "flour".to_string(),
+        quantity: Some(2.0),
+        unit: Some("cups".to_string()),
+        created_at: chrono::Utc::now(),
+        updated_at: chrono::Utc::now(),
+    }];
 
-    let current_matches = vec![
-        MeasurementMatch {
-            quantity: "2".to_string(),
-            measurement: Some("cups".to_string()),
-            ingredient_name: "flour".to_string(),
-            line_number: 0,
-            start_pos: 0,
-            end_pos: 6,
-            requires_quantity_confirmation: false,
-        },
-    ];
+    let current_matches = vec![MeasurementMatch {
+        quantity: "2".to_string(),
+        measurement: Some("cups".to_string()),
+        ingredient_name: "flour".to_string(),
+        line_number: 0,
+        start_pos: 0,
+        end_pos: 6,
+        requires_quantity_confirmation: false,
+    }];
 
     let saved_editing_state_no_original = RecipeDialogueState::EditingSavedIngredient {
         recipe_id: 200,
@@ -1410,6 +1074,7 @@ fn test_message_editing_edge_cases() {
         language_code: Some("en".to_string()),
         message_id: Some(2001),
         original_message_id: None, // No original message ID
+        field: Default::default(),
     };
 
     // Verify state handles None original_message_id gracefully
@@ -1424,24 +1089,17 @@ fn test_message_editing_edge_cases() {
     }
 
     // Edge Case 3: State transitions preserve message ID tracking
-    let review_state = RecipeDialogueState::ReviewIngredients {
-        recipe_name: "Test Recipe".to_string(),
-        ingredients: ingredients.clone(),
-        language_code: Some("en".to_string()),
-        message_id: Some(3000),
-        extracted_text: "Test OCR text".to_string(),
-        recipe_name_from_caption: None,
-    };
-
-    // Simulate multiple transitions while preserving message ID tracking
+    // The review message 3000 becomes the original message of the edit
     let editing_from_review = RecipeDialogueState::EditingIngredient {
         recipe_name: "Test Recipe".to_string(),
         ingredients: ingredients.clone(),
         editing_index: 0,
         language_code: Some("en".to_string()),
-        message_id: Some(3001), // New editing message
+        message_id: Some(3001),          // New editing message
         original_message_id: Some(3000), // Preserved from review state
         extracted_text: "Test OCR text".to_string(),
+        field: Default::default(),
+        recipe_name_from_caption: None,
     };
 
     // Verify message ID tracking is preserved through transitions
@@ -1485,6 +1143,7 @@ fn test_message_editing_edge_cases() {
 /// Test unified multi-word ingredient extraction in bot workflows
 #[test]
 fn test_unified_multi_word_ingredient_bot_workflow() {
+    use just_ingredients::dialogue::RecipeDialogueState;
     // Test that bot workflows correctly handle multi-word ingredients extracted by unified regex
 
     let ocr_text = r#"
@@ -1537,8 +1196,7 @@ fn test_unified_multi_word_ingredient_bot_workflow() {
 
     // Verify dialogue state contains complete multi-word ingredient names
     if let RecipeDialogueState::WaitingForRecipeName {
-        ingredients: ingr,
-        ..
+        ingredients: ingr, ..
     } = waiting_state
     {
         assert_eq!(ingr.len(), 3);
@@ -1559,7 +1217,10 @@ fn test_unified_multi_word_ingredient_bot_workflow() {
     // Test that ingredient display formatting works with multi-word names
     for ingredient in &ingredients {
         let display_text = if let Some(ref unit) = ingredient.measurement {
-            format!("{} {} → {}", ingredient.quantity, unit, ingredient.ingredient_name)
+            format!(
+                "{} {} → {}",
+                ingredient.quantity, unit, ingredient.ingredient_name
+            )
         } else {
             format!("{} → {}", ingredient.quantity, ingredient.ingredient_name)
         };

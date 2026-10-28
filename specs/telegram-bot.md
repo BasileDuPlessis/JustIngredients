@@ -317,7 +317,9 @@ dispatcher.
 - Unit tests next to the code: error keys present in both locales, caption cleaning, callback
   data length, quantity guard, duplicate detection.
 - `tests/bot_tests.rs`, `tests/dialogue_tests.rs`, `tests/localization_tests.rs`: keyboards,
-  formatting, state values, locale files. No test drives the handlers against a fake Telegram.
+  formatting, state values, locale files. `tests/integration/` (one binary, `main.rs` declares
+  `bot_flow_tests`): caption and naming flows, dialogue state values. No test drives the
+  handlers against a fake Telegram.
 - `tests/gemini_live.rs`: ignored by default, calls the paid API.
 - Manual check in Telegram on staging, then production.
 
