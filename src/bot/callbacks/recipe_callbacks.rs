@@ -106,7 +106,15 @@ pub async fn handle_recipe_action(
                     .await?;
             } else {
                 let message = t_lang(localization, "recipe-not-found", language_code.as_deref());
-                bot.send_message(chat_id, message).await?;
+                send_transient(bot, chat_id, message).await?;
+                crate::bot::home::move_list_down(
+                    bot,
+                    &pool,
+                    chat_id,
+                    localization,
+                    language_code.as_deref(),
+                )
+                .await;
             }
         }
         "delete" => {
@@ -274,6 +282,7 @@ pub async fn handle_delete_recipe_confirmation(
                 Ok(false) => {
                     // Already gone: its card goes too, the message stays until the next action
                     if let Some(card) = card {
+                        crate::bot::cleanup::untrack(chat_id, card).await;
                         let _ = bot.delete_message(chat_id, card).await;
                     }
                     let message =
@@ -327,7 +336,12 @@ pub async fn handle_delete_recipe_confirmation(
 
     // A delete done in the middle of another action (a rename, a review) leaves that action
     // running: its home message would hide the prompts the action still waits on
-    if !dialogue.get().await?.is_some_and(|state| state.is_action()) {
+    if dialogue.get().await?.is_some_and(|state| state.is_action()) {
+        // The running action keeps its messages; the error goes when it ends
+        for id in &keep {
+            crate::bot::cleanup::track(chat_id, *id).await;
+        }
+    } else {
         crate::bot::home::send_home_keeping(
             bot,
             &pool,
@@ -372,7 +386,15 @@ async fn handle_edit_ingredients_callback(
         Some(recipe) => recipe,
         None => {
             let message = t_lang(localization, "recipe-not-found", language_code.as_deref());
-            bot.send_message(chat_id, message).await?;
+            send_transient(bot, chat_id, message).await?;
+            crate::bot::home::move_list_down(
+                bot,
+                &pool,
+                chat_id,
+                localization,
+                language_code.as_deref(),
+            )
+            .await;
             return Ok(());
         }
     };
@@ -394,7 +416,15 @@ async fn handle_edit_ingredients_callback(
                 language_code.as_deref()
             )
         );
-        bot.send_message(chat_id, message).await?;
+        send_transient(bot, chat_id, message).await?;
+        crate::bot::home::move_list_down(
+            bot,
+            &pool,
+            chat_id,
+            localization,
+            language_code.as_deref(),
+        )
+        .await;
         return Ok(());
     }
 

@@ -582,7 +582,18 @@ async fn dispatch_message(
     } else {
         let answered = handle_unsupported_message(&bot, &msg, &localization).await;
         if answered.is_ok() {
-            crate::bot::home::move_list_down(&bot, &pool, msg.chat.id, &localization, None).await;
+            let language_code = msg
+                .from
+                .as_ref()
+                .and_then(|user| user.language_code.as_deref());
+            crate::bot::home::move_list_down(
+                &bot,
+                &pool,
+                msg.chat.id,
+                &localization,
+                language_code,
+            )
+            .await;
         }
         answered
     };

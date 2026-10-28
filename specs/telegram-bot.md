@@ -199,7 +199,10 @@ welcome stays above the list until the next action ends.
 Before sending the list, `send_home` deletes what the action left behind (`bot::cleanup`, one
 `deleteMessages` call per 100 ids, failures logged at debug level):
 - the previous recipe list (and the home message of older versions), so a chat has one list at
-  the bottom; one Telegram no longer lets the bot delete (older than 48 h) only loses its buttons;
+  the bottom; one Telegram no longer lets the bot delete (older than 48 h) shrinks to "📚 ⬇️"
+  without buttons. A home message or list of a version before U5 (never recorded) is deleted
+  when one of its buttons is pressed (`cleanup::remove_legacy_message`); a paged one is recorded
+  as a list from then on (`adopt_legacy_list`);
 - the messages recorded during the action: every text the user typed in a dialogue state
   (recorded in `handle_text_message`) and the bot prompts sent with `cleanup::send_transient`:
   quantity questions and the "check the quantities" warning, "try again" answers (name, edit,

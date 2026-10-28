@@ -484,16 +484,16 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         .is_none()
     {
         if let Some(message) = &q.message {
-            ctx.bot
-                .send_message(
-                    message.chat().id,
-                    t_lang(
-                        ctx.localization,
-                        "recipe-not-found",
-                        language_code.as_deref(),
-                    ),
-                )
-                .await?;
+            send_transient(
+                ctx.bot,
+                message.chat().id,
+                t_lang(
+                    ctx.localization,
+                    "recipe-not-found",
+                    language_code.as_deref(),
+                ),
+            )
+            .await?;
             dialogue.exit().await?;
             send_home(
                 ctx.bot,
@@ -548,16 +548,16 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 Some(&[("recipe_id", &recipe_id.to_string())]),
             );
             if let Some(message) = &q.message {
-                ctx.bot
-                    .send_message(
-                        message.chat().id,
-                        t_lang(
-                            ctx.localization,
-                            "error-updating-ingredients",
-                            language_code.as_deref(),
-                        ),
-                    )
-                    .await?;
+                send_transient(
+                    ctx.bot,
+                    message.chat().id,
+                    t_lang(
+                        ctx.localization,
+                        "error-updating-ingredients",
+                        language_code.as_deref(),
+                    ),
+                )
+                .await?;
             }
             return Ok(());
         }

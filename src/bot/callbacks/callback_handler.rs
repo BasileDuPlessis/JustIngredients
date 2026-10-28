@@ -474,7 +474,6 @@ async fn handle_recipe_selection_by_id(
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     let language_code = &from.language_code;
-    let telegram_id = from.id.0 as i64;
 
     // Extract recipe ID from callback data (format: "recipe_instance:123")
     let recipe_id_str = data.strip_prefix("recipe_instance:").unwrap_or("");
@@ -501,7 +500,7 @@ async fn handle_recipe_selection_by_id(
         bot,
         &pool,
         chat_id,
-        telegram_id,
+        Some(msg.id()),
         recipe_id,
         language_code.as_deref(),
         localization,

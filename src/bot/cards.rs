@@ -41,27 +41,34 @@ async fn render(
     )))
 }
 
-/// Opens a recipe: its earlier card goes (one card per recipe), the card is sent and the recipe
-/// list moves below it. A recipe that is gone answers `recipe-not-found` until the next action.
+/// Opens a recipe from the button on `pressed`: its earlier card goes (one card per recipe), the
+/// card is sent and the recipe list moves below it. A recipe that is gone answers `recipe-not-found` until the next action.
 pub async fn show_card(
     bot: &Bot,
     pool: &PgPool,
     chat_id: ChatId,
-    telegram_id: i64,
+    pressed: Option<teloxide::types::MessageId>,
     recipe_id: i64,
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> Result<()> {
+    // Private chats only: the chat id is the user's id, the recipe's owner
+    let telegram_id = chat_id.0;
     let Some(card) = render(pool, telegram_id, recipe_id, language_code, localization).await?
     else {
         let message = t_lang(localization, "recipe-not-found", language_code);
         cleanup::send_transient(bot, chat_id, message).await?;
+        super::home::move_list_down(bot, pool, chat_id, localization, language_code).await;
         return Ok(());
     };
     cleanup::remove_recipe_cards(bot, chat_id, recipe_id, None).await;
     let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
     let sent = send_html(bot, chat_id, card).reply_markup(keyboard).await?;
     cleanup::record_card(chat_id, sent.id, recipe_id).await;
+    // Opened from a home message or list of an older version: that message goes
+    if let Some(pressed) = pressed {
+        cleanup::remove_legacy_message(bot, chat_id, pressed).await;
+    }
     super::home::move_list_down(bot, pool, chat_id, localization, language_code).await;
     Ok(())
 }

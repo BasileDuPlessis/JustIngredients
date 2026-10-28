@@ -1288,6 +1288,22 @@ pub async fn take_chat_messages(
     Ok(messages)
 }
 
+/// Whether a message of `chat` is recorded.
+pub async fn is_chat_message_recorded(
+    pool: &PgPool,
+    chat_id: i64,
+    message_id: i32,
+) -> Result<bool> {
+    let found: Option<i32> =
+        sqlx::query_scalar("SELECT 1 FROM chat_messages WHERE chat_id = $1 AND message_id = $2")
+            .bind(chat_id)
+            .bind(i64::from(message_id))
+            .fetch_optional(pool)
+            .await
+            .context("Failed to look up a chat message")?;
+    Ok(found.is_some())
+}
+
 /// The recorded messages of `chat` of `kind` about `recipe_id` (the cards of a recipe), oldest
 /// first, still recorded.
 pub async fn find_recipe_messages(

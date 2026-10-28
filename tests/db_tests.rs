@@ -1093,6 +1093,12 @@ async fn chat_messages_are_taken_once_per_chat_and_kind(pool: PgPool) -> Result<
         ids(take_chat_messages(&pool, 42, &["home"]).await?),
         vec![11]
     );
+
+    // Messages of older versions were never recorded
+    record_chat_message(&pool, 42, 12, "list", None).await?;
+    assert!(is_chat_message_recorded(&pool, 42, 12).await?);
+    assert!(!is_chat_message_recorded(&pool, 42, 13).await?);
+    assert!(!is_chat_message_recorded(&pool, 7, 12).await?, "per chat");
     Ok(())
 }
 

@@ -11,6 +11,7 @@ use teloxide::types::MaybeInaccessibleMessage;
 use tracing::debug;
 
 // Import localization
+use crate::dialogue::RecipeDialogue;
 use crate::localization::t_lang;
 
 // Import UI builder functions
@@ -64,6 +65,8 @@ pub async fn handle_recipes_pagination(
     let MaybeInaccessibleMessage::Regular(msg) = msg else {
         return Ok(());
     };
+    // A list of an older version is recorded now, so the next action's cleanup takes it
+    crate::bot::cleanup::adopt_legacy_list(msg.chat.id, msg.id).await;
     // The list message becomes the requested page
     crate::bot::recipe_list::show_recipe_list(
         bot,
@@ -83,6 +86,7 @@ pub async fn handle_list_recipes(
     bot: &Bot,
     msg: &MaybeInaccessibleMessage,
     pool: Arc<PgPool>,
+    dialogue: &RecipeDialogue,
     language_code: &Option<String>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
@@ -91,15 +95,28 @@ pub async fn handle_list_recipes(
     let MaybeInaccessibleMessage::Regular(msg) = msg else {
         return Ok(());
     };
-    // The list moves to the bottom, like at the end of an action
-    crate::bot::home::send_home(
-        bot,
-        &pool,
-        msg.chat.id,
-        localization,
-        language_code.as_deref(),
-    )
-    .await;
+    // Only older home messages carry this button: that message is replaced by the list
+    crate::bot::cleanup::remove_legacy_message(bot, msg.chat.id, msg.id).await;
+    // A running action keeps its messages: the list just moves down
+    if dialogue.get().await?.is_some_and(|state| state.is_action()) {
+        crate::bot::home::move_list_down(
+            bot,
+            &pool,
+            msg.chat.id,
+            localization,
+            language_code.as_deref(),
+        )
+        .await;
+    } else {
+        crate::bot::home::send_home(
+            bot,
+            &pool,
+            msg.chat.id,
+            localization,
+            language_code.as_deref(),
+        )
+        .await;
+    }
     Ok(())
 }
 
@@ -154,6 +171,7 @@ pub async fn handle_workflow_button(
                     .as_ref()
                     .expect("Callback query should have a message"),
                 pool.clone(),
+                dialogue,
                 &q.from.language_code,
                 localization,
             )

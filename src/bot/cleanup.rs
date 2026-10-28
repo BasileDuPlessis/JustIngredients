@@ -26,6 +26,9 @@ const LIST: &str = "list";
 /// A recipe card in the history: one per recipe, kept current (U5.4).
 const CARD: &str = "card";
 
+/// What a list older than 48 hours becomes, Telegram no longer letting the bot delete it.
+const OLD_LIST_LINE: &str = "📚 ⬇️";
+
 /// `deleteMessages` accepts at most 100 ids per call.
 const DELETE_BATCH: usize = 100;
 
@@ -67,9 +70,14 @@ async fn delete_or_strip(bot: &Bot, chat: ChatId, messages: Vec<crate::db::ChatM
         let id = MessageId(message.message_id);
         if message.deletable {
             ids.push(id);
-        } else if message.kind == LIST || message.kind == HOME || message.kind == CARD {
+        } else if message.kind == LIST || message.kind == HOME {
+            // An old list shrinks to one line without buttons: the new one is below
+            if let Err(e) = bot.edit_message_text(chat, id, OLD_LIST_LINE).await {
+                debug!(error = %e, "Could not shrink an old list");
+            }
+        } else if message.kind == CARD {
             if let Err(e) = bot.edit_message_reply_markup(chat, id).await {
-                debug!(error = %e, "Could not remove the buttons of an old list");
+                debug!(error = %e, "Could not remove the buttons of an old card");
             }
         }
     }
@@ -164,6 +172,36 @@ pub async fn remove_recipe_cards(bot: &Bot, chat: ChatId, recipe_id: i64, keep: 
             deletable,
         };
         delete_or_strip(bot, chat, vec![message]).await;
+    }
+}
+
+/// A list or home message of a version before U5, whose button was just pressed: it was never
+/// recorded, so it would stay above the new list. Deleted, or emptied when too old. A recorded
+/// message is left to the cleanup.
+pub async fn remove_legacy_message(bot: &Bot, chat: ChatId, id: MessageId) {
+    let Some(pool) = pool() else { return };
+    if !matches!(
+        crate::db::is_chat_message_recorded(pool, chat.0, id.0).await,
+        Ok(false)
+    ) {
+        return;
+    }
+    if bot.delete_message(chat, id).await.is_err() {
+        if let Err(e) = bot.edit_message_text(chat, id, OLD_LIST_LINE).await {
+            debug!(error = %e, "Could not remove an old list");
+        }
+    }
+}
+
+/// A list of a version before U5 being paged: recorded as a list from now on, so the next
+/// action's cleanup takes it with the current one.
+pub async fn adopt_legacy_list(chat: ChatId, id: MessageId) {
+    let Some(pool) = pool() else { return };
+    if matches!(
+        crate::db::is_chat_message_recorded(pool, chat.0, id.0).await,
+        Ok(false)
+    ) {
+        record(chat, id, LIST).await;
     }
 }
 
