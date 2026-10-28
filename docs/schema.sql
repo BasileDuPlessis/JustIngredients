@@ -1,4 +1,4 @@
--- Schema created by the migrations of src/db.rs (version 2), dumped from a fresh database:
+-- Schema created by the migrations of src/db.rs (version 3), dumped from a fresh database:
 -- pg_dump --schema-only --no-owner --no-privileges. Regenerate it when a migration is added.
 
 --
@@ -23,6 +23,19 @@ SET row_security = off;
 SET default_tablespace = '';
 
 SET default_table_access_method = heap;
+
+--
+-- Name: chat_messages; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.chat_messages (
+    chat_id bigint NOT NULL,
+    message_id bigint NOT NULL,
+    kind text NOT NULL,
+    recipe_id bigint,
+    sent_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP NOT NULL
+);
+
 
 --
 -- Name: ingredients; Type: TABLE; Schema: public; Owner: -
@@ -158,6 +171,14 @@ ALTER TABLE ONLY public.users ALTER COLUMN id SET DEFAULT nextval('public.users_
 
 
 --
+-- Name: chat_messages chat_messages_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.chat_messages
+    ADD CONSTRAINT chat_messages_pkey PRIMARY KEY (chat_id, message_id);
+
+
+--
 -- Name: ingredients ingredients_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -195,6 +216,13 @@ ALTER TABLE ONLY public.users
 
 ALTER TABLE ONLY public.users
     ADD CONSTRAINT users_telegram_id_key UNIQUE (telegram_id);
+
+
+--
+-- Name: chat_messages_chat_kind_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX chat_messages_chat_kind_idx ON public.chat_messages USING btree (chat_id, kind);
 
 
 --

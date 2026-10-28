@@ -201,6 +201,8 @@ async fn main() -> Result<()> {
 
     // Wrap pool in Arc for sharing across async tasks
     let shared_pool = Arc::new(pool);
+    // Messages to delete at the end of an action are recorded in the database
+    bot::cleanup::init(Arc::clone(&shared_pool));
 
     // Initialize cache manager for performance optimization
     let cache_manager = Arc::new(std::sync::Mutex::new(CacheManager::new()));

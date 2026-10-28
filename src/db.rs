@@ -1052,7 +1052,7 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
     info!("Validating database schema");
 
     // Check that all required tables exist
-    let required_tables = vec!["users", "recipes", "ingredients"];
+    let required_tables = vec!["users", "recipes", "ingredients", "chat_messages"];
     for table_name in required_tables {
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = 'public')"
@@ -1214,6 +1214,77 @@ async fn validate_indexes(
     Ok(())
 }
 
+/// A message recorded in `chat_messages`, taken back to be deleted or edited.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ChatMessage {
+    pub message_id: i32,
+    /// Sent less than 48 hours ago: Telegram still lets the bot delete it.
+    pub deletable: bool,
+}
+
+/// Records a message of `chat` with its `kind` (and recipe, for a card). Recording it again
+/// replaces its kind and recipe.
+pub async fn record_chat_message(
+    pool: &PgPool,
+    chat_id: i64,
+    message_id: i32,
+    kind: &str,
+    recipe_id: Option<i64>,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO chat_messages (chat_id, message_id, kind, recipe_id) VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (chat_id, message_id) DO UPDATE SET kind = EXCLUDED.kind, recipe_id = EXCLUDED.recipe_id",
+    )
+    .bind(chat_id)
+    .bind(i64::from(message_id))
+    .bind(kind)
+    .bind(recipe_id)
+    .execute(pool)
+    .await
+    .context("Failed to record a chat message")?;
+    Ok(())
+}
+
+/// Forgets a recorded message: it stays in the chat.
+pub async fn forget_chat_message(pool: &PgPool, chat_id: i64, message_id: i32) -> Result<()> {
+    sqlx::query("DELETE FROM chat_messages WHERE chat_id = $1 AND message_id = $2")
+        .bind(chat_id)
+        .bind(i64::from(message_id))
+        .execute(pool)
+        .await
+        .context("Failed to forget a chat message")?;
+    Ok(())
+}
+
+/// Takes the recorded messages of `chat` of the given kinds: they are no longer recorded, and
+/// come back oldest first, each telling whether Telegram still allows deleting it.
+pub async fn take_chat_messages(
+    pool: &PgPool,
+    chat_id: i64,
+    kinds: &[&str],
+) -> Result<Vec<ChatMessage>> {
+    let kinds: Vec<String> = kinds.iter().map(|kind| (*kind).to_string()).collect();
+    let rows = sqlx::query(
+        "DELETE FROM chat_messages WHERE chat_id = $1 AND kind = ANY($2) \
+         RETURNING message_id, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable",
+    )
+    .bind(chat_id)
+    .bind(&kinds)
+    .fetch_all(pool)
+    .await
+    .context("Failed to take chat messages")?;
+    let mut messages: Vec<ChatMessage> = rows
+        .iter()
+        .map(|row| ChatMessage {
+            message_id: i32::try_from(row.get::<i64, _>("message_id")).unwrap_or(0),
+            deletable: row.get("deletable"),
+        })
+        .filter(|message| message.message_id > 0)
+        .collect();
+    messages.sort_by_key(|message| message.message_id);
+    Ok(messages)
+}
+
 /// Database migration system
 pub mod migrations {
     use super::*;
@@ -1296,6 +1367,29 @@ pub mod migrations {
                     ALTER TABLE ingredients ADD CONSTRAINT ingredients_recipe_id_fkey
                         FOREIGN KEY (recipe_id) REFERENCES recipes(id);
                     DROP INDEX IF EXISTS recipes_telegram_id_created_at_idx;
+                "#,
+                ),
+            },
+            Migration {
+                version: 3,
+                name: "chat_messages",
+                // Ids of the bot's and the user's messages that a later action deletes or edits
+                // (UX plan U5): never their content
+                up: r#"
+                    CREATE TABLE IF NOT EXISTS chat_messages (
+                        chat_id BIGINT NOT NULL,
+                        message_id BIGINT NOT NULL,
+                        kind TEXT NOT NULL,
+                        recipe_id BIGINT,
+                        sent_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (chat_id, message_id)
+                    );
+                    CREATE INDEX IF NOT EXISTS chat_messages_chat_kind_idx
+                        ON chat_messages (chat_id, kind);
+                "#,
+                down: Some(
+                    r#"
+                    DROP TABLE IF EXISTS chat_messages;
                 "#,
                 ),
             },

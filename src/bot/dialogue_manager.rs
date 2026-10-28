@@ -253,7 +253,7 @@ async fn handle_recipe_name_cancellation(
     dialogue.exit().await?;
     // The name prompt is the saved notice only when a name is given
     if let Some(id) = prompt_message_id {
-        cleanup::track(msg.chat.id, teloxide::types::MessageId(id));
+        cleanup::track(msg.chat.id, teloxide::types::MessageId(id)).await;
     }
     send_home(bot, pool, msg.chat.id, localization, language_code).await;
     Ok(())
@@ -296,7 +296,7 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
         Ok(recipe_id) => {
             // The saved recipe card is the result; the name prompt goes with the review messages
             if let Some(prompt_msg_id) = message_id {
-                cleanup::track(msg.chat.id, teloxide::types::MessageId(prompt_msg_id));
+                cleanup::track(msg.chat.id, teloxide::types::MessageId(prompt_msg_id)).await;
             }
             send_saved_recipe(
                 ctx.bot,

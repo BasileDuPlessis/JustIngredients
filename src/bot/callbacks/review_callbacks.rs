@@ -566,7 +566,7 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
 
     // The review ends here: its list goes with the action's messages
     if let Some(id) = c.review_message_id {
-        cleanup::track(c.chat_id, id);
+        cleanup::track(c.chat_id, id).await;
     }
 
     let Some(name) = c.known_name else {
@@ -687,7 +687,7 @@ pub async fn cancel_review(
     let cancelled = t_lang(localization, "review-cancelled", language_code);
     // The list becomes the cancelled notice, which stays in the chat
     if let Some(id) = review_message_id {
-        cleanup::untrack(chat_id, id);
+        cleanup::untrack(chat_id, id).await;
     }
     let edited = match review_message_id {
         Some(id) => bot

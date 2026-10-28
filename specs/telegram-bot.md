@@ -206,11 +206,11 @@ Before sending it, `send_home` deletes what the action left behind (`bot::cleanu
   typed "confirm"), and the name prompt: after saving, the saved recipe card and the home message
   remain.
 
-Kept: saved or cancelled notices, recipe cards and lists. A review cancelled with ❌ before
-confirming keeps its list edited to `review-cancelled`; typing a cancel word ("cancel", "stop", "back", "annuler", "annule", "retour", "arrêter") or "stop" sends a new
-notice and leaves the list with inactive buttons (U2.5). Only recorded messages are deleted; records older than 48 h are skipped
-(Telegram refuses them), at most 200 per chat, in memory (lost on restart, like the dialogue
-state).
+Kept: saved or cancelled notices, recipe cards and lists. A review cancelled with ❌ or a typed
+cancel word keeps its list edited to `review-cancelled`. Only recorded messages are deleted. The
+records are message ids (never content) in the `chat_messages` table (kind `transient` or
+`home`), so a deploy or a restart does not forget them; records older than 48 h are dropped
+without deleting (Telegram refuses them). A database error only leaves the messages in the chat.
 
 ## My Recipes
 - **List** (`/liste`, 📚 button, `recipe_list::show_recipe_list`): one button per named recipe

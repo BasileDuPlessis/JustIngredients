@@ -686,15 +686,16 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
 
     // Check that migrations table was created and version is updated
     let version = migrations::get_current_version(pool).await?;
-    assert_eq!(version, 2);
+    assert_eq!(version, 3);
 
     // Verify that tables were created
     validate_database_schema(pool).await?;
 
-    // Roll back with the down scripts: version 1 keeps the tables, version 0 removes them
+    // Roll back with the down scripts, one version at a time, then all tables
+    migrations::rollback_to_version(pool, 2).await?;
+    assert_eq!(migrations::get_current_version(pool).await?, 2);
     migrations::rollback_to_version(pool, 1).await?;
     assert_eq!(migrations::get_current_version(pool).await?, 1);
-    validate_database_schema(pool).await?;
     migrations::rollback_to_version(pool, 0).await?;
     assert_eq!(migrations::get_current_version(pool).await?, 0);
     assert!(validate_database_schema(pool).await.is_err());
@@ -1043,5 +1044,82 @@ async fn edited_ingredients_keep_their_place(pool: PgPool) -> Result<()> {
         .map(|ingredient| ingredient.id)
         .collect();
     assert_eq!(after, ids);
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn chat_messages_are_taken_once_per_chat_and_kind(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    record_chat_message(&pool, 42, 5, "transient", None).await?;
+    record_chat_message(&pool, 42, 6, "transient", None).await?;
+    record_chat_message(&pool, 42, 6, "transient", None).await?; // recorded twice: one row
+    record_chat_message(&pool, 42, 1, "home", None).await?;
+    record_chat_message(&pool, 7, 9, "transient", None).await?;
+
+    let ids = |messages: Vec<ChatMessage>| -> Vec<i32> {
+        messages.iter().map(|message| message.message_id).collect()
+    };
+    // A command ends the action: its messages only, the home message stays recorded
+    assert_eq!(
+        ids(take_chat_messages(&pool, 42, &["transient"]).await?),
+        vec![5, 6]
+    );
+    assert!(
+        take_chat_messages(&pool, 42, &["transient"])
+            .await?
+            .is_empty(),
+        "taken once"
+    );
+    assert_eq!(
+        ids(take_chat_messages(&pool, 42, &["transient", "home"]).await?),
+        vec![1]
+    );
+    // Other chats are untouched
+    assert_eq!(
+        ids(take_chat_messages(&pool, 7, &["transient"]).await?),
+        vec![9]
+    );
+
+    // A forgotten message stays in the chat; recording again changes the kind
+    record_chat_message(&pool, 42, 10, "transient", None).await?;
+    record_chat_message(&pool, 42, 11, "transient", None).await?;
+    forget_chat_message(&pool, 42, 10).await?;
+    record_chat_message(&pool, 42, 11, "home", None).await?;
+    assert!(take_chat_messages(&pool, 42, &["transient"])
+        .await?
+        .is_empty());
+    assert_eq!(
+        ids(take_chat_messages(&pool, 42, &["home"]).await?),
+        vec![11]
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn chat_messages_older_than_48_hours_are_not_deletable(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    record_chat_message(&pool, 42, 5, "transient", None).await?;
+    record_chat_message(&pool, 42, 6, "transient", None).await?;
+    sqlx::query(
+        "UPDATE chat_messages SET sent_at = sent_at - INTERVAL '49 hours' WHERE message_id = 5",
+    )
+    .execute(&pool)
+    .await?;
+    let taken = take_chat_messages(&pool, 42, &["transient"]).await?;
+    assert_eq!(
+        taken,
+        vec![
+            ChatMessage {
+                message_id: 5,
+                deletable: false
+            },
+            ChatMessage {
+                message_id: 6,
+                deletable: true
+            },
+        ]
+    );
     Ok(())
 }

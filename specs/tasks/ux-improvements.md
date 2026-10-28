@@ -285,7 +285,9 @@ Goal: the chat reads as a history of recipes and actions, with the recipe list a
 edit its own messages at any time: older messages that should go are edited down instead.
 
 ### Task U5.1: Message registry in the database (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-28): migration 3, `db::{record,forget,take}_chat_message(s)`, `bot::cleanup`
+  on top of them (pool given once at startup); DB tests for kinds, chats, taking once and the
+  48-hour cut-off. Staging restart check pending.
 - Description: migration 3, table `chat_messages (chat_id, message_id, kind, recipe_id,
   sent_at)`, kind `list`, `card` or `transient`; `bot::cleanup` records and takes messages there
   instead of in memory, so a deploy or restart no longer forgets the list or an action's

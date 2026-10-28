@@ -112,7 +112,7 @@ pub async fn send_home(
         None => request.await,
     };
     match result {
-        Ok(sent) => cleanup::set_home(chat_id, sent.id),
+        Ok(sent) => cleanup::set_home(chat_id, sent.id).await,
         Err(e) => warn!(error = %e, "Failed to send the home message"),
     }
 }

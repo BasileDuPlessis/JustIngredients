@@ -155,7 +155,7 @@ pub async fn get_current_version(pool: &PgPool) -> Result<i32>
 pub async fn rollback_to_version(pool: &PgPool, target_version: i32) -> Result<()>
 ```
 
-Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There are two: version 1 `create_initial_tables`, and version 2 `recipes_owner_index_and_ingredient_cascade` (owner index on `recipes`, `ON DELETE CASCADE` on `ingredients.recipe_id`); each has a down script. Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch.
+Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There are three: version 1 `create_initial_tables`, version 2 `recipes_owner_index_and_ingredient_cascade` (owner index on `recipes`, `ON DELETE CASCADE` on `ingredients.recipe_id`) and version 3 `chat_messages` (see below); each has a down script. Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch.
 
 ### Constraints
 - **Data Types**: Appropriate PostgreSQL types for performance
@@ -214,6 +214,22 @@ CREATE TABLE ingredients (
 CREATE INDEX ingredients_recipe_id_idx ON ingredients (recipe_id);
 CREATE INDEX ingredients_user_id_idx   ON ingredients (user_id);
 ```
+
+### Chat Messages Table (migration 3)
+```sql
+-- Ids of messages a later action deletes or edits (UX plan U5), never their content
+CREATE TABLE chat_messages (
+    chat_id BIGINT NOT NULL,
+    message_id BIGINT NOT NULL,
+    kind TEXT NOT NULL,              -- transient (the running action's messages) or home
+    recipe_id BIGINT,                -- for recipe cards (U5.4)
+    sent_at TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (chat_id, message_id)
+);
+CREATE INDEX chat_messages_chat_kind_idx ON chat_messages (chat_id, kind);
+```
+`record_chat_message` (upsert), `forget_chat_message`, `take_chat_messages` (delete and return,
+with whether the message is under 48 hours old, the limit for Telegram deletions).
 
 ### Migrations Table
 ```sql

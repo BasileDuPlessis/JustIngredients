@@ -75,7 +75,7 @@ async fn handle_text_message(
                 return handle_command(bot, msg, pool, localization, language_code, command).await;
             }
             // Replies typed during an action are deleted when it ends
-            TextRoute::ActionInput => cleanup::track(msg.chat.id, msg.id),
+            TextRoute::ActionInput => cleanup::track(msg.chat.id, msg.id).await,
             TextRoute::FreeText => {}
         }
 
