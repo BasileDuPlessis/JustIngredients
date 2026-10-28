@@ -3,7 +3,7 @@
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
 // Import localization
-use crate::localization::t_lang;
+use crate::localization::{t_args_lang, t_lang};
 use std::sync::Arc;
 
 // Import text processing types
@@ -427,7 +427,12 @@ pub fn render_saved_recipe(
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Html {
     Html::text("✅ ")
-        + Html::bold(recipe_name)
+        + Html::bold(&t_args_lang(
+            localization,
+            "recipe-created-title",
+            &[("name", recipe_name)],
+            language_code,
+        ))
         + Html::text("\n\n")
         + Html::text(&format_ingredients_list(
             ingredients,
@@ -690,14 +695,14 @@ mod tests {
     }
 
     #[test]
-    fn the_saved_recipe_card_has_a_check_mark_a_bold_name_and_the_ingredients() {
+    fn the_saved_recipe_card_says_created_in_bold_and_lists_the_ingredients() {
         let localization =
             crate::localization::create_localization_manager().expect("localization");
         let card =
             render_saved_recipe("Crêpes & co", &[named("farine")], Some("fr"), &localization);
         assert_eq!(
             card.as_str(),
-            "✅ <b>Crêpes &amp; co</b>\n\n1. 2 g → farine\n"
+            "✅ <b>Recette « Crêpes &amp; co » créée</b>\n\n1. 2 g → farine\n"
         );
     }
 

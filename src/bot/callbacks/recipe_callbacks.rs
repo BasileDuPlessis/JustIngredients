@@ -8,14 +8,14 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
-use teloxide::types::{MaybeInaccessibleMessage, User};
+use teloxide::types::{InlineKeyboardMarkup, MaybeInaccessibleMessage, User};
 use tracing::debug;
 
 // Import error logging utilities
 use crate::errors::error_logging;
 
 // Import localization
-use crate::localization::t_lang;
+use crate::localization::{t_args_lang, t_lang};
 
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
@@ -25,7 +25,6 @@ use crate::bot::ui_builder::create_ingredient_review_keyboard;
 
 // Import database functions
 use crate::bot::cleanup::send_transient;
-use crate::bot::home::send_home;
 
 /// Handle recipe action callbacks (rename, delete)
 ///
@@ -216,123 +215,65 @@ pub async fn handle_delete_recipe_confirmation(
         .and_then(|s| s.parse().ok())
         .filter(|&id| id != 0);
 
+    // Errors stay above the list until the next action
+    let mut keep = Vec::new();
     match action {
         "confirm_delete_recipe" => {
-            // Attempt to delete the recipe
-            match crate::db::delete_recipe(&pool, telegram_id, recipe_id).await {
-                Ok(deleted) => {
-                    if deleted {
-                        // Delete the confirmation message entirely
-                        if let MaybeInaccessibleMessage::Regular(msg) = msg {
-                            match bot.delete_message(chat_id, msg.id).await {
-                                Ok(_) => (),
-                                Err(e) => {
-                                    crate::errors::error_logging::log_internal_error(
-                                        &e,
-                                        "handle_delete_recipe_confirmation",
-                                        "Failed to delete confirmation message",
-                                        Some(chat_id.0),
-                                    );
-                                }
-                            }
-                        }
+            // The name, for the history line that replaces the card
+            let name = crate::db::read_recipe_with_name(&pool, telegram_id, recipe_id)
+                .await
+                .ok()
+                .flatten()
+                .and_then(|recipe| recipe.recipe_name.map(|name| name.to_string()));
+            let result = crate::db::delete_recipe(&pool, telegram_id, recipe_id).await;
 
-                        // Also delete the original recipe message
-                        if let Some(original_msg_id) = original_message_id {
-                            match bot
-                                .delete_message(
-                                    chat_id,
-                                    teloxide::types::MessageId(original_msg_id),
-                                )
-                                .await
-                            {
-                                Ok(_) => (),
-                                Err(e) => {
-                                    crate::errors::error_logging::log_internal_error(
-                                        &e,
-                                        "handle_delete_recipe_confirmation",
-                                        "Failed to delete original recipe message",
-                                        Some(chat_id.0),
-                                    );
-                                }
-                            }
-                        }
-                    } else {
-                        // Recipe not found - show error and delete both messages
-                        if let MaybeInaccessibleMessage::Regular(msg) = msg {
-                            match bot.delete_message(chat_id, msg.id).await {
-                                Ok(_) => (),
-                                Err(e) => {
-                                    crate::errors::error_logging::log_internal_error(
-                                        &e,
-                                        "handle_delete_recipe_confirmation",
-                                        "Failed to delete confirmation message",
-                                        Some(chat_id.0),
-                                    );
-                                }
-                            }
-                        }
+            // The confirmation goes in every case
+            if let MaybeInaccessibleMessage::Regular(msg) = msg {
+                if let Err(e) = bot.delete_message(chat_id, msg.id).await {
+                    error_logging::log_internal_error(
+                        &e,
+                        "handle_delete_recipe_confirmation",
+                        "Failed to delete confirmation message",
+                        Some(chat_id.0),
+                    );
+                }
+            }
+            let card = original_message_id.map(teloxide::types::MessageId);
 
-                        // Also delete the original recipe message
-                        if let Some(original_msg_id) = original_message_id {
-                            match bot
-                                .delete_message(
-                                    chat_id,
-                                    teloxide::types::MessageId(original_msg_id),
-                                )
-                                .await
-                            {
-                                Ok(_) => (),
-                                Err(e) => {
-                                    crate::errors::error_logging::log_internal_error(
-                                        &e,
-                                        "handle_delete_recipe_confirmation",
-                                        "Failed to delete original recipe message",
-                                        Some(chat_id.0),
-                                    );
-                                }
-                            }
-                        }
-
-                        let message =
-                            t_lang(localization, "recipe-not-found", language_code.as_deref());
-                        bot.send_message(chat_id, message).await?;
+            match result {
+                Ok(true) => {
+                    // The card becomes the history line "🗑️ « X » supprimée", without buttons
+                    let line = t_args_lang(
+                        localization,
+                        "recipe-deleted-line",
+                        &[("name", name.as_deref().unwrap_or(""))],
+                        language_code.as_deref(),
+                    );
+                    let edited = match card {
+                        Some(card) => bot
+                            .edit_message_text(chat_id, card, line.clone())
+                            .reply_markup(InlineKeyboardMarkup::default())
+                            .await
+                            .is_ok(),
+                        None => false,
+                    };
+                    if !edited {
+                        bot.send_message(chat_id, line)
+                            .disable_notification(true)
+                            .await?;
                     }
                 }
+                Ok(false) => {
+                    // Already gone: its card goes too, the message stays until the next action
+                    if let Some(card) = card {
+                        let _ = bot.delete_message(chat_id, card).await;
+                    }
+                    let message =
+                        t_lang(localization, "recipe-not-found", language_code.as_deref());
+                    keep.push(bot.send_message(chat_id, message).await?.id);
+                }
                 Err(e) => {
-                    // Database error - show error and delete both messages
-                    if let MaybeInaccessibleMessage::Regular(msg) = msg {
-                        match bot.delete_message(chat_id, msg.id).await {
-                            Ok(_) => (),
-                            Err(e) => {
-                                crate::errors::error_logging::log_internal_error(
-                                    &e,
-                                    "handle_delete_recipe_confirmation",
-                                    "Failed to delete confirmation message",
-                                    Some(chat_id.0),
-                                );
-                            }
-                        }
-                    }
-
-                    // Also delete the original recipe message
-                    if let Some(original_msg_id) = original_message_id {
-                        match bot
-                            .delete_message(chat_id, teloxide::types::MessageId(original_msg_id))
-                            .await
-                        {
-                            Ok(_) => (),
-                            Err(e) => {
-                                crate::errors::error_logging::log_internal_error(
-                                    &e,
-                                    "handle_delete_recipe_confirmation",
-                                    "Failed to delete original recipe message",
-                                    Some(chat_id.0),
-                                );
-                            }
-                        }
-                    }
-
+                    // Nothing deleted: the card stays, the error until the next action
                     error_logging::log_database_error(
                         &e,
                         "delete_recipe",
@@ -352,7 +293,7 @@ pub async fn handle_delete_recipe_confirmation(
                             language_code.as_deref()
                         )
                     );
-                    bot.send_message(chat_id, message).await?;
+                    keep.push(bot.send_message(chat_id, message).await?.id);
                 }
             }
         }
@@ -379,7 +320,15 @@ pub async fn handle_delete_recipe_confirmation(
     // A delete done in the middle of another action (a rename, a review) leaves that action
     // running: its home message would hide the prompts the action still waits on
     if !dialogue.get().await?.is_some_and(|state| state.is_action()) {
-        send_home(bot, &pool, chat_id, localization, language_code.as_deref()).await;
+        crate::bot::home::send_home_keeping(
+            bot,
+            &pool,
+            chat_id,
+            &keep,
+            localization,
+            language_code.as_deref(),
+        )
+        .await;
     }
     Ok(())
 }

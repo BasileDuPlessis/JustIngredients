@@ -109,7 +109,6 @@ caption-invalid = Caption "{$caption}" is invalid, using default recipe name ins
 review-title = Review Your Ingredients
 review-description = Tap an ingredient to change its quantity or name, or to delete it, then confirm with ✅.
 review-confirm = Confirm and Save
-review-cancelled = Ingredient review cancelled. No ingredients were saved.
 review-no-ingredients = No ingredients remaining
 review-no-ingredients-help = All ingredients have been deleted. Add some with ➕, or cancel with ❌.
 review-empty-confirm = Add at least one ingredient with ➕ before confirming, or cancel with ❌.
@@ -176,14 +175,15 @@ back-to-recipes = Back to Recipes
 rename-recipe-title = Rename Recipe
 rename-recipe-instructions = Enter the new name for this recipe:
 current-recipe-name = Current name
-rename-recipe-success = Recipe renamed successfully
-rename-recipe-success-details = Recipe renamed from "{$old_name}" to "{$new_name}"
+recipe-created-title = Recipe “{$name}” created
+recipe-renamed-line = ✏️ “{$old_name}” renamed to “{$new_name}”
+recipe-edited-line = 📝 “{$name}” updated
+recipe-deleted-line = 🗑️ “{$name}” deleted
 delete-recipe-title = Delete Recipe
 delete-recipe-confirmation = Are you sure you want to delete this recipe? This action cannot be undone.
 recipe-deleted = Recipe deleted successfully
 recipe-deleted-help = The recipe and all its ingredients have been permanently removed.
 delete-cancelled = Recipe deletion cancelled
-rename-cancelled = Renaming cancelled. The recipe keeps its name.
 
 # Recipe viewing messages
 recipe-not-found = Recipe not found

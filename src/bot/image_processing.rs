@@ -99,6 +99,29 @@ async fn fetch_file_bytes(
     Ok(bytes.into())
 }
 
+/// A photo that gave no review: the photo and the bot's answer stay until the next action ends.
+/// With no action running, the recipe list comes back below them; a review still open keeps its
+/// messages and the list where they are.
+async fn end_failed_photo(
+    bot: &Bot,
+    pool: &PgPool,
+    chat_id: ChatId,
+    dialogue: &RecipeDialogue,
+    keep: &[teloxide::types::MessageId],
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) {
+    let in_action = matches!(dialogue.get().await, Ok(Some(state)) if state.is_action());
+    if in_action {
+        for id in keep {
+            crate::bot::cleanup::track(chat_id, *id).await;
+        }
+    } else {
+        crate::bot::home::send_home_keeping(bot, pool, chat_id, keep, localization, language_code)
+            .await;
+    }
+}
+
 pub async fn download_and_process_image(
     bot: &Bot,
     params: ImageProcessingParams<'_>,
@@ -110,7 +133,7 @@ pub async fn download_and_process_image(
         success_message,
         language_code,
         dialogue,
-        pool: _pool,
+        pool,
         caption,
         extractor,
         photo_message_id,
@@ -132,8 +155,20 @@ pub async fn download_and_process_image(
                     "error-download-failed"
                 }
             };
-            bot.send_message(chat_id, t_lang(localization, message_key, language_code))
+            let error_message = bot
+                .send_message(chat_id, t_lang(localization, message_key, language_code))
                 .await?;
+            let keep = [photo_message_id, error_message.id];
+            end_failed_photo(
+                bot,
+                &pool,
+                chat_id,
+                &dialogue,
+                &keep,
+                language_code,
+                localization,
+            )
+            .await;
             return Err(e);
         }
     };
@@ -162,6 +197,17 @@ pub async fn download_and_process_image(
                 t_lang(localization, extraction_error_key(&error), language_code),
             )
             .await?;
+            let keep = [photo_message_id, message_id];
+            end_failed_photo(
+                bot,
+                &pool,
+                chat_id,
+                &dialogue,
+                &keep,
+                language_code,
+                localization,
+            )
+            .await;
             return Err(anyhow::anyhow!("ingredient extraction failed: {error}"));
         }
     };
@@ -174,6 +220,17 @@ pub async fn download_and_process_image(
             t_lang(localization, "extraction-not-a-recipe", language_code),
         )
         .await?;
+        let keep = [photo_message_id, message_id];
+        end_failed_photo(
+            bot,
+            &pool,
+            chat_id,
+            &dialogue,
+            &keep,
+            language_code,
+            localization,
+        )
+        .await;
         return Ok(String::new());
     }
 
@@ -199,6 +256,17 @@ pub async fn download_and_process_image(
                 ));
         }
         edit_html(bot, chat_id, message_id, no_ingredients_msg).await?;
+        let keep = [photo_message_id, message_id];
+        end_failed_photo(
+            bot,
+            &pool,
+            chat_id,
+            &dialogue,
+            &keep,
+            language_code,
+            localization,
+        )
+        .await;
         return Ok(extracted_text);
     }
 

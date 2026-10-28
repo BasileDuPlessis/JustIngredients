@@ -310,7 +310,10 @@ edit its own messages at any time: older messages that should go are edited down
   at the bottom.
 
 ### Task U5.3: One line per action (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-28): creation card titled "✅ Recette « X » créée"; rename, edit (when
+  something changed) and delete lines, silent; the deleted recipe's card becomes its line; a
+  cancel leaves nothing; end-of-action errors and photos that gave no review stay until the next
+  action (`home::send_home_keeping`). Four replaced locale keys removed.
 - Description: a creation leaves the saved card titled "✅ Recette « X » créée"; rename, edit and
   delete leave "✏️ « X » renommée en « Y »", "📝 « X » modifiée", "🗑️ « X » supprimée", sent
   without notification; a cancelled creation leaves nothing; errors (not a recipe, daily limit,

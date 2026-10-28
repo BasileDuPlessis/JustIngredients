@@ -9,7 +9,6 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
-use teloxide::types::InlineKeyboardMarkup;
 use tracing::debug;
 
 // Import error logging utilities
@@ -673,8 +672,9 @@ async fn handle_cancel_review_button(
     .await
 }
 
-/// What ❌ and a typed cancel word both do: the review list becomes `review-cancelled` without
-/// buttons (a new message if it cannot be edited), the dialogue ends and the home message follows.
+/// What ❌ and a typed cancel word both do: a cancelled creation leaves nothing behind (the
+/// photo and the review list go with the action's messages), the dialogue ends and the recipe
+/// list comes back at the bottom.
 pub async fn cancel_review(
     bot: &Bot,
     localization: &Arc<crate::localization::LocalizationManager>,
@@ -684,25 +684,10 @@ pub async fn cancel_review(
     review_message_id: Option<teloxide::types::MessageId>,
     language_code: Option<&str>,
 ) -> Result<()> {
-    let cancelled = t_lang(localization, "review-cancelled", language_code);
-    // The list becomes the cancelled notice, which stays in the chat
     if let Some(id) = review_message_id {
-        cleanup::untrack(chat_id, id).await;
+        // Recorded since U5: taking it again is harmless and covers older reviews
+        cleanup::track(chat_id, id).await;
     }
-    let edited = match review_message_id {
-        Some(id) => bot
-            .edit_message_text(chat_id, id, cancelled.clone())
-            .reply_markup(InlineKeyboardMarkup::new(Vec::<
-                Vec<teloxide::types::InlineKeyboardButton>,
-            >::new()))
-            .await
-            .is_ok(),
-        None => false,
-    };
-    if !edited {
-        bot.send_message(chat_id, cancelled).await?;
-    }
-
     dialogue.exit().await?;
     send_home(bot, pool, chat_id, localization, language_code).await;
     Ok(())

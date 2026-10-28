@@ -150,16 +150,17 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
   later); **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
   with their names and stays in the review until they are edited or deleted. The review list is
   recorded for cleanup as soon as it is sent (with the photo), so a command that ends the review
-  deletes it too; a cancel keeps it as the `review-cancelled` notice. Then:
+  deletes it too, and so does a cancel. Then:
   - name from the caption or the page title: saved at once; the review loses its buttons; the
-    saved recipe card follows (`home::send_saved_recipe`: ✅ bold name, ingredients, recipe card
+    saved recipe card follows (`home::send_saved_recipe`: ✅ bold "Recette « X » créée", ingredients, recipe card
     buttons), then the [recipe list](#end-of-an-action-the-recipe-list-last);
   - otherwise: buttons removed, `recipe-name-prompt` sent, state
     `WaitingForRecipeNameAfterConfirm`. The typed name (a cancel word cancels; empty
     or over 255 bytes refused) is saved; the prompt is deleted with the review messages and the
     saved recipe card is sent, followed by the recipe list.
-- `cancel_review` (and a typed cancel word; both call `review_callbacks::cancel_review`): the
-  review list becomes `review-cancelled` without buttons, dialogue ended, recipe list sent again.
+- `cancel_review` (and a typed cancel word; both call `review_callbacks::cancel_review`): a
+  cancelled creation leaves nothing behind (photo, list and prompts deleted), dialogue ended,
+  recipe list sent again. The same for a cancel at the name prompt.
 - Older messages may still carry the post-save buttons that the home message replaced:
   📚 `workflow_list_recipes` (recipe list) and 🔍 `workflow_search_recipes` (answers
   `workflow-search-coming-soon`); both are still handled.
@@ -209,8 +210,14 @@ Before sending the list, `send_home` deletes what the action left behind (`bot::
 - the review message (ingredient list), recorded when it is sent, and the name prompt: after
   saving, the saved recipe card and the list remain.
 
-Kept: saved or cancelled notices, recipe cards and lists. A review cancelled with ❌ or a typed
-cancel word keeps its list edited to `review-cancelled`. Only recorded messages are deleted. The
+Kept (the history): recipe cards and one line per action (U5.3), sent without notification:
+the saved card titled "✅ Recette « X » créée", `recipe-renamed-line` ("✏️ « X » renommée en
+« Y »"), `recipe-edited-line` ("📝 « X » modifiée", only when something changed),
+`recipe-deleted-line` ("🗑️ « X » supprimée", which replaces the deleted recipe's card in place).
+A cancel leaves nothing. An error at the end of an action (recipe gone, database error) and a
+photo that gave no review (download or extraction error, not a recipe, no ingredients) stay above
+the list until the next action ends (`home::send_home_keeping`); while a review is open, the
+photo's answer just waits for the review's end. Only recorded messages are deleted. The
 records are message ids (never content) in the `chat_messages` table (kind `transient`, `list`,
 or `home` for older versions), so a deploy or a restart does not forget them; records older than 48 h are dropped
 without deleting (Telegram refuses them). A database error only leaves the messages in the chat.
@@ -230,8 +237,8 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   🗑️ `recipe_action:delete:<id>`, ⬅️ `back_to_recipes` (deletes the card message). The 📊
   statistics of older cards (`recipe_action:statistics:<id>`) are retired.
 - **Rename**: prompt, state `RenamingRecipe`, typed name saved with `update_recipe_name`
-  (cancel words answer `rename-cancelled`); an empty or too long name is refused and the prompt
-  stays open.
+  (a cancel word leaves nothing); an empty or too long name is refused and the prompt stays
+  open. A rename leaves `recipe-renamed-line`.
 - **Edit ingredients**: state `EditingSavedIngredients` with the review keyboard and the same
   ingredient menu; 🔢, 🏷️ and ✏️ open `EditingSavedIngredient` (typed quantity, name or line,
   `cancel_ingredient_editing`). Saved ingredients without quantity stay without quantity (they
@@ -242,8 +249,9 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   drops them and shows the card again; ✅ on an emptied list gets `review-empty-confirm`. Other
   typed text outside the prompts answers `use-buttons-instruction`.
 - **Delete**: confirmation with `confirm_delete_recipe:<id>:<card message id>` and
-  `cancel_delete_recipe:<id>:<card message id>`; confirming deletes the recipe, its ingredients,
-  the confirmation and the card; cancelling deletes the confirmation only (the card stays).
+  `cancel_delete_recipe:<id>:<card message id>`; confirming deletes the recipe, its ingredients
+  and the confirmation, and turns the card into `recipe-deleted-line` (no buttons); cancelling
+  deletes the confirmation only (the card stays).
 - Recipe lookups and card ingredients are read from the database each time (no cache), so a card
   opened right after a rename, edit or delete shows the new data.
 

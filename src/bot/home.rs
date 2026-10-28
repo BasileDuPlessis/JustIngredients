@@ -41,7 +41,23 @@ pub async fn send_home(
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
 ) {
+    send_home_keeping(bot, pool, chat_id, &[], localization, language_code).await;
+}
+
+/// Like [`send_home`], but the messages in `keep` (an error the user must read, the photo it is
+/// about) stay above the new list, and go when the next action ends.
+pub async fn send_home_keeping(
+    bot: &Bot,
+    pool: &sqlx::PgPool,
+    chat_id: ChatId,
+    keep: &[teloxide::types::MessageId],
+    localization: &Arc<LocalizationManager>,
+    language_code: Option<&str>,
+) {
     cleanup::delete_tracked(bot, chat_id).await;
+    for id in keep {
+        cleanup::track(chat_id, *id).await;
+    }
     send_list(bot, pool, chat_id, localization, language_code).await;
 }
 

@@ -104,7 +104,6 @@ recipe-complete = ✅ Recette "{$recipe_name}" sauvegardée avec succès avec {$
 review-title = Révisez vos ingrédients
 review-description = Touchez un ingrédient pour changer sa quantité, son nom ou le supprimer, puis validez avec ✅.
 review-confirm = Confirmer et sauvegarder
-review-cancelled = Révision des ingrédients annulée. Aucun ingrédient n'a été sauvegardé.
 review-no-ingredients = Aucun ingrédient restant
 review-no-ingredients-help = Tous les ingrédients ont été supprimés. Ajoutez-en avec ➕, ou annulez avec ❌.
 review-empty-confirm = Ajoutez au moins un ingrédient avec ➕ avant de valider, ou annulez avec ❌.
@@ -176,9 +175,10 @@ delete-recipe-confirmation = Êtes-vous sûr de vouloir supprimer cette recette 
 recipe-deleted = Recette supprimée avec succès
 recipe-deleted-help = La recette et tous ses ingrédients ont été supprimés définitivement.
 delete-cancelled = Suppression de recette annulée
-rename-cancelled = Renommage annulé. La recette garde son nom.
-rename-recipe-success = Recette renommée avec succès
-rename-recipe-success-details = Recette renommée de "{$old_name}" à "{$new_name}"
+recipe-created-title = Recette « {$name} » créée
+recipe-renamed-line = ✏️ « {$old_name} » renommée en « {$new_name} »
+recipe-edited-line = 📝 « {$name} » modifiée
+recipe-deleted-line = 🗑️ « {$name} » supprimée
 
 # Messages de consultation des recettes
 # Messages de visualisation de recette

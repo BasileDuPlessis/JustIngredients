@@ -10,7 +10,7 @@ use teloxide::prelude::*;
 use crate::errors::error_logging;
 
 // Import localization
-use crate::localization::t_lang;
+use crate::localization::{t_args_lang, t_lang};
 
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
@@ -513,6 +513,9 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
     let changes =
         crate::ingredient_editing::detect_ingredient_changes(original_ingredients, current_matches);
 
+    // The history line of the edit, when something changed
+    let mut edited_line: Option<String> = None;
+
     // Apply changes to database
     if !changes.to_update.is_empty() || !changes.to_add.is_empty() || !changes.to_delete.is_empty()
     {
@@ -619,6 +622,12 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         let recipe_name = recipe
             .recipe_name
             .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
+        edited_line = Some(t_args_lang(
+            ctx.localization,
+            "recipe-edited-line",
+            &[("name", recipe_name.as_str())],
+            language_code.as_deref(),
+        ));
         let recipe_message = render_recipe_summary(
             &recipe_name,
             &updated_matches,
@@ -756,6 +765,12 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
     // End the dialogue
     dialogue.exit().await?;
     if let Some(message) = &q.message {
+        if let Some(line) = edited_line {
+            ctx.bot
+                .send_message(message.chat().id, line)
+                .disable_notification(true)
+                .await?;
+        }
         send_home(
             ctx.bot,
             pool,

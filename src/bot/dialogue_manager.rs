@@ -244,12 +244,7 @@ async fn handle_recipe_name_cancellation(
     localization: &Arc<crate::localization::LocalizationManager>,
     language_code: Option<&str>,
 ) -> Result<()> {
-    // User cancelled, end dialogue without saving
-    bot.send_message(
-        msg.chat.id,
-        t_lang(localization, "review-cancelled", language_code),
-    )
-    .await?;
+    // A cancelled creation leaves nothing behind: the prompt and the review go
     dialogue.exit().await?;
     // The name prompt is the saved notice only when a name is given
     if let Some(id) = prompt_message_id {
@@ -444,15 +439,7 @@ pub async fn handle_recipe_rename_input(
 
     // Check for cancellation commands
     if is_cancellation_command(&input) {
-        bot.send_message(
-            msg.chat.id,
-            t_lang(
-                handler_ctx.localization,
-                "rename-cancelled",
-                handler_ctx.language_code,
-            ),
-        )
-        .await?;
+        // A cancel leaves nothing behind: the prompt goes and the list comes back
         dialogue.exit().await?;
         send_home(
             bot,
@@ -476,23 +463,19 @@ pub async fn handle_recipe_rename_input(
                 }
                 None => Ok(false),
             };
+            // The history keeps one line for a rename; an error stays until the next action
+            let mut keep = Vec::new();
             match rename_result {
                 Ok(true) => {
-                    let success_message = format!(
-                        "✅ {}\n\n{}",
-                        t_lang(
-                            handler_ctx.localization,
-                            "rename-recipe-success",
-                            handler_ctx.language_code
-                        ),
-                        t_args_lang(
-                            handler_ctx.localization,
-                            "rename-recipe-success-details",
-                            &[("old_name", &current_name), ("new_name", validated_name)],
-                            handler_ctx.language_code
-                        )
+                    let line = t_args_lang(
+                        handler_ctx.localization,
+                        "recipe-renamed-line",
+                        &[("old_name", &current_name), ("new_name", validated_name)],
+                        handler_ctx.language_code,
                     );
-                    bot.send_message(msg.chat.id, success_message).await?;
+                    bot.send_message(msg.chat.id, line)
+                        .disable_notification(true)
+                        .await?;
                 }
                 Ok(false) => {
                     let message = t_lang(
@@ -500,7 +483,7 @@ pub async fn handle_recipe_rename_input(
                         "recipe-not-found",
                         handler_ctx.language_code,
                     );
-                    bot.send_message(msg.chat.id, message).await?;
+                    keep.push(bot.send_message(msg.chat.id, message).await?.id);
                 }
                 Err(e) => {
                     error_logging::log_database_error(
@@ -525,9 +508,20 @@ pub async fn handle_recipe_rename_input(
                             handler_ctx.language_code
                         )
                     );
-                    bot.send_message(msg.chat.id, message).await?;
+                    keep.push(bot.send_message(msg.chat.id, message).await?.id);
                 }
             }
+            dialogue.exit().await?;
+            super::home::send_home_keeping(
+                bot,
+                pool,
+                msg.chat.id,
+                &keep,
+                handler_ctx.localization,
+                handler_ctx.language_code,
+            )
+            .await;
+            Ok(())
         }
         Err(AppError::Validation(error_msg)) if error_msg == "empty" => {
             send_transient(
@@ -541,7 +535,7 @@ pub async fn handle_recipe_rename_input(
             )
             .await?;
             // Keep the dialogue: the user can type another name
-            return Ok(());
+            Ok(())
         }
         Err(AppError::Validation(error_msg)) if error_msg == "too_long" => {
             send_transient(
@@ -555,7 +549,7 @@ pub async fn handle_recipe_rename_input(
             )
             .await?;
             // Keep the dialogue: the user can type another name
-            return Ok(());
+            Ok(())
         }
         Err(_) => {
             send_transient(
@@ -569,21 +563,9 @@ pub async fn handle_recipe_rename_input(
             )
             .await?;
             // Keep the dialogue: the user can type another name
-            return Ok(());
+            Ok(())
         }
     }
-
-    // End the dialogue
-    dialogue.exit().await?;
-    send_home(
-        bot,
-        pool,
-        msg.chat.id,
-        handler_ctx.localization,
-        handler_ctx.language_code,
-    )
-    .await;
-    Ok(())
 }
 
 /// Check if input is a cancellation command
