@@ -844,7 +844,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 
 ### IMP-037: `docs/schema.sql` does not match the live migration
 - [x] Done
-- Status: Done (2026-10-28): `docs/schema.sql` regenerated with `pg_dump --schema-only` from a database created by migrations 1 and 2; loading it into an empty database and starting the app passes the schema validation. The old dump showed the same `ingredients_recipe_id_fkey` name, so migration 2 replaces it there too. Left: checking the production schema for leftovers (`ocr_entries`, `ingredients.ocr_entry_id`) needs the owner's go-ahead.
+- Status: Done (2026-10-28): `docs/schema.sql` regenerated with `pg_dump --schema-only` from a database created by migrations 1 and 2; loading it into an empty database and starting the app passes the schema validation. The old dump showed the same `ingredients_recipe_id_fkey` name, so migration 2 replaces it there too. Production checked by the owner on 2026-10-28 (read-only catalog queries): schema version 1, tables `users`, `recipes`, `ingredients`, `schema_migrations` only, no `ocr_entries` nor `ocr_entry_id`, one foreign key per column (`ingredients_recipe_id_fkey`, `ingredients_user_id_fkey`), so it matches migration 1 and migration 2 will apply as on staging.
 - Priority: P3. Effort: S. Area: Docs.
 - Location: `docs/schema.sql` (`ocr_entries` table, `ingredients.ocr_entry_id`,
   `ingredients.recipe_name`, duplicated `*_fkey1` constraints) vs `src/db.rs:1300-1349`.
