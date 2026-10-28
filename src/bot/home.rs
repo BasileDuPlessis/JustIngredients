@@ -24,8 +24,9 @@ pub async fn send_saved_recipe(
 ) {
     let card = render_saved_recipe(recipe_name, ingredients, language_code, localization);
     let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
-    if let Err(e) = send_html(bot, chat_id, card).reply_markup(keyboard).await {
-        warn!(error = %e, "Failed to send the saved recipe card");
+    match send_html(bot, chat_id, card).reply_markup(keyboard).await {
+        Ok(sent) => cleanup::record_card(chat_id, sent.id, recipe_id).await,
+        Err(e) => warn!(error = %e, "Failed to send the saved recipe card"),
     }
 }
 

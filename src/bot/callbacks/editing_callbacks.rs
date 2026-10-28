@@ -638,31 +638,53 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         let keyboard =
             create_recipe_details_keyboard(recipe_id, language_code.as_deref(), ctx.localization);
 
-        // Update the message to show the updated recipe
-        match edit_html(
-            ctx.bot,
-            q.message
-                .as_ref()
-                .expect("Callback query should have a message")
-                .chat()
-                .id,
-            q.message
-                .as_ref()
-                .expect("Callback query should have a message")
-                .id(),
-            recipe_message,
-        )
-        .reply_markup(keyboard)
-        .await
-        {
-            Ok(_) => (),
-            Err(e) => {
-                error_logging::log_internal_error(
-                    &e,
-                    "handle_confirm_saved_ingredients_button",
-                    "Failed to update message with recipe details after confirmation",
-                    Some(q.from.id.0 as i64),
-                );
+        // The recorded cards of the recipe get the new ingredients and the editing view goes;
+        // without one (older cards), the editing view becomes the card
+        let refreshed = match &q.message {
+            Some(message) => {
+                crate::bot::cards::refresh_cards(
+                    ctx.bot,
+                    pool,
+                    message.chat().id,
+                    telegram_id,
+                    recipe_id,
+                    language_code.as_deref(),
+                    ctx.localization,
+                )
+                .await
+            }
+            None => false,
+        };
+        if !refreshed {
+            // Update the message to show the updated recipe
+            match edit_html(
+                ctx.bot,
+                q.message
+                    .as_ref()
+                    .expect("Callback query should have a message")
+                    .chat()
+                    .id,
+                q.message
+                    .as_ref()
+                    .expect("Callback query should have a message")
+                    .id(),
+                recipe_message,
+            )
+            .reply_markup(keyboard)
+            .await
+            {
+                Ok(_) => (),
+                Err(e) => {
+                    error_logging::log_internal_error(
+                        &e,
+                        "handle_confirm_saved_ingredients_button",
+                        "Failed to update message with recipe details after confirmation",
+                        Some(q.from.id.0 as i64),
+                    );
+                }
+            }
+            if let Some(message) = &q.message {
+                crate::bot::cleanup::record_card(message.chat().id, message.id(), recipe_id).await;
             }
         }
     } else {
@@ -733,31 +755,43 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         let keyboard =
             create_recipe_details_keyboard(recipe_id, language_code.as_deref(), ctx.localization);
 
-        // Update the message to show the recipe details
-        match edit_html(
-            ctx.bot,
-            q.message
-                .as_ref()
-                .expect("Callback query should have a message")
-                .chat()
-                .id,
-            q.message
-                .as_ref()
-                .expect("Callback query should have a message")
-                .id(),
-            recipe_message,
-        )
-        .reply_markup(keyboard)
-        .await
-        {
-            Ok(_) => (),
-            Err(e) => {
-                error_logging::log_internal_error(
-                    &e,
-                    "handle_confirm_saved_ingredients_button",
-                    "Failed to update message with recipe details after confirmation (no changes)",
-                    Some(q.from.id.0 as i64),
-                );
+        // Nothing changed: with a recorded card the editing view just goes
+        let has_card = match &q.message {
+            Some(message) => !crate::bot::cleanup::recipe_cards(message.chat().id, recipe_id)
+                .await
+                .is_empty(),
+            None => false,
+        };
+        if !has_card {
+            // Update the message to show the recipe details
+            match edit_html(
+                ctx.bot,
+                q.message
+                    .as_ref()
+                    .expect("Callback query should have a message")
+                    .chat()
+                    .id,
+                q.message
+                    .as_ref()
+                    .expect("Callback query should have a message")
+                    .id(),
+                recipe_message,
+            )
+            .reply_markup(keyboard)
+            .await
+            {
+                Ok(_) => (),
+                Err(e) => {
+                    error_logging::log_internal_error(
+                        &e,
+                        "handle_confirm_saved_ingredients_button",
+                        "Failed to update message with recipe details after confirmation (no changes)",
+                        Some(q.from.id.0 as i64),
+                    );
+                }
+            }
+            if let Some(message) = &q.message {
+                crate::bot::cleanup::record_card(message.chat().id, message.id(), recipe_id).await;
             }
         }
     }
@@ -809,9 +843,10 @@ async fn handle_cancel_saved_ingredients_button(
     .await
 }
 
-/// What ❌ and a typed cancel word both do while a saved recipe's ingredients are edited: the
-/// list goes back to the recipe card as saved (nothing written), the editing ends and the home
-/// message follows. A recipe deleted meanwhile just ends the editing.
+/// What ❌ and a typed cancel word both do while a saved recipe's ingredients are edited: nothing
+/// is written, the editing view goes (or turns back into the card when the recipe has no
+/// recorded card), the editing ends and the recipe list follows. A recipe deleted meanwhile just
+/// ends the editing.
 pub async fn cancel_saved_editing(
     bot: &Bot,
     localization: &Arc<crate::localization::LocalizationManager>,
@@ -827,8 +862,17 @@ pub async fn cancel_saved_editing(
         ..
     }) = dialogue.get().await?
     {
-        if let Some(recipe) = crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await?
-        {
+        // With a recorded card of the recipe (U5.4), the editing view just goes with the action;
+        // otherwise it turns back into the card
+        let has_card = !crate::bot::cleanup::recipe_cards(chat_id, recipe_id)
+            .await
+            .is_empty();
+        let recipe = if has_card {
+            None
+        } else {
+            crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await?
+        };
+        if let Some(recipe) = recipe {
             let ingredients =
                 crate::db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
             let measurement_matches =
@@ -858,6 +902,8 @@ pub async fn cancel_saved_editing(
                 );
                 // Fallback: delete the message
                 let _ = bot.delete_message(chat_id, message_id).await;
+            } else {
+                crate::bot::cleanup::record_card(chat_id, message_id, recipe_id).await;
             }
         }
     }

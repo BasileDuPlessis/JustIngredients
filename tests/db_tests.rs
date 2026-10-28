@@ -1125,3 +1125,42 @@ async fn chat_messages_older_than_48_hours_are_not_deletable(pool: PgPool) -> Re
     );
     Ok(())
 }
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn recipe_cards_are_found_per_chat_and_recipe(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    record_chat_message(&pool, 42, 20, "card", Some(7)).await?;
+    record_chat_message(&pool, 42, 21, "card", Some(8)).await?;
+    record_chat_message(&pool, 42, 25, "card", Some(7)).await?;
+    record_chat_message(&pool, 9, 30, "card", Some(7)).await?;
+    record_chat_message(&pool, 42, 26, "transient", None).await?;
+
+    let ids = |messages: Vec<ChatMessage>| -> Vec<i32> {
+        messages.iter().map(|message| message.message_id).collect()
+    };
+    assert_eq!(
+        ids(find_recipe_messages(&pool, 42, "card", 7).await?),
+        vec![20, 25]
+    );
+    // Finding does not take: they are still recorded
+    assert_eq!(
+        ids(find_recipe_messages(&pool, 42, "card", 7).await?),
+        vec![20, 25]
+    );
+    assert_eq!(
+        ids(find_recipe_messages(&pool, 9, "card", 7).await?),
+        vec![30]
+    );
+
+    // A transient message turned into a card (the editing view kept as the card)
+    record_chat_message(&pool, 42, 26, "card", Some(8)).await?;
+    assert_eq!(
+        ids(find_recipe_messages(&pool, 42, "card", 8).await?),
+        vec![21, 26]
+    );
+    assert!(take_chat_messages(&pool, 42, &["transient"])
+        .await?
+        .is_empty());
+    Ok(())
+}

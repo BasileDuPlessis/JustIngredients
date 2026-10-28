@@ -229,28 +229,37 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   when they were saved the same day (Paris). Two recipes with the same name are two entries. Callback data `recipe_instance:<id>`. Pagination row: ⬅️ `page:<n>`, "Page x of y"
   (`noop`, ignored), ➡️ `page:<n>`; it edits the list message, and a page past the end (recipes
   deleted meanwhile) shows the last one.
-- **Selection** (owner = callback sender): `recipe_instance:<id>` opens the card; a recipe that
-  is gone or another user's answers `recipe-not-found`. Older lists grouped by name
+- **Selection** (owner = callback sender): `recipe_instance:<id>` opens the card
+  (`cards::show_card`): the recipe's earlier card goes (one card per recipe; older than 48 h it
+  only loses its buttons), the card is sent and recorded (`chat_messages`, kind `card` with the
+  recipe id), and the list moves below it. A recipe that is gone or another user's answers
+  `recipe-not-found` until the next action. Older lists grouped by name
   (`select_recipe:`, `select_recipe_h:`) are retired buttons.
 - **Recipe card**: name, creation date (user's language, Paris time: `format_recipe_date`), ingredients. Buttons:
   ✏️ `recipe_action:rename:<id>`, 📝 `recipe_action:edit_ingredients:<id>`, then
-  🗑️ `recipe_action:delete:<id>`, ⬅️ `back_to_recipes` (deletes the card message). The 📊
+  🗑️ `recipe_action:delete:<id>`, ⬅️ `back_to_recipes` (deletes the card message and its
+  record). The 📊
   statistics of older cards (`recipe_action:statistics:<id>`) are retired.
 - **Rename**: prompt, state `RenamingRecipe`, typed name saved with `update_recipe_name`
   (a cancel word leaves nothing); an empty or too long name is refused and the prompt stays
-  open. A rename leaves `recipe-renamed-line`.
-- **Edit ingredients**: state `EditingSavedIngredients` with the review keyboard and the same
+  open. A rename updates the recipe's recorded cards in place (`cards::refresh_cards`) and leaves
+  `recipe-renamed-line`.
+- **Edit ingredients**: a separate editing view, recorded as transient (it goes when the edit
+  ends); state `EditingSavedIngredients` with the review keyboard and the same
   ingredient menu; 🔢, 🏷️ and ✏️ open `EditingSavedIngredient` (typed quantity, name or line,
   `cancel_ingredient_editing`). Saved ingredients without quantity stay without quantity (they
   were shown and could be saved as "1"). ➕ `add_ingredient` opens
   `AddingIngredientToSavedRecipe` (typed line), 🗑️ removes, ✅ `confirm` writes the differences
-  in one transaction (`db::apply_ingredient_changes`: exact values, so a quantity can be cleared),
+  in one transaction (`db::apply_ingredient_changes`: exact values, so a quantity can be cleared)
+  and updates the recipe's recorded cards in place; a recipe without a recorded card (shown
+  before U5.4) gets the editing view turned into its card instead,
   ❌ `cancel_review` (or a typed cancel word, both `editing_callbacks::cancel_saved_editing`)
   drops them and shows the card again; ✅ on an emptied list gets `review-empty-confirm`. Other
   typed text outside the prompts answers `use-buttons-instruction`.
 - **Delete**: confirmation with `confirm_delete_recipe:<id>:<card message id>` and
   `cancel_delete_recipe:<id>:<card message id>`; confirming deletes the recipe, its ingredients
-  and the confirmation, and turns the card into `recipe-deleted-line` (no buttons); cancelling
+  and the confirmation, turns the card into `recipe-deleted-line` (no buttons, no longer a
+  recorded card) and removes any other card of the recipe; cancelling
   deletes the confirmation only (the card stays).
 - Recipe lookups and card ingredients are read from the database each time (no cache), so a card
   opened right after a rename, edit or delete shows the new data.

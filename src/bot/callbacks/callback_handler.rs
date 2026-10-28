@@ -15,12 +15,6 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 // Import recipe callbacks module
 use super::recipe_callbacks;
 
-// Import UI builder functions
-use crate::bot::ui_builder::{create_recipe_details_keyboard, render_recipe_card};
-
-// Import database functions
-// (using cached versions where available)
-
 // Import workflow callbacks module
 use super::workflow_callbacks;
 
@@ -502,39 +496,17 @@ async fn handle_recipe_selection_by_id(
         }
     };
 
-    // Get recipe details using cached function
-    let recipe = match crate::db::read_recipe_with_name(&pool, telegram_id, recipe_id).await? {
-        Some(recipe) => recipe,
-        None => {
-            let message = t_lang(localization, "recipe-not-found", language_code.as_deref());
-            bot.send_message(chat_id, message).await?;
-            return Ok(());
-        }
-    };
-
-    // Get ingredients using cached function
-    let ingredients = crate::db::get_recipe_ingredients(&pool, telegram_id, recipe_id).await?;
-
-    let message = render_recipe_card(
-        recipe
-            .recipe_name
-            .as_ref()
-            .map(|s| s.as_str())
-            .unwrap_or("Unnamed Recipe"),
-        recipe.created_at,
-        &ingredients,
+    // One card per recipe, the list below it (U5.4)
+    crate::bot::cards::show_card(
+        bot,
+        &pool,
+        chat_id,
+        telegram_id,
+        recipe_id,
         language_code.as_deref(),
         localization,
-    );
-
-    let keyboard =
-        create_recipe_details_keyboard(recipe_id, language_code.as_deref(), localization);
-
-    send_html(bot, chat_id, message)
-        .reply_markup(keyboard)
-        .await?;
-
-    Ok(())
+    )
+    .await
 }
 
 #[cfg(test)]

@@ -23,6 +23,8 @@ const TRANSIENT: &str = "transient";
 const HOME: &str = "home";
 /// The recipe list at the bottom: replaced when the next action ends.
 const LIST: &str = "list";
+/// A recipe card in the history: one per recipe, kept current (U5.4).
+const CARD: &str = "card";
 
 /// `deleteMessages` accepts at most 100 ids per call.
 const DELETE_BATCH: usize = 100;
@@ -65,7 +67,7 @@ async fn delete_or_strip(bot: &Bot, chat: ChatId, messages: Vec<crate::db::ChatM
         let id = MessageId(message.message_id);
         if message.deletable {
             ids.push(id);
-        } else if message.kind == LIST || message.kind == HOME {
+        } else if message.kind == LIST || message.kind == HOME || message.kind == CARD {
             if let Err(e) = bot.edit_message_reply_markup(chat, id).await {
                 debug!(error = %e, "Could not remove the buttons of an old list");
             }
@@ -119,6 +121,49 @@ async fn delete(bot: &Bot, chat: ChatId, ids: Vec<MessageId>) {
         if let Err(e) = bot.delete_messages(chat, batch.to_vec()).await {
             debug!(error = %e, count = batch.len(), "Could not delete the messages of the action");
         }
+    }
+}
+
+/// Remembers a recipe card just sent, so it can be updated, replaced or turned into a line.
+pub async fn record_card(chat: ChatId, id: MessageId, recipe_id: i64) {
+    let Some(pool) = pool() else { return };
+    if let Err(e) = crate::db::record_chat_message(pool, chat.0, id.0, CARD, Some(recipe_id)).await
+    {
+        debug!(error = %e, "Could not record a recipe card");
+    }
+}
+
+/// The recorded cards of a recipe, oldest first: (message, still deletable).
+pub async fn recipe_cards(chat: ChatId, recipe_id: i64) -> Vec<(MessageId, bool)> {
+    let Some(pool) = pool() else {
+        return Vec::new();
+    };
+    match crate::db::find_recipe_messages(pool, chat.0, CARD, recipe_id).await {
+        Ok(cards) => cards
+            .into_iter()
+            .map(|card| (MessageId(card.message_id), card.deletable))
+            .collect(),
+        Err(e) => {
+            debug!(error = %e, "Could not read the cards of a recipe");
+            Vec::new()
+        }
+    }
+}
+
+/// Removes the recorded cards of a recipe (except `keep`): deleted, or stripped of their
+/// buttons when Telegram no longer allows deleting them, and forgotten.
+pub async fn remove_recipe_cards(bot: &Bot, chat: ChatId, recipe_id: i64, keep: Option<MessageId>) {
+    for (id, deletable) in recipe_cards(chat, recipe_id).await {
+        if Some(id) == keep {
+            continue;
+        }
+        untrack(chat, id).await;
+        let message = crate::db::ChatMessage {
+            message_id: id.0,
+            kind: CARD.to_string(),
+            deletable,
+        };
+        delete_or_strip(bot, chat, vec![message]).await;
     }
 }
 

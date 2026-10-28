@@ -262,6 +262,11 @@ pub async fn handle_delete_recipe_confirmation(
                             .disable_notification(true)
                             .await?;
                     }
+                    // The line is history, not a card; any other card of the recipe goes
+                    crate::bot::cleanup::remove_recipe_cards(bot, chat_id, recipe_id, card).await;
+                    if let Some(card) = card {
+                        crate::bot::cleanup::untrack(chat_id, card).await;
+                    }
                 }
                 Ok(false) => {
                     // Already gone: its card goes too, the message stays until the next action
@@ -414,6 +419,8 @@ async fn handle_edit_ingredients_callback(
     let sent_message = send_html(bot, chat_id, edit_message)
         .reply_markup(keyboard)
         .await?;
+    // The editing view goes when the edit ends: the recipe's card is updated instead (U5.4)
+    crate::bot::cleanup::track(chat_id, sent_message.id).await;
 
     // Transition to editing state
     dialogue

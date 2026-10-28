@@ -1288,6 +1288,35 @@ pub async fn take_chat_messages(
     Ok(messages)
 }
 
+/// The recorded messages of `chat` of `kind` about `recipe_id` (the cards of a recipe), oldest
+/// first, still recorded.
+pub async fn find_recipe_messages(
+    pool: &PgPool,
+    chat_id: i64,
+    kind: &str,
+    recipe_id: i64,
+) -> Result<Vec<ChatMessage>> {
+    let rows = sqlx::query(
+        "SELECT message_id, kind, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable \
+         FROM chat_messages WHERE chat_id = $1 AND kind = $2 AND recipe_id = $3 ORDER BY message_id",
+    )
+    .bind(chat_id)
+    .bind(kind)
+    .bind(recipe_id)
+    .fetch_all(pool)
+    .await
+    .context("Failed to read the messages of a recipe")?;
+    Ok(rows
+        .iter()
+        .map(|row| ChatMessage {
+            message_id: i32::try_from(row.get::<i64, _>("message_id")).unwrap_or(0),
+            kind: row.get("kind"),
+            deletable: row.get("deletable"),
+        })
+        .filter(|message| message.message_id > 0)
+        .collect())
+}
+
 /// Database migration system
 pub mod migrations {
     use super::*;

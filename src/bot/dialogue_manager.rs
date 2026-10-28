@@ -467,6 +467,19 @@ pub async fn handle_recipe_rename_input(
             let mut keep = Vec::new();
             match rename_result {
                 Ok(true) => {
+                    // The cards already shown get the new name
+                    if let Some(user) = msg.from.as_ref() {
+                        super::cards::refresh_cards(
+                            bot,
+                            pool,
+                            msg.chat.id,
+                            user.id.0 as i64,
+                            recipe_id,
+                            handler_ctx.language_code,
+                            handler_ctx.localization,
+                        )
+                        .await;
+                    }
                     let line = t_args_lang(
                         handler_ctx.localization,
                         "recipe-renamed-line",

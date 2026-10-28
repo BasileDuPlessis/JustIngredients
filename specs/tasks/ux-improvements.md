@@ -321,7 +321,12 @@ edit its own messages at any time: older messages that should go are edited down
 - How to validate: renderer tests of each line in fr and en; manual run of each action.
 
 ### Task U5.4: One card per recipe, always current (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-28): `bot/cards.rs` (`show_card`, `refresh_cards`), cards recorded with
+  their recipe (`chat_messages`, `find_recipe_messages`). Opening replaces the earlier card and
+  moves the list below; rename and edit update the cards in place; the editing view of a saved
+  recipe is now transient (before, it became a second card and the first one kept the old
+  ingredients); a delete turns its card into the line and removes the others; ⬅️ forgets the
+  card. DB test of the card records; the rest is checked manually on staging.
 - Description: cards are recorded with their recipe id. Opening a recipe deletes its previous
   card (or strips its buttons after 48 hours) and sends the card above the list; a rename or an
   edit updates every recorded card of the recipe in place; a delete turns the card into the

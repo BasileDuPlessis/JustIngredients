@@ -36,7 +36,8 @@ pub async fn handle_back_to_recipes(
         }
     };
 
-    // Simply delete the message - no database queries, no content regeneration
+    // The card leaves the history: forget it, then delete it
+    crate::bot::cleanup::untrack(chat_id, message_id).await;
     if let Err(e) = bot.delete_message(chat_id, message_id).await {
         debug!("Failed to delete message: {:?}", e);
         // If deletion fails, just ignore - the message might already be deleted or inaccessible
