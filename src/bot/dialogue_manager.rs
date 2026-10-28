@@ -22,7 +22,7 @@ use crate::dialogue::{IngredientField, RecipeDialogue, RecipeDialogueState};
 use crate::validation::{parse_ingredient_from_text, validate_recipe_name};
 
 // Import database types
-use crate::db::{update_recipe_name, Ingredient};
+use crate::db::Ingredient;
 
 // Import UI builder functions
 use super::ui_builder::{
@@ -288,15 +288,16 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
             .await?;
             return Ok(());
         }
-        Ok(_) => {
+        Ok(saved) => {
             // One history line is the result; the name prompt goes with the review messages
             if let Some(prompt_msg_id) = message_id {
                 cleanup::track(msg.chat.id, teloxide::types::MessageId(prompt_msg_id)).await;
             }
+            // The stored name: "Tarte (2)" when the user already has a "Tarte"
             send_created_line(
                 ctx.bot,
                 msg.chat.id,
-                validated_name,
+                &saved.name,
                 ctx.localization,
                 ctx.language_code,
             )
@@ -457,14 +458,15 @@ pub async fn handle_recipe_rename_input(
             // message; a message without a sender is handled like a missing recipe.
             let rename_result = match msg.from.as_ref() {
                 Some(user) => {
-                    update_recipe_name(pool, user.id.0 as i64, recipe_id, validated_name).await
+                    crate::db::rename_recipe(pool, user.id.0 as i64, recipe_id, validated_name)
+                        .await
                 }
-                None => Ok(false),
+                None => Ok(None),
             };
             // The history keeps one line for a rename; an error stays until the next action
             let mut keep = Vec::new();
             match rename_result {
-                Ok(true) => {
+                Ok(Some(new_name)) => {
                     // The cards already shown get the new name
                     if let Some(user) = msg.from.as_ref() {
                         super::cards::refresh_cards(
@@ -481,14 +483,14 @@ pub async fn handle_recipe_rename_input(
                     let line = t_args_lang(
                         handler_ctx.localization,
                         "recipe-renamed-line",
-                        &[("old_name", &current_name), ("new_name", validated_name)],
+                        &[("old_name", &current_name), ("new_name", &new_name)],
                         handler_ctx.language_code,
                     );
                     bot.send_message(msg.chat.id, line)
                         .disable_notification(true)
                         .await?;
                 }
-                Ok(false) => {
+                Ok(None) => {
                     let message = t_lang(
                         handler_ctx.localization,
                         "recipe-not-found",
@@ -879,7 +881,7 @@ pub async fn save_ingredients_to_database(
     ingredients: &[MeasurementMatch],
     recipe_name: &str,
     language_code: Option<&str>,
-) -> Result<i64> {
+) -> Result<crate::db::SavedRecipe> {
     let start_time = std::time::Instant::now();
 
     debug!(telegram_id = %telegram_id, ingredient_count = %ingredients.len(), "Starting ingredient save process");
@@ -905,7 +907,7 @@ pub async fn save_ingredients_to_database(
             return Err(e);
         }
     };
-    let crate::db::SavedRecipe { recipe_id, user_id } = saved;
+    let (recipe_id, user_id) = (saved.recipe_id, saved.user_id);
 
     let processing_duration = start_time.elapsed();
 
@@ -934,7 +936,7 @@ pub async fn save_ingredients_to_database(
         "Ingredient save process completed successfully"
     );
 
-    Ok(recipe_id)
+    Ok(saved)
 }
 
 /// Handle adding new ingredient input for saved recipes

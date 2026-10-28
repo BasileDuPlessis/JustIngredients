@@ -218,11 +218,81 @@ pub struct NewIngredient<'a> {
 }
 
 /// Ids of a recipe saved by [`save_recipe`].
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct SavedRecipe {
     pub recipe_id: i64,
     /// Internal `users.id` of the owner.
     pub user_id: i64,
+    /// The name stored: the one asked for, or "Tarte (2)" when the user already has a "Tarte".
+    pub name: String,
+}
+
+/// Longest stored recipe name, in bytes (the limit of `validate_recipe_name`).
+const MAX_RECIPE_NAME_BYTES: usize = 255;
+
+/// `wanted` if none of `taken` has it, else the first free "wanted (n)" from 2, the name
+/// shortened if needed so that the whole stays within the name limit.
+pub fn unique_recipe_name(wanted: &str, taken: &[String]) -> String {
+    if !taken.iter().any(|name| name == wanted) {
+        return wanted.to_string();
+    }
+    (2u32..)
+        .map(|n| {
+            let suffix = format!(" ({n})");
+            let mut base = wanted.to_string();
+            while base.len() + suffix.len() > MAX_RECIPE_NAME_BYTES {
+                base.pop();
+            }
+            format!("{}{suffix}", base.trim_end())
+        })
+        .find(|candidate| !taken.iter().any(|name| name == candidate))
+        .unwrap_or_else(|| wanted.to_string())
+}
+
+/// The names of the user's recipes, except `except` (the recipe being renamed).
+async fn recipe_names_of(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    telegram_id: i64,
+    except: Option<i64>,
+) -> Result<Vec<String>> {
+    sqlx::query_scalar(
+        "SELECT recipe_name FROM recipes WHERE telegram_id = $1 AND recipe_name IS NOT NULL \
+         AND id IS DISTINCT FROM $2",
+    )
+    .bind(telegram_id)
+    .bind(except)
+    .fetch_all(&mut **tx)
+    .await
+    .context("Failed to read the recipe names")
+}
+
+/// Renames a recipe of `telegram_id` to `wanted`, or to "wanted (n)" when another of the
+/// user's recipes has that name. Returns the stored name, `None` when the recipe is not the
+/// user's.
+pub async fn rename_recipe(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+    wanted: &str,
+) -> Result<Option<String>> {
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to start the rename transaction")?;
+    let taken = recipe_names_of(&mut tx, telegram_id, Some(recipe_id)).await?;
+    let name = unique_recipe_name(wanted, &taken);
+    let renamed =
+        sqlx::query("UPDATE recipes SET recipe_name = $1 WHERE id = $2 AND telegram_id = $3")
+            .bind(&name)
+            .bind(recipe_id)
+            .bind(telegram_id)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to rename the recipe")?
+            .rows_affected()
+            > 0;
+    tx.commit().await.context("Failed to commit the rename")?;
+    Ok(renamed.then_some(name))
 }
 
 /// Saves a new recipe of `telegram_id` with its name and ingredients in one transaction: either
@@ -255,12 +325,15 @@ pub async fn save_recipe(
     .await
     .context("Failed to get or create the recipe owner")?;
 
+    // One name per recipe of the user: a second "Tarte" is stored as "Tarte (2)"
+    let taken = recipe_names_of(&mut tx, telegram_id, None).await?;
+    let name = unique_recipe_name(name, &taken);
     let recipe_id: i64 = sqlx::query_scalar(
         "INSERT INTO recipes (telegram_id, content, recipe_name) VALUES ($1, $2, $3) RETURNING id",
     )
     .bind(telegram_id)
     .bind(content)
-    .bind(name)
+    .bind(&name)
     .fetch_one(&mut *tx)
     .await
     .context("Failed to insert the recipe")?;
@@ -288,7 +361,11 @@ pub async fn save_recipe(
         2 + ingredients.len() as u64,
         crate::observability::QueryComplexity::Medium,
     );
-    Ok(SavedRecipe { recipe_id, user_id })
+    Ok(SavedRecipe {
+        recipe_id,
+        user_id,
+        name,
+    })
 }
 
 /// New values of a saved ingredient, written as they are (`None` clears the quantity or unit).
@@ -1438,6 +1515,31 @@ pub mod migrations {
                 down: Some(
                     r#"
                     DROP TABLE IF EXISTS chat_messages;
+                "#,
+                ),
+            },
+            Migration {
+                version: 4,
+                name: "number_duplicate_recipe_names",
+                // A user's recipes with the same name become "Tarte", "Tarte (2)", "Tarte (3)"
+                // in creation order (the user's choice, 2026-10-28); new names are numbered by
+                // save_recipe and rename_recipe
+                up: r#"
+                    UPDATE recipes AS r
+                    SET recipe_name = left(r.recipe_name, 248) || ' (' || d.n || ')'
+                    FROM (
+                        SELECT id, ROW_NUMBER() OVER (
+                            PARTITION BY telegram_id, recipe_name ORDER BY created_at, id
+                        ) AS n
+                        FROM recipes
+                        WHERE recipe_name IS NOT NULL
+                    ) AS d
+                    WHERE r.id = d.id AND d.n > 1;
+                "#,
+                // The former names are not kept: rolling back leaves the numbered names
+                down: Some(
+                    r#"
+                    SELECT 1;
                 "#,
                 ),
             },

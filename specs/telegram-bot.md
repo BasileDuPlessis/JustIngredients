@@ -246,7 +246,8 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   statistics of older cards (`recipe_action:statistics:<id>`) are retired.
 - **Rename**: prompt, state `RenamingRecipe`, typed name saved with `update_recipe_name`
   (a cancel word leaves nothing); an empty or too long name is refused and the prompt stays
-  open. A rename updates the recipe's recorded cards in place (`cards::refresh_cards`) and leaves
+  open. Names are unique per user: renaming to a taken name stores "X (2)" (`db::rename_recipe`),
+  and so does saving a second "X"; the lines show the stored name. A rename updates the recipe's recorded cards in place (`cards::refresh_cards`) and leaves
   `recipe-renamed-line`.
 - **Edit ingredients**: a separate editing view, recorded as transient (it goes when the edit
   ends); state `EditingSavedIngredients` with the review keyboard and the same

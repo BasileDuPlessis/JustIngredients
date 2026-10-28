@@ -1,4 +1,4 @@
--- Schema created by the migrations of src/db.rs (version 3), dumped from a fresh database:
+-- Schema created by the migrations of src/db.rs (version 4; 4 changes data only), dumped from a fresh database:
 -- pg_dump --schema-only --no-owner --no-privileges. Regenerate it when a migration is added.
 
 --

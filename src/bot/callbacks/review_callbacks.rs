@@ -592,7 +592,7 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
     };
 
     debug!(user_id = %c.owner_id, "Recipe name from the caption or the title, saving at once");
-    match save_ingredients_to_database(
+    let saved = match save_ingredients_to_database(
         c.pool,
         c.owner_id,
         c.extracted_text,
@@ -602,7 +602,7 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
     )
     .await
     {
-        Ok(_) => {}
+        Ok(saved) => saved,
         Err(_) => {
             // Logged by the save; nothing was written: the review stays open to try again
             send_transient(
@@ -617,7 +617,15 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
 
     // One history line replaces the review, then the recipe list
     remove_review_keyboard(&c).await;
-    send_created_line(c.bot, c.chat_id, name, c.localization, c.language_code).await;
+    // The stored name: "Tarte (2)" when the user already has a "Tarte"
+    send_created_line(
+        c.bot,
+        c.chat_id,
+        &saved.name,
+        c.localization,
+        c.language_code,
+    )
+    .await;
     send_home(c.bot, c.pool, c.chat_id, c.localization, c.language_code).await;
     c.dialogue.exit().await?;
     Ok(())

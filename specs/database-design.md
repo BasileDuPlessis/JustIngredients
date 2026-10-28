@@ -60,7 +60,7 @@ Note: `recipes.telegram_id` holds the Telegram user id by value (no foreign key 
 1. **User Registration**: `get_or_create_user()` when a recipe is saved or an ingredient is added (not on `/start`)
 2. **Recipe Creation**: `create_recipe()` stores the extracted text under `telegram_id`
 3. **Ingredient Storage**: a new recipe is saved by `save_recipe()` in one transaction (user upsert with `ON CONFLICT (telegram_id)`, recipe with its name, one insert per ingredient; nothing is written if one fails). The edit of a saved recipe is applied by `apply_ingredient_changes()` in one transaction (updates write the exact values, so a quantity or unit can be cleared; additions; deletions).
-4. **Recipe Naming**: `update_recipe_name()` sets human-readable name
+4. **Recipe Naming**: a user's recipe names are unique: `save_recipe()` and `rename_recipe()` store "Tarte (2)", "Tarte (3)"… when the name is taken (`unique_recipe_name`, first free number from 2, within 255 bytes) and return the stored name; `update_recipe_name()` writes a name as it is (tests)
 5. **Lookups**: the recipe list and the home message read the user's named recipes newest first with their total (`get_user_recipes_newest_first`, `ORDER BY created_at DESC, id DESC`, served by `recipes_telegram_id_created_at_idx`, returns `RecipeSummary { id, name, created_at }`); a recipe is opened by id (`read_recipe_with_name`); no full-text query is used
 
 ## API Design
@@ -155,7 +155,7 @@ pub async fn get_current_version(pool: &PgPool) -> Result<i32>
 pub async fn rollback_to_version(pool: &PgPool, target_version: i32) -> Result<()>
 ```
 
-Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There are three: version 1 `create_initial_tables`, version 2 `recipes_owner_index_and_ingredient_cascade` (owner index on `recipes`, `ON DELETE CASCADE` on `ingredients.recipe_id`) and version 3 `chat_messages` (see below); each has a down script. Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch.
+Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There are four: version 1 `create_initial_tables`, version 2 `recipes_owner_index_and_ingredient_cascade` (owner index on `recipes`, `ON DELETE CASCADE` on `ingredients.recipe_id`), version 3 `chat_messages` (see below) and version 4 `number_duplicate_recipe_names` (a user's recipes with the same name become "Tarte", "Tarte (2)", "Tarte (3)" in creation order; its down script leaves the numbered names); each has a down script. Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch.
 
 ### Constraints
 - **Data Types**: Appropriate PostgreSQL types for performance

@@ -686,12 +686,14 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
 
     // Check that migrations table was created and version is updated
     let version = migrations::get_current_version(pool).await?;
-    assert_eq!(version, 3);
+    assert_eq!(version, 4);
 
     // Verify that tables were created
     validate_database_schema(pool).await?;
 
     // Roll back with the down scripts, one version at a time, then all tables
+    migrations::rollback_to_version(pool, 3).await?;
+    assert_eq!(migrations::get_current_version(pool).await?, 3);
     migrations::rollback_to_version(pool, 2).await?;
     assert_eq!(migrations::get_current_version(pool).await?, 2);
     migrations::rollback_to_version(pool, 1).await?;
@@ -1168,5 +1170,99 @@ async fn recipe_cards_are_found_per_chat_and_recipe(pool: PgPool) -> Result<()> 
     assert!(take_chat_messages(&pool, 42, &["transient"])
         .await?
         .is_empty());
+    Ok(())
+}
+
+#[test]
+fn duplicate_recipe_names_get_the_first_free_number() {
+    let taken = |names: &[&str]| {
+        names
+            .iter()
+            .map(|name| name.to_string())
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(unique_recipe_name("Tarte", &taken(&["Crêpes"])), "Tarte");
+    assert_eq!(unique_recipe_name("Tarte", &taken(&["Tarte"])), "Tarte (2)");
+    assert_eq!(
+        unique_recipe_name("Tarte", &taken(&["Tarte", "Tarte (2)", "Tarte (4)"])),
+        "Tarte (3)"
+    );
+    let long = "é".repeat(127); // 254 bytes
+    let numbered = unique_recipe_name(&long, std::slice::from_ref(&long));
+    assert!(numbered.len() <= 255, "{}", numbered.len());
+    assert!(numbered.ends_with(" (2)"));
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_second_recipe_with_the_same_name_is_numbered(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let none: [NewIngredient; 0] = [];
+    let first = save_recipe(&pool, 55, Some("fr"), "texte", "Tarte", &none).await?;
+    let second = save_recipe(&pool, 55, Some("fr"), "texte", "Tarte", &none).await?;
+    let other_user = save_recipe(&pool, 66, Some("fr"), "texte", "Tarte", &none).await?;
+    assert_eq!(first.name, "Tarte");
+    assert_eq!(second.name, "Tarte (2)");
+    assert_eq!(other_user.name, "Tarte", "names are numbered per user");
+
+    let crepes = save_recipe(&pool, 55, Some("fr"), "texte", "Crêpes", &none).await?;
+    assert_eq!(
+        rename_recipe(&pool, 55, crepes.recipe_id, "Tarte")
+            .await?
+            .as_deref(),
+        Some("Tarte (3)")
+    );
+    assert_eq!(
+        rename_recipe(&pool, 55, second.recipe_id, "Tarte (2)")
+            .await?
+            .as_deref(),
+        Some("Tarte (2)"),
+        "renamed to its own name: unchanged"
+    );
+    assert_eq!(
+        rename_recipe(&pool, 66, crepes.recipe_id, "Volée").await?,
+        None
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn migration_4_numbers_existing_duplicates_in_creation_order(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    // Duplicates made before migration 4 (update_recipe_name does not number)
+    let mut ids = Vec::new();
+    for _ in 0..3 {
+        let id = create_recipe(&pool, 77, "texte").await?;
+        update_recipe_name(&pool, 77, id, "Recipe").await?;
+        ids.push(id);
+    }
+    let other = create_recipe(&pool, 88, "texte").await?;
+    update_recipe_name(&pool, 88, other, "Recipe").await?;
+
+    migrations::rollback_to_version(&pool, 3).await?;
+    migrations::apply_pending_migrations(&pool).await?;
+
+    let mut names = Vec::new();
+    for id in &ids {
+        let recipe = read_recipe_with_name(&pool, 77, *id).await?;
+        names.push(recipe.and_then(|r| r.recipe_name.map(|n| n.to_string())));
+    }
+    assert_eq!(
+        names,
+        vec![
+            Some("Recipe".to_string()),
+            Some("Recipe (2)".to_string()),
+            Some("Recipe (3)".to_string())
+        ]
+    );
+    let other_name = read_recipe_with_name(&pool, 88, other)
+        .await?
+        .and_then(|r| r.recipe_name.map(|n| n.to_string()));
+    assert_eq!(
+        other_name.as_deref(),
+        Some("Recipe"),
+        "another user's recipe is not numbered"
+    );
     Ok(())
 }
