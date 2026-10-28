@@ -18,32 +18,41 @@ use crate::localization::t_lang;
 
 // Import database functions
 
-/// Handle back to recipes callback - simply deletes the current message
-pub async fn handle_back_to_recipes(
+/// "📚 Liste des recettes" (and the ⬅️ of older cards): the message it is on goes into the history
+/// without buttons (a card) or away (an answer, an older home message), a running action ends
+/// like with a command, and the recipe list comes back at the bottom (U6.1).
+pub async fn handle_show_list(
     bot: &Bot,
     msg: &MaybeInaccessibleMessage,
-    _pool: Arc<PgPool>,
-    _language_code: &Option<String>,
-    _localization: &Arc<crate::localization::LocalizationManager>,
+    pool: Arc<PgPool>,
+    dialogue: &RecipeDialogue,
+    language_code: &Option<String>,
+    localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    debug!("Handling back to recipes - removing message");
-
-    // Extract chat id and message id from the message
-    let (chat_id, message_id) = match msg {
-        MaybeInaccessibleMessage::Regular(msg) => (msg.chat.id, msg.id),
-        MaybeInaccessibleMessage::Inaccessible(_) => {
-            // Can't delete inaccessible messages
-            return Ok(());
-        }
+    debug!("Showing the recipe list");
+    let MaybeInaccessibleMessage::Regular(msg) = msg else {
+        return Ok(());
     };
-
-    // The card leaves the history: forget it, then delete it
-    crate::bot::cleanup::untrack(chat_id, message_id).await;
-    if let Err(e) = bot.delete_message(chat_id, message_id).await {
-        debug!("Failed to delete message: {:?}", e);
-        // If deletion fails, just ignore - the message might already be deleted or inaccessible
+    // A card of an older version was never recorded: it stays in the history without buttons
+    if matches!(
+        crate::bot::cleanup::is_recorded(msg.chat.id, msg.id).await,
+        Some(false)
+    ) {
+        if let Err(e) = bot.edit_message_reply_markup(msg.chat.id, msg.id).await {
+            debug!(error = %e, "Could not remove the buttons of an old card");
+        }
     }
-
+    if dialogue.get().await?.is_some_and(|state| state.is_action()) {
+        dialogue.exit().await?;
+    }
+    crate::bot::home::send_home(
+        bot,
+        &pool,
+        msg.chat.id,
+        localization,
+        language_code.as_deref(),
+    )
+    .await;
     Ok(())
 }
 
@@ -90,34 +99,11 @@ pub async fn handle_list_recipes(
     language_code: &Option<String>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
-    debug!("Handling list recipes workflow");
-    // Can't respond to inaccessible messages
-    let MaybeInaccessibleMessage::Regular(msg) = msg else {
-        return Ok(());
-    };
-    // Only older home messages carry this button: that message is replaced by the list
-    crate::bot::cleanup::remove_legacy_message(bot, msg.chat.id, msg.id).await;
-    // A running action keeps its messages: the list just moves down
-    if dialogue.get().await?.is_some_and(|state| state.is_action()) {
-        crate::bot::home::move_list_down(
-            bot,
-            &pool,
-            msg.chat.id,
-            localization,
-            language_code.as_deref(),
-        )
-        .await;
-    } else {
-        crate::bot::home::send_home(
-            bot,
-            &pool,
-            msg.chat.id,
-            localization,
-            language_code.as_deref(),
-        )
-        .await;
+    // Only older home messages carry this button: that message goes, then like the list button
+    if let MaybeInaccessibleMessage::Regular(msg) = msg {
+        crate::bot::cleanup::remove_legacy_message(bot, msg.chat.id, msg.id).await;
     }
-    Ok(())
+    handle_show_list(bot, msg, pool, dialogue, language_code, localization).await
 }
 
 /// Handle workflow button callbacks (post-confirmation actions)

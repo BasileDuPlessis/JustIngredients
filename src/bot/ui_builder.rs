@@ -13,8 +13,7 @@ use crate::text_processing::MeasurementMatch;
 // Import common UI components
 use super::html::Html;
 use super::ui_components::{
-    create_add_button, create_back_button, create_localized_button_with_emoji, truncate_text,
-    with_ui_metrics_sync,
+    create_add_button, create_localized_button_with_emoji, truncate_text, with_ui_metrics_sync,
 };
 
 /// Quantity and unit as shown to the user ("150 g", "2", "pincée"), empty when the
@@ -147,6 +146,18 @@ pub fn render_saved_editing(
             language_code,
             localization,
         ))
+}
+
+/// "📚 Liste des recettes": the exit of a bottom message when no action is running; it puts that
+/// message into the history and brings the recipe list back.
+pub fn recipes_list_button(
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> InlineKeyboardButton {
+    InlineKeyboardButton::callback(
+        t_lang(localization, "recipes-list-button", language_code),
+        "show_list",
+    )
 }
 
 /// Create inline keyboard for ingredient review
@@ -316,16 +327,15 @@ pub fn create_recipe_details_keyboard(
                     language_code,
                 ),
             ],
-            vec![
-                create_localized_button_with_emoji(
-                    localization,
-                    "🗑️",
-                    "delete-recipe",
-                    format!("recipe_action:delete:{}", recipe_id),
-                    language_code,
-                ),
-                create_back_button(localization, "back_to_recipes".to_string(), language_code),
-            ],
+            vec![create_localized_button_with_emoji(
+                localization,
+                "🗑️",
+                "delete-recipe",
+                format!("recipe_action:delete:{}", recipe_id),
+                language_code,
+            )],
+            // The single exit of a card shown at the bottom (U6.1)
+            vec![recipes_list_button(language_code, localization)],
         ];
 
         InlineKeyboardMarkup::new(buttons)
@@ -468,7 +478,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_recipe_card_offers_rename_edit_delete_and_back_only() {
+    fn the_recipe_card_offers_rename_edit_delete_and_the_list() {
         let localization =
             crate::localization::create_localization_manager().expect("localization");
         let keyboard = create_recipe_details_keyboard(7, Some("fr"), &localization);
@@ -490,7 +500,8 @@ mod tests {
             data,
             vec![
                 vec!["recipe_action:rename:7", "recipe_action:edit_ingredients:7"],
-                vec!["recipe_action:delete:7", "back_to_recipes"],
+                vec!["recipe_action:delete:7"],
+                vec!["show_list"],
             ]
         );
     }

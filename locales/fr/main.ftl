@@ -147,6 +147,7 @@ of = sur
 
 # Messages de commande recettes
 your-recipes = Vos recettes
+recipes-list-button = 📚 Liste des recettes
 recipe-details-coming-soon = Détails de la recette bientôt disponibles !
 
 # Messages de workflow post-confirmation

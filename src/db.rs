@@ -1295,8 +1295,10 @@ async fn validate_indexes(
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatMessage {
     pub message_id: i32,
-    /// What it is: `transient`, `home`, `list` or `card`.
+    /// What it is: `transient`, `home`, `list`, `card` or `active_card`.
     pub kind: String,
+    /// The recipe of a card.
+    pub recipe_id: Option<i64>,
     /// Sent less than 48 hours ago: Telegram still lets the bot delete it.
     pub deletable: bool,
 }
@@ -1345,7 +1347,7 @@ pub async fn take_chat_messages(
     let kinds: Vec<String> = kinds.iter().map(|kind| (*kind).to_string()).collect();
     let rows = sqlx::query(
         "DELETE FROM chat_messages WHERE chat_id = $1 AND kind = ANY($2) \
-         RETURNING message_id, kind, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable",
+         RETURNING message_id, kind, recipe_id, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable",
     )
     .bind(chat_id)
     .bind(&kinds)
@@ -1357,6 +1359,7 @@ pub async fn take_chat_messages(
         .map(|row| ChatMessage {
             message_id: i32::try_from(row.get::<i64, _>("message_id")).unwrap_or(0),
             kind: row.get("kind"),
+            recipe_id: row.get("recipe_id"),
             deletable: row.get("deletable"),
         })
         .filter(|message| message.message_id > 0)
@@ -1381,20 +1384,21 @@ pub async fn is_chat_message_recorded(
     Ok(found.is_some())
 }
 
-/// The recorded messages of `chat` of `kind` about `recipe_id` (the cards of a recipe), oldest
-/// first, still recorded.
+/// The recorded messages of `chat` of the given kinds about `recipe_id` (the cards of a recipe),
+/// oldest first, still recorded.
 pub async fn find_recipe_messages(
     pool: &PgPool,
     chat_id: i64,
-    kind: &str,
+    kinds: &[&str],
     recipe_id: i64,
 ) -> Result<Vec<ChatMessage>> {
+    let kinds: Vec<String> = kinds.iter().map(|kind| (*kind).to_string()).collect();
     let rows = sqlx::query(
-        "SELECT message_id, kind, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable \
-         FROM chat_messages WHERE chat_id = $1 AND kind = $2 AND recipe_id = $3 ORDER BY message_id",
+        "SELECT message_id, kind, recipe_id, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable \
+         FROM chat_messages WHERE chat_id = $1 AND kind = ANY($2) AND recipe_id = $3 ORDER BY message_id",
     )
     .bind(chat_id)
-    .bind(kind)
+    .bind(&kinds)
     .bind(recipe_id)
     .fetch_all(pool)
     .await
@@ -1404,6 +1408,7 @@ pub async fn find_recipe_messages(
         .map(|row| ChatMessage {
             message_id: i32::try_from(row.get::<i64, _>("message_id")).unwrap_or(0),
             kind: row.get("kind"),
+            recipe_id: row.get("recipe_id"),
             deletable: row.get("deletable"),
         })
         .filter(|message| message.message_id > 0)

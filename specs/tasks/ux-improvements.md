@@ -349,6 +349,43 @@ edit its own messages at any time: older messages that should go are edited down
 ### Review gate RU5
 - [x] Done (2026-10-28, see the Review Log)
 
+## Phase U6: One Active Message at the Bottom (user request of 2026-10-29)
+Replaces U5's "list always last" (see `ux-thread-wireframes.md`, validated: A list after a
+rename or an edit, B every consultation stays in the history, C history cards are kept
+current). The history has no buttons: recipe cards and action lines. The bottom message is the
+only one with buttons: the recipe list, or the action in progress whose last button is its
+single exit ("❌ Annuler" during an action, "📚 Liste des recettes" otherwise).
+
+### Task U6.1: The card replaces the list, history without buttons (<= 1 hour)
+- [x] Done (2026-10-29): kind `active_card`; `cleanup::delete_lists` and `delete_tracked` turn
+  it into a history card without buttons; `cards::show_card` no longer removes earlier copies
+  nor sends the list below; `show_list` button on the card.
+- Description: opening a recipe deletes the list and sends the card with ✏️ 📝 🗑️ and
+  "📚 Liste des recettes" (recorded as the active card); that button (and the old ⬅️ and 📚
+  buttons) turns the card into history (no buttons) and sends the list; any end of action does
+  the same; rename and edit update every card of the recipe in place, the history ones without
+  buttons.
+- How to validate: open, back to the list, open again: two cards in the history, none with
+  buttons, one list.
+
+### Task U6.2: One exit per action (<= 1 hour)
+- [ ] Done
+- Description: rename, edit and delete from the card turn it into history and show their
+  message with "❌ Annuler" as the last button, which deletes it and makes the card active
+  again; the name prompt of a creation gets "❌ Annuler"; ✅ Valider and ❌ Annuler are no longer
+  side by side.
+- How to validate: cancel each action; the card comes back with its buttons.
+
+### Task U6.3: Answers at the bottom with the list button (<= 1 hour)
+- [ ] Done
+- Description: `/start`, `/aide`, unknown commands, free text, unsupported messages and photo
+  errors replace the list or the active card and carry "📚 Liste des recettes"; a photo during an
+  action ends it.
+- How to validate: manual session on staging.
+
+### Review gate RU6
+- [ ] Done
+
 ## Phase U4: Search
 
 ### Task U4.1: French-aware search (finding 11) (<= 1 hour)

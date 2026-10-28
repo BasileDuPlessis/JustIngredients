@@ -152,6 +152,7 @@ of = of
 
 # Recipes command messages
 your-recipes = Your Recipes
+recipes-list-button = 📚 Recipe list
 recipe-details-coming-soon = Recipe details coming soon!
 
 # Post-confirmation workflow messages

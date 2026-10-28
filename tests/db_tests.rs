@@ -1122,11 +1122,13 @@ async fn chat_messages_older_than_48_hours_are_not_deletable(pool: PgPool) -> Re
             ChatMessage {
                 message_id: 5,
                 kind: "transient".to_string(),
+                recipe_id: None,
                 deletable: false
             },
             ChatMessage {
                 message_id: 6,
                 kind: "transient".to_string(),
+                recipe_id: None,
                 deletable: true
             },
         ]
@@ -1148,23 +1150,23 @@ async fn recipe_cards_are_found_per_chat_and_recipe(pool: PgPool) -> Result<()> 
         messages.iter().map(|message| message.message_id).collect()
     };
     assert_eq!(
-        ids(find_recipe_messages(&pool, 42, "card", 7).await?),
+        ids(find_recipe_messages(&pool, 42, &["card"], 7).await?),
         vec![20, 25]
     );
     // Finding does not take: they are still recorded
     assert_eq!(
-        ids(find_recipe_messages(&pool, 42, "card", 7).await?),
+        ids(find_recipe_messages(&pool, 42, &["card"], 7).await?),
         vec![20, 25]
     );
     assert_eq!(
-        ids(find_recipe_messages(&pool, 9, "card", 7).await?),
+        ids(find_recipe_messages(&pool, 9, &["card"], 7).await?),
         vec![30]
     );
 
     // A transient message turned into a card (the editing view kept as the card)
     record_chat_message(&pool, 42, 26, "card", Some(8)).await?;
     assert_eq!(
-        ids(find_recipe_messages(&pool, 42, "card", 8).await?),
+        ids(find_recipe_messages(&pool, 42, &["card"], 8).await?),
         vec![21, 26]
     );
     assert!(take_chat_messages(&pool, 42, &["transient"])

@@ -41,8 +41,9 @@ async fn render(
     )))
 }
 
-/// Opens a recipe from the button on `pressed`: its earlier card goes (one card per recipe), the
-/// card is sent and the recipe list moves below it. A recipe that is gone answers `recipe-not-found` until the next action.
+/// Opens a recipe from the button on `pressed`: the card replaces the list at the bottom, with
+/// its buttons (U6.1). Earlier cards of the recipe stay in the history (every consultation is
+/// kept). A recipe that is gone answers `recipe-not-found` until the next action.
 pub async fn show_card(
     bot: &Bot,
     pool: &PgPool,
@@ -61,20 +62,21 @@ pub async fn show_card(
         super::home::move_list_down(bot, pool, chat_id, localization, language_code).await;
         return Ok(());
     };
-    cleanup::remove_recipe_cards(bot, chat_id, recipe_id, None).await;
-    let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
-    let sent = send_html(bot, chat_id, card).reply_markup(keyboard).await?;
-    cleanup::record_card(chat_id, sent.id, recipe_id).await;
     // Opened from a home message or list of an older version: that message goes
     if let Some(pressed) = pressed {
         cleanup::remove_legacy_message(bot, chat_id, pressed).await;
     }
-    super::home::move_list_down(bot, pool, chat_id, localization, language_code).await;
+    // One message with buttons at the bottom: the list goes, an active card becomes history
+    cleanup::delete_lists(bot, chat_id).await;
+    let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
+    let sent = send_html(bot, chat_id, card).reply_markup(keyboard).await?;
+    cleanup::record_active_card(chat_id, sent.id, recipe_id).await;
     Ok(())
 }
 
-/// Updates every recorded card of a recipe in place, after a rename or an edit. Returns whether
-/// there was one (cards of versions before U5.4 are not recorded).
+/// Updates every recorded card of a recipe in place, after a rename or an edit: the history
+/// ones without buttons, the active one with them. Returns whether there was one (cards of
+/// versions before U5.4 are not recorded).
 pub async fn refresh_cards(
     bot: &Bot,
     pool: &PgPool,
@@ -96,12 +98,20 @@ pub async fn refresh_cards(
             return false;
         }
     };
-    for (id, _) in cards {
-        let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
-        if let Err(e) = edit_html(bot, chat_id, id, card.clone())
-            .reply_markup(keyboard)
-            .await
-        {
+    for recorded in cards {
+        let request = edit_html(bot, chat_id, recorded.id, card.clone());
+        let result = if recorded.active {
+            request
+                .reply_markup(create_recipe_details_keyboard(
+                    recipe_id,
+                    language_code,
+                    localization,
+                ))
+                .await
+        } else {
+            request.await
+        };
+        if let Err(e) = result {
             debug!(error = %e, "Could not update a recipe card");
         }
     }

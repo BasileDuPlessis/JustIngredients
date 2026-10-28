@@ -684,7 +684,8 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 }
             }
             if let Some(message) = &q.message {
-                crate::bot::cleanup::record_card(message.chat().id, message.id(), recipe_id).await;
+                crate::bot::cleanup::record_active_card(message.chat().id, message.id(), recipe_id)
+                    .await;
             }
         }
     } else {
@@ -791,7 +792,8 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 }
             }
             if let Some(message) = &q.message {
-                crate::bot::cleanup::record_card(message.chat().id, message.id(), recipe_id).await;
+                crate::bot::cleanup::record_active_card(message.chat().id, message.id(), recipe_id)
+                    .await;
             }
         }
     }
@@ -903,7 +905,7 @@ pub async fn cancel_saved_editing(
                 // Fallback: delete the message
                 let _ = bot.delete_message(chat_id, message_id).await;
             } else {
-                crate::bot::cleanup::record_card(chat_id, message_id, recipe_id).await;
+                crate::bot::cleanup::record_active_card(chat_id, message_id, recipe_id).await;
             }
         }
     }

@@ -234,15 +234,16 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   (`noop`, ignored), ➡️ `page:<n>`; it edits the list message, and a page past the end (recipes
   deleted meanwhile) shows the last one.
 - **Selection** (owner = callback sender): `recipe_instance:<id>` opens the card
-  (`cards::show_card`): the recipe's earlier card goes (one card per recipe; older than 48 h it
-  only loses its buttons), the card is sent and recorded (`chat_messages`, kind `card` with the
-  recipe id), and the list moves below it. A recipe that is gone or another user's answers
-  `recipe-not-found` until the next action. Older lists grouped by name
-  (`select_recipe:`, `select_recipe_h:`) are retired buttons.
+  (`cards::show_card`): the list goes and the card is sent at the bottom with its buttons,
+  recorded as the active card (`chat_messages` kind `active_card`, at most one per chat; U6.1).
+  Earlier cards of the recipe stay in the history: every consultation is kept. A recipe that is
+  gone or another user's answers `recipe-not-found` until the next action.
 - **Recipe card**: name, creation date (user's language, Paris time: `format_recipe_date`), ingredients. Buttons:
   ✏️ `recipe_action:rename:<id>`, 📝 `recipe_action:edit_ingredients:<id>`, then
-  🗑️ `recipe_action:delete:<id>`, ⬅️ `back_to_recipes` (deletes the card message and its
-  record). The 📊
+  🗑️ `recipe_action:delete:<id>`, then 📚 `show_list` ("Liste des recettes"): the card goes into
+  the history without buttons and the list comes back at the bottom (`handle_show_list`; the ⬅️
+  `back_to_recipes` of older cards and the old home's 📚 do the same). History cards never have
+  buttons; a rename or an edit updates every card of the recipe in place (`refresh_cards`). The 📊
   statistics of older cards (`recipe_action:statistics:<id>`) are retired.
 - **Rename**: prompt, state `RenamingRecipe`, typed name saved with `update_recipe_name`
   (a cancel word leaves nothing); an empty or too long name is refused and the prompt stays

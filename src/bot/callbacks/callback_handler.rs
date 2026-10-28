@@ -117,11 +117,12 @@ pub async fn callback_handler_with_cache(
                         &localization,
                     )
                     .await?;
-                } else if data == "back_to_recipes" {
-                    workflow_callbacks::handle_back_to_recipes(
+                } else if data == "show_list" || data == "back_to_recipes" {
+                    workflow_callbacks::handle_show_list(
                         &bot,
                         msg,
                         pool.clone(),
+                        &dialogue,
                         &q.from.language_code,
                         &localization,
                     )
