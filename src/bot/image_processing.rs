@@ -130,12 +130,13 @@ pub async fn download_and_process_image(
         photo_message_id,
     } = params;
 
-    // A photo starts a new creation: a running action ends (its messages go), and the list or
-    // the active card leaves the bottom (U6.3)
+    // A photo starts a new creation: a running action ends, and whatever had buttons at the
+    // bottom goes (its messages, an earlier answer, a pending confirmation, the list; the active
+    // card goes into the history) (U6.3)
     if dialogue.get().await?.is_some_and(|state| state.is_action()) {
         dialogue.exit().await?;
-        crate::bot::cleanup::delete_action_messages(bot, chat_id).await;
     }
+    crate::bot::cleanup::delete_action_messages(bot, chat_id).await;
     crate::bot::cleanup::delete_lists(bot, chat_id).await;
 
     let bytes = match download_file_bytes(bot, file_id).await {

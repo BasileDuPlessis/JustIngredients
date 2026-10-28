@@ -15,6 +15,9 @@ use super::cleanup;
 use super::html::{edit_html, send_html, Html};
 use super::ui_builder::{create_recipe_details_keyboard, render_recipe_card};
 
+/// Cards of a recipe updated after a rename or an edit, the most recent first.
+const MAX_CARDS_REFRESHED: usize = 20;
+
 /// The card of a recipe of `telegram_id` as read now, or `None` when it is gone or another
 /// user's.
 async fn render(
@@ -59,7 +62,8 @@ pub async fn show_card(
     else {
         let message = t_lang(localization, "recipe-not-found", language_code);
         let answer = cleanup::send_transient(bot, chat_id, message).await?;
-        super::home::answer_at_bottom(bot, chat_id, answer.id, localization, language_code).await;
+        super::home::answer_at_bottom(bot, chat_id, answer.id, false, localization, language_code)
+            .await;
         return Ok(());
     };
     // Opened from a home message or list of an older version: that message goes
@@ -98,7 +102,9 @@ pub async fn refresh_cards(
             return false;
         }
     };
-    for recorded in cards {
+    // Every consultation stays in the history: only the most recent ones are updated, so a recipe
+    // opened many times does not make a rename slow or hit Telegram's rate limit
+    for recorded in cards.into_iter().rev().take(MAX_CARDS_REFRESHED) {
         let request = edit_html(bot, chat_id, recorded.id, card.clone());
         let result = if recorded.active {
             request

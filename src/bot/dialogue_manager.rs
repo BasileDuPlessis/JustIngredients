@@ -482,15 +482,18 @@ pub async fn handle_recipe_rename_input(
                         )
                         .await;
                     }
-                    let line = t_args_lang(
-                        handler_ctx.localization,
-                        "recipe-renamed-line",
-                        &[("old_name", &current_name), ("new_name", &new_name)],
-                        handler_ctx.language_code,
-                    );
-                    bot.send_message(msg.chat.id, line)
-                        .disable_notification(true)
-                        .await?;
+                    // Renamed to its own name: nothing changed, no line
+                    if new_name != current_name {
+                        let line = t_args_lang(
+                            handler_ctx.localization,
+                            "recipe-renamed-line",
+                            &[("old_name", &current_name), ("new_name", &new_name)],
+                            handler_ctx.language_code,
+                        );
+                        bot.send_message(msg.chat.id, line)
+                            .disable_notification(true)
+                            .await?;
+                    }
                 }
                 Ok(None) => {
                     let message = t_lang(

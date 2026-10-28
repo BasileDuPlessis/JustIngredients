@@ -354,6 +354,7 @@ async fn handle_text_message(
             bot,
             msg.chat.id,
             answer.id,
+            false,
             localization,
             language_code,
         )
@@ -578,7 +579,8 @@ async fn dispatch_message(
     } else if msg.document().is_some() {
         handle_document_message(&bot, &msg, dialogue, pool, &localization, &extractor).await
     } else {
-        handle_unsupported_message(&bot, &msg, &localization).await
+        let in_action = dialogue.get().await?.is_some_and(|state| state.is_action());
+        handle_unsupported_message(&bot, &msg, in_action, &localization).await
     };
 
     let duration = start_time.elapsed();

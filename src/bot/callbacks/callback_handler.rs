@@ -56,6 +56,9 @@ pub async fn callback_handler_with_cache(
         let data = q.data.as_deref().unwrap_or("");
         let pressed = q.message.as_ref().map(|message| message.id().0);
         let stale = is_stale_button(data, dialogue_state.as_ref(), pressed);
+        let running_action = dialogue_state
+            .as_ref()
+            .is_some_and(|state| state.is_action());
 
         // A stale button must not act on the current dialogue (an older list's ✅ would save
         // the newer review)
@@ -187,9 +190,22 @@ pub async fn callback_handler_with_cache(
                 q.from.language_code.as_deref(),
             ));
             if let Some(message) = &q.message {
-                let _ = bot
-                    .edit_message_reply_markup(message.chat().id, message.id())
-                    .await;
+                // With no action running (e.g. after a restart) this message may be the bottom
+                // one: it keeps a way out, "📚 Liste des recettes". During an action it is an
+                // older list in the history: it just loses its buttons.
+                let request = bot.edit_message_reply_markup(message.chat().id, message.id());
+                let _ = if running_action {
+                    request.await
+                } else {
+                    request
+                        .reply_markup(teloxide::types::InlineKeyboardMarkup::new(vec![vec![
+                            crate::bot::ui_builder::recipes_list_button(
+                                q.from.language_code.as_deref(),
+                                &localization,
+                            ),
+                        ]]))
+                        .await
+                };
             }
         }
         if let Err(error) = answer.await {

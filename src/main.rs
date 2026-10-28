@@ -199,6 +199,12 @@ async fn main() -> Result<()> {
     // Validate that the database schema is correct
     db::validate_database_schema(&pool).await?;
 
+    // A user's recipes have unique names ("Tarte (2)"): number any duplicates left
+    let numbered = db::number_duplicate_recipe_names(&pool).await?;
+    if numbered > 0 {
+        info!(recipes = numbered, "Numbered duplicate recipe names");
+    }
+
     // Wrap pool in Arc for sharing across async tasks
     let shared_pool = Arc::new(pool);
     // Messages to delete at the end of an action are recorded in the database

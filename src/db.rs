@@ -266,6 +266,57 @@ async fn recipe_names_of(
     .context("Failed to read the recipe names")
 }
 
+/// Gives every user's recipes unique names: in each group of a user's recipes with the same name,
+/// the oldest keeps it and the others become "Tarte (2)", "Tarte (3)"… (the first free numbers,
+/// like a new recipe). Runs at startup; does nothing once names are unique. Returns the number
+/// of recipes renamed.
+pub async fn number_duplicate_recipe_names(pool: &PgPool) -> Result<u64> {
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to start numbering duplicate names")?;
+    let duplicates: Vec<(i64, i64, String)> = sqlx::query_as(
+        "SELECT id, telegram_id, recipe_name FROM recipes \
+         WHERE (telegram_id, recipe_name) IN ( \
+             SELECT telegram_id, recipe_name FROM recipes WHERE recipe_name IS NOT NULL \
+             GROUP BY telegram_id, recipe_name HAVING COUNT(*) > 1) \
+         ORDER BY telegram_id, recipe_name, created_at, id",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .context("Failed to find duplicate recipe names")?;
+
+    let mut renamed = 0;
+    let mut current_user = None;
+    let mut taken: Vec<String> = Vec::new();
+    let mut previous_name: Option<String> = None;
+    for (id, telegram_id, name) in duplicates {
+        if current_user != Some(telegram_id) {
+            current_user = Some(telegram_id);
+            taken = recipe_names_of(&mut tx, telegram_id, None).await?;
+            previous_name = None;
+        }
+        // The oldest of a group keeps its name
+        if previous_name.as_deref() != Some(name.as_str()) {
+            previous_name = Some(name);
+            continue;
+        }
+        let numbered = unique_recipe_name(&name, &taken);
+        sqlx::query("UPDATE recipes SET recipe_name = $1 WHERE id = $2")
+            .bind(&numbered)
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .context("Failed to number a duplicate recipe name")?;
+        taken.push(numbered);
+        renamed += 1;
+    }
+    tx.commit()
+        .await
+        .context("Failed to commit the numbered names")?;
+    Ok(renamed)
+}
+
 /// Renames a recipe of `telegram_id` to `wanted`, or to "wanted (n)" when another of the
 /// user's recipes has that name. Returns the stored name, `None` when the recipe is not the
 /// user's.
@@ -1526,22 +1577,12 @@ pub mod migrations {
             Migration {
                 version: 4,
                 name: "number_duplicate_recipe_names",
-                // A user's recipes with the same name become "Tarte", "Tarte (2)", "Tarte (3)"
-                // in creation order (the user's choice, 2026-10-28); new names are numbered by
-                // save_recipe and rename_recipe
+                // The numbering itself runs at every startup in Rust
+                // (`number_duplicate_recipe_names`, the rule of new names, idempotent): the first
+                // SQL version of this migration (applied on staging) could leave duplicates
                 up: r#"
-                    UPDATE recipes AS r
-                    SET recipe_name = left(r.recipe_name, 248) || ' (' || d.n || ')'
-                    FROM (
-                        SELECT id, ROW_NUMBER() OVER (
-                            PARTITION BY telegram_id, recipe_name ORDER BY created_at, id
-                        ) AS n
-                        FROM recipes
-                        WHERE recipe_name IS NOT NULL
-                    ) AS d
-                    WHERE r.id = d.id AND d.n > 1;
+                    SELECT 1;
                 "#,
-                // The former names are not kept: rolling back leaves the numbered names
                 down: Some(
                     r#"
                     SELECT 1;

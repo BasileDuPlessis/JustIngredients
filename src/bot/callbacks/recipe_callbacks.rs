@@ -63,6 +63,11 @@ pub async fn handle_recipe_action(
         }
     };
 
+    // A card shown by an older version was never recorded: it becomes the active card now
+    if let MaybeInaccessibleMessage::Regular(card) = msg {
+        crate::bot::cleanup::adopt_card(chat_id, card.id, recipe_id).await;
+    }
+
     match action {
         "rename" => {
             // Get current recipe details
@@ -121,6 +126,7 @@ pub async fn handle_recipe_action(
                     bot,
                     chat_id,
                     answer.id,
+                    false,
                     localization,
                     language_code.as_deref(),
                 )
@@ -328,6 +334,14 @@ pub async fn handle_delete_recipe_confirmation(
             }
         }
         "cancel_delete_recipe" => {
+            // An action started meanwhile keeps its messages: only the confirmation goes
+            if dialogue.get().await?.is_some_and(|state| state.is_action()) {
+                if let MaybeInaccessibleMessage::Regular(msg) = msg {
+                    let _ = bot.delete_message(chat_id, msg.id).await;
+                    crate::bot::cleanup::untrack(chat_id, msg.id).await;
+                }
+                return Ok(());
+            }
             // The confirmation goes and the card is the bottom message again
             crate::bot::home::back_to_card(
                 bot,
@@ -401,6 +415,7 @@ async fn handle_edit_ingredients_callback(
                 bot,
                 chat_id,
                 answer.id,
+                false,
                 localization,
                 language_code.as_deref(),
             )
@@ -431,6 +446,7 @@ async fn handle_edit_ingredients_callback(
             bot,
             chat_id,
             answer.id,
+            false,
             localization,
             language_code.as_deref(),
         )

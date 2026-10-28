@@ -86,6 +86,8 @@ pub async fn handle_document_message(
     localization: &Arc<crate::localization::LocalizationManager>,
     extractor: &SharedExtractor,
 ) -> Result<()> {
+    // During an action, an answer gets no list button: the action's ❌ stays the only exit
+    let in_action = dialogue.get().await?.is_some_and(|state| state.is_action());
     // Extract user's language code from Telegram
     let language_code = msg
         .from
@@ -137,6 +139,7 @@ pub async fn handle_document_message(
                     bot,
                     msg.chat.id,
                     answer.id,
+                    in_action,
                     localization,
                     language_code,
                 )
@@ -155,6 +158,7 @@ pub async fn handle_document_message(
                 bot,
                 msg.chat.id,
                 answer.id,
+                in_action,
                 localization,
                 language_code,
             )

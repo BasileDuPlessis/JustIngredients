@@ -1230,21 +1230,20 @@ async fn a_second_recipe_with_the_same_name_is_numbered(pool: PgPool) -> Result<
 
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
-async fn migration_4_numbers_existing_duplicates_in_creation_order(pool: PgPool) -> Result<()> {
+async fn duplicate_names_are_numbered_without_new_collisions(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
-    // Duplicates made before migration 4 (update_recipe_name does not number)
+    // Duplicates made by older versions (update_recipe_name does not number), next to an
+    // existing "Recipe (2)" that a naive numbering would collide with
     let mut ids = Vec::new();
-    for _ in 0..3 {
+    for name in ["Recipe", "Recipe", "Recipe (2)", "Recipe"] {
         let id = create_recipe(&pool, 77, "texte").await?;
-        update_recipe_name(&pool, 77, id, "Recipe").await?;
+        update_recipe_name(&pool, 77, id, name).await?;
         ids.push(id);
     }
     let other = create_recipe(&pool, 88, "texte").await?;
     update_recipe_name(&pool, 88, other, "Recipe").await?;
 
-    migrations::rollback_to_version(&pool, 3).await?;
-    migrations::apply_pending_migrations(&pool).await?;
-
+    assert_eq!(number_duplicate_recipe_names(&pool).await?, 2);
     let mut names = Vec::new();
     for id in &ids {
         let recipe = read_recipe_with_name(&pool, 77, *id).await?;
@@ -1254,9 +1253,11 @@ async fn migration_4_numbers_existing_duplicates_in_creation_order(pool: PgPool)
         names,
         vec![
             Some("Recipe".to_string()),
+            Some("Recipe (3)".to_string()),
             Some("Recipe (2)".to_string()),
-            Some("Recipe (3)".to_string())
-        ]
+            Some("Recipe (4)".to_string()),
+        ],
+        "the oldest keeps its name, the others take the first free numbers"
     );
     let other_name = read_recipe_with_name(&pool, 88, other)
         .await?
@@ -1266,5 +1267,6 @@ async fn migration_4_numbers_existing_duplicates_in_creation_order(pool: PgPool)
         Some("Recipe"),
         "another user's recipe is not numbered"
     );
+    assert_eq!(number_duplicate_recipe_names(&pool).await?, 0, "idempotent");
     Ok(())
 }

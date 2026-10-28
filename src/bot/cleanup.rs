@@ -64,9 +64,10 @@ async fn take(chat: ChatId, kinds: &[&str]) -> Vec<crate::db::ChatMessage> {
         })
 }
 
-/// Deletes the messages Telegram still allows deleting. An older list or home message only
-/// loses its buttons (a bot can edit its messages at any time); older prompts stay as they are.
-/// The active card is never deleted: it loses its buttons and goes into the history.
+/// Deletes the messages Telegram still allows deleting. An older list or home message shrinks to
+/// one line without buttons, and any other older message loses its buttons (a bot can edit its
+/// messages at any time), so no forgotten button stays usable. The active card is never
+/// deleted: it loses its buttons and goes into the history.
 async fn delete_or_strip(bot: &Bot, chat: ChatId, messages: Vec<crate::db::ChatMessage>) {
     let mut ids = Vec::new();
     for message in messages {
@@ -85,10 +86,9 @@ async fn delete_or_strip(bot: &Bot, chat: ChatId, messages: Vec<crate::db::ChatM
             if let Err(e) = bot.edit_message_text(chat, id, OLD_LIST_LINE).await {
                 debug!(error = %e, "Could not shrink an old list");
             }
-        } else if message.kind == CARD {
-            if let Err(e) = bot.edit_message_reply_markup(chat, id).await {
-                debug!(error = %e, "Could not remove the buttons of an old card");
-            }
+        } else if let Err(e) = bot.edit_message_reply_markup(chat, id).await {
+            // An old prompt, answer or confirmation (e.g. "🗑️ Oui, supprimer") or card
+            debug!(error = %e, "Could not remove the buttons of an old message");
         }
     }
     delete(bot, chat, ids).await;
@@ -264,6 +264,14 @@ pub async fn is_recorded(chat: ChatId, id: MessageId) -> Option<bool> {
     crate::db::is_chat_message_recorded(pool, chat.0, id.0)
         .await
         .ok()
+}
+
+/// A card of a version before U5.4 whose action button was just pressed: recorded as the active
+/// card, so the action puts it into the history and "❌ Annuler" brings it back.
+pub async fn adopt_card(chat: ChatId, id: MessageId, recipe_id: i64) {
+    if is_recorded(chat, id).await == Some(false) {
+        record_active_card(chat, id, recipe_id).await;
+    }
 }
 
 /// A list of a version before U5 being paged: recorded as a list from now on, so the next

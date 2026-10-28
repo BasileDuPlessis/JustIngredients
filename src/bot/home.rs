@@ -70,16 +70,25 @@ pub async fn send_home_keeping(
     }
 }
 
-/// An answer outside an action (help, an error, an unknown command), already sent and recorded
-/// as transient: it replaces the list or the active card at the bottom and carries
-/// "📚 Liste des recettes" (U6.3). It goes when the next action ends.
+/// An answer (help, an error, an unknown command), already sent and recorded as transient. Outside
+/// an action it replaces whatever had buttons at the bottom (the list, the active card, an earlier
+/// answer or a pending confirmation) and carries "📚 Liste des recettes" (U6.3); it goes when the
+/// next action ends. During an action it gets no button: the action's ❌ stays the only exit, and
+/// the answer goes with the action.
 pub async fn answer_at_bottom(
     bot: &Bot,
     chat_id: ChatId,
     answer: teloxide::types::MessageId,
+    in_action: bool,
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
 ) {
+    if in_action {
+        return;
+    }
+    cleanup::untrack(chat_id, answer).await;
+    cleanup::delete_action_messages(bot, chat_id).await;
+    cleanup::track(chat_id, answer).await;
     cleanup::delete_lists(bot, chat_id).await;
     add_list_button(bot, chat_id, answer, localization, language_code).await;
 }
