@@ -222,6 +222,196 @@ async fn test_get_user_recipes_paginated_impl(pool: &PgPool) -> Result<()> {
 
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_save_recipe_is_all_or_nothing(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let ingredients = [
+        NewIngredient {
+            name: "farine",
+            quantity: Some(200.0),
+            unit: Some("g"),
+        },
+        NewIngredient {
+            name: "sel",
+            quantity: None,
+            unit: None,
+        },
+    ];
+    let saved = save_recipe(
+        &pool,
+        12345,
+        Some("fr"),
+        "200 g farine\nsel",
+        "Pain",
+        &ingredients,
+    )
+    .await?;
+    let recipe = read_recipe_with_name(&pool, 12345, saved.recipe_id)
+        .await?
+        .expect("saved");
+    assert_eq!(
+        recipe.recipe_name.as_deref().map(|n| n.as_str()),
+        Some("Pain")
+    );
+    let stored = get_recipe_ingredients(&pool, 12345, saved.recipe_id).await?;
+    assert_eq!(stored.len(), 2);
+    assert_eq!(
+        stored
+            .iter()
+            .find(|i| i.name == "sel")
+            .and_then(|i| i.quantity),
+        None
+    );
+
+    // The same user is reused, never duplicated
+    let again = save_recipe(&pool, 12345, Some("en"), "x", "Tarte", &ingredients).await?;
+    assert_eq!(again.user_id, saved.user_id);
+
+    // An ingredient that cannot be stored (name over 255 characters) leaves nothing behind
+    let too_long = "x".repeat(300);
+    let failing = [
+        NewIngredient {
+            name: "beurre",
+            quantity: Some(50.0),
+            unit: Some("g"),
+        },
+        NewIngredient {
+            name: &too_long,
+            quantity: None,
+            unit: None,
+        },
+    ];
+    assert!(
+        save_recipe(&pool, 12345, Some("fr"), "x", "Ratée", &failing)
+            .await
+            .is_err()
+    );
+    let (recipes, total) = get_user_recipes_newest_first(&pool, 12345, 10, 0).await?;
+    assert_eq!(total, 2, "the failed save added no recipe: {recipes:?}");
+    assert!(recipes.iter().all(|r| r.name != "Ratée"));
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_apply_ingredient_changes_writes_exact_values_in_one_go(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let saved = save_recipe(
+        &pool,
+        555,
+        Some("fr"),
+        "x",
+        "Gâteau",
+        &[
+            NewIngredient {
+                name: "sucre",
+                quantity: Some(1.0),
+                unit: Some("cup"),
+            },
+            NewIngredient {
+                name: "sel",
+                quantity: Some(2.0),
+                unit: Some("g"),
+            },
+            NewIngredient {
+                name: "beurre",
+                quantity: Some(50.0),
+                unit: Some("g"),
+            },
+        ],
+    )
+    .await?;
+    let before = get_recipe_ingredients(&pool, 555, saved.recipe_id).await?;
+    let id = |name: &str| {
+        before
+            .iter()
+            .find(|i| i.name == name)
+            .map(|i| i.id)
+            .expect(name)
+    };
+
+    // Another user's recipe: refused, nothing written
+    let refused =
+        apply_ingredient_changes(&pool, 999, saved.recipe_id, None, &[], &[], &[id("beurre")])
+            .await;
+    assert!(refused.is_err());
+    assert_eq!(
+        get_recipe_ingredients(&pool, 555, saved.recipe_id)
+            .await?
+            .len(),
+        3
+    );
+
+    apply_ingredient_changes(
+        &pool,
+        555,
+        saved.recipe_id,
+        Some("fr"),
+        &[
+            IngredientUpdate {
+                id: id("sucre"),
+                ingredient: NewIngredient {
+                    name: "sucre",
+                    quantity: Some(0.5),
+                    unit: Some("cup"),
+                },
+            },
+            IngredientUpdate {
+                id: id("sel"),
+                ingredient: NewIngredient {
+                    name: "sel",
+                    quantity: None,
+                    unit: None,
+                },
+            },
+        ],
+        &[NewIngredient {
+            name: "lait",
+            quantity: Some(200.0),
+            unit: Some("ml"),
+        }],
+        &[id("beurre")],
+    )
+    .await?;
+    let after = get_recipe_ingredients(&pool, 555, saved.recipe_id).await?;
+    let find = |name: &str| after.iter().find(|i| i.name == name);
+    assert_eq!(find("sucre").and_then(|i| i.quantity), Some(0.5));
+    let salt = find("sel").expect("sel");
+    assert_eq!(
+        (salt.quantity, salt.unit.as_deref()),
+        (None, None),
+        "quantity and unit cleared"
+    );
+    assert!(find("lait").is_some());
+    assert!(find("beurre").is_none());
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_delete_recipe_removes_its_ingredients(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let ingredients = [NewIngredient {
+        name: "farine",
+        quantity: Some(1.0),
+        unit: None,
+    }];
+    let saved = save_recipe(&pool, 777, None, "x", "Crêpes", &ingredients).await?;
+    assert!(
+        !delete_recipe(&pool, 999, saved.recipe_id).await?,
+        "another user's recipe"
+    );
+    assert!(delete_recipe(&pool, 777, saved.recipe_id).await?);
+    assert!(read_recipe_with_name(&pool, 777, saved.recipe_id)
+        .await?
+        .is_none());
+    assert!(get_recipe_ingredients(&pool, 777, saved.recipe_id)
+        .await?
+        .is_empty());
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn test_get_user_recipes_newest_first(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
 
@@ -537,36 +727,6 @@ async fn test_ingredient_operations_are_scoped_by_owner_impl(pool: &PgPool) -> R
     assert!(read_ingredient(pool, OWNER_A, ingredient_id)
         .await?
         .is_none());
-
-    Ok(())
-}
-
-#[sqlx::test(migrations = false)]
-#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
-async fn test_update_recipe_ingredients_is_scoped_by_owner(pool: PgPool) -> Result<()> {
-    init_database_schema(&pool).await?;
-    test_update_recipe_ingredients_is_scoped_by_owner_impl(&pool).await
-}
-
-async fn test_update_recipe_ingredients_is_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
-    let (recipe_id, _) = create_recipe_with_ingredient(pool, OWNER_A, "Secret Cake").await?;
-    get_or_create_user(pool, OTHER_B, Some("en")).await?;
-
-    // User B: an empty list would delete every ingredient if B owned the recipe
-    let result = update_recipe_ingredients(pool, OTHER_B, recipe_id, &[]).await;
-    assert!(result.is_err(), "B must get 'recipe not found'");
-    assert_eq!(
-        get_recipe_ingredients(pool, OWNER_A, recipe_id)
-            .await?
-            .len(),
-        1
-    );
-
-    // User A: the same call applies
-    update_recipe_ingredients(pool, OWNER_A, recipe_id, &[]).await?;
-    assert!(get_recipe_ingredients(pool, OWNER_A, recipe_id)
-        .await?
-        .is_empty());
 
     Ok(())
 }

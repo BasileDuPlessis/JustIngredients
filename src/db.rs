@@ -166,12 +166,17 @@ pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> R
 
     // First, delete all ingredients associated with this recipe (only if the caller owns it)
     // This is necessary due to the foreign key constraint between ingredients and recipes
+    // One transaction: never a recipe left without its ingredients, or the reverse
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to start the delete transaction")?;
     let ingredients_deleted = sqlx::query(
         "DELETE FROM ingredients WHERE recipe_id = (SELECT id FROM recipes WHERE id = $1 AND telegram_id = $2)",
     )
     .bind(recipe_id)
     .bind(telegram_id)
-    .execute(pool)
+    .execute(&mut *tx)
     .await
     .context("Failed to delete ingredients for recipe")?;
 
@@ -181,9 +186,12 @@ pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> R
     let result = sqlx::query("DELETE FROM recipes WHERE id = $1 AND telegram_id = $2")
         .bind(recipe_id)
         .bind(telegram_id)
-        .execute(pool)
+        .execute(&mut *tx)
         .await
         .context("Failed to delete recipe")?;
+    tx.commit()
+        .await
+        .context("Failed to commit the recipe deletion")?;
 
     let rows_affected = result.rows_affected();
     if rows_affected > 0 {
@@ -193,6 +201,190 @@ pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> R
         info!("No recipe found with ID: {recipe_id}");
         Ok(false)
     }
+}
+
+/// An ingredient of a recipe being saved.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NewIngredient<'a> {
+    pub name: &'a str,
+    /// `None` for an ingredient without quantity ("sel").
+    pub quantity: Option<f64>,
+    pub unit: Option<&'a str>,
+}
+
+/// Ids of a recipe saved by [`save_recipe`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct SavedRecipe {
+    pub recipe_id: i64,
+    /// Internal `users.id` of the owner.
+    pub user_id: i64,
+}
+
+/// Saves a new recipe of `telegram_id` with its name and ingredients in one transaction: either
+/// everything is written or nothing is, so a failing ingredient leaves no partial recipe. The
+/// owner's `users` row is created on first use with `ON CONFLICT`, which is safe when two first
+/// requests arrive together. `content` is the extracted text, also kept as each ingredient's
+/// `raw_text`.
+pub async fn save_recipe(
+    pool: &PgPool,
+    telegram_id: i64,
+    language_code: Option<&str>,
+    content: &str,
+    name: &str,
+    ingredients: &[NewIngredient<'_>],
+) -> Result<SavedRecipe> {
+    let start_time = std::time::Instant::now();
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to start the recipe transaction")?;
+
+    let user_id: i64 = sqlx::query_scalar(
+        "INSERT INTO users (telegram_id, language_code) VALUES ($1, $2) \
+         ON CONFLICT (telegram_id) DO UPDATE SET telegram_id = EXCLUDED.telegram_id \
+         RETURNING id",
+    )
+    .bind(telegram_id)
+    .bind(language_code.unwrap_or("en"))
+    .fetch_one(&mut *tx)
+    .await
+    .context("Failed to get or create the recipe owner")?;
+
+    let recipe_id: i64 = sqlx::query_scalar(
+        "INSERT INTO recipes (telegram_id, content, recipe_name) VALUES ($1, $2, $3) RETURNING id",
+    )
+    .bind(telegram_id)
+    .bind(content)
+    .bind(name)
+    .fetch_one(&mut *tx)
+    .await
+    .context("Failed to insert the recipe")?;
+
+    for ingredient in ingredients {
+        sqlx::query(
+            "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit, raw_text) \
+             VALUES ($1, $2, $3, $4, $5, $6)",
+        )
+        .bind(user_id)
+        .bind(recipe_id)
+        .bind(ingredient.name)
+        .bind(ingredient.quantity)
+        .bind(ingredient.unit)
+        .bind(content)
+        .execute(&mut *tx)
+        .await
+        .with_context(|| format!("Failed to insert the ingredient '{}'", ingredient.name))?;
+    }
+
+    tx.commit().await.context("Failed to commit the recipe")?;
+    observability::record_db_performance_metrics(
+        "save_recipe",
+        start_time.elapsed(),
+        2 + ingredients.len() as u64,
+        crate::observability::QueryComplexity::Medium,
+    );
+    Ok(SavedRecipe { recipe_id, user_id })
+}
+
+/// New values of a saved ingredient, written as they are (`None` clears the quantity or unit).
+#[derive(Debug, Clone, PartialEq)]
+pub struct IngredientUpdate<'a> {
+    pub id: i64,
+    pub ingredient: NewIngredient<'a>,
+}
+
+/// Applies the edit of a saved recipe of `telegram_id` in one transaction: every update, addition
+/// and deletion, or none of them. Unlike [`update_ingredient`], an update writes the given values,
+/// so a quantity or unit can be removed. Fails without writing when the recipe is not the user's.
+pub async fn apply_ingredient_changes(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+    language_code: Option<&str>,
+    updates: &[IngredientUpdate<'_>],
+    additions: &[NewIngredient<'_>],
+    deletions: &[i64],
+) -> Result<()> {
+    let start_time = std::time::Instant::now();
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to start the ingredient transaction")?;
+
+    let owned: Option<i32> =
+        sqlx::query_scalar("SELECT 1 FROM recipes WHERE id = $1 AND telegram_id = $2")
+            .bind(recipe_id)
+            .bind(telegram_id)
+            .fetch_optional(&mut *tx)
+            .await
+            .context("Failed to check the recipe owner")?;
+    if owned.is_none() {
+        return Err(anyhow::anyhow!(
+            "Recipe {recipe_id} not found for this user"
+        ));
+    }
+
+    for update in updates {
+        sqlx::query(
+            "UPDATE ingredients SET name = $1, quantity = $2, unit = $3, \
+             updated_at = CURRENT_TIMESTAMP WHERE id = $4 AND recipe_id = $5",
+        )
+        .bind(update.ingredient.name)
+        .bind(update.ingredient.quantity)
+        .bind(update.ingredient.unit)
+        .bind(update.id)
+        .bind(recipe_id)
+        .execute(&mut *tx)
+        .await
+        .with_context(|| format!("Failed to update the ingredient {}", update.id))?;
+    }
+
+    if !additions.is_empty() {
+        let user_id: i64 = sqlx::query_scalar(
+            "INSERT INTO users (telegram_id, language_code) VALUES ($1, $2) \
+             ON CONFLICT (telegram_id) DO UPDATE SET telegram_id = EXCLUDED.telegram_id \
+             RETURNING id",
+        )
+        .bind(telegram_id)
+        .bind(language_code.unwrap_or("en"))
+        .fetch_one(&mut *tx)
+        .await
+        .context("Failed to get or create the recipe owner")?;
+        for ingredient in additions {
+            sqlx::query(
+                "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit, raw_text) \
+                 VALUES ($1, $2, $3, $4, $5, '')",
+            )
+            .bind(user_id)
+            .bind(recipe_id)
+            .bind(ingredient.name)
+            .bind(ingredient.quantity)
+            .bind(ingredient.unit)
+            .execute(&mut *tx)
+            .await
+            .with_context(|| format!("Failed to add the ingredient '{}'", ingredient.name))?;
+        }
+    }
+
+    for id in deletions {
+        sqlx::query("DELETE FROM ingredients WHERE id = $1 AND recipe_id = $2")
+            .bind(id)
+            .bind(recipe_id)
+            .execute(&mut *tx)
+            .await
+            .with_context(|| format!("Failed to delete the ingredient {id}"))?;
+    }
+
+    tx.commit()
+        .await
+        .context("Failed to commit the ingredient changes")?;
+    observability::record_db_performance_metrics(
+        "apply_ingredient_changes",
+        start_time.elapsed(),
+        (updates.len() + additions.len() + deletions.len()) as u64,
+        crate::observability::QueryComplexity::Medium,
+    );
+    Ok(())
 }
 
 /// Get or create a user by Telegram ID
@@ -659,110 +851,6 @@ pub async fn get_recipe_ingredients(
         ingredients.len()
     );
     Ok(ingredients)
-}
-
-/// Bulk update ingredients for a recipe (add/update/delete)
-///
-/// This function handles the complex task of synchronizing edited ingredients
-/// with the database, performing the minimal set of operations needed.
-pub async fn update_recipe_ingredients(
-    pool: &PgPool,
-    telegram_id: i64,
-    recipe_id: i64,
-    ingredients: &[crate::text_processing::MeasurementMatch],
-) -> Result<()> {
-    let span = crate::observability::db_span("update_recipe_ingredients", "ingredients");
-    let _enter = span.enter();
-
-    let start_time = std::time::Instant::now();
-    info!(
-        "Bulk updating {} ingredients for recipe {}",
-        ingredients.len(),
-        recipe_id
-    );
-
-    // Check ownership before any write: a recipe owned by another user is "not found"
-    let recipe = read_recipe_with_name(pool, telegram_id, recipe_id)
-        .await?
-        .ok_or_else(|| anyhow::anyhow!("Recipe not found during update"))?;
-
-    // Get existing ingredients for this recipe
-    let existing_ingredients = get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
-
-    // Use the change detection logic from ingredient_editing module
-    let changes =
-        crate::ingredient_editing::detect_ingredient_changes(&existing_ingredients, ingredients);
-
-    // Execute changes in transaction
-    let mut tx = pool.begin().await.context("Failed to start transaction")?;
-
-    // Delete ingredients that are no longer present
-    for &ingredient_id in &changes.to_delete {
-        sqlx::query("DELETE FROM ingredients WHERE id = $1 AND recipe_id = $2")
-            .bind(ingredient_id)
-            .bind(recipe_id)
-            .execute(&mut *tx)
-            .await
-            .context(format!("Failed to delete ingredient {}", ingredient_id))?;
-        info!("Deleted ingredient ID {}", ingredient_id);
-    }
-
-    // Update existing ingredients
-    for (ingredient_id, new_match) in &changes.to_update {
-        let quantity = new_match.quantity.parse::<f64>().ok();
-        let unit = new_match.measurement.as_deref();
-
-        sqlx::query("UPDATE ingredients SET name = $1, quantity = $2, unit = $3, updated_at = CURRENT_TIMESTAMP WHERE id = $4 AND recipe_id = $5")
-            .bind(&new_match.ingredient_name)
-            .bind(quantity)
-            .bind(unit)
-            .bind(ingredient_id)
-            .bind(recipe_id)
-            .execute(&mut *tx)
-            .await
-            .context(format!("Failed to update ingredient {}", ingredient_id))?;
-        info!("Updated ingredient ID {}", ingredient_id);
-    }
-
-    // Add new ingredients
-    for new_match in &changes.to_add {
-        let quantity = new_match.quantity.parse::<f64>().ok();
-        let unit = new_match.measurement.as_deref();
-
-        sqlx::query("INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit) VALUES ($1, $2, $3, $4, $5)")
-            .bind(recipe.telegram_id)
-            .bind(recipe_id)
-            .bind(&new_match.ingredient_name)
-            .bind(quantity)
-            .bind(unit)
-            .execute(&mut *tx)
-            .await
-            .context(format!("Failed to add new ingredient '{}'", new_match.ingredient_name))?;
-        info!("Added new ingredient '{}'", new_match.ingredient_name);
-    }
-
-    // Commit transaction
-    tx.commit()
-        .await
-        .context("Failed to commit ingredient updates")?;
-
-    let duration = start_time.elapsed();
-    observability::record_db_performance_metrics(
-        "update_recipe_ingredients",
-        duration,
-        ingredients.len() as u64,
-        crate::observability::QueryComplexity::Complex,
-    );
-
-    info!(
-        "Successfully updated ingredients for recipe {}: {} deleted, {} updated, {} added",
-        recipe_id,
-        changes.to_delete.len(),
-        changes.to_update.len(),
-        changes.to_add.len()
-    );
-
-    Ok(())
 }
 
 /// Update the recipe name for a recipe owned by `telegram_id`

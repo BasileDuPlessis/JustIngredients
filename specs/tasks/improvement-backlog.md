@@ -192,7 +192,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 ## P1: Should Fix Soon
 
 ### IMP-004: Quantities > 1000 become `0`; confirm button saves `0`; manual "1500 g" rejected
-- [ ] Done
+- [x] Done (triage 2026-10-28): Confirm refuses flagged quantities and lists them; one `MAX_QUANTITY`; the Gemini mapping keeps the values.
 - Priority: P1. Effort: M. Area: Parsing / Bot.
 - Related: LLM migration (the plan maps `needs_review` to `requires_quantity_confirmation`, so
   the button path must check that flag first, or Gemini's review signal is ignored).
@@ -224,7 +224,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   quantities (> 10000, letter mixes) are still replaced by `"0"` instead of kept and flagged.
 
 ### IMP-005: Quantity parsing is inconsistent; mixed numbers are saved as NULL
-- [ ] Done
+- [x] Done (2026-10-28): `parse_quantity` reads mixed numbers ("1 1/2"); saved-recipe edits store the parsed value (fractions) and can clear a quantity or unit; change detection compares the stored values (no quantity is not 1).
 - Priority: P1. Effort: M. Area: Parsing / DB.
 - Related: LLM migration (Task 1.1 units module and Task 1.3 mapping should own the single parser).
 - Location: `src/validation.rs:239-262` (`parse_quantity`), `src/text_processing.rs:1525-1535`
@@ -251,7 +251,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   3. `rg "parse::<f64>\(\)" src/bot src/db.rs src/ingredient_editing.rs` finds nothing.
 
 ### IMP-006: Multi-row writes are not transactional
-- [ ] Done
+- [x] Done (2026-10-28): `db::save_recipe` (user upsert, recipe with its name, ingredients) and `db::apply_ingredient_changes` (updates, additions, deletions) each run in one transaction; `delete_recipe` too. DB tests: a failing ingredient leaves no recipe; another user's recipe is refused without writing. A failed save still exits the dialogue (IMP-023).
 - Priority: P1. Effort: M. Area: DB.
 - Related: LLM migration (Task 3.2 changes the same save path, so do this first or in the same task).
 - Location: `src/bot/dialogue_manager.rs:1077-1190` (`save_ingredients_to_database`),
@@ -397,7 +397,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   2. Unit test: the limiter keeps at most N keys, and an expired key is removed.
 
 ### IMP-012: `cargo audit` reports 18 vulnerabilities; `deny.toml` unused
-- [ ] Done
+- [x] Done (triage 2026-10-28): dependencies updated, cargo-deny `advisories sources` in CI (`447fd9d`).
 - Priority: P1. Effort: S. Area: Dependencies.
 - Location: `Cargo.lock`, `.github/workflows/build-test.yml` (security job), `config/deny.toml`.
 - Problem: `cargo audit` (2026-10-26) reports "18 vulnerabilities found" and 10 warnings: `rustls`
@@ -700,7 +700,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   `_sqlx_migrations` in both.
 
 ### IMP-029: `update_recipe_ingredients` binds `telegram_id` as `user_id`
-- [ ] Done
+- [x] Done (2026-10-28): `update_recipe_ingredients` deleted (never called by the bot).
 - Priority: P2. Effort: S. Area: DB.
 - Location: `src/db.rs:619-714`, in particular `src/db.rs:680` (`.bind(recipe.telegram_id)` for
   `ingredients.user_id REFERENCES users(id)`), `src/db.rs:639` and `src/db.rs:669-671` (reads outside
@@ -713,7 +713,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: a DB test that adds an ingredient to a saved recipe and checks `user_id = users.id`.
 
 ### IMP-030: One global circuit breaker without a half-open state
-- [ ] Done
+- [x] Done (triage 2026-10-28): the OCR breaker is gone; `extraction::breaker` has a half-open state.
 - Priority: P2. Effort: M. Area: Resilience.
 - Related: LLM migration (Task 2.2 reuses this breaker for Gemini, so fix it there).
 - Location: `src/circuit_breaker.rs:86-90`, `src/circuit_breaker.rs:158-186`,
@@ -757,7 +757,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   line.
 
 ### IMP-033: Locale placeholder bug: `.replace("{}", …)` vs `{$msg}`
-- [ ] Done
+- [x] Obsolete (triage 2026-10-28): the `.replace("{}")` code and the OCR keys were removed.
 - Priority: P2. Effort: S. Area: Localization.
 - Related: LLM migration (Task 3.3 already plans this fix. Tick both together.)
 - Location: `src/bot/image_processing.rs:321`, `src/bot/image_processing.rs:337`,
@@ -862,7 +862,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: `rg "\.0 as i64" src` is empty, and the chosen lints are at `deny` in CI.
 
 ### IMP-039: Health checks load Tesseract every minute; bot-token check is a no-op
-- [ ] Done
+- [x] Done (triage 2026-10-28): no Tesseract; health uses the Telegram heartbeat; readiness needs a Telegram success.
 - Priority: P3. Effort: S. Area: Observability.
 - Related: LLM migration (Task 3.5 replaces the OCR check. Readiness must not call the paid API.)
 - Location: `src/observability/health_checks.rs:47-57` (`LepTess::new` on every readiness call and
@@ -877,7 +877,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   Telegram health metric red.
 
 ### IMP-040: Pre-push hook untracked, slow, and missing `cargo fmt --check`
-- [ ] Done
+- [x] Done (triage 2026-10-28): versioned `scripts/hooks/pre-push` with fmt, clippy and `cargo test --lib` (`ea8b5f6`).
 - Priority: P2. Effort: S. Area: Tooling.
 - Related: LLM migration (Task 5.4 versions the hook in `scripts/hooks/`.)
 - Location: `.git/hooks/pre-push` (untracked, documented in README).
@@ -889,7 +889,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: an unformatted change is rejected by `git push` in under a minute.
 
 ### IMP-041: Docker image built twice, pushed on PRs, no build cache, unused CI artifact
-- [ ] Done
+- [x] Done (triage 2026-10-28): one image per push to main, layer cache, no duplicate workflow (Task 5.4).
 - Priority: P2. Effort: M. Area: CI/CD.
 - Related: LLM migration (Task 5.4, target pipeline.)
 - Location: `.github/workflows/build-and-push-docker.yml`, `.github/workflows/deploy-staging.yml`,
@@ -1030,7 +1030,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: the production run deploys the digest the staging run deployed.
 
 ### IMP-051: Observability and HTTP settings of `.env.example` are never read
-- [ ] Done
+- [x] Closed as a duplicate of IMP-016 (triage 2026-10-28).
 - Priority: P3. Effort: S. Area: Config.
 - Location: `src/config.rs` (`config.observability = ObservabilityConfig::default()`),
   `src/main.rs` (HTTP client timeout 30 s, deduplicator 300 s / 10,000 entries),
@@ -1044,7 +1044,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: unit tests of the config loading; `LOG_FORMAT=json` gives JSON logs.
 
 ### IMP-052: `update_recipe_ingredients` writes the Telegram id as `ingredients.user_id`
-- [ ] Done
+- [x] Done (2026-10-28, same as IMP-029): the function was deleted.
 - Priority: P3. Effort: S. Area: Database.
 - Location: `src/db.rs` (`update_recipe_ingredients` binds `recipe.telegram_id` as `user_id`).
 - Problem: `ingredients.user_id` is the internal `users.id`; the function is not called by the bot
@@ -1052,3 +1052,14 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Proposed fix: delete the function (saved-recipe edits use `update_ingredient`,
   `create_ingredient` and `delete_ingredient`) or bind the user's `users.id`.
 - Validation: DB test, or `git grep update_recipe_ingredients` empty.
+
+## Triage of 2026-10-28
+Read-only check of every open item against `main` at `1c10336`, after UX phase U1, part of U2 and
+migration Phase 5. Ticked above: 004, 005, 006, 009, 012, 029, 030, 033, 039, 040, 041, 051, 052.
+- Scheduled in the UX plan: 007 (U2.5; the message-id check and answering the query after a
+  failing handler are not planned yet), 010 (U3.4), 024 (U3.3), the search part of 026 (U4.1).
+- Partly done: 008 (no French cancel word nor `/annuler`), 011 (public health server, staging
+  without metrics token, limiter per proxy peer), 013 (`tests/integration/bot_flow_tests.rs`
+  never compiled), 016 (observability and HTTP settings ignored), 023 (a failed save loses the
+  review), 025 (English, UTC dates on cards), 034, 042.
+- Still open as described: 017–022, 026–028, 031, 032, 035–038, 044, 047–050.

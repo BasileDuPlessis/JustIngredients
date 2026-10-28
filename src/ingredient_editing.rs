@@ -9,6 +9,16 @@ use crate::validation::{parse_ingredient_from_text, parse_quantity_answer};
 /// Longest ingredient name accepted, in characters (same limit as a typed line).
 const MAX_INGREDIENT_NAME_CHARS: usize = 100;
 
+/// The values to store for an ingredient: quantities are parsed like typed ones ("1/2",
+/// "1 1/2"), and an empty quantity is stored as none.
+pub fn to_new_ingredient(ingredient: &MeasurementMatch) -> crate::db::NewIngredient<'_> {
+    crate::db::NewIngredient {
+        name: &ingredient.ingredient_name,
+        quantity: crate::validation::parse_quantity(&ingredient.quantity),
+        unit: ingredient.measurement.as_deref(),
+    }
+}
+
 /// The ingredient after the user's answer to an edit prompt: the whole line is parsed again,
 /// or only the quantity or the name is replaced. Errors carry the locale key to show.
 pub fn apply_edit(
@@ -113,20 +123,19 @@ pub fn detect_ingredient_changes(
         let orig = &original[i];
         let edit = &edited[i];
 
-        // Compare the key data
-        let orig_quantity = orig.quantity.unwrap_or(1.0);
-        let orig_unit = orig.unit.as_deref().unwrap_or("");
-        let orig_name = &orig.name;
+        // Compare the stored values: no quantity is not "1", and "1/2" is 0.5
+        let quantity_changed = match (
+            orig.quantity,
+            crate::validation::parse_quantity(&edit.quantity),
+        ) {
+            (Some(stored), Some(edited)) => (stored - edited).abs() > 1e-9,
+            (None, None) => false,
+            _ => true,
+        };
+        let unit_changed =
+            orig.unit.as_deref().unwrap_or("") != edit.measurement.as_deref().unwrap_or("");
 
-        let edit_quantity = edit.quantity.parse::<f64>().unwrap_or(1.0);
-        let edit_unit = edit.measurement.as_deref().unwrap_or("");
-        let edit_name = &edit.ingredient_name;
-
-        // If any data changed, mark as update
-        if (orig_quantity - edit_quantity).abs() > f64::EPSILON
-            || orig_unit != edit_unit
-            || orig_name != edit_name
-        {
+        if quantity_changed || unit_changed || orig.name != edit.ingredient_name {
             changes.to_update.push((orig.id, edit.clone()));
         }
     }
@@ -218,6 +227,36 @@ mod tests {
         assert_eq!(quantity_only.ingredient_name, "sel");
         // Without the current ingredient (index out of range) the line is parsed
         assert!(apply_edit(IngredientField::Name, None, "2 cups flour").is_ok());
+    }
+
+    #[test]
+    fn stored_values_parse_fractions_and_keep_no_quantity() {
+        let half = line("1/2", Some("cup"), "sugar", false);
+        assert_eq!(to_new_ingredient(&half).quantity, Some(0.5));
+        let mixed = line("1 1/2", Some("cup"), "flour", false);
+        assert_eq!(to_new_ingredient(&mixed).quantity, Some(1.5));
+        let salt = line("", None, "sel", false);
+        assert_eq!(to_new_ingredient(&salt).quantity, None);
+        assert_eq!(to_new_ingredient(&salt).unit, None);
+    }
+
+    #[test]
+    fn clearing_a_quantity_or_typing_a_fraction_is_a_change() {
+        let stored = [create_test_ingredient(1, "sucre", Some(1.0), Some("cup"))];
+        for edited_quantity in ["", "1/2", "1 1/2"] {
+            let edited = [line(edited_quantity, Some("cup"), "sucre", false)];
+            let changes = detect_ingredient_changes(&stored, &edited);
+            assert_eq!(changes.to_update.len(), 1, "{edited_quantity:?}");
+        }
+        let unchanged = [line("1", Some("cup"), "sucre", false)];
+        assert!(detect_ingredient_changes(&stored, &unchanged)
+            .to_update
+            .is_empty());
+        let no_quantity = [create_test_ingredient(2, "sel", None, None)];
+        let still_none = [line("", None, "sel", false)];
+        assert!(detect_ingredient_changes(&no_quantity, &still_none)
+            .to_update
+            .is_empty());
     }
 
     #[test]

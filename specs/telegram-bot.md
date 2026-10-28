@@ -149,9 +149,9 @@ turn (`AwaitingQuantityCorrection`; a number in range, or `-`/"none"/"aucune" fo
 saves under the current name (caption or "Recipe") without asking for a name; "cancel" or "stop"
 cancels; anything else answers `review-help`.
 
-Saving (`save_ingredients_to_database`): `get_or_create_user`, `create_recipe` (content = the
-transcription), `update_recipe_name`, then one `create_ingredient` per line, not in a single
-transaction. Owner id: the callback sender (`from.id`) on the caption path, the chat id on the
+Saving (`save_ingredients_to_database` → `db::save_recipe`): the user, the recipe with its name
+(content = the transcription) and its ingredients in one transaction, nothing written on error;
+quantities are parsed with `parse_quantity` ("1/2", "1 1/2"). Owner id: the callback sender (`from.id`) on the caption path, the chat id on the
 typed paths; they are equal in private chats (IMP-024).
 
 ## Home Message
@@ -213,7 +213,8 @@ state).
   `cancel_ingredient_editing`). Saved ingredients without quantity stay without quantity (they
   were shown and could be saved as "1"). ➕ `add_ingredient` opens
   `AddingIngredientToSavedRecipe` (typed line), 🗑️ removes, ✅ `confirm` writes the differences
-  (update, create, delete), ❌ `cancel_review` drops them. Typed text outside the prompts answers
+  in one transaction (`db::apply_ingredient_changes`: exact values, so a quantity can be cleared),
+  ❌ `cancel_review` drops them. Typed text outside the prompts answers
   `use-buttons-instruction`.
 - **Delete**: confirmation with `confirm_delete_recipe:<id>:<card message id>` and
   `cancel_delete_recipe:<id>:<card message id>`; confirming deletes the recipe, its ingredients,

@@ -253,30 +253,33 @@ pub fn parse_quantity_answer(input: &str) -> Option<String> {
 /// assert_eq!(parse_quantity("2"), Some(2.0));
 /// assert_eq!(parse_quantity("1/2"), Some(0.5));
 /// assert_eq!(parse_quantity("2.5"), Some(2.5));
+/// assert_eq!(parse_quantity("1 1/2"), Some(1.5));
 /// assert_eq!(parse_quantity("invalid"), None);
 /// ```
 pub fn parse_quantity(quantity_str: &str) -> Option<f64> {
-    if quantity_str.contains('/') {
-        // Handle fractions like "1/2"
-        let parts: Vec<&str> = quantity_str.split('/').collect();
-        if parts.len() == 2 {
-            if let (Ok(numerator), Ok(denominator)) =
-                (parts[0].parse::<f64>(), parts[1].parse::<f64>())
-            {
-                if denominator != 0.0 {
-                    Some(numerator / denominator)
-                } else {
-                    None
-                }
-            } else {
-                None
-            }
-        } else {
-            None
+    let quantity = quantity_str.trim();
+    // Mixed number "1 1/2": a whole part, then a fraction
+    if let Some((whole, fraction)) = quantity.split_once(char::is_whitespace) {
+        let whole = parse_simple_quantity(whole)?;
+        let fraction = fraction.trim();
+        return (fraction.contains('/') && whole.fract() == 0.0)
+            .then(|| parse_simple_quantity(fraction))
+            .flatten()
+            .map(|fraction| whole + fraction);
+    }
+    parse_simple_quantity(quantity)
+}
+
+/// A number ("2", "2.5", "2,5") or a fraction ("1/2"), without spaces.
+fn parse_simple_quantity(quantity: &str) -> Option<f64> {
+    match quantity.split_once('/') {
+        Some((numerator, denominator)) => {
+            let numerator: f64 = numerator.parse().ok()?;
+            let denominator: f64 = denominator.parse().ok()?;
+            (denominator != 0.0).then_some(numerator / denominator)
         }
-    } else {
-        // Handle regular numbers, replace comma with dot for European format
-        quantity_str.replace(',', ".").parse::<f64>().ok()
+        // Comma as decimal separator (European format)
+        None => quantity.replace(',', ".").parse::<f64>().ok(),
     }
 }
 
@@ -544,6 +547,21 @@ mod tests {
 
         // European format
         assert_eq!(parse_quantity("2,5"), Some(2.5));
+
+        // Mixed numbers
+        assert_eq!(parse_quantity("1 1/2"), Some(1.5));
+        assert_eq!(parse_quantity(" 2  3/4 "), Some(2.75));
+        assert_eq!(
+            parse_quantity("1 2"),
+            None,
+            "two numbers, not a mixed number"
+        );
+        assert_eq!(
+            parse_quantity("1.5 1/2"),
+            None,
+            "the whole part must be whole"
+        );
+        assert_eq!(parse_quantity("1 1/0"), None);
 
         // Invalid cases
         assert_eq!(parse_quantity(""), None);

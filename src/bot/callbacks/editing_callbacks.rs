@@ -5,7 +5,6 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
-use tracing::error;
 
 // Import error logging utilities
 use crate::errors::error_logging;
@@ -27,6 +26,7 @@ use crate::bot::cleanup::send_transient;
 use crate::bot::home::send_home;
 use crate::bot::ui_builder::{edit_instruction_key, parse_ingredient_action, IngredientAction};
 use crate::bot::HandlerContext;
+use crate::ingredient_editing::to_new_ingredient;
 
 // Import callback types module
 use super::callback_types::SavedIngredientsParams;
@@ -498,31 +498,38 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
     // Apply changes to database
     if !changes.to_update.is_empty() || !changes.to_add.is_empty() || !changes.to_delete.is_empty()
     {
-        // Update existing ingredients
-        for (ingredient_id, new_data) in &changes.to_update {
-            if let Err(e) = crate::db::update_ingredient(
-                pool,
-                telegram_id,
-                *ingredient_id,
-                Some(&new_data.ingredient_name),
-                new_data.quantity.parse().ok(),
-                new_data.measurement.as_deref(),
-            )
-            .await
-            {
-                error_logging::log_database_error(
-                    &e,
-                    "update_ingredient",
-                    Some(q.from.id.0 as i64),
-                    Some(&[("ingredient_id", &ingredient_id.to_string())]),
-                );
+        // Updates, additions and deletions in one transaction: never a half-applied edit
+        let updates: Vec<crate::db::IngredientUpdate> = changes
+            .to_update
+            .iter()
+            .map(|(id, m)| crate::db::IngredientUpdate {
+                id: *id,
+                ingredient: to_new_ingredient(m),
+            })
+            .collect();
+        let additions: Vec<crate::db::NewIngredient> =
+            changes.to_add.iter().map(to_new_ingredient).collect();
+        if let Err(e) = crate::db::apply_ingredient_changes(
+            pool,
+            telegram_id,
+            recipe_id,
+            language_code.as_deref(),
+            &updates,
+            &additions,
+            &changes.to_delete,
+        )
+        .await
+        {
+            error_logging::log_database_error(
+                &e,
+                "apply_ingredient_changes",
+                Some(q.from.id.0 as i64),
+                Some(&[("recipe_id", &recipe_id.to_string())]),
+            );
+            if let Some(message) = &q.message {
                 ctx.bot
                     .send_message(
-                        q.message
-                            .as_ref()
-                            .expect("Callback query should have a message")
-                            .chat()
-                            .id,
+                        message.chat().id,
                         t_lang(
                             ctx.localization,
                             "error-updating-ingredients",
@@ -530,117 +537,8 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                         ),
                     )
                     .await?;
-                return Ok(());
             }
-        }
-
-        // Add new ingredients
-        for new_ingredient in &changes.to_add {
-            // Get the internal user ID from the database
-            let user = match crate::db::get_or_create_user(
-                pool,
-                q.from.id.0 as i64,
-                language_code.as_deref(),
-            )
-            .await
-            {
-                Ok(user) => user,
-                Err(e) => {
-                    error_logging::log_database_error(
-                        &e,
-                        "get_or_create_user",
-                        Some(q.from.id.0 as i64),
-                        None,
-                    );
-                    ctx.bot
-                        .send_message(
-                            q.message
-                                .as_ref()
-                                .expect("Callback query should have a message")
-                                .chat()
-                                .id,
-                            t_lang(
-                                ctx.localization,
-                                "error-processing-failed",
-                                language_code.as_deref(),
-                            ),
-                        )
-                        .await?;
-                    return Ok(());
-                }
-            };
-
-            let quantity = new_ingredient.quantity.parse().ok();
-            let unit = new_ingredient.measurement.as_deref();
-            error!(
-                user_id = %user.id,
-                telegram_id = %q.from.id.0,
-                recipe_id = %recipe_id,
-                ingredient_name = %new_ingredient.ingredient_name,
-                quantity = ?quantity,
-                unit = ?unit,
-                "Attempting to add new ingredient"
-            );
-            if let Err(e) = crate::db::create_ingredient(
-                pool,
-                user.id, // Use internal database user ID
-                Some(recipe_id),
-                &new_ingredient.ingredient_name,
-                quantity,
-                unit,
-                "", // raw_text not meaningful for edited ingredients
-            )
-            .await
-            {
-                error_logging::log_database_error(
-                    &e,
-                    "create_ingredient",
-                    Some(q.from.id.0 as i64),
-                    Some(&[("recipe_id", &recipe_id.to_string())]),
-                );
-                ctx.bot
-                    .send_message(
-                        q.message
-                            .as_ref()
-                            .expect("Callback query should have a message")
-                            .chat()
-                            .id,
-                        t_lang(
-                            ctx.localization,
-                            "error-adding-ingredients",
-                            language_code.as_deref(),
-                        ),
-                    )
-                    .await?;
-                return Ok(());
-            }
-        }
-
-        // Delete ingredients
-        for ingredient_id in &changes.to_delete {
-            if let Err(e) = crate::db::delete_ingredient(pool, telegram_id, *ingredient_id).await {
-                error_logging::log_database_error(
-                    &e,
-                    "delete_ingredient",
-                    Some(q.from.id.0 as i64),
-                    Some(&[("ingredient_id", &ingredient_id.to_string())]),
-                );
-                ctx.bot
-                    .send_message(
-                        q.message
-                            .as_ref()
-                            .expect("Callback query should have a message")
-                            .chat()
-                            .id,
-                        t_lang(
-                            ctx.localization,
-                            "error-deleting-ingredients",
-                            language_code.as_deref(),
-                        ),
-                    )
-                    .await?;
-                return Ok(());
-            }
+            return Ok(());
         }
 
         // Fetch updated recipe details and ingredients

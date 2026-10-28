@@ -19,12 +19,10 @@ use crate::text_processing::MeasurementMatch;
 use crate::dialogue::{IngredientField, RecipeDialogue, RecipeDialogueState};
 
 // Import validation functions
-use crate::validation::{parse_ingredient_from_text, parse_quantity, validate_recipe_name};
+use crate::validation::{parse_ingredient_from_text, validate_recipe_name};
 
 // Import database types
-use crate::db::{
-    create_ingredient, create_recipe, get_or_create_user, update_recipe_name, Ingredient,
-};
+use crate::db::{update_recipe_name, Ingredient};
 
 // Import UI builder functions
 use super::ui_builder::{
@@ -1115,102 +1113,28 @@ pub async fn save_ingredients_to_database(
 
     info!(telegram_id = %telegram_id, ingredient_count = %ingredients.len(), "Starting ingredient save process");
 
-    // Get or create user
-    info!(telegram_id = %telegram_id, "Calling get_or_create_user");
-    let user = match get_or_create_user(pool, telegram_id, language_code).await {
-        Ok(user) => {
-            info!(telegram_id = %telegram_id, user_id = %user.id, user_telegram_id = %user.telegram_id, "User resolved successfully");
-            user
-        }
+    // User, recipe, name and ingredients in one transaction: nothing is left half-saved
+    let new_ingredients: Vec<crate::db::NewIngredient> = ingredients
+        .iter()
+        .map(crate::ingredient_editing::to_new_ingredient)
+        .collect();
+    let saved = match crate::db::save_recipe(
+        pool,
+        telegram_id,
+        language_code,
+        extracted_text,
+        recipe_name,
+        &new_ingredients,
+    )
+    .await
+    {
+        Ok(saved) => saved,
         Err(e) => {
-            error!(telegram_id = %telegram_id, error = %e, "CRITICAL: get_or_create_user failed!");
+            error!(telegram_id = %telegram_id, recipe_name = %recipe_name, error = %e, "Recipe save failed, nothing was written");
             return Err(e);
         }
     };
-
-    // Verify user has correct telegram_id
-    if user.telegram_id != telegram_id {
-        error!(
-            telegram_id = %telegram_id,
-            user_id = %user.id,
-            user_telegram_id = %user.telegram_id,
-            "CRITICAL: Resolved user has wrong telegram_id!"
-        );
-        return Err(anyhow::anyhow!(
-            "User resolution returned wrong telegram_id: expected {}, got {}",
-            telegram_id,
-            user.telegram_id
-        ));
-    }
-
-    // Create recipe
-    info!(telegram_id = %telegram_id, user_id = %user.id, "Creating recipe");
-    let recipe_id = match create_recipe(pool, telegram_id, extracted_text).await {
-        Ok(id) => {
-            info!(telegram_id = %telegram_id, recipe_id = %id, "Recipe created successfully");
-            id
-        }
-        Err(e) => {
-            error!(telegram_id = %telegram_id, user_id = %user.id, error = %e, "Recipe creation failed");
-            return Err(e);
-        }
-    };
-
-    // Update recipe with recipe name
-    info!(recipe_id = %recipe_id, recipe_name = %recipe_name, "Updating recipe name");
-    match update_recipe_name(pool, telegram_id, recipe_id, recipe_name).await {
-        Ok(_) => {
-            info!(recipe_id = %recipe_id, "Recipe name updated successfully");
-        }
-        Err(e) => {
-            error!(recipe_id = %recipe_id, recipe_name = %recipe_name, error = %e, "Recipe name update failed");
-            return Err(e);
-        }
-    };
-
-    // Save each ingredient
-    for (i, ingredient) in ingredients.iter().enumerate() {
-        // Parse quantity from string (handle fractions)
-        let quantity = parse_quantity(&ingredient.quantity);
-        let unit = ingredient.measurement.as_deref();
-
-        info!(
-            ingredient_index = %i,
-            user_id = %user.id,
-            recipe_id = %recipe_id,
-            name = %ingredient.ingredient_name,
-            quantity = ?quantity,
-            unit = ?unit,
-            "Creating ingredient"
-        );
-
-        match create_ingredient(
-            pool,
-            user.id,
-            Some(recipe_id),
-            &ingredient.ingredient_name,
-            quantity,
-            unit,
-            extracted_text,
-        )
-        .await
-        {
-            Ok(_) => {
-                info!(ingredient_index = %i, name = %ingredient.ingredient_name, "Ingredient created successfully");
-            }
-            Err(e) => {
-                error!(
-                    ingredient_index = %i,
-                    user_id = %user.id,
-                    recipe_id = %recipe_id,
-                    name = %ingredient.ingredient_name,
-                    error = %e,
-                    "Ingredient creation failed"
-                );
-                return Err(e);
-            }
-        }
-    }
+    let crate::db::SavedRecipe { recipe_id, user_id } = saved;
 
     let processing_duration = start_time.elapsed();
 
@@ -1227,12 +1151,12 @@ pub async fn save_ingredients_to_database(
         ingredients.len(),
         naming_method,
         processing_duration,
-        user.id,
+        user_id,
     );
 
     info!(
         telegram_id = %telegram_id,
-        user_id = %user.id,
+        user_id = %user_id,
         recipe_id = %recipe_id,
         ingredient_count = %ingredients.len(),
         duration_ms = %processing_duration.as_millis(),
