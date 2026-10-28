@@ -294,24 +294,6 @@ pub fn edit_instruction_key(field: IngredientField) -> &'static str {
     }
 }
 
-/// Create inline keyboard for OCR processing with cancel option
-pub fn create_processing_keyboard(
-    language_code: Option<&str>,
-    localization: &Arc<crate::localization::LocalizationManager>,
-) -> InlineKeyboardMarkup {
-    with_ui_metrics_sync("create_processing_keyboard", 0, || {
-        let buttons = vec![vec![create_localized_button_with_emoji(
-            localization,
-            "❌",
-            "cancel",
-            "cancel_processing".to_string(),
-            language_code,
-        )]];
-
-        InlineKeyboardMarkup::new(buttons)
-    })
-}
-
 /// Create inline keyboard for paginated recipe list
 pub fn create_recipes_pagination_keyboard(
     recipes: &[String],

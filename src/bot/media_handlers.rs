@@ -61,7 +61,7 @@ pub async fn handle_photo_message(
                 ImageProcessingParams {
                     file_id: largest_photo.file.id.clone(),
                     chat_id: msg.chat.id,
-                    success_message: &t_lang(localization, "processing-photo", language_code),
+                    success_message: &t_lang(localization, "processing-reading", language_code),
                     language_code,
                     dialogue,
                     pool,
@@ -113,11 +113,7 @@ pub async fn handle_document_message(
                     ImageProcessingParams {
                         file_id: doc.file.id.clone(),
                         chat_id: msg.chat.id,
-                        success_message: &t_lang(
-                            localization,
-                            "processing-document",
-                            language_code,
-                        ),
+                        success_message: &t_lang(localization, "processing-reading", language_code),
                         language_code,
                         dialogue,
                         pool,

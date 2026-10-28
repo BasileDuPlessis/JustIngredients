@@ -80,8 +80,7 @@ save-failed-retry = L'enregistrement a échoué, rien n'a été enregistré. Ré
 error-try-again = Veuillez réessayer avec une image différente.
 
 # Messages de traitement
-processing-photo = Photo téléchargée avec succès ! Traitement en cours...
-processing-document = Document image téléchargé avec succès ! Traitement en cours...
+processing-reading = ⏳ Lecture de la recette…
 
 # Types de messages non supportés
 unsupported-title = 🤔 Je ne peux traiter que les messages texte et les images.
@@ -108,7 +107,6 @@ review-title = Révisez vos ingrédients
 review-description = Veuillez réviser les ingrédients extraits ci-dessous. Utilisez les boutons pour modifier ou supprimer des éléments, puis confirmez quand vous êtes prêt.
 review-confirm = Confirmer et sauvegarder
 review-cancelled = Révision des ingrédients annulée. Aucun ingrédient n'a été sauvegardé.
-processing-cancelled = Traitement de l'image annulé. Aucun ingrédient n'a été extrait.
 review-no-ingredients = Aucun ingrédient restant
 review-no-ingredients-help = Tous les ingrédients ont été supprimés. Vous pouvez ajouter plus d'ingrédients en envoyant une autre image, ou annuler cette recette.
 review-add-more = Ajouter plus d'ingrédients

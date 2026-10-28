@@ -5,7 +5,7 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
-use teloxide::types::{InlineKeyboardMarkup, MaybeInaccessibleMessage, User};
+use teloxide::types::{MaybeInaccessibleMessage, User};
 use tracing::debug;
 use tracing::Instrument;
 
@@ -14,7 +14,6 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import recipe callbacks module
 use super::recipe_callbacks;
-use crate::bot::home::send_home;
 
 // Import UI builder functions
 use crate::bot::ui_builder::{
@@ -166,8 +165,6 @@ pub async fn callback_handler(
                     &localization,
                 )
                 .await?;
-            } else if data == "cancel_processing" {
-                handle_cancel_processing_button(&bot, &q, &dialogue, &localization, &pool).await?;
             }
         }
 
@@ -319,9 +316,6 @@ pub async fn callback_handler_with_cache(
                         &localization,
                     )
                     .await?;
-                } else if data == "cancel_processing" {
-                    handle_cancel_processing_button(&bot, &q, &dialogue, &localization, &pool)
-                        .await?;
                 }
             }
             Ok(())
@@ -370,19 +364,25 @@ fn needs_editing_dialogue(data: &str) -> bool {
         )
 }
 
+/// Buttons older versions sent and nothing handles any more, e.g. the Cancel of a processing
+/// message left when the bot restarted during an extraction.
+const RETIRED_BUTTONS: [&str; 1] = ["cancel_processing"];
+
 /// A review or edit button pressed while no review or edit is running: the bot restarted since
 /// (dialogues are kept in memory) or a newer action replaced it, so the button did nothing.
+/// Retired buttons are always stale.
 fn is_stale_button(data: &str, state: Option<&RecipeDialogueState>) -> bool {
-    needs_editing_dialogue(data)
-        && !matches!(
-            state,
-            Some(
-                RecipeDialogueState::ReviewIngredients { .. }
-                    | RecipeDialogueState::EditingSavedIngredients { .. }
-                    | RecipeDialogueState::EditingIngredient { .. }
-                    | RecipeDialogueState::EditingSavedIngredient { .. }
+    RETIRED_BUTTONS.contains(&data)
+        || needs_editing_dialogue(data)
+            && !matches!(
+                state,
+                Some(
+                    RecipeDialogueState::ReviewIngredients { .. }
+                        | RecipeDialogueState::EditingSavedIngredients { .. }
+                        | RecipeDialogueState::EditingIngredient { .. }
+                        | RecipeDialogueState::EditingSavedIngredient { .. }
+                )
             )
-        )
 }
 
 /// Handle callbacks when in EditingIngredient dialogue state
@@ -579,47 +579,6 @@ async fn handle_editing_saved_ingredient_callbacks(
         }
     }
 
-    Ok(())
-}
-
-/// Handle cancel processing button callback
-///
-/// This function handles cancellation during OCR processing:
-/// - Edits the processing message to show cancellation
-/// - Removes all buttons from the message
-/// - Exits the dialogue to clean up state
-async fn handle_cancel_processing_button(
-    bot: &Bot,
-    q: &teloxide::types::CallbackQuery,
-    dialogue: &RecipeDialogue,
-    localization: &Arc<crate::localization::LocalizationManager>,
-    pool: &PgPool,
-) -> Result<()> {
-    let message = q
-        .message
-        .as_ref()
-        .expect("Callback query should have a message");
-    let chat_id = message.chat().id;
-    let language_code = &q.from.language_code;
-
-    // Edit the existing message to show cancellation and remove all buttons
-    bot.edit_message_text(
-        chat_id,
-        message.id(),
-        t_lang(
-            localization,
-            "processing-cancelled",
-            language_code.as_deref(),
-        ),
-    )
-    .reply_markup(InlineKeyboardMarkup::new(Vec::<
-        Vec<teloxide::types::InlineKeyboardButton>,
-    >::new())) // Remove all inline keyboard buttons
-    .await?;
-
-    // End the dialogue
-    dialogue.exit().await?;
-    send_home(bot, pool, chat_id, localization, language_code.as_deref()).await;
     Ok(())
 }
 
@@ -839,13 +798,18 @@ mod tests {
     }
 
     #[test]
+    fn retired_buttons_are_always_stale() {
+        assert!(is_stale_button("cancel_processing", None));
+        assert!(is_stale_button("cancel_processing", Some(&review_state())));
+    }
+
+    #[test]
     fn buttons_that_work_in_any_state_are_never_stale() {
         for data in [
             "recipe_instance:3",
             "page:1",
             "workflow_list_recipes",
             "noop",
-            "cancel_processing",
         ] {
             assert!(!is_stale_button(data, None), "{data}");
         }

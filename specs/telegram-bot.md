@@ -95,10 +95,9 @@ the user's language.
    checked on the declared size, `Content-Length` and the body. Errors never contain the file
    URL (it embeds the bot token). Too large: `error-extraction-image-too-large`; other failures:
    `error-download-failed`.
-2. A processing message (`processing-photo` or `processing-document`) is sent with a ❌ Cancel
-   button (`cancel_processing`). Since the chat's next update waits for this one, a press is
-   only handled after the extraction has finished, and then cancels the review that has just
-   appeared.
+2. A processing message `processing-reading` ("⏳ Lecture de la recette…") is sent, without a
+   button: the chat's next update waits for this one, so a Cancel press could only act once the
+   review is shown (it used to cancel the review that had just appeared).
 3. `ImageInput::prepare`: JPEG, PNG and WebP are sent as they are; other formats the `image`
    crate decodes (BMP, TIFF, GIF…) are converted to JPEG, one conversion at a time, with
    8,000 px and 96 MB decoding limits.
@@ -170,8 +169,7 @@ typed paths; they are equal in private chats (IMP-024).
 ## Home Message
 `home::send_home` ends every finished action:
 - saving a recipe: caption path, typed name, typed "confirm", end of the quantity questions;
-- cancelling: the review (button or typed word), the processing message, the name prompt, the
-  quantity questions;
+- cancelling: the review (button or typed word), the name prompt, the quantity questions;
 - a saved recipe: rename (also when it fails), delete confirmed or cancelled, ingredient editing
   confirmed or cancelled (also when the recipe was deleted meanwhile). A delete confirmed or
   cancelled while another action runs (e.g. a rename prompt is open) sends no home message, so
@@ -257,7 +255,7 @@ it) answers `button-expired` and loses its keyboard.
 | `back_to_recipes` | any | Delete the current message |
 | `page:<n>` | any | Recipe list page |
 | `workflow_list_recipes`, `workflow_search_recipes` | any | Recipe list (home "all my recipes" button), search placeholder; `workflow_add_another` is handled but never sent |
-| `cancel_processing` | any | Processing message replaced by `processing-cancelled`, dialogue ended |
+| `cancel_processing` | any | Retired (2026-10-28): answered as a stale button (`button-expired`, keyboard removed) |
 
 `cancel_empty` and `noop` are sent but have no handler; `add_more`, offered when the last line of
 a saved recipe is deleted, has no handler in `EditingSavedIngredients` either (U2.5). In `ReviewIngredients`, `workflow_*`

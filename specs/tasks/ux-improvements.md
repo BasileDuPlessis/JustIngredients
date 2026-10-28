@@ -207,7 +207,11 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
   recipe.
 
 ### Task U2.4: Honest processing message (finding 6) (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-28): the processing message is "⏳ Lecture de la recette…" without a button.
+  Running the extraction outside the chat's update was not cheap (dialogue updates racing a new
+  photo), so the Cancel button was removed: a press was only handled after the extraction and
+  then cancelled the review that had just appeared. An old `cancel_processing` button answers
+  "no longer active" and loses its keyboard.
 - Description: remove the Cancel button that cannot act during processing (or run extraction
   outside the per-chat update so it can, if cheap); show "⏳ Reading the recipe…".
 - How to validate: no dead button; message replaced by the review or an error.

@@ -14,9 +14,7 @@ use crate::localization::t_lang;
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
-use super::ui_builder::{
-    create_ingredient_review_keyboard, create_processing_keyboard, render_review,
-};
+use super::ui_builder::{create_ingredient_review_keyboard, render_review};
 
 // Import HandlerContext
 // use super::HandlerContext;
@@ -140,12 +138,9 @@ pub async fn download_and_process_image(
         }
     };
 
-    // Processing message with a cancel button, replaced below by the result
-    let processing_keyboard = create_processing_keyboard(language_code, localization);
-    let processing_message = bot
-        .send_message(chat_id, success_message)
-        .reply_markup(processing_keyboard)
-        .await?;
+    // Processing message, replaced below by the result. It has no Cancel button: the chat's
+    // next update waits for this one, so a press would only act once the review is shown.
+    let processing_message = bot.send_message(chat_id, success_message).await?;
     let message_id = processing_message.id;
 
     let extraction = match ImageInput::prepare(bytes).await {
