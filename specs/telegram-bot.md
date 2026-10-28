@@ -48,7 +48,7 @@ src/bot/
 ├── media_handlers.rs       # Photo and image document messages
 ├── image_processing.rs     # Download, extraction call, review message, error keys
 ├── dialogue_manager.rs     # Text input of each dialogue state, save to database
-├── home.rs                 # Home message sent at the end of every action
+├── home.rs                 # End of an action: cleanup, recipe list sent again last
 ├── html.rs                 # Html type (escaped text, <b>, <pre>), send_html / edit_html
 ├── ui_builder.rs           # Review list and keyboards, recipe list and card keyboards
 ├── ui_components.rs        # Buttons, pagination row, focused edit keyboard
@@ -70,11 +70,11 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 ## Messages and Commands
 | Input | Behaviour |
 |---|---|
-| Any text starting with `/` | A command, in every dialogue state (`commands::route_text`): a running action ends first (dialogue exited, its recorded messages deleted; the previous home message stays and no new one is sent), then the command runs. |
-| `/liste`, `/list`, `/recipes` | First page of the recipe list. |
-| `/start` | Welcome message. |
+| Any text starting with `/` | A command, in every dialogue state (`commands::route_text`): a running action ends first (dialogue exited, its recorded messages deleted; the recipe list stays and is not sent again), then the command runs. |
+| `/liste`, `/list`, `/recipes` | Moves the recipe list to the bottom (like the end of an action). |
+| `/start` | Welcome message, then the recipe list below it; the welcome goes at the next action's end. |
 | `/aide`, `/help` | Help message. |
-| `/annuler`, `/cancel` | Ends the running action (like any command) and sends the home message. |
+| `/annuler`, `/cancel` | Ends the running action (like any command) and moves the recipe list down. |
 | `/cherche`, `/search` | "Search is coming soon" (`search-coming-soon`); the words are parsed but not used yet. |
 | Unknown `/command` | `unknown-command` and the menu commands. |
 | Other text, no dialogue | Echo "Received: <text>" plus a tip to send a photo (`text-response`, `text-tip`). No search. |
@@ -153,13 +153,13 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
   deletes it too; a cancel keeps it as the `review-cancelled` notice. Then:
   - name from the caption or the page title: saved at once; the review loses its buttons; the
     saved recipe card follows (`home::send_saved_recipe`: ✅ bold name, ingredients, recipe card
-    buttons), then the [home message](#home-message);
+    buttons), then the [recipe list](#end-of-an-action-the-recipe-list-last);
   - otherwise: buttons removed, `recipe-name-prompt` sent, state
     `WaitingForRecipeNameAfterConfirm`. The typed name (a cancel word cancels; empty
     or over 255 bytes refused) is saved; the prompt is deleted with the review messages and the
-    saved recipe card is sent, followed by the home message.
+    saved recipe card is sent, followed by the recipe list.
 - `cancel_review` (and a typed cancel word; both call `review_callbacks::cancel_review`): the
-  review list becomes `review-cancelled` without buttons, dialogue ended, home message.
+  review list becomes `review-cancelled` without buttons, dialogue ended, recipe list sent again.
 - Older messages may still carry the post-save buttons that the home message replaced:
   📚 `workflow_list_recipes` (recipe list) and 🔍 `workflow_search_recipes` (answers
   `workflow-search-coming-soon`); both are still handled.
@@ -175,25 +175,29 @@ Saving (`save_ingredients_to_database` → `db::save_recipe`): the user, the rec
 quantities are parsed with `parse_quantity` ("1/2", "1 1/2"). Owner id: the callback sender (`from.id`) on the caption path, the chat id on the
 typed paths; they are equal in private chats (IMP-024).
 
-## Home Message
+## End of an Action: the Recipe List Last
 `home::send_home` ends every finished action:
-- saving a recipe: caption path, typed name, typed "confirm", end of the quantity questions;
-- cancelling: the review (button or typed word), the name prompt, the quantity questions;
+- saving a recipe: caption path, typed name, typed "confirm";
+- cancelling: the review (button or typed word), the name prompt;
 - a saved recipe: rename (also when it fails), delete confirmed or cancelled, ingredient editing
   confirmed or cancelled (also when the recipe was deleted meanwhile). A delete confirmed or
-  cancelled while another action runs (e.g. a rename prompt is open) sends no home message, so
-  the running action keeps its prompts.
+  cancelled while another action runs (e.g. a rename prompt is open) does not end it, so the
+  running action keeps its prompts;
+- `/liste`, `/annuler` and the 📚 button of older messages (`workflow_list_recipes`).
 
-Content (`home::render_home`, pure): 🏠 title, the number of recipes, a hint to send a photo
-and the menu commands (`/liste`, `/aide` or `/list`, `/help`). Buttons: the 3 newest recipes
-(📖 name cut at 40 characters, `recipe_instance:<id>`), then 📚 `workflow_list_recipes` when
-there are more; no keyboard without recipes. Recipes are read with
-`db::get_user_recipes_newest_first` for the chat id. A failure is logged and no home message is
-sent; the action itself is not affected.
+It deletes what the action left behind (below) and the previous recipe list, then sends the
+list again as the last message, without notification (`recipe_list::show_recipe_list`, page 1).
+Since U5.2 the list replaces the former home message: its header
+(`recipe_list::render_list_header`) is the bold 📚 title, the number of recipes ("Vous avez 12
+recettes.", "Vous n'avez pas encore de recette.") and the photo hint; no keyboard without
+recipes. A failure is logged and no list is sent; the action itself is not affected. `/start`
+uses `move_list_down` instead, which replaces the list but keeps the action's messages, so its
+welcome stays above the list until the next action ends.
 
-Before sending it, `send_home` deletes what the action left behind (`bot::cleanup`, one
+Before sending the list, `send_home` deletes what the action left behind (`bot::cleanup`, one
 `deleteMessages` call per 100 ids, failures logged at debug level):
-- the previous home message, so a chat has one home message at the bottom;
+- the previous recipe list (and the home message of older versions), so a chat has one list at
+  the bottom; one Telegram no longer lets the bot delete (older than 48 h) only loses its buttons;
 - the messages recorded during the action: every text the user typed in a dialogue state
   (recorded in `handle_text_message`) and the bot prompts sent with `cleanup::send_transient`:
   quantity questions and the "check the quantities" warning, "try again" answers (name, edit,
@@ -202,14 +206,13 @@ Before sending it, `send_home` deletes what the action left behind (`bot::cleanu
 - the user's photo or image document, recorded once its review starts: it stays while the
   ingredients are reviewed and goes when the review ends (saved, cancelled or interrupted by a
   command). A photo whose extraction fails is not recorded;
-- the review message (ingredient list), recorded when the review is confirmed (✅ button or
-  typed "confirm"), and the name prompt: after saving, the saved recipe card and the home message
-  remain.
+- the review message (ingredient list), recorded when it is sent, and the name prompt: after
+  saving, the saved recipe card and the list remain.
 
 Kept: saved or cancelled notices, recipe cards and lists. A review cancelled with ❌ or a typed
 cancel word keeps its list edited to `review-cancelled`. Only recorded messages are deleted. The
-records are message ids (never content) in the `chat_messages` table (kind `transient` or
-`home`), so a deploy or a restart does not forget them; records older than 48 h are dropped
+records are message ids (never content) in the `chat_messages` table (kind `transient`, `list`,
+or `home` for older versions), so a deploy or a restart does not forget them; records older than 48 h are dropped
 without deleting (Telegram refuses them). A database error only leaves the messages in the chat.
 
 ## My Recipes
@@ -258,7 +261,7 @@ loses its keyboard and is not passed to the state handler.
 | `item_<i>`, `back_review`, `qty_<i>`, `name_<i>`, `edit_<i>`, `delete_<i>`, `confirm`, `cancel_review` | `ReviewIngredients`, `EditingSavedIngredients` | Review or saved-recipe editing (above) |
 | `add_ingredient`, `add_more` (old messages) | `ReviewIngredients`, `EditingSavedIngredients` | Add a line (focused prompt in a review, `AddingIngredientToSavedRecipe` for a saved recipe) |
 | `cancel_ingredient_editing` | `EditingIngredient`, `EditingSavedIngredient` | Leave the focused edit prompt |
-| `recipe_instance:<id>` | any | Open a recipe by id (recipe list, home message) |
+| `recipe_instance:<id>` | any | Open a recipe by id (recipe list, home message of older versions) |
 | `select_recipe:`, `select_recipe_h:`, `recipe_action:statistics:` | any | Retired (2026-10-28): stale button |
 | `recipe_action:<action>:<id>` | any | `rename`, `edit_ingredients`, `delete` |
 | `confirm_delete_recipe:`, `cancel_delete_recipe:` | any | Delete confirmation |

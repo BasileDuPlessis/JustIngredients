@@ -38,12 +38,10 @@ private-chat-only = I only work in private chats: message me directly.
 button-expired = This button is no longer active. Send the photo again, or open the recipe from the home message.
 
 # Home message (end of every action)
-home-title = 🏠 Home
 home-no-recipes = You have no recipe yet.
 home-one-recipe = You have 1 recipe.
 home-recipe-count = You have {$count} recipes.
 home-send-photo = 📸 Send a photo of an ingredient list to add a recipe.
-home-all-recipes = 📚 All my recipes
 
 # Error messages
 error-download-failed = Failed to download the image. Please try again.
@@ -154,10 +152,7 @@ page = Page
 of = of
 
 # Recipes command messages
-no-recipes-found = No recipes found
-no-recipes-suggestion = Send me some ingredient images to create your first recipe!
 your-recipes = Your Recipes
-select-recipe = Select a recipe to view its ingredients:
 recipe-details-coming-soon = Recipe details coming soon!
 
 # Post-confirmation workflow messages

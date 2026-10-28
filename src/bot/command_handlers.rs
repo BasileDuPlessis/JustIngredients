@@ -98,8 +98,10 @@ pub async fn handle_start_command(
         );
     }
 
+    // Shown until the next action ends, above the recipe list
     let welcome_message = render_welcome(localization, language_code);
-    send_html(bot, msg.chat.id, welcome_message).await?;
+    let sent = send_html(bot, msg.chat.id, welcome_message).await?;
+    super::cleanup::track(msg.chat.id, sent.id).await;
     Ok(())
 }
 
@@ -174,16 +176,9 @@ pub async fn handle_recipes_command(
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     debug!(user_id = %msg.chat.id, "Handling list command");
-    super::recipe_list::show_recipe_list(
-        bot,
-        &pool,
-        msg.chat.id,
-        0,
-        None,
-        language_code,
-        localization,
-    )
-    .await
+    // The list moves to the bottom, like at the end of an action
+    super::home::send_home(bot, &pool, msg.chat.id, localization, language_code).await;
+    Ok(())
 }
 
 /// Messages from a group: recipes belong to one person, so the bot only works in private chats.

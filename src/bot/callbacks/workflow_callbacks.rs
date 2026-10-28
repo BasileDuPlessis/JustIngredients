@@ -74,6 +74,7 @@ pub async fn handle_recipes_pagination(
         localization,
     )
     .await
+    .map(|_| ())
 }
 
 /// Handle list recipes workflow callback
@@ -89,16 +90,16 @@ pub async fn handle_list_recipes(
     let MaybeInaccessibleMessage::Regular(msg) = msg else {
         return Ok(());
     };
-    crate::bot::recipe_list::show_recipe_list(
+    // The list moves to the bottom, like at the end of an action
+    crate::bot::home::send_home(
         bot,
         &pool,
         msg.chat.id,
-        0,
-        None,
-        language_code.as_deref(),
         localization,
+        language_code.as_deref(),
     )
-    .await
+    .await;
+    Ok(())
 }
 
 /// Handle workflow button callbacks (post-confirmation actions)

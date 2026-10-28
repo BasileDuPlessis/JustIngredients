@@ -37,12 +37,10 @@ private-chat-only = Je fonctionne seulement en conversation privée : écrivez-m
 button-expired = Ce bouton n'est plus actif. Renvoyez la photo, ou ouvrez la recette depuis l'accueil.
 
 # Message d'accueil (fin de chaque action)
-home-title = 🏠 Accueil
 home-no-recipes = Vous n'avez pas encore de recette.
 home-one-recipe = Vous avez 1 recette.
 home-recipe-count = Vous avez {$count} recettes.
 home-send-photo = 📸 Envoyez une photo d'une liste d'ingrédients pour ajouter une recette.
-home-all-recipes = 📚 Toutes mes recettes
 
 # Messages d'erreur
 error-download-failed = Échec du téléchargement de l'image. Veuillez réessayer.
@@ -149,10 +147,7 @@ page = Page
 of = sur
 
 # Messages de commande recettes
-no-recipes-found = Aucune recette trouvée
-no-recipes-suggestion = Envoyez-moi des images d'ingrédients pour créer votre première recette !
-your-recipes = Vos Recettes
-select-recipe = Sélectionnez une recette pour voir ses ingrédients :
+your-recipes = Vos recettes
 recipe-details-coming-soon = Détails de la recette bientôt disponibles !
 
 # Messages de workflow post-confirmation

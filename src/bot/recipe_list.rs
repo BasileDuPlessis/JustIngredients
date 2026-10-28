@@ -11,8 +11,9 @@ use teloxide::prelude::*;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, MessageId};
 
 use crate::db::{get_user_recipes_newest_first, RecipeSummary};
-use crate::localization::{t_lang, LocalizationManager};
+use crate::localization::{t_args_lang, t_lang, LocalizationManager};
 
+use super::html::{edit_html, send_html, Html};
 use super::ui_builder::format_recipe_date;
 use super::ui_components::{create_pagination_buttons, truncate_text};
 
@@ -96,9 +97,35 @@ pub fn recipe_list_keyboard(
     InlineKeyboardMarkup::new(rows)
 }
 
-/// Sends page `page` of the user's recipes, or turns `edit` (the list being paged) into it. A
-/// page past the end shows the last one. The bot only serves private chats, so the chat id is
-/// the user's Telegram id, the recipes' owner.
+/// The list's text: its title, the number of recipes and how to add one. It is the last message
+/// of the chat after every action (it replaced the home message in U5.2).
+pub fn render_list_header(
+    total: i64,
+    language_code: Option<&str>,
+    localization: &Arc<LocalizationManager>,
+) -> Html {
+    let count = match total {
+        0 => t_lang(localization, "home-no-recipes", language_code),
+        1 => t_lang(localization, "home-one-recipe", language_code),
+        n => t_args_lang(
+            localization,
+            "home-recipe-count",
+            &[("count", &n.to_string())],
+            language_code,
+        ),
+    };
+    Html::bold(&format!(
+        "📚 {}",
+        t_lang(localization, "your-recipes", language_code)
+    )) + Html::text(&format!(
+        "\n{count}\n{}",
+        t_lang(localization, "home-send-photo", language_code)
+    ))
+}
+
+/// Sends page `page` of the user's recipes without notification and returns the new message,
+/// or turns `edit` (the list being paged) into it. A page past the end shows the last one. The
+/// bot only serves private chats, so the chat id is the user's Telegram id, the recipes' owner.
 pub async fn show_recipe_list(
     bot: &Bot,
     pool: &PgPool,
@@ -107,7 +134,7 @@ pub async fn show_recipe_list(
     edit: Option<MessageId>,
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
-) -> Result<()> {
+) -> Result<Option<MessageId>> {
     let telegram_id = chat_id.0;
     // The query refuses offsets over 10,000: beyond, show the last page it can read
     let page = page.min(usize::try_from(10_000 / RECIPES_PER_PAGE).unwrap_or(0));
@@ -123,38 +150,28 @@ pub async fn show_recipe_list(
                 .await?;
     }
 
-    if recipes.is_empty() {
-        let text = format!(
-            "📚 {}\n\n{}",
-            t_lang(localization, "no-recipes-found", language_code),
-            t_lang(localization, "no-recipes-suggestion", language_code)
-        );
-        match edit {
-            Some(id) => bot.edit_message_text(chat_id, id, text).await.map(|_| ())?,
-            None => bot.send_message(chat_id, text).await.map(|_| ())?,
-        }
-        return Ok(());
-    }
-
-    let text = format!(
-        "📚 {}\n\n{}",
-        t_lang(localization, "your-recipes", language_code),
-        t_lang(localization, "select-recipe", language_code)
-    );
-    let keyboard = recipe_list_keyboard(&recipes, page, total, language_code, localization);
+    let text = render_list_header(total, language_code, localization);
+    // No recipe: the header alone tells how to start
+    let keyboard = (!recipes.is_empty())
+        .then(|| recipe_list_keyboard(&recipes, page, total, language_code, localization));
     match edit {
         Some(id) => {
-            bot.edit_message_text(chat_id, id, text)
-                .reply_markup(keyboard)
-                .await?;
+            let request = edit_html(bot, chat_id, id, text);
+            match keyboard {
+                Some(keyboard) => request.reply_markup(keyboard).await?,
+                None => request.await?,
+            };
+            Ok(None)
         }
         None => {
-            bot.send_message(chat_id, text)
-                .reply_markup(keyboard)
-                .await?;
+            let request = send_html(bot, chat_id, text).disable_notification(true);
+            let sent = match keyboard {
+                Some(keyboard) => request.reply_markup(keyboard).await?,
+                None => request.await?,
+            };
+            Ok(Some(sent.id))
         }
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -221,6 +238,21 @@ mod tests {
             ],
             "a unique name alone; same name same day: day and time; one page: no page row"
         );
+    }
+
+    #[test]
+    fn the_list_header_counts_recipes_and_tells_how_to_add_one() {
+        let localization = manager();
+        let header = render_list_header(12, Some("fr"), &localization);
+        assert!(header.as_str().starts_with("<b>📚 "), "{}", header.as_str());
+        assert!(
+            header.as_str().contains("12 recettes"),
+            "{}",
+            header.as_str()
+        );
+        assert!(header.as_str().contains("📸"), "{}", header.as_str());
+        let empty = render_list_header(0, Some("en"), &localization);
+        assert!(!empty.as_str().contains('0'), "{}", empty.as_str());
     }
 
     #[test]

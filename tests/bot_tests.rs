@@ -651,35 +651,6 @@ mod tests {
         assert!(formatted.contains("\n") || formatted.contains("•"));
     }
 
-    /// Test recipes command message formatting
-    #[test]
-    fn test_recipes_command_message_formatting() {
-        let manager = setup_localization();
-        use just_ingredients::localization::t_lang;
-
-        // Test that localization keys exist and return reasonable strings
-        let your_recipes = t_lang(&manager, "your-recipes", Some("en"));
-        let select_recipe = t_lang(&manager, "select-recipe", Some("en"));
-        let no_recipes = t_lang(&manager, "no-recipes-found", Some("en"));
-        let no_recipes_suggestion = t_lang(&manager, "no-recipes-suggestion", Some("en"));
-
-        assert!(!your_recipes.is_empty());
-        assert!(!select_recipe.is_empty());
-        assert!(!no_recipes.is_empty());
-        assert!(!no_recipes_suggestion.is_empty());
-
-        // Test French versions
-        let your_recipes_fr = t_lang(&manager, "your-recipes", Some("fr"));
-        let select_recipe_fr = t_lang(&manager, "select-recipe", Some("fr"));
-
-        assert!(!your_recipes_fr.is_empty());
-        assert!(!select_recipe_fr.is_empty());
-
-        // French and English should be different
-        assert_ne!(your_recipes, your_recipes_fr);
-        assert_ne!(select_recipe, select_recipe_fr);
-    }
-
     /// Test callback data parsing for recipes
     #[test]
     fn test_recipes_callback_data_parsing() {

@@ -1113,10 +1113,12 @@ async fn chat_messages_older_than_48_hours_are_not_deletable(pool: PgPool) -> Re
         vec![
             ChatMessage {
                 message_id: 5,
+                kind: "transient".to_string(),
                 deletable: false
             },
             ChatMessage {
                 message_id: 6,
+                kind: "transient".to_string(),
                 deletable: true
             },
         ]

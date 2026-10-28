@@ -359,7 +359,12 @@ async fn handle_command(
     command: Option<Command>,
 ) -> Result<()> {
     match command {
-        Some(Command::Start) => handle_start_command(bot, msg, localization, language_code).await,
+        Some(Command::Start) => {
+            handle_start_command(bot, msg, localization, language_code).await?;
+            crate::bot::home::move_list_down(bot, &pool, msg.chat.id, localization, language_code)
+                .await;
+            Ok(())
+        }
         Some(Command::Help) => handle_help_command(bot, msg, localization, language_code).await,
         Some(Command::List) => {
             handle_recipes_command(bot, msg, pool, language_code, localization).await

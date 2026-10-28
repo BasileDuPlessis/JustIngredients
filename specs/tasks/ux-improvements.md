@@ -297,7 +297,10 @@ edit its own messages at any time: older messages that should go are edited down
   staging restart the next action still deletes the previous list.
 
 ### Task U5.2: The recipe list as the last message (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-28): `home::send_home` deletes the action's messages and the previous list
+  (an old list loses its buttons instead), then sends page 1 silently with the header that
+  replaced the home message (`recipe_list::render_list_header`); `/liste`, `/annuler` and the
+  older 📚 buttons do the same, `/start` keeps its welcome above the list (`move_list_down`).
 - Description: `send_home` becomes "move the list down": delete the previous list (or, older
   than 48 hours, edit it to one neutral line without buttons) and send page 1 without
   notification. Its header replaces the home message: the recipe count and the photo hint, an

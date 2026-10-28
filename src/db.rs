@@ -1215,9 +1215,11 @@ async fn validate_indexes(
 }
 
 /// A message recorded in `chat_messages`, taken back to be deleted or edited.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ChatMessage {
     pub message_id: i32,
+    /// What it is: `transient`, `home`, `list` or `card`.
+    pub kind: String,
     /// Sent less than 48 hours ago: Telegram still lets the bot delete it.
     pub deletable: bool,
 }
@@ -1266,7 +1268,7 @@ pub async fn take_chat_messages(
     let kinds: Vec<String> = kinds.iter().map(|kind| (*kind).to_string()).collect();
     let rows = sqlx::query(
         "DELETE FROM chat_messages WHERE chat_id = $1 AND kind = ANY($2) \
-         RETURNING message_id, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable",
+         RETURNING message_id, kind, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable",
     )
     .bind(chat_id)
     .bind(&kinds)
@@ -1277,6 +1279,7 @@ pub async fn take_chat_messages(
         .iter()
         .map(|row| ChatMessage {
             message_id: i32::try_from(row.get::<i64, _>("message_id")).unwrap_or(0),
+            kind: row.get("kind"),
             deletable: row.get("deletable"),
         })
         .filter(|message| message.message_id > 0)
