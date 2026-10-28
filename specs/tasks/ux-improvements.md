@@ -45,7 +45,7 @@ are easy to find, and messages read well. Validated by the user on 2026-10-27 fr
 | Topic | Decision (2026-10-27) |
 |---|---|
 | Findings | Findings 1–16 accepted by the user (12 and 13 stay "later"); 17–24 found while updating the specs (Phase U0) and added. |
-| Nominal state | Hybrid: at the end of a transaction the intermediate messages (prompts, user replies, previews) are deleted, the result is kept (e.g. the saved recipe card), then the home message is posted. |
+| Nominal state | Superseded by "Clean thread" (U5, 2026-10-28). Before: at the end of a transaction the intermediate messages were deleted, the result kept, then the home message posted. |
 | Commands | `/liste`, `/cherche`, `/aide`; English aliases `/list`, `/search`, `/help`; `/start` and `/recipes` still accepted. |
 | Free text | Any text sent outside a dialogue is a search in the user's recipes. |
 | Photo | Kept while its ingredients are reviewed, deleted with the other messages when the review ends (2026-10-27). |
@@ -335,7 +335,10 @@ edit its own messages at any time: older messages that should go are edited down
   delete.
 
 ### Task U5.5: Everything else is transient (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-28): typed commands, `/aide`, `/cherche`, unknown commands, free text and
+  unsupported messages with their answers, and an ignored delete confirmation are transient; the
+  answers appear above the list (`move_list_down`). Telegram toasts leave nothing anyway.
+  `telegram-bot.md` rewritten along U5.2–U5.5.
 - Description: `/aide`, `/start`, unknown commands, free text and the bot's answers, delete
   confirmations and "button no longer active" toasts leave nothing once the next action ends;
   the "Nominal state" decision and `telegram-bot.md` are rewritten for the new model.

@@ -155,9 +155,12 @@ pub async fn handle_recipe_action(
                 ),
             ]];
 
-            bot.send_message(chat_id, message)
+            // Deleted by its own buttons, or with the next action's messages if ignored
+            let sent = bot
+                .send_message(chat_id, message)
                 .reply_markup(teloxide::types::InlineKeyboardMarkup::new(keyboard))
                 .await?;
+            crate::bot::cleanup::track(chat_id, sent.id).await;
         }
         "edit_ingredients" => {
             handle_edit_ingredients_callback(

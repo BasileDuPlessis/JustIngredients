@@ -68,10 +68,12 @@ async fn handle_text_message(
             TextRoute::Command(command) => {
                 if in_action {
                     // The command ends the running action, which leaves no message behind;
-                    // the home message from before the action stays
+                    // the recipe list stays
                     dialogue.exit().await?;
                     cleanup::delete_action_messages(bot, msg.chat.id).await;
                 }
+                // The typed command goes too: with its answer, or at once for /liste
+                cleanup::track(msg.chat.id, msg.id).await;
                 return handle_command(bot, msg, pool, localization, language_code, command).await;
             }
             // Replies typed during an action are deleted when it ends
@@ -331,7 +333,10 @@ async fn handle_text_message(
             }
         }
 
-        bot.send_message(
+        // Free text and the answer go when the next action ends; the list stays last
+        cleanup::track(msg.chat.id, msg.id).await;
+        cleanup::send_transient(
+            bot,
             msg.chat.id,
             format!(
                 "{} {}",
@@ -345,6 +350,8 @@ async fn handle_text_message(
             ),
         )
         .await?;
+        crate::bot::home::move_list_down(bot, &pool, msg.chat.id, localization, language_code)
+            .await;
     }
     Ok(())
 }
@@ -365,19 +372,32 @@ async fn handle_command(
                 .await;
             Ok(())
         }
-        Some(Command::Help) => handle_help_command(bot, msg, localization, language_code).await,
+        Some(Command::Help) => {
+            handle_help_command(bot, msg, localization, language_code).await?;
+            crate::bot::home::move_list_down(bot, &pool, msg.chat.id, localization, language_code)
+                .await;
+            Ok(())
+        }
         Some(Command::List) => {
             handle_recipes_command(bot, msg, pool, language_code, localization).await
         }
         Some(Command::Search(_)) => {
-            handle_search_command(bot, msg, localization, language_code).await
+            handle_search_command(bot, msg, localization, language_code).await?;
+            crate::bot::home::move_list_down(bot, &pool, msg.chat.id, localization, language_code)
+                .await;
+            Ok(())
         }
-        // The running action, if any, was ended by the caller: back to the home message
+        // The running action, if any, was ended by the caller: the list comes back
         Some(Command::Cancel) => {
             crate::bot::home::send_home(bot, &pool, msg.chat.id, localization, language_code).await;
             Ok(())
         }
-        None => handle_unknown_command(bot, msg, localization, language_code).await,
+        None => {
+            handle_unknown_command(bot, msg, localization, language_code).await?;
+            crate::bot::home::move_list_down(bot, &pool, msg.chat.id, localization, language_code)
+                .await;
+            Ok(())
+        }
     }
 }
 
@@ -560,7 +580,11 @@ async fn dispatch_message(
     } else if msg.document().is_some() {
         handle_document_message(&bot, &msg, dialogue, pool, &localization, &extractor).await
     } else {
-        handle_unsupported_message(&bot, &msg, &localization).await
+        let answered = handle_unsupported_message(&bot, &msg, &localization).await;
+        if answered.is_ok() {
+            crate::bot::home::move_list_down(&bot, &pool, msg.chat.id, &localization, None).await;
+        }
+        answered
     };
 
     let duration = start_time.elapsed();

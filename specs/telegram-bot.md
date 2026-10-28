@@ -70,14 +70,14 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 ## Messages and Commands
 | Input | Behaviour |
 |---|---|
-| Any text starting with `/` | A command, in every dialogue state (`commands::route_text`): a running action ends first (dialogue exited, its recorded messages deleted; the recipe list stays and is not sent again), then the command runs. |
+| Any text starting with `/` | A command, in every dialogue state (`commands::route_text`): a running action ends first (dialogue exited, its recorded messages deleted; the recipe list stays and is not sent again), then the command runs. The typed command is recorded as transient: it goes with its answer at the next action's end, at once for `/liste` and `/annuler`. |
 | `/liste`, `/list`, `/recipes` | Moves the recipe list to the bottom (like the end of an action). |
 | `/start` | Welcome message, then the recipe list below it; the welcome goes at the next action's end. |
-| `/aide`, `/help` | Help message. |
+| `/aide`, `/help` | Help message above the recipe list (both moved down); it goes at the next action's end. |
 | `/annuler`, `/cancel` | Ends the running action (like any command) and moves the recipe list down. |
-| `/cherche`, `/search` | "Search is coming soon" (`search-coming-soon`); the words are parsed but not used yet. |
-| Unknown `/command` | `unknown-command` and the menu commands. |
-| Other text, no dialogue | Echo "Received: <text>" plus a tip to send a photo (`text-response`, `text-tip`). No search. |
+| `/cherche`, `/search` | "Search is coming soon" (`search-coming-soon`) above the list, transient; the words are parsed but not used yet. |
+| Unknown `/command` | `unknown-command` and the menu commands above the list, transient. |
+| Other text, no dialogue | Echo "Received: <text>" plus a tip to send a photo (`text-response`, `text-tip`) above the list; the text and the answer are transient. No search. |
 | Other text in a dialogue | Handled by the current state (see [Dialogue States](#dialogue-states)). |
 | Photo | Largest size, caption used as recipe name candidate. Handled whatever the state: a successful extraction replaces the current dialogue with a new review. |
 | Document | Only `image/*` MIME types, caption ignored; otherwise `error-unsupported-format` or `error-no-mime-type`. |
