@@ -102,6 +102,7 @@ pub async fn handle_start_command(
     let welcome_message = render_welcome(localization, language_code);
     let sent = send_html(bot, msg.chat.id, welcome_message).await?;
     super::cleanup::track(msg.chat.id, sent.id).await;
+    super::home::answer_at_bottom(bot, msg.chat.id, sent.id, localization, language_code).await;
     Ok(())
 }
 
@@ -126,6 +127,7 @@ pub async fn handle_help_command(
     // Shown until the next action ends, above the recipe list
     let sent = send_html(bot, msg.chat.id, help_message).await?;
     super::cleanup::track(msg.chat.id, sent.id).await;
+    super::home::answer_at_bottom(bot, msg.chat.id, sent.id, localization, language_code).await;
     Ok(())
 }
 
@@ -152,6 +154,7 @@ pub async fn handle_search_command(
         )
         .await?;
     super::cleanup::track(msg.chat.id, sent.id).await;
+    super::home::answer_at_bottom(bot, msg.chat.id, sent.id, localization, language_code).await;
     Ok(())
 }
 
@@ -169,6 +172,7 @@ pub async fn handle_unknown_command(
     );
     let sent = bot.send_message(msg.chat.id, message).await?;
     super::cleanup::track(msg.chat.id, sent.id).await;
+    super::home::answer_at_bottom(bot, msg.chat.id, sent.id, localization, language_code).await;
     Ok(())
 }
 
@@ -240,6 +244,7 @@ pub async fn handle_unsupported_message(
     super::cleanup::track(msg.chat.id, msg.id).await;
     let sent = bot.send_message(msg.chat.id, help_message).await?;
     super::cleanup::track(msg.chat.id, sent.id).await;
+    super::home::answer_at_bottom(bot, msg.chat.id, sent.id, localization, language_code).await;
     Ok(())
 }
 

@@ -116,11 +116,11 @@ pub async fn handle_recipe_action(
                     .await?;
             } else {
                 let message = t_lang(localization, "recipe-not-found", language_code.as_deref());
-                send_transient(bot, chat_id, message).await?;
-                crate::bot::home::move_list_down(
+                let answer = send_transient(bot, chat_id, message).await?;
+                crate::bot::home::answer_at_bottom(
                     bot,
-                    &pool,
                     chat_id,
+                    answer.id,
                     localization,
                     language_code.as_deref(),
                 )
@@ -396,11 +396,11 @@ async fn handle_edit_ingredients_callback(
         Some(recipe) => recipe,
         None => {
             let message = t_lang(localization, "recipe-not-found", language_code.as_deref());
-            send_transient(bot, chat_id, message).await?;
-            crate::bot::home::move_list_down(
+            let answer = send_transient(bot, chat_id, message).await?;
+            crate::bot::home::answer_at_bottom(
                 bot,
-                &pool,
                 chat_id,
+                answer.id,
                 localization,
                 language_code.as_deref(),
             )
@@ -426,11 +426,11 @@ async fn handle_edit_ingredients_callback(
                 language_code.as_deref()
             )
         );
-        send_transient(bot, chat_id, message).await?;
-        crate::bot::home::move_list_down(
+        let answer = send_transient(bot, chat_id, message).await?;
+        crate::bot::home::answer_at_bottom(
             bot,
-            &pool,
             chat_id,
+            answer.id,
             localization,
             language_code.as_deref(),
         )

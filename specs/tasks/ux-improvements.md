@@ -381,7 +381,9 @@ single exit ("❌ Annuler" during an action, "📚 Liste des recettes" otherwise
 - How to validate: cancel each action; the card comes back with its buttons.
 
 ### Task U6.3: Answers at the bottom with the list button (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29): `home::answer_at_bottom` and `send_home_keeping` put the
+  "📚 Liste des recettes" button on the answer instead of sending the list; `move_list_down`
+  removed; a photo ends the running action and clears the bottom.
 - Description: `/start`, `/aide`, unknown commands, free text, unsupported messages and photo
   errors replace the list or the active card and carry "📚 Liste des recettes"; a photo during an
   action ends it.

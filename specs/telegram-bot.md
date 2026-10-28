@@ -72,12 +72,12 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 |---|---|
 | Any text starting with `/` | A command, in every dialogue state (`commands::route_text`): a running action ends first (dialogue exited, its recorded messages deleted; the recipe list stays and is not sent again), then the command runs. The typed command is recorded as transient: it goes with its answer at the next action's end, at once for `/liste` and `/annuler`. |
 | `/liste`, `/list`, `/recipes` | Moves the recipe list to the bottom (like the end of an action). |
-| `/start` | Welcome message, then the recipe list below it; the welcome goes at the next action's end. |
-| `/aide`, `/help` | Help message above the recipe list (both moved down); it goes at the next action's end. |
+| `/start` | Welcome message at the bottom (it replaces the list or the active card) with "📚 Liste des recettes"; it goes at the next action's end. |
+| `/aide`, `/help` | Help message at the bottom with "📚 Liste des recettes" (`home::answer_at_bottom`); it goes at the next action's end. |
 | `/annuler`, `/cancel` | Ends the running action (like any command) and moves the recipe list down. |
-| `/cherche`, `/search` | "Search is coming soon" (`search-coming-soon`) above the list, transient; the words are parsed but not used yet. |
-| Unknown `/command` | `unknown-command` and the menu commands above the list, transient. |
-| Other text, no dialogue | Echo "Received: <text>" plus a tip to send a photo (`text-response`, `text-tip`) above the list; the text and the answer are transient. No search. |
+| `/cherche`, `/search` | "Search is coming soon" (`search-coming-soon`) at the bottom with the list button, transient; the words are parsed but not used yet. |
+| Unknown `/command` | `unknown-command` and the menu commands at the bottom with the list button, transient. |
+| Other text, no dialogue | Echo "Received: <text>" plus a tip to send a photo (`text-response`, `text-tip`) at the bottom with the list button; the text and the answer are transient. No search. |
 | Other text in a dialogue | Handled by the current state (see [Dialogue States](#dialogue-states)). |
 | Photo | Largest size, caption used as recipe name candidate. Handled whatever the state: a successful extraction replaces the current dialogue with a new review. |
 | Document | Only `image/*` MIME types, caption ignored; otherwise `error-unsupported-format` or `error-no-mime-type`. |
@@ -219,9 +219,9 @@ Kept (the history): recipe cards and one line per action (U5.3), sent without no
 « Y »"), `recipe-edited-line` ("📝 « X » modifiée", only when something changed),
 `recipe-deleted-line` ("🗑️ « X » supprimée", which replaces the deleted recipe's card in place).
 A cancel leaves nothing. An error at the end of an action (recipe gone, database error) and a
-photo that gave no review (download or extraction error, not a recipe, no ingredients) stay above
-the list until the next action ends (`home::send_home_keeping`); while a review is open, the
-photo's answer just waits for the review's end. Only recorded messages are deleted. The
+photo that gave no review (download or extraction error, not a recipe, no ingredients) stay at
+the bottom instead of the list, the last one carrying "📚 Liste des recettes", until the next
+action ends (`home::send_home_keeping`, U6.3). A photo sent during an action ends it first. Only recorded messages are deleted. The
 records are message ids (never content) in the `chat_messages` table (kind `transient`, `list`,
 or `home` for older versions), so a deploy or a restart does not forget them; records older than 48 h are dropped
 without deleting (Telegram refuses them). A database error only leaves the messages in the chat.

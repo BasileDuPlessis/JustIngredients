@@ -335,7 +335,7 @@ async fn handle_text_message(
 
         // Free text and the answer go when the next action ends; the list stays last
         cleanup::track(msg.chat.id, msg.id).await;
-        cleanup::send_transient(
+        let answer = cleanup::send_transient(
             bot,
             msg.chat.id,
             format!(
@@ -350,8 +350,14 @@ async fn handle_text_message(
             ),
         )
         .await?;
-        crate::bot::home::move_list_down(bot, &pool, msg.chat.id, localization, language_code)
-            .await;
+        crate::bot::home::answer_at_bottom(
+            bot,
+            msg.chat.id,
+            answer.id,
+            localization,
+            language_code,
+        )
+        .await;
     }
     Ok(())
 }
@@ -368,14 +374,10 @@ async fn handle_command(
     match command {
         Some(Command::Start) => {
             handle_start_command(bot, msg, localization, language_code).await?;
-            crate::bot::home::move_list_down(bot, &pool, msg.chat.id, localization, language_code)
-                .await;
             Ok(())
         }
         Some(Command::Help) => {
             handle_help_command(bot, msg, localization, language_code).await?;
-            crate::bot::home::move_list_down(bot, &pool, msg.chat.id, localization, language_code)
-                .await;
             Ok(())
         }
         Some(Command::List) => {
@@ -383,8 +385,6 @@ async fn handle_command(
         }
         Some(Command::Search(_)) => {
             handle_search_command(bot, msg, localization, language_code).await?;
-            crate::bot::home::move_list_down(bot, &pool, msg.chat.id, localization, language_code)
-                .await;
             Ok(())
         }
         // The running action, if any, was ended by the caller: the list comes back
@@ -394,8 +394,6 @@ async fn handle_command(
         }
         None => {
             handle_unknown_command(bot, msg, localization, language_code).await?;
-            crate::bot::home::move_list_down(bot, &pool, msg.chat.id, localization, language_code)
-                .await;
             Ok(())
         }
     }
@@ -580,22 +578,7 @@ async fn dispatch_message(
     } else if msg.document().is_some() {
         handle_document_message(&bot, &msg, dialogue, pool, &localization, &extractor).await
     } else {
-        let answered = handle_unsupported_message(&bot, &msg, &localization).await;
-        if answered.is_ok() {
-            let language_code = msg
-                .from
-                .as_ref()
-                .and_then(|user| user.language_code.as_deref());
-            crate::bot::home::move_list_down(
-                &bot,
-                &pool,
-                msg.chat.id,
-                &localization,
-                language_code,
-            )
-            .await;
-        }
-        answered
+        handle_unsupported_message(&bot, &msg, &localization).await
     };
 
     let duration = start_time.elapsed();

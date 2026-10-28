@@ -99,27 +99,18 @@ async fn fetch_file_bytes(
     Ok(bytes.into())
 }
 
-/// A photo that gave no review: the photo and the bot's answer stay until the next action ends.
-/// With no action running, the recipe list comes back below them; a review still open keeps its
-/// messages and the list where they are.
+/// A photo that gave no review: the photo and the bot's answer stay at the bottom, the answer
+/// carrying "📚 Liste des recettes", until the next action ends (U6.3).
 async fn end_failed_photo(
     bot: &Bot,
     pool: &PgPool,
     chat_id: ChatId,
-    dialogue: &RecipeDialogue,
     keep: &[teloxide::types::MessageId],
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) {
-    let in_action = matches!(dialogue.get().await, Ok(Some(state)) if state.is_action());
-    if in_action {
-        for id in keep {
-            crate::bot::cleanup::track(chat_id, *id).await;
-        }
-    } else {
-        crate::bot::home::send_home_keeping(bot, pool, chat_id, keep, localization, language_code)
-            .await;
-    }
+    crate::bot::home::send_home_keeping(bot, pool, chat_id, keep, localization, language_code)
+        .await;
 }
 
 pub async fn download_and_process_image(
@@ -138,6 +129,14 @@ pub async fn download_and_process_image(
         extractor,
         photo_message_id,
     } = params;
+
+    // A photo starts a new creation: a running action ends (its messages go), and the list or
+    // the active card leaves the bottom (U6.3)
+    if dialogue.get().await?.is_some_and(|state| state.is_action()) {
+        dialogue.exit().await?;
+        crate::bot::cleanup::delete_action_messages(bot, chat_id).await;
+    }
+    crate::bot::cleanup::delete_lists(bot, chat_id).await;
 
     let bytes = match download_file_bytes(bot, file_id).await {
         Ok(bytes) => {
@@ -159,16 +158,7 @@ pub async fn download_and_process_image(
                 .send_message(chat_id, t_lang(localization, message_key, language_code))
                 .await?;
             let keep = [photo_message_id, error_message.id];
-            end_failed_photo(
-                bot,
-                &pool,
-                chat_id,
-                &dialogue,
-                &keep,
-                language_code,
-                localization,
-            )
-            .await;
+            end_failed_photo(bot, &pool, chat_id, &keep, language_code, localization).await;
             return Err(e);
         }
     };
@@ -198,16 +188,7 @@ pub async fn download_and_process_image(
             )
             .await?;
             let keep = [photo_message_id, message_id];
-            end_failed_photo(
-                bot,
-                &pool,
-                chat_id,
-                &dialogue,
-                &keep,
-                language_code,
-                localization,
-            )
-            .await;
+            end_failed_photo(bot, &pool, chat_id, &keep, language_code, localization).await;
             return Err(anyhow::anyhow!("ingredient extraction failed: {error}"));
         }
     };
@@ -221,16 +202,7 @@ pub async fn download_and_process_image(
         )
         .await?;
         let keep = [photo_message_id, message_id];
-        end_failed_photo(
-            bot,
-            &pool,
-            chat_id,
-            &dialogue,
-            &keep,
-            language_code,
-            localization,
-        )
-        .await;
+        end_failed_photo(bot, &pool, chat_id, &keep, language_code, localization).await;
         return Ok(String::new());
     }
 
@@ -257,16 +229,7 @@ pub async fn download_and_process_image(
         }
         edit_html(bot, chat_id, message_id, no_ingredients_msg).await?;
         let keep = [photo_message_id, message_id];
-        end_failed_photo(
-            bot,
-            &pool,
-            chat_id,
-            &dialogue,
-            &keep,
-            language_code,
-            localization,
-        )
-        .await;
+        end_failed_photo(bot, &pool, chat_id, &keep, language_code, localization).await;
         return Ok(extracted_text);
     }
 

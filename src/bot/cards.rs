@@ -58,8 +58,8 @@ pub async fn show_card(
     let Some(card) = render(pool, telegram_id, recipe_id, language_code, localization).await?
     else {
         let message = t_lang(localization, "recipe-not-found", language_code);
-        cleanup::send_transient(bot, chat_id, message).await?;
-        super::home::move_list_down(bot, pool, chat_id, localization, language_code).await;
+        let answer = cleanup::send_transient(bot, chat_id, message).await?;
+        super::home::answer_at_bottom(bot, chat_id, answer.id, localization, language_code).await;
         return Ok(());
     };
     // Opened from a home message or list of an older version: that message goes

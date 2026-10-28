@@ -127,16 +127,16 @@ pub async fn handle_document_message(
             } else {
                 debug!(user_id = %msg.chat.id, mime_type = %mime_type, "Received non-image document from user");
                 crate::bot::cleanup::track(msg.chat.id, msg.id).await;
-                crate::bot::cleanup::send_transient(
+                let answer = crate::bot::cleanup::send_transient(
                     bot,
                     msg.chat.id,
                     t_lang(localization, "error-unsupported-format", language_code),
                 )
                 .await?;
-                crate::bot::home::move_list_down(
+                crate::bot::home::answer_at_bottom(
                     bot,
-                    &pool,
                     msg.chat.id,
+                    answer.id,
                     localization,
                     language_code,
                 )
@@ -145,14 +145,20 @@ pub async fn handle_document_message(
         } else {
             debug!(user_id = %msg.chat.id, "Received document without mime type from user");
             crate::bot::cleanup::track(msg.chat.id, msg.id).await;
-            crate::bot::cleanup::send_transient(
+            let answer = crate::bot::cleanup::send_transient(
                 bot,
                 msg.chat.id,
                 t_lang(localization, "error-no-mime-type", language_code),
             )
             .await?;
-            crate::bot::home::move_list_down(bot, &pool, msg.chat.id, localization, language_code)
-                .await;
+            crate::bot::home::answer_at_bottom(
+                bot,
+                msg.chat.id,
+                answer.id,
+                localization,
+                language_code,
+            )
+            .await;
         }
     }
     Ok(())
