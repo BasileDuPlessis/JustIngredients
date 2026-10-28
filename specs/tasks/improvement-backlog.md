@@ -280,6 +280,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 
 ### IMP-007: Buttons that do nothing, and stale buttons that act on the wrong recipe
 - [ ] Done
+- Status: Partly done (2026-10-28): a review or edit button with no dialogue left answers "this button is no longer active" and loses its keyboard; the query is always answered, even when a handler fails. Left: dead buttons of U2.5 and the message-id check (a button of an older list acting on the current one).
 - Priority: P1. Effort: M. Area: Bot callbacks.
 - Location: `src/bot/ui_builder.rs:131-138` (`add_ingredient` on every review keyboard),
   `src/bot/callbacks/review_callbacks.rs:57-131` (review routing), `src/bot/callbacks/review_callbacks.rs:316-335`
@@ -589,6 +590,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 
 ### IMP-022: Dialogue state is in memory only; lost on every deploy
 - [ ] Done
+- Status: Partly done (2026-10-28, short term): after a restart, review and edit buttons say they are no longer active instead of doing nothing. Left: dialogues are still lost on every deploy (persistent storage).
 - Priority: P2. Effort: M. Area: Dialogue.
 - Location: `src/main.rs:258` (`InMemStorage`), `src/dialogue.rs:85`.
 - Problem: each deploy or restart drops every in-progress review. The user's next tap on Confirm

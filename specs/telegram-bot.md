@@ -230,9 +230,10 @@ state).
 
 ## Callback Data
 `callback_handler_with_cache` first runs the handler of the current state, then the prefix
-handlers below, which work in any state. The query is answered at the end, unless a handler
-fails first (its error returns before the answer, and the button keeps spinning until Telegram
-gives up).
+handlers below, which work in any state. The query is always answered, also when a handler
+failed (the error is logged). A review or edit button pressed while no review or edit is running
+(`is_stale_button`: the bot restarted since, dialogues being in memory, or a newer action replaced
+it) answers `button-expired` and loses its keyboard.
 
 | Data | Handled in | Action |
 |---|---|---|

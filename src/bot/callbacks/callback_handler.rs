@@ -203,6 +203,7 @@ pub async fn callback_handler_with_cache(
     debug!(user_id = %q.from.id, dialogue_state = ?dialogue_state, "Retrieved dialogue state");
 
     let data = q.data.as_deref().unwrap_or("");
+    let stale = is_stale_button(data, dialogue_state.as_ref());
 
     let result = match dialogue_state {
         Some(RecipeDialogueState::ReviewIngredients { .. }) => {
@@ -239,78 +240,141 @@ pub async fn callback_handler_with_cache(
 
     // Handle general callbacks that work in any state. Recipe reads are not cached: they must
     // show a rename or an edit at once, and the database answers in a few milliseconds.
-    if let Some(msg) = &q.message {
-        if crate::bot::recipe_selection::is_recipe_selection(data) {
-            handle_recipe_selection_by_name(&bot, msg, data, pool.clone(), &q.from, &localization)
+    let prefix_result: Result<()> = async {
+        if let Some(msg) = &q.message {
+            if crate::bot::recipe_selection::is_recipe_selection(data) {
+                handle_recipe_selection_by_name(
+                    &bot,
+                    msg,
+                    data,
+                    pool.clone(),
+                    &q.from,
+                    &localization,
+                )
                 .await?;
-        } else if data.starts_with("recipe_instance:") {
-            handle_recipe_selection_by_id(&bot, msg, data, pool.clone(), &q.from, &localization)
+            } else if data.starts_with("recipe_instance:") {
+                handle_recipe_selection_by_id(
+                    &bot,
+                    msg,
+                    data,
+                    pool.clone(),
+                    &q.from,
+                    &localization,
+                )
                 .await?;
-        } else if data.starts_with("recipe_action:") {
-            recipe_callbacks::handle_recipe_action(
-                &bot,
-                msg,
-                data,
-                pool.clone(),
-                &dialogue,
-                &q.from,
-                &localization,
-            )
-            .await?;
-        } else if data == "back_to_recipes" {
-            workflow_callbacks::handle_back_to_recipes(
-                &bot,
-                msg,
-                pool.clone(),
-                &q.from.language_code,
-                &localization,
-            )
-            .await?;
-        } else if data.starts_with("confirm_delete_recipe")
-            || data.starts_with("cancel_delete_recipe")
-        {
-            recipe_callbacks::handle_delete_recipe_confirmation(
-                &bot,
-                msg,
-                data,
-                pool.clone(),
-                &q.from,
-                &localization,
-                &dialogue,
-            )
-            .await?;
-        } else if data.starts_with("page:") {
-            workflow_callbacks::handle_recipes_pagination(
-                &bot,
-                msg,
-                data,
-                pool,
-                &q.from.language_code,
-                &localization,
-            )
-            .await?;
-        } else if data.starts_with("workflow_") {
-            workflow_callbacks::handle_workflow_button(
-                &bot,
-                &q,
-                data,
-                &pool,
-                &dialogue,
-                &localization,
-            )
-            .await?;
-        } else if data == "cancel_processing" {
-            handle_cancel_processing_button(&bot, &q, &dialogue, &localization, &pool).await?;
+            } else if data.starts_with("recipe_action:") {
+                recipe_callbacks::handle_recipe_action(
+                    &bot,
+                    msg,
+                    data,
+                    pool.clone(),
+                    &dialogue,
+                    &q.from,
+                    &localization,
+                )
+                .await?;
+            } else if data == "back_to_recipes" {
+                workflow_callbacks::handle_back_to_recipes(
+                    &bot,
+                    msg,
+                    pool.clone(),
+                    &q.from.language_code,
+                    &localization,
+                )
+                .await?;
+            } else if data.starts_with("confirm_delete_recipe")
+                || data.starts_with("cancel_delete_recipe")
+            {
+                recipe_callbacks::handle_delete_recipe_confirmation(
+                    &bot,
+                    msg,
+                    data,
+                    pool.clone(),
+                    &q.from,
+                    &localization,
+                    &dialogue,
+                )
+                .await?;
+            } else if data.starts_with("page:") {
+                workflow_callbacks::handle_recipes_pagination(
+                    &bot,
+                    msg,
+                    data,
+                    pool,
+                    &q.from.language_code,
+                    &localization,
+                )
+                .await?;
+            } else if data.starts_with("workflow_") {
+                workflow_callbacks::handle_workflow_button(
+                    &bot,
+                    &q,
+                    data,
+                    &pool,
+                    &dialogue,
+                    &localization,
+                )
+                .await?;
+            } else if data == "cancel_processing" {
+                handle_cancel_processing_button(&bot, &q, &dialogue, &localization, &pool).await?;
+            }
+        }
+        Ok(())
+    }
+    .await;
+
+    // Always answer, even when a handler failed (otherwise the button keeps spinning). A review
+    // or edit button with no dialogue left (bot restarted, or a newer action) did nothing: say so
+    // and remove the inactive keyboard.
+    let mut answer = bot.answer_callback_query(q.id.clone());
+    if stale {
+        answer = answer.text(t_lang(
+            &localization,
+            "button-expired",
+            q.from.language_code.as_deref(),
+        ));
+        if let Some(message) = &q.message {
+            let _ = bot
+                .edit_message_reply_markup(message.chat().id, message.id())
+                .await;
         }
     }
-
-    // Answer the callback query to remove the loading state
-    bot.answer_callback_query(q.id).await?;
+    if let Err(error) = answer.await {
+        debug!(error = %error, "Could not answer the callback query");
+    }
 
     let duration = start_time.elapsed();
     observability::record_request_metrics("telegram_callback", 200, duration);
 
-    result
+    result.and(prefix_result)
+}
+
+/// Whether a button only acts within a review or an ingredient edit.
+fn needs_editing_dialogue(data: &str) -> bool {
+    crate::bot::ui_builder::parse_ingredient_action(data).is_some()
+        || matches!(
+            data,
+            "confirm"
+                | "cancel_review"
+                | "add_ingredient"
+                | "add_more"
+                | "cancel_ingredient_editing"
+        )
+}
+
+/// A review or edit button pressed while no review or edit is running: the bot restarted since
+/// (dialogues are kept in memory) or a newer action replaced it, so the button did nothing.
+fn is_stale_button(data: &str, state: Option<&RecipeDialogueState>) -> bool {
+    needs_editing_dialogue(data)
+        && !matches!(
+            state,
+            Some(
+                RecipeDialogueState::ReviewIngredients { .. }
+                    | RecipeDialogueState::EditingSavedIngredients { .. }
+                    | RecipeDialogueState::EditingIngredient { .. }
+                    | RecipeDialogueState::EditingSavedIngredient { .. }
+            )
+        )
 }
 
 /// Handle callbacks when in EditingIngredient dialogue state
@@ -726,4 +790,56 @@ async fn handle_recipe_selection_by_id(
         .await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn review_state() -> RecipeDialogueState {
+        RecipeDialogueState::ReviewIngredients {
+            recipe_name: "Recipe".to_string(),
+            ingredients: Vec::new(),
+            language_code: None,
+            message_id: None,
+            extracted_text: String::new(),
+            recipe_name_from_caption: None,
+        }
+    }
+
+    #[test]
+    fn review_buttons_without_a_dialogue_are_stale() {
+        for data in [
+            "confirm",
+            "item_2",
+            "qty_0",
+            "delete_1",
+            "back_review",
+            "cancel_review",
+            "add_more",
+        ] {
+            assert!(is_stale_button(data, None), "{data} after a restart");
+            assert!(
+                is_stale_button(data, Some(&RecipeDialogueState::Start)),
+                "{data} with no action"
+            );
+            assert!(
+                !is_stale_button(data, Some(&review_state())),
+                "{data} in a review"
+            );
+        }
+    }
+
+    #[test]
+    fn buttons_that_work_in_any_state_are_never_stale() {
+        for data in [
+            "recipe_instance:3",
+            "page:1",
+            "workflow_list_recipes",
+            "noop",
+            "cancel_processing",
+        ] {
+            assert!(!is_stale_button(data, None), "{data}");
+        }
+    }
 }
