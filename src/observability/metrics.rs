@@ -13,18 +13,25 @@ use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use sqlx::PgPool;
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 use tokio::net::TcpListener;
 
-use crate::observability_config::ObservabilityConfig;
+use sha2::{Digest, Sha256};
 
-/// Simple rate limiter for HTTP requests
+use crate::observability_config::ObservabilityConfig;
+use crate::secret::SecretString;
+
+/// Distinct clients the rate limiter remembers; beyond, the least recently seen is forgotten.
+pub const MAX_TRACKED_CLIENTS: usize = 1024;
+
+/// Per-client rate limiter for the HTTP server, bounded in memory.
 #[derive(Debug)]
 pub struct RateLimiter {
     requests: Mutex<HashMap<String, Vec<Instant>>>,
     max_requests: u32,
     window_secs: u64,
+    max_clients: usize,
 }
 
 impl RateLimiter {
@@ -33,22 +40,41 @@ impl RateLimiter {
             requests: Mutex::new(HashMap::new()),
             max_requests,
             window_secs,
+            max_clients: MAX_TRACKED_CLIENTS,
         }
     }
 
-    /// Check if request is allowed for the given IP
-    pub fn is_allowed(&self, ip: &str) -> bool {
+    /// Replaces the number of clients remembered.
+    pub fn with_max_clients(mut self, max_clients: usize) -> Self {
+        self.max_clients = max_clients.max(1);
+        self
+    }
+
+    /// Check if request is allowed for the given client
+    pub fn is_allowed(&self, client: &str) -> bool {
         let now = Instant::now();
         let window = Duration::from_secs(self.window_secs);
+        let recent = |time: &Instant| now.duration_since(*time) < window;
 
-        let mut requests = self
-            .requests
-            .lock()
-            .expect("Failed to acquire mutex for rate limiting");
-        let client_requests = requests.entry(ip.to_string()).or_default();
+        // Plain counters: a panic while holding the lock cannot leave them inconsistent.
+        let mut requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
+        if !requests.contains_key(client) && requests.len() >= self.max_clients {
+            // Forget clients without a request in the window, then the least recently seen
+            requests.retain(|_, times| times.last().is_some_and(recent));
+            if requests.len() >= self.max_clients {
+                let oldest = requests
+                    .iter()
+                    .min_by_key(|(_, times)| times.last().copied())
+                    .map(|(key, _)| key.clone());
+                if let Some(oldest) = oldest {
+                    requests.remove(&oldest);
+                }
+            }
+        }
+        let client_requests = requests.entry(client.to_string()).or_default();
 
         // Remove old requests outside the window
-        client_requests.retain(|&time| now.duration_since(time) < window);
+        client_requests.retain(recent);
 
         // Check if under limit
         if client_requests.len() >= self.max_requests as usize {
@@ -59,36 +85,59 @@ impl RateLimiter {
         client_requests.push(now);
         true
     }
+
+    /// Number of clients currently remembered.
+    pub fn tracked_clients(&self) -> usize {
+        self.requests
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .len()
+    }
 }
 
-/// Paths that require `METRICS_AUTH_TOKEN` when it is set. Health checks stay open: Fly and
-/// the uptime monitor call them without a token.
+/// The client a request counts for: `Fly-Client-IP` (set by Fly's proxy, which is the TCP peer
+/// of every request from the internet) when present, else the TCP peer.
+pub fn client_key<B>(req: &hyper::Request<B>, peer: IpAddr) -> String {
+    req.headers()
+        .get("fly-client-ip")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<IpAddr>().ok())
+        .unwrap_or(peer)
+        .to_string()
+}
+
+/// Paths that require `METRICS_AUTH_TOKEN`. Health checks stay open: Fly and the uptime monitor
+/// call them without a token.
 pub fn is_protected_path(path: &str) -> bool {
     path == "/metrics"
 }
 
-/// Check authentication token from Authorization header
-pub fn check_auth(req: &hyper::Request<hyper::body::Incoming>) -> bool {
-    // Get auth token from environment
-    let expected_token = match std::env::var("METRICS_AUTH_TOKEN") {
-        Ok(token) if !token.is_empty() => token,
-        _ => return true, // No token required if not set (for development)
+/// Whether the request carries `Authorization: Bearer <expected>`. Without a configured token
+/// nothing is authorized, so `/metrics` stays closed.
+pub fn check_auth<B>(req: &hyper::Request<B>, expected: Option<&SecretString>) -> bool {
+    let Some(expected) = expected.filter(|token| !token.is_empty()) else {
+        return false;
     };
+    req.headers()
+        .get(hyper::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "))
+        .is_some_and(|token| tokens_match(token, expected.expose()))
+}
 
-    // Check Authorization header
-    if let Some(auth_header) = req.headers().get("authorization") {
-        if let Ok(auth_str) = auth_header.to_str() {
-            if let Some(token) = auth_str.strip_prefix("Bearer ") {
-                return token == expected_token;
-            }
-        }
-    }
-
-    false
+/// Compares two tokens in constant time; comparing SHA-256 digests hides the length too.
+fn tokens_match(given: &str, expected: &str) -> bool {
+    let given = Sha256::digest(given.as_bytes());
+    let expected = Sha256::digest(expected.as_bytes());
+    given
+        .iter()
+        .zip(expected.iter())
+        .fold(0u8, |diff, (a, b)| diff | (a ^ b))
+        == 0
 }
 
 /// Check request size limit
-pub fn check_request_size(req: &hyper::Request<hyper::body::Incoming>) -> bool {
+pub fn check_request_size<B>(req: &hyper::Request<B>) -> bool {
     const MAX_REQUEST_SIZE: u64 = 1024 * 1024; // 1MB limit
 
     if let Some(content_length) = req.headers().get("content-length") {
@@ -127,130 +176,87 @@ pub fn init_metrics() -> Result<PrometheusHandle> {
     Ok(handle)
 }
 
-/// Start basic metrics server with basic health checks (no dependencies yet)
+/// Start the HTTP server without dependencies: readiness only checks what it is given.
 pub async fn start_metrics_server_basic_with_config(
     metrics_handle: PrometheusHandle,
     port: u16,
 ) -> Result<()> {
-    // Determine bind address - localhost for security unless explicitly configured
-    let bind_all = std::env::var("METRICS_BIND_ALL_INTERFACES")
-        .unwrap_or_else(|_| "false".to_string())
-        .parse::<bool>()
-        .unwrap_or(false);
+    start_metrics_server_with_health_checks(metrics_handle, port, None, None).await
+}
 
-    let addr = if bind_all {
-        SocketAddr::new(IpAddr::V6(Ipv6Addr::UNSPECIFIED), port)
-    } else {
-        SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port) // localhost only
-    };
+/// What every request of the HTTP server needs.
+struct ServerState {
+    metrics_handle: PrometheusHandle,
+    db_pool: Option<Arc<PgPool>>,
+    bot_token: Option<String>,
+    rate_limiter: RateLimiter,
+    metrics_token: Option<SecretString>,
+}
 
-    tracing::info!(
-        "Starting basic metrics server on {} (bind_all: {})",
-        addr,
-        bind_all
-    );
+fn text_response(status: hyper::StatusCode, body: &str) -> hyper::Response<String> {
+    let mut response = hyper::Response::new(body.to_string());
+    *response.status_mut() = status;
+    response
+}
 
-    // Initialize rate limiter (10 requests per minute per IP)
-    let rate_limiter = Arc::new(RateLimiter::new(10, 60));
+/// Answers one request: rate limit, size limit, token for `/metrics`, then the route.
+async fn handle_request(
+    req: hyper::Request<hyper::body::Incoming>,
+    peer: IpAddr,
+    state: Arc<ServerState>,
+) -> hyper::Response<String> {
+    use hyper::StatusCode;
 
-    let listener = TcpListener::bind(addr).await?;
-    tracing::info!("Metrics server listening on {}", addr);
+    if !state.rate_limiter.is_allowed(&client_key(&req, peer)) {
+        return text_response(StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded");
+    }
+    if !check_request_size(&req) {
+        return text_response(StatusCode::PAYLOAD_TOO_LARGE, "Request too large");
+    }
+    if is_protected_path(req.uri().path()) && !check_auth(&req, state.metrics_token.as_ref()) {
+        let mut response = text_response(StatusCode::UNAUTHORIZED, "Unauthorized");
+        response.headers_mut().insert(
+            "www-authenticate",
+            hyper::header::HeaderValue::from_static("Bearer"),
+        );
+        return response;
+    }
 
-    tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((stream, peer_addr)) => {
-                    let metrics_handle = metrics_handle.clone();
-                    let rate_limiter = rate_limiter.clone();
-
-                    tokio::spawn(async move {
-                        let io = TokioIo::new(stream);
-
-                        let service = hyper::service::service_fn(
-                            move |req: hyper::Request<hyper::body::Incoming>| {
-                                let metrics_handle = metrics_handle.clone();
-                                let peer_ip = peer_addr.ip().to_string();
-                                let rate_limiter = rate_limiter.clone();
-                                async move {
-                                    // Rate limiting check
-                                    if !rate_limiter.is_allowed(&peer_ip) {
-                                        let mut response =
-                                            hyper::Response::new("Rate limit exceeded".to_string());
-                                        *response.status_mut() =
-                                            hyper::StatusCode::TOO_MANY_REQUESTS;
-                                        return Ok::<_, std::convert::Infallible>(response);
-                                    }
-
-                                    // Request size check
-                                    if !check_request_size(&req) {
-                                        let mut response =
-                                            hyper::Response::new("Request too large".to_string());
-                                        *response.status_mut() =
-                                            hyper::StatusCode::PAYLOAD_TOO_LARGE;
-                                        return Ok(response);
-                                    }
-
-                                    // Authentication check: only /metrics is protected; health checks
-                                    // (Fly, uptime monitor) must keep working without a token.
-                                    if is_protected_path(req.uri().path()) && !check_auth(&req) {
-                                        let mut response =
-                                            hyper::Response::new("Unauthorized".to_string());
-                                        *response.status_mut() = hyper::StatusCode::UNAUTHORIZED;
-                                        response.headers_mut().insert(
-                                            "www-authenticate",
-                                            hyper::header::HeaderValue::from_static("Bearer"),
-                                        );
-                                        return Ok(response);
-                                    }
-
-                                    match (req.method(), req.uri().path()) {
-                                        (&hyper::Method::GET, "/metrics") => {
-                                            let metrics = metrics_handle.render();
-                                            Ok::<_, std::convert::Infallible>(hyper::Response::new(
-                                                metrics,
-                                            ))
-                                        }
-                                        (&hyper::Method::GET, "/health/live") => {
-                                            Ok(hyper::Response::new("OK".to_string()))
-                                        }
-                                        (&hyper::Method::GET, "/health/ready") => {
-                                            Ok(hyper::Response::new("OK".to_string()))
-                                        }
-                                        _ => {
-                                            let mut response =
-                                                hyper::Response::new("Not Found".to_string());
-                                            *response.status_mut() = hyper::StatusCode::NOT_FOUND;
-                                            Ok(response)
-                                        }
-                                    }
-                                }
-                            },
-                        );
-
-                        if let Err(err) = http1::Builder::new().serve_connection(io, service).await
-                        {
-                            crate::errors::error_logging::log_network_error(
-                                &err,
-                                "serve_http_connection",
-                                Some(&format!("{}:{}", peer_addr.ip(), peer_addr.port())),
-                                None,
-                            );
-                        }
-                    });
-                }
-                Err(e) => {
-                    crate::errors::error_logging::log_network_error(
-                        &e,
-                        "accept_tcp_connection",
-                        Some(&addr.to_string()),
-                        None,
-                    );
+    match (req.method(), req.uri().path()) {
+        (&hyper::Method::GET, "/metrics") => {
+            // Ensure at least one metric is registered to avoid empty render
+            metrics::gauge!("uptime_seconds").set(1.0);
+            let mut response = hyper::Response::new(state.metrics_handle.render());
+            response.headers_mut().insert(
+                "content-type",
+                hyper::header::HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
+            );
+            response
+        }
+        // Liveness: the process runs and can reach Telegram
+        (&hyper::Method::GET, "/health/live") => {
+            match crate::observability::health_checks::check_telegram_health() {
+                Ok(()) => text_response(StatusCode::OK, "OK"),
+                Err(_) => text_response(StatusCode::SERVICE_UNAVAILABLE, "NOT LIVE"),
+            }
+        }
+        // Readiness: database and Telegram. The reason is logged, never sent to the caller.
+        (&hyper::Method::GET, "/health/ready") => {
+            match crate::observability::health_checks::perform_readiness_checks(
+                state.db_pool.clone(),
+                state.bot_token.clone(),
+            )
+            .await
+            {
+                Ok(_) => text_response(StatusCode::OK, "OK"),
+                Err(error) => {
+                    tracing::warn!(error = %error, "Readiness check failed");
+                    text_response(StatusCode::SERVICE_UNAVAILABLE, "NOT READY")
                 }
             }
         }
-    });
-
-    Ok(())
+        _ => text_response(StatusCode::NOT_FOUND, "Not Found"),
+    }
 }
 
 /// Start metrics server with health checks
@@ -278,8 +284,21 @@ pub async fn start_metrics_server_with_health_checks(
         bind_all
     );
 
-    // Initialize rate limiter (10 requests per minute per IP)
-    let rate_limiter = Arc::new(RateLimiter::new(10, 60));
+    let metrics_token = std::env::var("METRICS_AUTH_TOKEN")
+        .ok()
+        .map(|token| SecretString::new(token.trim()))
+        .filter(|token| !token.is_empty());
+    if metrics_token.is_none() {
+        tracing::warn!("METRICS_AUTH_TOKEN is not set: /metrics answers 401");
+    }
+    let state = Arc::new(ServerState {
+        metrics_handle,
+        db_pool,
+        bot_token,
+        // 10 requests per minute per client
+        rate_limiter: RateLimiter::new(10, 60),
+        metrics_token,
+    });
 
     let listener = TcpListener::bind(addr).await?;
     tracing::info!("Metrics server listening on {}", addr);
@@ -288,109 +307,17 @@ pub async fn start_metrics_server_with_health_checks(
         loop {
             match listener.accept().await {
                 Ok((stream, peer_addr)) => {
-                    let metrics_handle = metrics_handle.clone();
-                    let db_pool = db_pool.clone();
-                    let bot_token = bot_token.clone();
-                    let rate_limiter = rate_limiter.clone();
-
+                    let state = Arc::clone(&state);
                     tokio::spawn(async move {
                         let io = TokioIo::new(stream);
-
-                        let service = hyper::service::service_fn(
-                            move |req: hyper::Request<hyper::body::Incoming>| {
-                                let metrics_handle = metrics_handle.clone();
-                                let db_pool = db_pool.clone();
-                                let bot_token = bot_token.clone();
-                                let peer_ip = peer_addr.ip().to_string();
-                                let rate_limiter = rate_limiter.clone();
-                                async move {
-                                    // Rate limiting check
-                                    if !rate_limiter.is_allowed(&peer_ip) {
-                                        let mut response =
-                                            hyper::Response::new("Rate limit exceeded".to_string());
-                                        *response.status_mut() =
-                                            hyper::StatusCode::TOO_MANY_REQUESTS;
-                                        return Ok::<_, std::convert::Infallible>(response);
-                                    }
-
-                                    // Request size check
-                                    if !check_request_size(&req) {
-                                        let mut response =
-                                            hyper::Response::new("Request too large".to_string());
-                                        *response.status_mut() =
-                                            hyper::StatusCode::PAYLOAD_TOO_LARGE;
-                                        return Ok(response);
-                                    }
-
-                                    // Authentication check: only /metrics is protected; health checks
-                                    // (Fly, uptime monitor) must keep working without a token.
-                                    if is_protected_path(req.uri().path()) && !check_auth(&req) {
-                                        let mut response =
-                                            hyper::Response::new("Unauthorized".to_string());
-                                        *response.status_mut() = hyper::StatusCode::UNAUTHORIZED;
-                                        response.headers_mut().insert(
-                                            "www-authenticate",
-                                            hyper::header::HeaderValue::from_static("Bearer"),
-                                        );
-                                        return Ok(response);
-                                    }
-
-                                    match (req.method(), req.uri().path()) {
-                                        (&hyper::Method::GET, "/metrics") => {
-                                            // Ensure at least one metric is registered to avoid empty render
-                                            metrics::gauge!("uptime_seconds").set(1.0);
-                                            let metrics = metrics_handle.render();
-                                            let mut response = hyper::Response::new(metrics);
-                                            response.headers_mut().insert(
-                                                "content-type",
-                                                hyper::header::HeaderValue::from_static(
-                                                    "text/plain; version=0.0.4; charset=utf-8",
-                                                ),
-                                            );
-                                            Ok::<_, std::convert::Infallible>(response)
-                                        }
-                                        (&hyper::Method::GET, "/health/live") => {
-                                            // Liveness: the process runs and can reach Telegram
-                                            match crate::observability::health_checks::check_telegram_health() {
-                                                Ok(()) => Ok(hyper::Response::new("OK".to_string())),
-                                                Err(error) => {
-                                                    let mut response =
-                                                        hyper::Response::new(error.to_string());
-                                                    *response.status_mut() =
-                                                        hyper::StatusCode::SERVICE_UNAVAILABLE;
-                                                    Ok(response)
-                                                }
-                                            }
-                                        }
-                                        (&hyper::Method::GET, "/health/ready") => {
-                                            // Readiness probe - check if all dependencies are available
-                                            match crate::observability::health_checks::perform_readiness_checks(
-                                                db_pool.clone(),
-                                                bot_token.clone(),
-                                            )
-                                            .await
-                                            {
-                                                Ok(_) => Ok(hyper::Response::new("OK".to_string())),
-                                                Err(e) => {
-                                                    let mut response = hyper::Response::new(
-                                                        format!("NOT READY: {}", e),
-                                                    );
-                                                    *response.status_mut() =
-                                                        hyper::StatusCode::SERVICE_UNAVAILABLE;
-                                                    Ok(response)
-                                                }
-                                            }
-                                        }
-                                        _ => {
-                                            let mut response =
-                                                hyper::Response::new("Not Found".to_string());
-                                            *response.status_mut() = hyper::StatusCode::NOT_FOUND;
-                                            Ok(response)
-                                        }
-                                    }
-                                }
-                            },
-                        );
+                        let service = hyper::service::service_fn(move |req| {
+                            let state = Arc::clone(&state);
+                            async move {
+                                Ok::<_, std::convert::Infallible>(
+                                    handle_request(req, peer_addr.ip(), state).await,
+                                )
+                            }
+                        });
 
                         if let Err(err) = http1::Builder::new().serve_connection(io, service).await
                         {
@@ -1058,6 +985,75 @@ mod tests {
         for open in ["/health/live", "/health/ready", "/"] {
             assert!(!is_protected_path(open), "{open}");
         }
+    }
+
+    fn request(headers: &[(&str, &str)]) -> hyper::Request<()> {
+        let mut builder = hyper::Request::builder().uri("/metrics");
+        for (name, value) in headers {
+            builder = builder.header(*name, *value);
+        }
+        builder.body(()).unwrap_or_default()
+    }
+
+    #[test]
+    fn metrics_need_the_configured_token() {
+        let token = SecretString::new("s3cr3t");
+        let bearer = [("authorization", "Bearer s3cr3t")];
+        assert!(check_auth(&request(&bearer), Some(&token)));
+        assert!(!check_auth(
+            &request(&[("authorization", "Bearer wrong")]),
+            Some(&token)
+        ));
+        assert!(!check_auth(&request(&[]), Some(&token)));
+        assert!(
+            !check_auth(&request(&bearer), None),
+            "no token configured: closed"
+        );
+    }
+
+    #[test]
+    fn clients_are_told_apart_by_fly_client_ip() {
+        let proxy: IpAddr = "172.16.0.1"
+            .parse()
+            .unwrap_or(IpAddr::V4(Ipv4Addr::LOCALHOST));
+        assert_eq!(
+            client_key(&request(&[("fly-client-ip", "203.0.113.7")]), proxy),
+            "203.0.113.7"
+        );
+        assert_eq!(client_key(&request(&[]), proxy), "172.16.0.1");
+        assert_eq!(
+            client_key(&request(&[("fly-client-ip", "not an ip")]), proxy),
+            "172.16.0.1"
+        );
+    }
+
+    #[test]
+    fn the_rate_limiter_limits_each_client_and_stays_bounded() {
+        let limiter = RateLimiter::new(2, 60).with_max_clients(3);
+        assert!(limiter.is_allowed("a"));
+        assert!(limiter.is_allowed("a"));
+        assert!(!limiter.is_allowed("a"), "third request in the window");
+        assert!(
+            limiter.is_allowed("b"),
+            "other clients have their own count"
+        );
+        for client in ["c", "d", "e"] {
+            assert!(limiter.is_allowed(client));
+        }
+        assert_eq!(limiter.tracked_clients(), 3);
+    }
+
+    #[test]
+    fn expired_clients_are_forgotten_first() {
+        let limiter = RateLimiter::new(1, 0).with_max_clients(2);
+        assert!(limiter.is_allowed("a"));
+        assert!(limiter.is_allowed("b"));
+        assert!(limiter.is_allowed("c"));
+        assert_eq!(
+            limiter.tracked_clients(),
+            1,
+            "a and b had no request left in the window"
+        );
     }
 
     /// Metric name, labels and value from the debugging recorder.

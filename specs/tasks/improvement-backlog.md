@@ -375,7 +375,8 @@ they can be pulled into 1-hour micro-tasks without another review.
   2. Test: after deleting one of two same-named recipes, the instance list has one entry.
 
 ### IMP-011: Metrics and health server is publicly reachable; weak auth and rate limiting
-- [ ] Done
+- [x] Done
+- Status: Done (2026-10-28), keeping `[http_service]` because the uptime workflow and the post-deploy checks call the public health endpoints: `/metrics` needs `METRICS_AUTH_TOKEN` (constant-time compare) and is closed when it is unset (staging); health bodies are fixed (`NOT READY`, `NOT LIVE`), the reason is logged; the limiter keys on `Fly-Client-IP`, remembers at most 1,024 clients and has no `expect`. Both server copies now share one `handle_request`. Checked locally with curl (401, 503, 429 per client).
 - Priority: P1. Effort: S. Area: Security / Ops.
 - Location: `deploy/fly.toml` (`[http_service] internal_port = 8080`,
   `METRICS_BIND_ALL_INTERFACES = 'true'`), `src/observability/metrics.rs:65-81` (auth optional,

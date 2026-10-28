@@ -51,14 +51,15 @@ deployment is started by hand and approved.
 ## HTTP Endpoints
 One server on `HEALTH_PORT` (8080), bound to all interfaces only when
 `METRICS_BIND_ALL_INTERFACES=true` (localhost otherwise), limited to 10 requests per minute per
-TCP peer, checked before routing: behind Fly's proxy callers likely share one limit, and health
-checks count toward it. Code: `src/observability/metrics.rs`, `src/observability/health_checks.rs`.
+client, checked before routing: the client is `Fly-Client-IP` (set by Fly's proxy) when present,
+else the TCP peer; at most 1,024 clients are remembered, the least recently seen is forgotten
+first. Bodies are fixed texts: failure reasons go to the logs only. Code: `src/observability/metrics.rs`, `src/observability/health_checks.rs`.
 
 | Endpoint | Behaviour |
 |---|---|
-| `GET /health/live` | 200 `OK` while the Telegram heartbeat is fresh; 503 after 5 minutes without a successful Telegram call (`getMe` every minute, 5-minute grace at startup). |
-| `GET /health/ready` | 200 when the database answers `SELECT 1`, a Telegram call has succeeded since the start and recently (no startup grace), and the bot token is well formed; 503 `NOT READY: <reason>` otherwise. Gemini is not called. |
-| `GET /metrics` | Prometheus text format. When `METRICS_AUTH_TOKEN` is set, requires `Authorization: Bearer <token>` (401 otherwise); open when it is unset. |
+| `GET /health/live` | 200 `OK` while the Telegram heartbeat is fresh; 503 `NOT LIVE` after 5 minutes without a successful Telegram call (`getMe` every minute, 5-minute grace at startup). |
+| `GET /health/ready` | 200 when the database answers `SELECT 1`, a Telegram call has succeeded since the start and recently (no startup grace), and the bot token is well formed; 503 `NOT READY` otherwise, the reason logged as a warning. Gemini is not called. |
+| `GET /metrics` | Prometheus text format. Requires `Authorization: Bearer <METRICS_AUTH_TOKEN>`, compared in constant time; 401 otherwise, and always 401 when the token is not set (a warning is logged at startup). |
 
 Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` or `/live`).
 
@@ -71,7 +72,7 @@ Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` 
 - **Staging** (permanent app `just-ingredients-staging`, created once by hand, see
   [Staging Setup](#staging-setup)): Fly secrets `DATABASE_URL` (from `fly postgres attach` of
   `just-ingredients-staging-db`), `TELEGRAM_BOT_TOKEN` of the test bot, `GEMINI_API_KEY`.
-  `METRICS_AUTH_TOKEN` is not set there.
+  `METRICS_AUTH_TOKEN` is not set there, so its `/metrics` answers 401.
 - **GitHub environment secrets**: `FLY_API_TOKEN` in `staging` and in `production`, each a deploy
   token of its own app (`fly tokens create deploy -a <app>`); there is no repository-level token
   (deleted on 2026-10-27).
@@ -101,7 +102,7 @@ Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` 
 - Alerting: only the uptime workflow and the production deploy notification (Telegram).
   `monitoring/prometheus.yml` has no alert rules.
 - Prometheus scrapes `https://just-ingredients.fly.dev/metrics` every 30 s. Its configuration
-  sends no token, so the scrape is refused (401) while `METRICS_AUTH_TOKEN` is set.
+  sends no token, so the scrape is refused (401).
 - Logs: `fly logs` (pretty format).
 - Main metrics (all names: the `metrics::counter!`, `histogram!` and `gauge!` calls in
   `src/observability/metrics.rs` and `src/extraction/`):
