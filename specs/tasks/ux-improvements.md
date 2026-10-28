@@ -50,6 +50,7 @@ are easy to find, and messages read well. Validated by the user on 2026-10-27 fr
 | Free text | Any text sent outside a dialogue is a search in the user's recipes. |
 | Photo | Kept while its ingredients are reviewed, deleted with the other messages when the review ends (2026-10-27). |
 | Review list | Deleted once the review is confirmed (2026-10-27); the saved recipe stays shown as a card (✅ name, ingredients, card buttons) above the home message (2026-10-28). |
+| Clean thread | 2026-10-28, replaces "Nominal state" once Phase U5 ships: the chat keeps only a history (recipe cards and one line per action: created, renamed, modified, deleted) and the recipe list as the last message; everything else is deleted when the action ends. No home message: the list takes its place (its header carries the recipe count and the photo hint), `/start` and `/aide` are shown on demand and deleted at the next action. The user's choices: a creation is one message (the card titled "✅ created"); opening a recipe adds its card to the history and moves the list below, one card per recipe; rename and edit update the cards already shown; a delete turns the card into "🗑️ deleted"; a cancelled creation leaves nothing. |
 | Releases | One production deployment per feature, validated by the user in Telegram before the next one. Changed on 2026-10-27 (after v19): features are grouped, one deployment per phase (U1.3–U1.7 together after RU1). |
 
 ## Open Questions
@@ -275,6 +276,59 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 
 ### Review gate RU3
 - [x] Done (2026-10-28, see the Review Log)
+
+## Phase U5: Clean Thread (before U4, user priority of 2026-10-28)
+Goal: the chat reads as a history of recipes and actions, with the recipe list always last (see
+"Clean thread" in the Decisions). Telegram deletes only messages under 48 hours, but a bot can
+edit its own messages at any time: older messages that should go are edited down instead.
+
+### Task U5.1: Message registry in the database (<= 1 hour)
+- [ ] Done
+- Description: migration 3, table `chat_messages (chat_id, message_id, kind, recipe_id,
+  sent_at)`, kind `list`, `card` or `transient`; `bot::cleanup` records and takes messages there
+  instead of in memory, so a deploy or restart no longer forgets the list or an action's
+  messages. Only message ids are stored, never their content (user's agreement, 2026-10-28): one
+  list, one card per shown recipe and the running action's messages per user.
+- How to validate: DB tests (record, take once, per chat, kinds, 48-hour cut-off); after a
+  staging restart the next action still deletes the previous list.
+
+### Task U5.2: The recipe list as the last message (<= 1 hour)
+- [ ] Done
+- Description: `send_home` becomes "move the list down": delete the previous list (or, older
+  than 48 hours, edit it to one neutral line without buttons) and send page 1 without
+  notification. Its header replaces the home message: the recipe count and the photo hint, an
+  onboarding text when there is no recipe. `/liste` does the same; `/start` shows the welcome as a
+  transient message, then the list.
+- How to validate: renderer tests of the header; manual: every action ends with exactly one list
+  at the bottom.
+
+### Task U5.3: One line per action (<= 1 hour)
+- [ ] Done
+- Description: a creation leaves the saved card titled "✅ Recette « X » créée"; rename, edit and
+  delete leave "✏️ « X » renommée en « Y »", "📝 « X » modifiée", "🗑️ « X » supprimée", sent
+  without notification; a cancelled creation leaves nothing; errors (not a recipe, daily limit,
+  save failed) stay until the next action, then go.
+- How to validate: renderer tests of each line in fr and en; manual run of each action.
+
+### Task U5.4: One card per recipe, always current (<= 1 hour)
+- [ ] Done
+- Description: cards are recorded with their recipe id. Opening a recipe deletes its previous
+  card (or strips its buttons after 48 hours) and sends the card above the list; a rename or an
+  edit updates every recorded card of the recipe in place; a delete turns the card into the
+  "🗑️ supprimée" line.
+- How to validate: DB-backed tests of the card bookkeeping; manual: open, rename, open again,
+  delete.
+
+### Task U5.5: Everything else is transient (<= 1 hour)
+- [ ] Done
+- Description: `/aide`, `/start`, unknown commands, free text and the bot's answers, delete
+  confirmations and "button no longer active" toasts leave nothing once the next action ends;
+  the "Nominal state" decision and `telegram-bot.md` are rewritten for the new model.
+- How to validate: manual review of a long session on staging: only cards, action lines and one
+  list remain.
+
+### Review gate RU5
+- [ ] Done
 
 ## Phase U4: Search
 
