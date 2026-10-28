@@ -31,7 +31,7 @@ use super::ui_builder::{
 
 // Import HandlerContext
 use super::cleanup::{self, send_transient};
-use super::home::{send_home, send_saved_recipe};
+use super::home::{send_created_line, send_home};
 use super::HandlerContext;
 
 /// Check if the error is a "message not modified" Telegram API error
@@ -288,17 +288,15 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
             .await?;
             return Ok(());
         }
-        Ok(recipe_id) => {
-            // The saved recipe card is the result; the name prompt goes with the review messages
+        Ok(_) => {
+            // One history line is the result; the name prompt goes with the review messages
             if let Some(prompt_msg_id) = message_id {
                 cleanup::track(msg.chat.id, teloxide::types::MessageId(prompt_msg_id)).await;
             }
-            send_saved_recipe(
+            send_created_line(
                 ctx.bot,
                 msg.chat.id,
-                recipe_id,
                 validated_name,
-                ingredients,
                 ctx.localization,
                 ctx.language_code,
             )

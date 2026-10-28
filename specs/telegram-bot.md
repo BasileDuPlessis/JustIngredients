@@ -152,12 +152,13 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
   recorded for cleanup as soon as it is sent (with the photo), so a command that ends the review
   deletes it too, and so does a cancel. Then:
   - name from the caption or the page title: saved at once; the review loses its buttons; the
-    saved recipe card follows (`home::send_saved_recipe`: ✅ bold "Recette « X » créée", ingredients, recipe card
-    buttons), then the [recipe list](#end-of-an-action-the-recipe-list-last);
+    line "✅ Recette « X » créée" follows (`home::send_created_line`, `recipe-created-line`, no
+    card: the card shows when the recipe is opened), then the
+    [recipe list](#end-of-an-action-the-recipe-list-last);
   - otherwise: buttons removed, `recipe-name-prompt` sent, state
     `WaitingForRecipeNameAfterConfirm`. The typed name (a cancel word cancels; empty
     or over 255 bytes refused) is saved; the prompt is deleted with the review messages and the
-    saved recipe card is sent, followed by the recipe list.
+    `recipe-created-line` is sent, followed by the recipe list.
 - `cancel_review` (and a typed cancel word; both call `review_callbacks::cancel_review`): a
   cancelled creation leaves nothing behind (photo, list and prompts deleted), dialogue ended,
   recipe list sent again. The same for a cancel at the name prompt.
@@ -211,7 +212,7 @@ Before sending the list, `send_home` deletes what the action left behind (`bot::
   saving, the saved recipe card and the list remain.
 
 Kept (the history): recipe cards and one line per action (U5.3), sent without notification:
-the saved card titled "✅ Recette « X » créée", `recipe-renamed-line` ("✏️ « X » renommée en
+`recipe-created-line` ("✅ Recette « X » créée"), `recipe-renamed-line` ("✏️ « X » renommée en
 « Y »"), `recipe-edited-line` ("📝 « X » modifiée", only when something changed),
 `recipe-deleted-line` ("🗑️ « X » supprimée", which replaces the deleted recipe's card in place).
 A cancel leaves nothing. An error at the end of an action (recipe gone, database error) and a

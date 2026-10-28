@@ -49,8 +49,8 @@ are easy to find, and messages read well. Validated by the user on 2026-10-27 fr
 | Commands | `/liste`, `/cherche`, `/aide`; English aliases `/list`, `/search`, `/help`; `/start` and `/recipes` still accepted. |
 | Free text | Any text sent outside a dialogue is a search in the user's recipes. |
 | Photo | Kept while its ingredients are reviewed, deleted with the other messages when the review ends (2026-10-27). |
-| Review list | Deleted once the review is confirmed (2026-10-27); the saved recipe stays shown as a card (✅ name, ingredients, card buttons) above the home message (2026-10-28). |
-| Clean thread | 2026-10-28, replaces "Nominal state" once Phase U5 ships: the chat keeps only a history (recipe cards and one line per action: created, renamed, modified, deleted) and the recipe list as the last message; everything else is deleted when the action ends. No home message: the list takes its place (its header carries the recipe count and the photo hint), `/start` and `/aide` are shown on demand and deleted at the next action. The user's choices: a creation is one message (the card titled "✅ created"); opening a recipe adds its card to the history and moves the list below, one card per recipe; rename and edit update the cards already shown; a delete turns the card into "🗑️ deleted"; a cancelled creation leaves nothing. |
+| Review list | Deleted once the review is confirmed (2026-10-27); the saved recipe stays shown as a card (✅ name, ingredients, card buttons) above the home message (2026-10-28). Since U5.3 (2026-10-28) a creation leaves one line "✅ Recette « X » créée" instead of the card. |
+| Clean thread | 2026-10-28, replaces "Nominal state" once Phase U5 ships: the chat keeps only a history (recipe cards and one line per action: created, renamed, modified, deleted) and the recipe list as the last message; everything else is deleted when the action ends. No home message: the list takes its place (its header carries the recipe count and the photo hint), `/start` and `/aide` are shown on demand and deleted at the next action. The user's choices: a creation is one line "✅ Recette « X » créée" without the card (the user's correction after testing U5.3 on staging: the card shows only when a recipe is opened); opening a recipe adds its card to the history and moves the list below, one card per recipe; rename and edit update the cards already shown; a delete turns the card into "🗑️ deleted"; a cancelled creation leaves nothing. |
 | Releases | One production deployment per feature, validated by the user in Telegram before the next one. Changed on 2026-10-27 (after v19): features are grouped, one deployment per phase (U1.3–U1.7 together after RU1). |
 
 ## Open Questions
@@ -310,7 +310,7 @@ edit its own messages at any time: older messages that should go are edited down
   at the bottom.
 
 ### Task U5.3: One line per action (<= 1 hour)
-- [x] Done (2026-10-28): creation card titled "✅ Recette « X » créée"; rename, edit (when
+- [x] Done (2026-10-28): creation line "✅ Recette « X » créée" (first a card with that title, replaced by the line at the user's request); rename, edit (when
   something changed) and delete lines, silent; the deleted recipe's card becomes its line; a
   cancel leaves nothing; end-of-action errors and photos that gave no review stay until the next
   action (`home::send_home_keeping`). Four replaced locale keys removed.

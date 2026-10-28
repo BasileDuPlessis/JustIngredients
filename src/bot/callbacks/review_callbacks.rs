@@ -24,7 +24,7 @@ use crate::dialogue::{IngredientField, RecipeDialogue, RecipeDialogueState};
 use crate::bot::callbacks::ingredient_menu::show_ingredient_keyboard;
 use crate::bot::cleanup::{self, send_transient};
 use crate::bot::create_ingredient_review_keyboard;
-use crate::bot::home::{send_home, send_saved_recipe};
+use crate::bot::home::{send_created_line, send_home};
 use crate::bot::ui_builder::{
     edit_instruction_key, parse_ingredient_action, render_review, IngredientAction,
 };
@@ -592,7 +592,7 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
     };
 
     debug!(user_id = %c.owner_id, "Recipe name from the caption or the title, saving at once");
-    let recipe_id = match save_ingredients_to_database(
+    match save_ingredients_to_database(
         c.pool,
         c.owner_id,
         c.extracted_text,
@@ -602,7 +602,7 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
     )
     .await
     {
-        Ok(recipe_id) => recipe_id,
+        Ok(_) => {}
         Err(_) => {
             // Logged by the save; nothing was written: the review stays open to try again
             send_transient(
@@ -615,18 +615,9 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
         }
     };
 
-    // The saved recipe card replaces the review list, then the home message
+    // One history line replaces the review, then the recipe list
     remove_review_keyboard(&c).await;
-    send_saved_recipe(
-        c.bot,
-        c.chat_id,
-        recipe_id,
-        name,
-        c.ingredients,
-        c.localization,
-        c.language_code,
-    )
-    .await;
+    send_created_line(c.bot, c.chat_id, name, c.localization, c.language_code).await;
     send_home(c.bot, c.pool, c.chat_id, c.localization, c.language_code).await;
     c.dialogue.exit().await?;
     Ok(())

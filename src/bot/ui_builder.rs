@@ -3,7 +3,7 @@
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
 // Import localization
-use crate::localization::{t_args_lang, t_lang};
+use crate::localization::t_lang;
 use std::sync::Arc;
 
 // Import text processing types
@@ -418,29 +418,6 @@ pub fn render_recipe_card(
         ))
 }
 
-/// The card of a recipe that was just saved (HTML): ✅, bold name and the ingredients. It stays
-/// in the chat, with the recipe card buttons, when the review messages are deleted.
-pub fn render_saved_recipe(
-    recipe_name: &str,
-    ingredients: &[MeasurementMatch],
-    language_code: Option<&str>,
-    localization: &Arc<crate::localization::LocalizationManager>,
-) -> Html {
-    Html::text("✅ ")
-        + Html::bold(&t_args_lang(
-            localization,
-            "recipe-created-title",
-            &[("name", recipe_name)],
-            language_code,
-        ))
-        + Html::text("\n\n")
-        + Html::text(&format_ingredients_list(
-            ingredients,
-            language_code,
-            localization,
-        ))
-}
-
 /// The recipe card shown again after its ingredients were edited (HTML): bold name and the
 /// ingredient list.
 pub fn render_recipe_summary(
@@ -639,12 +616,6 @@ mod tests {
                 Some("fr"),
                 &localization,
             ),
-            render_saved_recipe(
-                "Une très longue recette",
-                &ingredients,
-                Some("fr"),
-                &localization,
-            ),
         ] {
             // The markup is at least as long as the text Telegram counts
             let length = html.as_str().chars().count();
@@ -691,18 +662,6 @@ mod tests {
         assert_eq!(
             format_recipe_date(at, None, true, &localization),
             "Oct 27, 2026"
-        );
-    }
-
-    #[test]
-    fn the_saved_recipe_card_says_created_in_bold_and_lists_the_ingredients() {
-        let localization =
-            crate::localization::create_localization_manager().expect("localization");
-        let card =
-            render_saved_recipe("Crêpes & co", &[named("farine")], Some("fr"), &localization);
-        assert_eq!(
-            card.as_str(),
-            "✅ <b>Recette « Crêpes &amp; co » créée</b>\n\n1. 2 g → farine\n"
         );
     }
 

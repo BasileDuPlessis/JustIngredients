@@ -7,26 +7,30 @@ use teloxide::prelude::*;
 use tracing::warn;
 
 use super::cleanup;
-use super::html::send_html;
-use super::ui_builder::{create_recipe_details_keyboard, render_saved_recipe};
-use crate::localization::LocalizationManager;
+use crate::localization::{t_args_lang, LocalizationManager};
 
-/// Sends the card of a recipe that was just saved (name, ingredients, card buttons). Never fails:
-/// the recipe is saved, so errors are only logged.
-pub async fn send_saved_recipe(
+/// Sends the history line of a recipe that was just saved: "✅ Recette « X » créée", without
+/// notification (the card shows when the recipe is opened from the list). Never fails: the
+/// recipe is saved, so errors are only logged.
+pub async fn send_created_line(
     bot: &Bot,
     chat_id: ChatId,
-    recipe_id: i64,
     recipe_name: &str,
-    ingredients: &[crate::text_processing::MeasurementMatch],
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
 ) {
-    let card = render_saved_recipe(recipe_name, ingredients, language_code, localization);
-    let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
-    match send_html(bot, chat_id, card).reply_markup(keyboard).await {
-        Ok(sent) => cleanup::record_card(chat_id, sent.id, recipe_id).await,
-        Err(e) => warn!(error = %e, "Failed to send the saved recipe card"),
+    let line = t_args_lang(
+        localization,
+        "recipe-created-line",
+        &[("name", recipe_name)],
+        language_code,
+    );
+    if let Err(e) = bot
+        .send_message(chat_id, line)
+        .disable_notification(true)
+        .await
+    {
+        warn!(error = %e, "Failed to send the created recipe line");
     }
 }
 
