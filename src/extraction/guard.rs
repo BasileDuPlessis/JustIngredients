@@ -3,11 +3,13 @@
 //! - at most `max_concurrency` extractions run at once; a photo that waits longer than the
 //!   queue timeout gets the "busy" message instead of waiting forever;
 //! - successful results are cached by SHA-256 of the image bytes, so the same photo sent again
-//!   (or forwarded by another user) is never paid twice. The cache is bounded in size and age.
+//!   (or forwarded by another user) is never paid twice. The cache is bounded in size and age;
+//! - each user gets at most a daily number of paid calls (UTC days, in memory, so a restart
+//!   resets it). Cache hits and images without a requester do not count.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, Instant};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
@@ -33,7 +35,30 @@ struct ResultCache {
     order: VecDeque<ImageHash>,
 }
 
-/// Wraps an extractor with a concurrency limit and a result cache.
+/// Paid calls of each user during one UTC day.
+#[derive(Debug, Default)]
+struct DailyUsage {
+    day: u64,
+    calls: HashMap<i64, u32>,
+}
+
+impl DailyUsage {
+    /// Counts one call of `user` on `day`, unless they already made `limit` calls that day.
+    fn take(&mut self, user: i64, day: u64, limit: u32) -> bool {
+        if self.day != day {
+            self.day = day;
+            self.calls.clear();
+        }
+        let calls = self.calls.entry(user).or_insert(0);
+        if *calls >= limit {
+            return false;
+        }
+        *calls += 1;
+        true
+    }
+}
+
+/// Wraps an extractor with a concurrency limit, a result cache and a per-user daily limit.
 #[derive(Debug)]
 pub struct GuardedExtractor {
     inner: SharedExtractor,
@@ -42,6 +67,8 @@ pub struct GuardedExtractor {
     cache: Mutex<ResultCache>,
     cache_capacity: usize,
     cache_ttl: Duration,
+    daily_limit: Option<u32>,
+    usage: Mutex<DailyUsage>,
 }
 
 impl GuardedExtractor {
@@ -54,7 +81,15 @@ impl GuardedExtractor {
             cache: Mutex::new(ResultCache::default()),
             cache_capacity: DEFAULT_CACHE_CAPACITY,
             cache_ttl: DEFAULT_CACHE_TTL,
+            daily_limit: None,
+            usage: Mutex::new(DailyUsage::default()),
         }
+    }
+
+    /// Limits each user to `limit` paid calls per UTC day.
+    pub fn with_daily_limit(mut self, limit: u32) -> Self {
+        self.daily_limit = Some(limit);
+        self
     }
 
     /// Replaces the queue timeout.
@@ -90,6 +125,7 @@ impl GuardedExtractor {
             return Ok(cached);
         }
 
+        self.take_daily_call(image.requester())?;
         let extraction = self.inner.extract(image).await?;
         // Only useful answers are cached: "not a recipe" or no ingredient may be a model miss,
         // and sending the same photo again must try again.
@@ -97,6 +133,23 @@ impl GuardedExtractor {
             self.store(hash, &extraction);
         }
         Ok(extraction)
+    }
+
+    /// Counts a paid call toward the requester's daily limit, failing when it is reached.
+    fn take_daily_call(&self, requester: Option<i64>) -> Result<(), ExtractionError> {
+        let (Some(limit), Some(user)) = (self.daily_limit, requester) else {
+            return Ok(());
+        };
+        let day = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs() / 86_400);
+        // Plain counters: a panic while holding the lock cannot leave them inconsistent.
+        let mut usage = self.usage.lock().unwrap_or_else(PoisonError::into_inner);
+        if usage.take(user, day, limit) {
+            Ok(())
+        } else {
+            Err(ExtractionError::DailyLimitReached { limit })
+        }
     }
 
     fn lock(&self) -> MutexGuard<'_, ResultCache> {
@@ -277,6 +330,36 @@ mod tests {
             .iter()
             .any(|r| matches!(r, Err(ExtractionError::RateLimited { .. }))));
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_user_over_the_daily_limit_is_refused_without_a_call() -> Result<(), ExtractionError>
+    {
+        let fake = Arc::new(FakeExtractor::default());
+        let guarded = GuardedExtractor::new(fake.clone(), 2).with_daily_limit(2);
+        guarded.extract(&image(1)?.requested_by(7)).await?;
+        guarded.extract(&image(2)?.requested_by(7)).await?;
+        let refused = guarded.extract(&image(3)?.requested_by(7)).await;
+        assert!(matches!(
+            refused,
+            Err(ExtractionError::DailyLimitReached { limit: 2 })
+        ));
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 2, "no paid call refused");
+
+        // A photo already read is free, and other users have their own count
+        guarded.extract(&image(1)?.requested_by(7)).await?;
+        guarded.extract(&image(3)?.requested_by(8)).await?;
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 3);
+        Ok(())
+    }
+
+    #[test]
+    fn daily_counts_start_again_the_next_day() {
+        let mut usage = DailyUsage::default();
+        assert!(usage.take(7, 100, 1));
+        assert!(!usage.take(7, 100, 1));
+        assert!(usage.take(7, 101, 1), "a new day");
+        assert_eq!(usage.calls.len(), 1, "the previous day is forgotten");
     }
 
     #[tokio::test]

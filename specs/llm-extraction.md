@@ -19,7 +19,7 @@ rolling back to Tesseract means reverting the Phase 5 commits.
 | `gemini/types.rs` | Request and response JSON types |
 | `prompt.rs` | Prompt and response schema, embedded from `config/extraction/` |
 | `image.rs` | `ImageInput::prepare`: format detection and conversion, `MAX_IMAGE_BYTES` |
-| `guard.rs` | `GuardedExtractor`: concurrency slots, queue timeout, result cache |
+| `guard.rs` | `GuardedExtractor`: concurrency slots, queue timeout, result cache, per-user daily limit |
 | `breaker.rs` | Circuit breaker (closed, open, half-open) |
 | `mapping.rs` | `Extraction` → `MeasurementMatch` (units, name length, quantity range) |
 | `pricing.rs` | Estimated cost per call for the cost metric |
@@ -35,6 +35,7 @@ The bot only knows `SharedExtractor` (`Arc<dyn IngredientExtractor>`), built onc
 | `GEMINI_TIMEOUT_SECS` | `40` | budget for one image, retries included, 1–300 |
 | `GEMINI_THINKING_LEVEL` | `minimal` | `minimal`, `low`, `medium` or `high` |
 | `GEMINI_MAX_CONCURRENCY` | `2` | concurrent calls, 1–32 |
+| `EXTRACTION_DAILY_LIMIT_PER_USER` | `50` | photos read per user and UTC day, 1–10000 |
 
 `EXTRACTION_BACKEND` is no longer read. At startup `verify_access` checks the key and model; a
 failure is logged as an error and the bot still starts (photos then fail with
@@ -68,6 +69,9 @@ failure is logged as an error and the bot still starts (photos then fail with
 - `GuardedExtractor`: `GEMINI_MAX_CONCURRENCY` slots; a photo waiting more than 30 s for a slot
   gets `error-extraction-busy`. Successful results are cached by SHA-256 of the image (100
   entries, 24 h); "not a recipe" answers and answers without ingredients are not cached.
+  Each user (the image's `requested_by`, set by the bot) gets `EXTRACTION_DAILY_LIMIT_PER_USER`
+  paid calls per UTC day; the next photo gets `error-extraction-daily-limit` without a call.
+  Cache hits are free. Counts are in memory: a restart resets them.
 
 ## Errors
 `ExtractionError` messages never contain the key or a URL with credentials. User messages come
@@ -78,6 +82,7 @@ from `bot::image_processing::extraction_error_key`:
 | `error-extraction-unsupported-image` | `UnsupportedImage` |
 | `error-extraction-image-too-large` | `ImageTooLarge` |
 | `error-extraction-busy` | `RateLimited` (HTTP 429 or no free slot within 30 s) |
+| `error-extraction-daily-limit` | `DailyLimitReached` |
 | `error-extraction-unreadable` | `Blocked`, `Recitation`, `Truncated`, `InvalidResponse`, other 4xx about the image |
 | `error-extraction-unavailable` | `Config`, `Timeout`, `Network`, 5xx, invalid key or model, `CircuitOpen` |
 

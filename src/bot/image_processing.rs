@@ -149,7 +149,7 @@ pub async fn download_and_process_image(
     let message_id = processing_message.id;
 
     let extraction = match ImageInput::prepare(bytes).await {
-        Ok(image) => extractor.extract(&image).await,
+        Ok(image) => extractor.extract(&image.requested_by(chat_id.0)).await,
         Err(error) => Err(error),
     };
     let extraction = match extraction {
@@ -302,6 +302,7 @@ pub fn extraction_error_key(error: &ExtractionError) -> &'static str {
         | ExtractionError::Network(_)
         | ExtractionError::Api { .. }
         | ExtractionError::CircuitOpen => "error-extraction-unavailable",
+        ExtractionError::DailyLimitReached { .. } => "error-extraction-daily-limit",
     }
 }
 
@@ -392,6 +393,7 @@ mod tests {
             ExtractionError::Truncated,
             ExtractionError::InvalidResponse(String::new()),
             ExtractionError::CircuitOpen,
+            ExtractionError::DailyLimitReached { limit: 1 },
         ];
         let locales = [
             include_str!("../../locales/en/main.ftl"),

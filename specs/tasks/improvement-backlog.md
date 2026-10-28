@@ -980,7 +980,8 @@ they can be pulled into 1-hour micro-tasks without another review.
   reports numbers without failing the build.
 
 ### IMP-047: No per-user limit on paid extractions
-- [ ] Done
+- [x] Done
+- Status: Done (2026-10-28): `GuardedExtractor::with_daily_limit`, in memory per UTC day, `EXTRACTION_DAILY_LIMIT_PER_USER` (default 50, 1–10000); cache hits are free; the refused photo gets `error-extraction-daily-limit` without a call (unit test).
 - Priority: P3. Effort: S. Area: Cost.
 - Related: LLM migration (Task 3.4 left it optional).
 - Location: `src/extraction/guard.rs`.

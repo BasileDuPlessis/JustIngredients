@@ -7,6 +7,7 @@
 //! | `GEMINI_TIMEOUT_SECS` | `40` | time budget for one image, retries included, 1–300 |
 //! | `GEMINI_THINKING_LEVEL` | `minimal` | `minimal`, `low`, `medium` or `high` |
 //! | `GEMINI_MAX_CONCURRENCY` | `2` | concurrent API calls, 1–32 (each holds up to ~25 MB) |
+//! | `EXTRACTION_DAILY_LIMIT_PER_USER` | `50` | photos read per user and UTC day, 1–10000 |
 //!
 //! Values are parsed and checked at startup: the bot does not start without `GEMINI_API_KEY` or
 //! with a malformed or out-of-range `GEMINI_*` value. `EXTRACTION_BACKEND` is no longer read: the
@@ -82,10 +83,21 @@ impl Default for GeminiConfig {
     }
 }
 
-/// Extraction settings: the Gemini client settings.
-#[derive(Debug, Clone, Default, PartialEq)]
+/// Extraction settings: the Gemini client settings and the per-user daily limit.
+#[derive(Debug, Clone, PartialEq)]
 pub struct ExtractionConfig {
     pub gemini: GeminiConfig,
+    /// Paid extractions per user and UTC day (about 0.0017 USD each).
+    pub daily_limit_per_user: u32,
+}
+
+impl Default for ExtractionConfig {
+    fn default() -> Self {
+        Self {
+            gemini: GeminiConfig::default(),
+            daily_limit_per_user: 50,
+        }
+    }
 }
 
 impl ExtractionConfig {
@@ -121,6 +133,11 @@ impl ExtractionConfig {
                 )?
                 .unwrap_or(defaults.gemini.max_concurrency),
             },
+            daily_limit_per_user: parse_number(
+                get("EXTRACTION_DAILY_LIMIT_PER_USER"),
+                "EXTRACTION_DAILY_LIMIT_PER_USER",
+            )?
+            .unwrap_or(defaults.daily_limit_per_user),
         })
     }
 
@@ -143,6 +160,11 @@ impl ExtractionConfig {
         if !(1..=32).contains(&gemini.max_concurrency) {
             return Err(AppError::Config(
                 "GEMINI_MAX_CONCURRENCY must be between 1 and 32".to_string(),
+            ));
+        }
+        if !(1..=10_000).contains(&self.daily_limit_per_user) {
+            return Err(AppError::Config(
+                "EXTRACTION_DAILY_LIMIT_PER_USER must be between 1 and 10000".to_string(),
             ));
         }
         Ok(())
@@ -207,12 +229,14 @@ mod tests {
             ("GEMINI_TIMEOUT_SECS", "45"),
             ("GEMINI_THINKING_LEVEL", "LOW"),
             ("GEMINI_MAX_CONCURRENCY", "2"),
+            ("EXTRACTION_DAILY_LIMIT_PER_USER", "20"),
         ])?;
         assert_eq!(config.gemini.api_key.expose(), "key");
         assert_eq!(config.gemini.model, "gemini-3.8-flash");
         assert_eq!(config.gemini.timeout_secs, 45);
         assert_eq!(config.gemini.thinking_level, ThinkingLevel::Low);
         assert_eq!(config.gemini.max_concurrency, 2);
+        assert_eq!(config.daily_limit_per_user, 20);
         config.validate()
     }
 
@@ -223,6 +247,7 @@ mod tests {
         for (name, value) in [
             ("GEMINI_TIMEOUT_SECS", "0"),
             ("GEMINI_MAX_CONCURRENCY", "64"),
+            ("EXTRACTION_DAILY_LIMIT_PER_USER", "0"),
         ] {
             let config = load(&[("GEMINI_API_KEY", "k"), (name, value)])?;
             assert!(config.validate().is_err(), "{name}={value}");

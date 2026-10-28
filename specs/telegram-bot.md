@@ -287,6 +287,7 @@ Extraction errors map to locale keys in `extraction_error_key` (`image_processin
 | `error-extraction-unsupported-image` | `UnsupportedImage` |
 | `error-extraction-image-too-large` | `ImageTooLarge` (also before download) |
 | `error-extraction-busy` | `RateLimited` (HTTP 429 or no free slot within 30 s) |
+| `error-extraction-daily-limit` | `DailyLimitReached` (`EXTRACTION_DAILY_LIMIT_PER_USER` photos read today, UTC) |
 | `error-extraction-unreadable` | `Blocked`, `Recitation`, `Truncated`, `InvalidResponse`, other 4xx about the image |
 | `error-extraction-unavailable` | `Config`, `Timeout`, `Network`, 5xx, invalid key or model, `CircuitOpen` |
 

@@ -63,6 +63,8 @@ impl ImageMime {
 pub struct ImageInput {
     bytes: Vec<u8>,
     mime: ImageMime,
+    /// Telegram id of the user who sent the image, for the per-user daily limit.
+    requester: Option<i64>,
 }
 
 impl ImageInput {
@@ -75,7 +77,23 @@ impl ImageInput {
         let mime = ImageMime::sniff(&bytes).ok_or_else(|| {
             ExtractionError::UnsupportedImage("expected a JPEG, PNG or WebP image".to_string())
         })?;
-        Ok(Self { bytes, mime })
+        Ok(Self {
+            bytes,
+            mime,
+            requester: None,
+        })
+    }
+
+    /// Records who sent the image, so that it counts toward their daily limit.
+    #[must_use]
+    pub fn requested_by(mut self, user_id: i64) -> Self {
+        self.requester = Some(user_id);
+        self
+    }
+
+    /// The user who sent the image, if known.
+    pub fn requester(&self) -> Option<i64> {
+        self.requester
     }
 
     /// The image file content.
@@ -178,6 +196,9 @@ pub enum ExtractionError {
     /// Calls are suspended by the circuit breaker after repeated failures.
     #[error("extraction temporarily disabled after repeated failures")]
     CircuitOpen,
+    /// The user already sent `limit` photos to read today (UTC).
+    #[error("daily extraction limit reached ({limit} per user)")]
+    DailyLimitReached { limit: u32 },
 }
 
 impl ExtractionError {
@@ -196,6 +217,7 @@ impl ExtractionError {
             Self::Truncated => "truncated",
             Self::InvalidResponse(_) => "invalid_response",
             Self::CircuitOpen => "circuit_open",
+            Self::DailyLimitReached { .. } => "daily_limit",
         }
     }
 

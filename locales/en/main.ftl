@@ -57,6 +57,7 @@ error-image-load = The image format is not supported or the image is corrupted. 
 # Ingredient extraction (Gemini)
 error-extraction-unavailable = Reading recipes is temporarily unavailable. Please try again in a few minutes.
 error-extraction-busy = Too many photos at the same time. Please try again in a minute.
+error-extraction-daily-limit = You have reached today's number of photos. Please try again tomorrow.
 error-extraction-unsupported-image = This file is not an image I can read. Please send a photo (JPEG, PNG or WebP).
 error-extraction-image-too-large = This image is too large (10 MB maximum). Please send a smaller photo.
 error-extraction-unreadable = I couldn't read this image. Please try a sharper photo of the ingredient list.

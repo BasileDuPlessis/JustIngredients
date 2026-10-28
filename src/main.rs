@@ -252,10 +252,13 @@ async fn main() -> Result<()> {
         ),
     }
     // Concurrency limit and result cache in front of the engine (cost and memory protection)
-    let extractor: SharedExtractor = Arc::new(GuardedExtractor::new(
-        Arc::new(gemini),
-        app_config.extraction.gemini.max_concurrency,
-    ));
+    let extractor: SharedExtractor = Arc::new(
+        GuardedExtractor::new(
+            Arc::new(gemini),
+            app_config.extraction.gemini.max_concurrency,
+        )
+        .with_daily_limit(app_config.extraction.daily_limit_per_user),
+    );
     info!(
         backend = extractor.name(),
         model = %app_config.extraction.gemini.model,
