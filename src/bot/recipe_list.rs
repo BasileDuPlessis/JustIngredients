@@ -1,6 +1,7 @@
 //! The recipe list (`/liste`, the home message's "all my recipes", page buttons): one button per
-//! recipe, newest first, [`RECIPES_PER_PAGE`] per page, labelled "name · date". A button carries
-//! the recipe id (`recipe_instance:<id>`), so recipes with the same name are told apart by date.
+//! recipe, newest first, [`RECIPES_PER_PAGE`] per page, labelled with the recipe name (and its
+//! date only when the name appears twice on the page). A button carries the recipe id
+//! (`recipe_instance:<id>`).
 
 use std::sync::Arc;
 
@@ -21,21 +22,48 @@ pub const RECIPES_PER_PAGE: i64 = 8;
 /// Longest recipe name on a button, in characters, before the date.
 const NAME_MAX_CHARS: usize = 30;
 
-/// "Tarte aux pommes · 27 oct. 2026"
-pub fn recipe_button_label(
-    recipe: &RecipeSummary,
+/// The labels of a page's buttons: the name alone, the day added for names that appear more
+/// than once on the page ("Tarte · 27 oct. 2026"), and the time too when those were saved the
+/// same day ("Tarte · 27 oct. 2026 21:36").
+pub fn recipe_button_labels(
+    recipes: &[RecipeSummary],
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
-) -> String {
-    format!(
-        "{} · {}",
-        truncate_text(&recipe.name, NAME_MAX_CHARS),
-        format_recipe_date(recipe.created_at, language_code, true, localization)
-    )
+) -> Vec<String> {
+    use chrono::Timelike;
+    let names: Vec<String> = recipes
+        .iter()
+        .map(|recipe| truncate_text(&recipe.name, NAME_MAX_CHARS))
+        .collect();
+    let with_day: Vec<String> = recipes
+        .iter()
+        .zip(&names)
+        .map(|(recipe, name)| {
+            if names.iter().filter(|other| *other == name).count() > 1 {
+                let day = format_recipe_date(recipe.created_at, language_code, true, localization);
+                format!("{name} · {day}")
+            } else {
+                name.clone()
+            }
+        })
+        .collect();
+    recipes
+        .iter()
+        .zip(&names)
+        .zip(&with_day)
+        .map(|((recipe, name), label)| {
+            if label != name && with_day.iter().filter(|other| *other == label).count() > 1 {
+                let local = super::ui_builder::paris_time(recipe.created_at);
+                format!("{label} {:02}:{:02}", local.hour(), local.minute())
+            } else {
+                label.clone()
+            }
+        })
+        .collect()
 }
 
-/// One button per recipe of the page, then ⬅️ Page n of m ➡️ when there are several pages.
-/// Recipes with the same name saved the same day also show the time ("Tarte · 27 oct. 2026 21:36").
+/// One button per recipe of the page (see [`recipe_button_labels`]), then ⬅️ Page n of m ➡️
+/// when there are several pages.
 pub fn recipe_list_keyboard(
     recipes: &[RecipeSummary],
     page: usize,
@@ -43,21 +71,11 @@ pub fn recipe_list_keyboard(
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> InlineKeyboardMarkup {
-    use chrono::Timelike;
-    let labels: Vec<String> = recipes
-        .iter()
-        .map(|recipe| recipe_button_label(recipe, language_code, localization))
-        .collect();
+    let labels = recipe_button_labels(recipes, language_code, localization);
     let mut rows: Vec<Vec<InlineKeyboardButton>> = recipes
         .iter()
-        .zip(&labels)
+        .zip(labels)
         .map(|(recipe, label)| {
-            let label = if labels.iter().filter(|other| *other == label).count() > 1 {
-                let local = super::ui_builder::paris_time(recipe.created_at);
-                format!("{label} {:02}:{:02}", local.hour(), local.minute())
-            } else {
-                label.clone()
-            };
             vec![InlineKeyboardButton::callback(
                 label,
                 format!("recipe_instance:{}", recipe.id),
@@ -149,11 +167,15 @@ mod tests {
     }
 
     fn recipe_at(id: i64, name: &str, hour: u32) -> RecipeSummary {
+        recipe_on(id, name, 27, hour)
+    }
+
+    fn recipe_on(id: i64, name: &str, day: u32, hour: u32) -> RecipeSummary {
         RecipeSummary {
             id,
             name: name.to_string(),
             created_at: chrono::Utc
-                .with_ymd_and_hms(2026, 10, 27, hour, 36, 0)
+                .with_ymd_and_hms(2026, 10, day, hour, 36, 0)
                 .single()
                 .unwrap_or_default(),
         }
@@ -164,7 +186,7 @@ mod tests {
     }
 
     #[test]
-    fn each_recipe_has_its_own_button_with_name_and_date() {
+    fn buttons_show_the_name_and_tell_homonyms_apart() {
         let localization = manager();
         let recipes = [
             recipe_at(12, "Recipe", 20),
@@ -195,12 +217,9 @@ mod tests {
                     "Recipe · 27 oct. 2026 08:36".to_string(),
                     "recipe_instance:9".to_string()
                 ),
-                (
-                    "Tarte · 27 oct. 2026".to_string(),
-                    "recipe_instance:5".to_string()
-                ),
+                ("Tarte".to_string(), "recipe_instance:5".to_string()),
             ],
-            "same names stay two entries told apart by the time; one page: no page row"
+            "a unique name alone; same name same day: day and time; one page: no page row"
         );
     }
 
@@ -223,11 +242,20 @@ mod tests {
     }
 
     #[test]
-    fn long_names_are_shortened_before_the_date() {
+    fn homonyms_of_different_days_get_the_day_only() {
         let localization = manager();
-        let long = recipe(1, &"Gâteau ".repeat(10));
-        let label = recipe_button_label(&long, Some("en"), &localization);
-        assert!(label.ends_with("· Oct 27, 2026"), "{label}");
-        assert!(label.chars().count() <= NAME_MAX_CHARS + " · Oct 27, 2026".chars().count());
+        let recipes = [recipe_on(2, "Tarte", 28, 9), recipe_on(1, "Tarte", 27, 9)];
+        assert_eq!(
+            recipe_button_labels(&recipes, Some("en"), &localization),
+            vec!["Tarte · Oct 28, 2026", "Tarte · Oct 27, 2026"]
+        );
+    }
+
+    #[test]
+    fn long_names_are_shortened() {
+        let localization = manager();
+        let labels = recipe_button_labels(&[recipe(1, &"Gâteau ".repeat(10))], None, &localization);
+        assert!(labels[0].chars().count() <= NAME_MAX_CHARS, "{}", labels[0]);
+        assert!(labels[0].ends_with("..."));
     }
 }

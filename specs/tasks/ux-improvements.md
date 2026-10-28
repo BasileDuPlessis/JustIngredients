@@ -241,7 +241,9 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 
 ### Task U3.1: One entry per recipe, newest first (findings 7, 8) (<= 1 hour)
 - [x] Done (2026-10-28): `bot/recipe_list.rs`, used by `/liste`, the home's 📚 button and the page
-  buttons; 8 per page, "name · date", `recipe_instance:<id>`. The name-grouped list, its
+  buttons; 8 per page, `recipe_instance:<id>`. Labels: the name alone (the date was dropped at
+  the user's request, 2026-10-28: hard to read), with the day, and the time if needed, only for
+  names that appear twice on the page. The name-grouped list, its
   fingerprints (`recipe_selection.rs`) and the same-name screen are gone; their old buttons are
   retired (stale). Removed with them: the unused legacy `callback_handler`,
   `get_user_recipes_paginated`, `get_user_recipe_names`, `get_recipes_by_name`. Tested: the

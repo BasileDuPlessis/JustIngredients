@@ -214,9 +214,9 @@ state).
 
 ## My Recipes
 - **List** (`/liste`, 📚 button, `recipe_list::show_recipe_list`): one button per named recipe
-  of the user, newest first, 8 per page, labelled "name · date" (name cut at 30 characters, day
-  in the user's language: "Tarte · 27 oct. 2026"); two recipes with the same name are two
-  entries, and when they were saved the same day their buttons add the time (Paris). Callback data `recipe_instance:<id>`. Pagination row: ⬅️ `page:<n>`, "Page x of y"
+  of the user, newest first, 8 per page, labelled with the name (cut at 30 characters); a name
+  that appears more than once on the page adds the day ("Tarte · 27 oct. 2026"), and the time
+  when they were saved the same day (Paris). Two recipes with the same name are two entries. Callback data `recipe_instance:<id>`. Pagination row: ⬅️ `page:<n>`, "Page x of y"
   (`noop`, ignored), ➡️ `page:<n>`; it edits the list message, and a page past the end (recipes
   deleted meanwhile) shows the last one.
 - **Selection** (owner = callback sender): `recipe_instance:<id>` opens the card; a recipe that
