@@ -642,7 +642,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   appears in send calls, not in DB calls.
 
 ### IMP-025: `**bold**` and code fences shown literally (no `parse_mode`)
-- [ ] Done
+- [x] Done (2026-10-28): HTML with escaping on the key screens (UX Task U1.1); recipe dates in the user's language and Paris time (`ui_builder::format_recipe_date`, `paris_time`, tested at the summer-time changes).
 - Priority: P2. Effort: M. Area: Bot UI.
 - Location: `src/bot/command_handlers.rs:42`, `src/bot/image_processing.rs:238-252`,
   `src/bot/callbacks/callback_handler.rs:368`, `src/bot/callbacks/callback_handler.rs:627-628`,

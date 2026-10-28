@@ -205,7 +205,7 @@ state).
 - **Selection** (owner = callback sender): no recipe → `recipe-not-found`; one → recipe card;
   several with the same name → one button per recipe "📅 date • first 3 ingredients"
   (`recipe_instance:<id>`) and ⬅️ `back_to_recipes`.
-- **Recipe card**: name, creation date (English format in both languages), ingredients. Buttons:
+- **Recipe card**: name, creation date (user's language, Paris time: `format_recipe_date`), ingredients. Buttons:
   ✏️ `recipe_action:rename:<id>`, 📝 `recipe_action:edit_ingredients:<id>`,
   🗑️ `recipe_action:delete:<id>`, 📊 `recipe_action:statistics:<id>`, ⬅️ `back_to_recipes`
   (deletes the card message).

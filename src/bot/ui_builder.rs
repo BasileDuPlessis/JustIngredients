@@ -361,7 +361,8 @@ pub fn create_recipe_instances_keyboard(
 
             // Add buttons for each recipe instance
             for (recipe, ingredients) in recipe_data {
-                let created_at = recipe.created_at.format("%b %d, %Y %H:%M");
+                let created_at =
+                    format_recipe_date(recipe.created_at, language_code, true, localization);
 
                 // Create ingredient preview (first 3 ingredients)
                 let ingredient_preview = if ingredients.is_empty() {
@@ -447,6 +448,75 @@ pub fn create_recipe_details_keyboard(
     })
 }
 
+/// Paris time of `at`: UTC+2 from the last Sunday of March to the last Sunday of October (both
+/// at 01:00 UTC, the European rule), UTC+1 otherwise. The bot's users are French; no time zone
+/// database is needed for one zone.
+pub fn paris_time(at: chrono::DateTime<chrono::Utc>) -> chrono::NaiveDateTime {
+    use chrono::{Datelike, NaiveDate, TimeZone};
+    let last_sunday_at_one_utc = |month: u32| {
+        NaiveDate::from_ymd_opt(at.year(), month, 31)
+            .map(|last| last - chrono::Days::new(u64::from(last.weekday().num_days_from_sunday())))
+            .and_then(|sunday| sunday.and_hms_opt(1, 0, 0))
+            .map(|start| chrono::Utc.from_utc_datetime(&start))
+    };
+    let summer = match (last_sunday_at_one_utc(3), last_sunday_at_one_utc(10)) {
+        (Some(start), Some(end)) => at >= start && at < end,
+        _ => false,
+    };
+    (at + chrono::Duration::hours(if summer { 2 } else { 1 })).naive_utc()
+}
+
+/// A recipe date in the user's language and Paris time: "27 octobre 2026 à 21:36" or
+/// "October 27, 2026 at 21:36"; `short` gives "27 oct. 2026 21:36" or "Oct 27, 2026 21:36".
+pub fn format_recipe_date(
+    at: chrono::DateTime<chrono::Utc>,
+    language_code: Option<&str>,
+    short: bool,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> String {
+    use chrono::{Datelike, Timelike};
+    const FR_MONTHS: [&str; 12] = [
+        "janvier",
+        "février",
+        "mars",
+        "avril",
+        "mai",
+        "juin",
+        "juillet",
+        "août",
+        "septembre",
+        "octobre",
+        "novembre",
+        "décembre",
+    ];
+    const FR_SHORT: [&str; 12] = [
+        "janv.", "févr.", "mars", "avr.", "mai", "juin", "juil.", "août", "sept.", "oct.", "nov.",
+        "déc.",
+    ];
+    let local = paris_time(at);
+    let month = local.month0() as usize;
+    let time = format!("{:02}:{:02}", local.hour(), local.minute());
+    match (
+        crate::localization::detect_language(localization, language_code).as_str(),
+        short,
+    ) {
+        ("fr", false) => format!(
+            "{} {} {} à {time}",
+            local.day(),
+            FR_MONTHS[month],
+            local.year()
+        ),
+        ("fr", true) => format!(
+            "{} {} {} {time}",
+            local.day(),
+            FR_SHORT[month],
+            local.year()
+        ),
+        (_, false) => format!("{} at {time}", local.format("%B %-d, %Y")),
+        (_, true) => format!("{} {time}", local.format("%b %-d, %Y")),
+    }
+}
+
 /// The recipe card (HTML): bold name, creation date and the saved ingredients.
 pub fn render_recipe_card(
     recipe_name: &str,
@@ -459,7 +529,7 @@ pub fn render_recipe_card(
         + Html::bold(recipe_name)
         + Html::text(&format!(
             "\n\n📅 {}\n\n",
-            created_at.format("%B %d, %Y at %H:%M")
+            format_recipe_date(created_at, language_code, false, localization)
         ))
         + Html::text(&format_database_ingredients_list(
             ingredients,
@@ -617,7 +687,7 @@ mod tests {
         );
         assert_eq!(
             card.as_str(),
-            "📖 <b>Tarte &lt;b&gt;</b>\n\n📅 October 27, 2026 at 16:30\n\n• 2 dl lait &lt;entier&gt; &amp; sucre"
+            "📖 <b>Tarte &lt;b&gt;</b>\n\n📅 27 octobre 2026 à 17:30\n\n• 2 dl lait &lt;entier&gt; &amp; sucre"
         );
         let empty = render_recipe_card("Vide", created_at, &[], Some("en"), &localization);
         assert!(
@@ -668,6 +738,47 @@ mod tests {
             assert!(length <= 4096, "{length} characters");
             assert!(html.as_str().contains('…'));
         }
+    }
+
+    fn utc(text: &str) -> chrono::DateTime<chrono::Utc> {
+        chrono::DateTime::parse_from_rfc3339(text)
+            .expect("date")
+            .with_timezone(&chrono::Utc)
+    }
+
+    #[test]
+    fn paris_time_follows_summer_time() {
+        let local = |text: &str| paris_time(utc(text)).format("%Y-%m-%d %H:%M").to_string();
+        // 2026: summer time from 29 March 01:00 UTC to 25 October 01:00 UTC
+        assert_eq!(local("2026-03-29T00:59:00Z"), "2026-03-29 01:59");
+        assert_eq!(local("2026-03-29T01:00:00Z"), "2026-03-29 03:00");
+        assert_eq!(local("2026-07-14T12:00:00Z"), "2026-07-14 14:00");
+        assert_eq!(local("2026-10-25T00:59:00Z"), "2026-10-25 02:59");
+        assert_eq!(local("2026-10-25T01:00:00Z"), "2026-10-25 02:00");
+        assert_eq!(local("2026-12-31T23:30:00Z"), "2027-01-01 00:30");
+    }
+
+    #[test]
+    fn recipe_dates_follow_the_user_language() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let at = utc("2026-10-27T20:36:00Z");
+        assert_eq!(
+            format_recipe_date(at, Some("fr"), false, &localization),
+            "27 octobre 2026 à 21:36"
+        );
+        assert_eq!(
+            format_recipe_date(at, Some("fr-FR"), true, &localization),
+            "27 oct. 2026 21:36"
+        );
+        assert_eq!(
+            format_recipe_date(at, Some("en"), false, &localization),
+            "October 27, 2026 at 21:36"
+        );
+        assert_eq!(
+            format_recipe_date(at, None, true, &localization),
+            "Oct 27, 2026 21:36"
+        );
     }
 
     #[test]

@@ -423,7 +423,12 @@ pub async fn handle_recipe_statistics(
     stats_message.push_str(&format!(
         "• {}: {}\n",
         t_lang(localization, "created-date", language_code.as_deref()),
-        recipe.created_at.format("%B %d, %Y at %H:%M")
+        crate::bot::ui_builder::format_recipe_date(
+            recipe.created_at,
+            language_code.as_deref(),
+            false,
+            localization
+        )
     ));
 
     // User overview stats
