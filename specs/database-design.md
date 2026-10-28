@@ -88,7 +88,6 @@ pub async fn read_recipe_with_name(pool: &PgPool, telegram_id: i64, recipe_id: i
 // Recipe search & listing
 pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Result<Vec<Recipe>> // not called by the bot
 pub async fn get_recipes_by_name(pool: &PgPool, telegram_id: i64, recipe_name: &str) -> Result<Vec<Recipe>> // exact name
-pub async fn get_recipes_by_name_cached(pool, telegram_id, recipe_name, cache) -> Result<Vec<Recipe>>
 pub async fn get_user_recipe_names(pool: &PgPool, telegram_id: i64) -> Result<Vec<String>>
 pub async fn get_user_recipes_paginated(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<String>, i64)> // distinct names A-Z, total
 pub async fn get_user_recipes_newest_first(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<RecipeSummary>, i64)> // named recipes, newest first, total (home message)
@@ -106,9 +105,9 @@ pub async fn update_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i
 pub async fn delete_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64) -> Result<bool>
 pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> // by users.id, not called by the bot
 pub async fn get_recipe_ingredients(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Vec<Ingredient>>
-pub async fn get_recipe_ingredients_cached(pool, telegram_id, recipe_id, cache) -> Result<Vec<Ingredient>>
 
-// The *_cached functions keep results 5 minutes per owner; writes do not invalidate them
+// The user *_cached functions keep results 5 minutes; the bot reads recipes and ingredients
+// without a cache (the recipe caches were removed on 2026-10-28, IMP-010)
 
 // Schema management
 pub async fn init_database_schema(pool: &PgPool) -> Result<()>

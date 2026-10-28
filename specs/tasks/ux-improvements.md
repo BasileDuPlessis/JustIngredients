@@ -246,7 +246,8 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 - How to validate: DB tests with chat id ≠ user id.
 
 ### Task U3.4: Fresh recipe data after every change (finding 22, IMP-010) (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-28, ahead of U3: the recipe reads no longer use a cache, rather than invalidating it
+  at every write; queries take a few milliseconds)
 - Description: invalidate the cached recipe and ingredient entries on rename, edit, delete and save,
   so the card and the home message never show stale data.
 - How to validate: cache tests: read, rename, read again returns the new name.

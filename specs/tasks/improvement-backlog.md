@@ -353,7 +353,9 @@ they can be pulled into 1-hour micro-tasks without another review.
   2. Test: a 200-ingredient list is split into messages of 4096 characters or less.
 
 ### IMP-010: Cache is never invalidated or purged; stale recipes shown after edits
-- [ ] Done
+- [x] Done (2026-10-28, with UX Task U3.4): the recipe and ingredient reads of the bot no longer use a
+  cache (the database answers in a few milliseconds); `get_recipes_by_name_cached` and
+  `get_recipe_ingredients_cached` were deleted. The user caches, never called, stay for IMP-035.
 - Priority: P1. Effort: S. Area: Cache.
 - Location: `src/db.rs:838-875` (`get_recipes_by_name_cached`), `src/db.rs:878-915`
   (`get_recipe_ingredients_cached`), `src/bot/callbacks/callback_handler.rs:604-625`,

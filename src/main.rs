@@ -310,12 +310,10 @@ async fn main() -> Result<()> {
             let pool = Arc::clone(&shared_pool);
             let storage = dialogue_storage.clone();
             let localization = Arc::clone(&localization_manager);
-            let cache = Arc::clone(&cache_manager);
             move |bot: Bot, q: CallbackQuery| {
                 let pool = Arc::clone(&pool);
                 let storage = storage.clone();
                 let localization = Arc::clone(&localization);
-                let cache = Arc::clone(&cache);
                 // Use the chat ID from the original message that contained the inline keyboard
                 let chat_id = match &q.message {
                     Some(msg) => match msg {
@@ -328,8 +326,7 @@ async fn main() -> Result<()> {
                 };
                 let dialogue = RecipeDialogue::new(storage, chat_id);
                 async move {
-                    bot::callback_handler_with_cache(bot, q, pool, dialogue, localization, cache)
-                        .await
+                    bot::callback_handler_with_cache(bot, q, pool, dialogue, localization).await
                 }
             }
         }));

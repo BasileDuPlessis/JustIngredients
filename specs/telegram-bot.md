@@ -221,8 +221,8 @@ state).
   the confirmation and the card; cancelling deletes the confirmation only (the card stays).
 - **Statistics**: recipe ingredient count and date, then the user's totals, recent activity and
   common units, with a button back to the recipe.
-- Name lookups and card ingredients are cached for 5 minutes per owner and not invalidated by
-  writes: a card opened from the list soon after a rename, edit or delete can show old data.
+- Recipe lookups and card ingredients are read from the database each time (no cache), so a card
+  opened right after a rename, edit or delete shows the new data.
 
 ## Callback Data
 `callback_handler_with_cache` first runs the handler of the current state, then the prefix

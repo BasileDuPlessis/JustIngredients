@@ -189,7 +189,6 @@ pub async fn callback_handler_with_cache(
     pool: Arc<PgPool>,
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
-    cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
 ) -> Result<()> {
     let span = crate::observability::telegram_span(
         "callback_handler_with_cache",
@@ -238,30 +237,15 @@ pub async fn callback_handler_with_cache(
         _ => Ok(()), // No state-specific handling needed
     };
 
-    // Handle general callbacks that work in any state with caching
+    // Handle general callbacks that work in any state. Recipe reads are not cached: they must
+    // show a rename or an edit at once, and the database answers in a few milliseconds.
     if let Some(msg) = &q.message {
         if crate::bot::recipe_selection::is_recipe_selection(data) {
-            handle_recipe_selection_cached(
-                &bot,
-                msg,
-                data,
-                pool.clone(),
-                &q.from,
-                &localization,
-                &cache,
-            )
-            .await?;
+            handle_recipe_selection_by_name(&bot, msg, data, pool.clone(), &q.from, &localization)
+                .await?;
         } else if data.starts_with("recipe_instance:") {
-            handle_recipe_instance_selection_cached(
-                &bot,
-                msg,
-                data,
-                pool.clone(),
-                &q.from,
-                &localization,
-                &cache,
-            )
-            .await?;
+            handle_recipe_selection_by_id(&bot, msg, data, pool.clone(), &q.from, &localization)
+                .await?;
         } else if data.starts_with("recipe_action:") {
             recipe_callbacks::handle_recipe_action(
                 &bot,
@@ -570,14 +554,13 @@ async fn handle_cancel_processing_button(
 /// Cache-enabled recipe selection handler
 ///
 /// `from` is the sender of the callback query (`q.from`): the owner of every recipe read here.
-async fn handle_recipe_selection_cached(
+async fn handle_recipe_selection_by_name(
     bot: &Bot,
     msg: &MaybeInaccessibleMessage,
     data: &str,
     pool: Arc<PgPool>,
     from: &User,
     localization: &Arc<crate::localization::LocalizationManager>,
-    cache: &Arc<std::sync::Mutex<crate::cache::CacheManager>>,
 ) -> Result<()> {
     let language_code = &from.language_code;
     let telegram_id = from.id.0 as i64;
@@ -600,8 +583,7 @@ async fn handle_recipe_selection_cached(
     };
 
     // Query for all recipes with this name for the user using cached function
-    let recipes =
-        crate::db::get_recipes_by_name_cached(&pool, telegram_id, recipe_name, cache).await?;
+    let recipes = crate::db::get_recipes_by_name(&pool, telegram_id, recipe_name).await?;
 
     match recipes.len() {
         0 => {
@@ -621,8 +603,7 @@ async fn handle_recipe_selection_cached(
             // Single recipe - show details directly
             let recipe = &recipes[0];
             let ingredients =
-                crate::db::get_recipe_ingredients_cached(&pool, telegram_id, recipe.id, cache)
-                    .await?;
+                crate::db::get_recipe_ingredients(&pool, telegram_id, recipe.id).await?;
 
             let message = render_recipe_card(
                 recipe
@@ -659,8 +640,7 @@ async fn handle_recipe_selection_cached(
             let mut recipe_data = Vec::new();
             for recipe in &recipes {
                 let ingredients =
-                    crate::db::get_recipe_ingredients_cached(&pool, telegram_id, recipe.id, cache)
-                        .await?;
+                    crate::db::get_recipe_ingredients(&pool, telegram_id, recipe.id).await?;
                 recipe_data.push((recipe.clone(), ingredients));
             }
 
@@ -682,14 +662,13 @@ async fn handle_recipe_selection_cached(
 /// Cache-enabled recipe instance selection handler
 ///
 /// `from` is the sender of the callback query (`q.from`): the owner of every recipe read here.
-async fn handle_recipe_instance_selection_cached(
+async fn handle_recipe_selection_by_id(
     bot: &Bot,
     msg: &MaybeInaccessibleMessage,
     data: &str,
     pool: Arc<PgPool>,
     from: &User,
     localization: &Arc<crate::localization::LocalizationManager>,
-    cache: &Arc<std::sync::Mutex<crate::cache::CacheManager>>,
 ) -> Result<()> {
     let language_code = &from.language_code;
     let telegram_id = from.id.0 as i64;
@@ -725,8 +704,7 @@ async fn handle_recipe_instance_selection_cached(
     };
 
     // Get ingredients using cached function
-    let ingredients =
-        crate::db::get_recipe_ingredients_cached(&pool, telegram_id, recipe_id, cache).await?;
+    let ingredients = crate::db::get_recipe_ingredients(&pool, telegram_id, recipe_id).await?;
 
     let message = render_recipe_card(
         recipe

@@ -733,32 +733,6 @@ async fn test_ingredient_operations_are_scoped_by_owner_impl(pool: &PgPool) -> R
 
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
-async fn test_recipe_ingredients_cache_is_scoped_by_owner(pool: PgPool) -> Result<()> {
-    init_database_schema(&pool).await?;
-    test_recipe_ingredients_cache_is_scoped_by_owner_impl(&pool).await
-}
-
-async fn test_recipe_ingredients_cache_is_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
-    let (recipe_id, _) = create_recipe_with_ingredient(pool, OWNER_A, "Secret Cake").await?;
-    let cache = std::sync::Mutex::new(just_ingredients::cache::CacheManager::new());
-
-    // User A fills the cache
-    let ingredients = get_recipe_ingredients_cached(pool, OWNER_A, recipe_id, &cache).await?;
-    assert_eq!(ingredients.len(), 1);
-
-    // User B must not be served A's cached entry
-    let ingredients = get_recipe_ingredients_cached(pool, OTHER_B, recipe_id, &cache).await?;
-    assert!(ingredients.is_empty());
-
-    // User A still gets the cached ingredients
-    let ingredients = get_recipe_ingredients_cached(pool, OWNER_A, recipe_id, &cache).await?;
-    assert_eq!(ingredients.len(), 1);
-
-    Ok(())
-}
-
-#[sqlx::test(migrations = false)]
-#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn test_schema_validation(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
     test_schema_validation_impl(&pool).await
