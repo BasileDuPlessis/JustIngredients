@@ -577,7 +577,8 @@ they can be pulled into 1-hour micro-tasks without another review.
   increments the error series.
 
 ### IMP-021: Localization re-parses the `.ftl` file on every message
-- [ ] Done
+- [x] Done
+- Status: Done (2026-10-28): `LocalizationManager::new()` parses each `.ftl` once into a concurrent bundle; isolation marks are off; formatting errors are logged at `warn` with the key. Tests: both locales have the same keys, and every message formats without errors and without U+2068/U+2069. The per-process parse count is guaranteed by construction (bundles are only built in `new()`), not by a counter.
 - Priority: P2. Effort: S. Area: Localization.
 - Location: `src/localization.rs:21-47` (`create_bundle`), `src/localization.rs:56-92`,
   `src/localization.rs:80` (formatting errors dropped into `&mut vec![]`).
@@ -1019,6 +1020,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 
 ### IMP-049: About 40 locale keys are never used by the code
 - [ ] Done
+- Status: Partly done (2026-10-28): `caption-empty`, `help-step5` and `help-tip5`, unused and missing in `fr`, were removed from `en`.
 - Priority: P3. Effort: S. Area: Localization.
 - Location: `locales/en/main.ftl`, `locales/fr/main.ftl` (e.g. `help-step5`, `help-tip5`,
   `success-extraction`, `caption-used`, `document-image`, `recipe-deleted`, `ingredients-updated`,

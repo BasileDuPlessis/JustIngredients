@@ -300,11 +300,14 @@ all are counted in `errors_total{type, component=<backend>}`. Handler errors are
 dispatcher.
 
 ## Localization
-- Fluent files `locales/en/main.ftl` and `locales/fr/main.ftl`, embedded at build time.
+- Fluent files `locales/en/main.ftl` and `locales/fr/main.ftl`, embedded at build time and
+  parsed once at startup (`LocalizationManager::new`). Variables are inserted without Unicode
+  isolation marks; a formatting error (e.g. a missing argument) is logged at `warn` with the key
+  and the message is sent with the placeholder.
 - Language: `language_code` of the message or callback sender, `fr-FR` → `fr`; `fr` and `en`
   are supported, anything else gets English. A key missing in French falls back to English,
-  then to "Missing translation: <key>". A test checks that every literal key used in `src/`
-  exists in both files.
+  then to "Missing translation: <key>". Tests check that every literal key used in `src/`
+  exists in both files, that both files have the same keys, and that every message formats.
 - `users.language_code` is stored when the user is created but not used to pick the language.
 - The key screens are sent in HTML (`parse_mode = HTML`) through `bot::html`: an `Html` value is
   built only from escaped text, `<b>` and `<pre>`, and sent only with `send_html`/`edit_html`. Bold:

@@ -1,35 +1,48 @@
 use anyhow::Result;
-use fluent_bundle::{FluentBundle, FluentResource};
+use fluent_bundle::concurrent::FluentBundle;
+use fluent_bundle::FluentResource;
 use std::collections::HashMap;
 use std::sync::Arc;
 use unic_langid::LanguageIdentifier;
 
-/// Localization manager for the Ingredients Bot
-#[derive(Debug)]
+/// Locales embedded in the binary, parsed once when the manager is created.
+const LOCALES: [(&str, &str); 2] = [
+    ("en", include_str!("../locales/en/main.ftl")),
+    ("fr", include_str!("../locales/fr/main.ftl")),
+];
+
+/// Localization manager for the Ingredients Bot: one parsed bundle per locale, shared by all
+/// handlers.
 pub struct LocalizationManager {
-    // No shared state - bundles are created on demand
+    bundles: HashMap<&'static str, FluentBundle<FluentResource>>,
+}
+
+impl std::fmt::Debug for LocalizationManager {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut locales: Vec<&str> = self.bundles.keys().copied().collect();
+        locales.sort_unstable();
+        f.debug_struct("LocalizationManager")
+            .field("locales", &locales)
+            .finish()
+    }
 }
 
 impl LocalizationManager {
     /// Create a new localization manager with embedded resources
     pub fn new() -> Result<Self> {
-        // No initialization needed - bundles are created on demand
-        Ok(Self {})
+        let bundles = LOCALES
+            .iter()
+            .map(|(locale, content)| Ok((*locale, Self::create_bundle(locale, content)?)))
+            .collect::<Result<_>>()?;
+        Ok(Self { bundles })
     }
 
-    /// Create a fluent bundle for a specific locale using embedded resources
-    fn create_bundle(
-        locale_str: &str,
-        locale: &LanguageIdentifier,
-    ) -> Result<FluentBundle<FluentResource>> {
-        let mut bundle = FluentBundle::new(vec![locale.clone()]);
-
-        // Load embedded resource based on locale
-        let content = match locale_str {
-            "en" => include_str!("../locales/en/main.ftl"),
-            "fr" => include_str!("../locales/fr/main.ftl"),
-            _ => return Err(anyhow::anyhow!("Unsupported locale: {}", locale_str)),
-        };
+    /// Parses one locale's resource into a bundle
+    fn create_bundle(locale_str: &str, content: &str) -> Result<FluentBundle<FluentResource>> {
+        let locale: LanguageIdentifier = locale_str.parse()?;
+        let mut bundle = FluentBundle::new_concurrent(vec![locale]);
+        // Telegram shows the U+2068/U+2069 marks Fluent puts around variables as stray characters
+        bundle.set_use_isolating(false);
 
         let resource = FluentResource::try_new(content.to_string()).map_err(|(_, errors)| {
             anyhow::anyhow!(
@@ -46,12 +59,6 @@ impl LocalizationManager {
         Ok(bundle)
     }
 
-    /// Create a bundle for a specific language
-    fn create_bundle_for_language(language: &str) -> Result<FluentBundle<FluentResource>> {
-        let locale: LanguageIdentifier = language.parse()?;
-        Self::create_bundle(language, &locale)
-    }
-
     /// Get a localized message in a specific language with graceful fallback
     pub fn get_message_in_language(
         &self,
@@ -59,32 +66,29 @@ impl LocalizationManager {
         language: &str,
         args: Option<&HashMap<&str, &str>>,
     ) -> String {
+        let fluent_args = args.map(|args_map| {
+            fluent_bundle::FluentArgs::from_iter(
+                args_map
+                    .iter()
+                    .map(|(k, v)| (*k, fluent_bundle::FluentValue::from(*v))),
+            )
+        });
+
         // Try requested language first, then fallback to English
-        let languages_to_try = vec![language, "en"];
-
-        for lang in languages_to_try {
-            if let Ok(bundle) = Self::create_bundle_for_language(lang) {
-                if let Some(msg) = bundle.get_message(key) {
-                    if let Some(pattern) = msg.value() {
-                        let mut value = String::new();
-
-                        let fluent_args = args.map(|args_map| {
-                            fluent_bundle::FluentArgs::from_iter(
-                                args_map
-                                    .iter()
-                                    .map(|(k, v)| (*k, fluent_bundle::FluentValue::from(*v))),
-                            )
-                        });
-
-                        if bundle
-                            .write_pattern(&mut value, pattern, fluent_args.as_ref(), &mut vec![])
-                            .is_ok()
-                        {
-                            return value;
-                        }
-                    }
-                }
+        for lang in [language, "en"] {
+            let Some(bundle) = self.bundles.get(lang) else {
+                continue;
+            };
+            let Some(pattern) = bundle.get_message(key).and_then(|msg| msg.value()) else {
+                continue;
+            };
+            let mut errors = vec![];
+            let value = bundle.format_pattern(pattern, fluent_args.as_ref(), &mut errors);
+            if !errors.is_empty() {
+                // e.g. a missing argument: the message is still sent, with the placeholder
+                tracing::warn!(key, language = lang, errors = ?errors, "Localized message formatted with errors");
             }
+            return value.into_owned();
         }
 
         // Fallback: return a user-friendly message
@@ -153,4 +157,63 @@ pub fn detect_language(manager: &Arc<LocalizationManager>, language_code: Option
 
     // Default to English if language not supported or not provided
     "en".to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::collections::BTreeMap;
+
+    /// Message ids of an `.ftl` file and the variables each one uses.
+    fn messages(content: &str) -> BTreeMap<String, Vec<String>> {
+        let id = regex::Regex::new(r"^([a-z][a-z0-9-]*) *=").unwrap_or_else(|e| panic!("{e}"));
+        let variable = regex::Regex::new(r"\{ *\$([a-z_]+) *\}").unwrap_or_else(|e| panic!("{e}"));
+        let mut messages: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut current = None;
+        for line in content.lines() {
+            if let Some(captures) = id.captures(line) {
+                current = Some(captures[1].to_string());
+            } else if !line.starts_with([' ', '\t']) {
+                current = None;
+            }
+            if let Some(current) = &current {
+                let variables = messages.entry(current.clone()).or_default();
+                variables.extend(variable.captures_iter(line).map(|c| c[1].to_string()));
+            }
+        }
+        messages
+    }
+
+    #[test]
+    fn both_locales_have_the_same_keys() {
+        let en: Vec<String> = messages(LOCALES[0].1).into_keys().collect();
+        let fr: Vec<String> = messages(LOCALES[1].1).into_keys().collect();
+        assert!(en.len() > 100, "the parser found the messages");
+        assert_eq!(en, fr);
+    }
+
+    #[test]
+    fn every_message_formats_without_errors() {
+        let manager = LocalizationManager::new().unwrap_or_else(|e| panic!("{e}"));
+        for (locale, content) in LOCALES {
+            let bundle = &manager.bundles[locale];
+            for (key, variables) in messages(content) {
+                let mut args = fluent_bundle::FluentArgs::new();
+                for variable in &variables {
+                    args.set(variable.as_str(), "x");
+                }
+                let pattern = bundle
+                    .get_message(&key)
+                    .and_then(|message| message.value())
+                    .unwrap_or_else(|| panic!("{locale} {key} has no value"));
+                let mut errors = vec![];
+                let text = bundle.format_pattern(pattern, Some(&args), &mut errors);
+                assert!(errors.is_empty(), "{locale} {key}: {errors:?}");
+                assert!(
+                    !text.contains('\u{2068}') && !text.contains('\u{2069}'),
+                    "{locale} {key} has isolation marks"
+                );
+            }
+        }
+    }
 }

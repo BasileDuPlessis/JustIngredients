@@ -18,7 +18,6 @@ help-step1 = 1. 📸 Send a photo of text you want to extract
 help-step2 = 2. 🏷️ Add a caption to name your recipe (optional)
 help-step3 = 3. 📎 Or send an image file (PNG, JPG, JPEG, BMP, TIFF, TIF)
 help-step4 = 4. ⏳ I'll read the ingredients from the image
-help-step5 = 5. 📝 You'll receive the extracted text and can review/edit ingredients
 help-formats = Supported formats: PNG, JPG, JPEG, BMP, TIFF, TIF
 help-limits = File size limit: 10 MB
 help-commands = Commands:
@@ -27,7 +26,6 @@ help-tip1 = • Use clear, well-lit images
 help-tip2 = • Ensure text is readable and not too small
 help-tip3 = • Avoid blurry or distorted images
 help-tip4 = • Add a caption to automatically name your recipe
-help-tip5 = • Supported languages: English + French
 help-final = Need help? Just send me an image! 😊
 
 # Commands (Telegram menu, welcome and help messages)
@@ -109,7 +107,6 @@ recipe-complete = ✅ Recipe "{$recipe_name}" saved successfully with {$ingredie
 # Caption-related messages
 caption-used = 📝 Using your caption "{$caption}" as the recipe name
 caption-invalid = Caption "{$caption}" is invalid, using default recipe name instead
-caption-empty = 💡 Tip: Add a caption to your photo to automatically name your recipe!
 
 # Ingredient review messages
 review-title = Review Your Ingredients
