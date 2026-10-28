@@ -109,7 +109,7 @@ caption-invalid = Caption "{$caption}" is invalid, using default recipe name ins
 
 # Ingredient review messages
 review-title = Review Your Ingredients
-review-description = Please review the extracted ingredients below. Use the buttons to edit or delete items, then confirm when ready.
+review-description = Tap an ingredient to change its quantity or name, or to delete it, then confirm with ✅.
 review-confirm = Confirm and Save
 review-cancelled = Ingredient review cancelled. No ingredients were saved.
 review-no-ingredients = No ingredients remaining
@@ -218,7 +218,7 @@ error-renaming-recipe-help = An error occurred while renaming the recipe. Please
 
 # Ingredient editing messages
 editing-recipe = Editing recipe
-editing-instructions = Use the buttons below to edit or delete ingredients, then confirm your changes.
+editing-instructions = Tap an ingredient to change its quantity or name, or to delete it, ➕ to add one, then save with ✅.
 ingredients-updated = Ingredients updated successfully
 ingredients-updated-help = Your recipe ingredients have been updated.
 no-changes-made = No changes were made to the ingredients.

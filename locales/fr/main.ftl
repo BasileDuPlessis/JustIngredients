@@ -104,7 +104,7 @@ recipe-complete = ✅ Recette "{$recipe_name}" sauvegardée avec succès avec {$
 
 # Messages de révision des ingrédients
 review-title = Révisez vos ingrédients
-review-description = Veuillez réviser les ingrédients extraits ci-dessous. Utilisez les boutons pour modifier ou supprimer des éléments, puis confirmez quand vous êtes prêt.
+review-description = Touchez un ingrédient pour changer sa quantité, son nom ou le supprimer, puis validez avec ✅.
 review-confirm = Confirmer et sauvegarder
 review-cancelled = Révision des ingrédients annulée. Aucun ingrédient n'a été sauvegardé.
 review-no-ingredients = Aucun ingrédient restant
@@ -214,7 +214,7 @@ error-renaming-recipe-help = Une erreur s'est produite lors du renommage de la r
 
 # Messages d'édition d'ingrédients
 editing-recipe = Modification de la recette
-editing-instructions = Utilisez les boutons ci-dessous pour modifier ou supprimer des ingrédients, puis confirmez vos modifications.
+editing-instructions = Touchez un ingrédient pour changer sa quantité, son nom ou le supprimer, ➕ pour en ajouter un, puis enregistrez avec ✅.
 ingredients-updated = Ingrédients mis à jour avec succès
 ingredients-updated-help = Les ingrédients de votre recette ont été mis à jour.
 no-changes-made = Aucune modification n'a été apportée aux ingrédients.
