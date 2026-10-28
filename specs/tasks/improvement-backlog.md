@@ -331,7 +331,10 @@ they can be pulled into 1-hour micro-tasks without another review.
   2. `rg "\"cancel\" \| \"stop\"" src/bot` shows one shared helper.
 
 ### IMP-009: Telegram limits not enforced (`callback_data` 64 bytes, message 4096 chars)
-- [ ] Done
+- [x] Done (2026-10-28): callback data carry ids or a name fingerprint (hotfix `1bf3ed4`, U2.2
+  `item_<i>`, tests check ≤ 64 bytes); ingredient lists and the no-ingredients transcription are
+  cut at a line with "…" (`ui_builder::fit_lines`, 3,500 characters), tested with 200
+  ingredients. Not handled: a keyboard over 100 buttons (more than 98 ingredients).
 - Priority: P1. Effort: M. Area: Bot UI.
 - Location: `src/bot/ui_builder.rs:204-209` (`select_recipe:{recipe_name}`), `src/validation.rs:46`
   (names up to 255 bytes), `src/bot/image_processing.rs:237-243` (full extracted text in one message),

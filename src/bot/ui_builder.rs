@@ -72,8 +72,39 @@ pub fn format_ingredients_list(
             ));
         }
 
-        result
+        fit_lines(&result, MAX_LIST_CHARS)
     })
+}
+
+/// Longest list or transcription in one message, in characters: Telegram refuses messages over
+/// 4096 characters, and titles and instructions need the rest.
+pub const MAX_LIST_CHARS: usize = 3500;
+
+/// Keeps the first lines of `text` that fit in `max_chars` characters, and adds "…" when lines
+/// were dropped; a single line longer than the budget is cut. Telegram rejects longer messages
+/// (the user would be left with "processing…").
+pub fn fit_lines(text: &str, max_chars: usize) -> String {
+    if text.chars().count() <= max_chars {
+        return text.to_string();
+    }
+    let budget = max_chars.saturating_sub(2); // room for "…" and its newline
+    let mut kept = String::new();
+    let mut used = 0;
+    for line in text.lines() {
+        let length = line.chars().count() + 1;
+        if used + length > budget {
+            break;
+        }
+        kept.push_str(line);
+        kept.push('\n');
+        used += length;
+    }
+    if kept.is_empty() {
+        kept = text.chars().take(budget).collect();
+        kept.push('\n');
+    }
+    kept.push('…');
+    kept
 }
 
 /// The review message (HTML): bold title, instructions and the numbered ingredient list.
@@ -497,7 +528,7 @@ pub fn format_database_ingredients_list(
         result.push_str(&line);
     }
 
-    result.trim_end().to_string()
+    fit_lines(result.trim_end(), MAX_LIST_CHARS)
 }
 
 #[cfg(test)]
@@ -594,6 +625,49 @@ mod tests {
             "{}",
             empty.as_str()
         );
+    }
+
+    #[test]
+    fn long_texts_are_cut_at_a_line_and_marked() {
+        assert_eq!(fit_lines("a\nb\n", 10), "a\nb\n");
+        assert_eq!(fit_lines("aaaa\nbbbb\ncccc\n", 12), "aaaa\nbbbb\n…");
+        assert_eq!(
+            fit_lines(&"x".repeat(20), 10),
+            format!("{}\n…", "x".repeat(8))
+        );
+    }
+
+    #[test]
+    fn a_200_ingredient_review_fits_in_one_telegram_message() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let ingredients: Vec<MeasurementMatch> = (0..200)
+            .map(|i| {
+                named(&format!(
+                    "ingrédient numéro {i} avec un nom assez long & précis"
+                ))
+            })
+            .collect();
+        for html in [
+            render_review(&ingredients, Some("fr"), &localization),
+            render_saved_editing(
+                Some("Une très longue recette"),
+                &ingredients,
+                Some("fr"),
+                &localization,
+            ),
+            render_saved_recipe(
+                "Une très longue recette",
+                &ingredients,
+                Some("fr"),
+                &localization,
+            ),
+        ] {
+            // The markup is at least as long as the text Telegram counts
+            let length = html.as_str().chars().count();
+            assert!(length <= 4096, "{length} characters");
+            assert!(html.as_str().contains('…'));
+        }
     }
 
     #[test]

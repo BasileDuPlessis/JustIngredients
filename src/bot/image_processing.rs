@@ -197,7 +197,11 @@ pub async fn download_and_process_image(
                 language_code,
             ));
         if !extracted_text.trim().is_empty() {
-            no_ingredients_msg += Html::text("\n\n") + Html::pre(&extracted_text);
+            no_ingredients_msg += Html::text("\n\n")
+                + Html::pre(&crate::bot::ui_builder::fit_lines(
+                    &extracted_text,
+                    crate::bot::ui_builder::MAX_LIST_CHARS,
+                ));
         }
         edit_html(bot, chat_id, message_id, no_ingredients_msg).await?;
         return Ok(extracted_text);
