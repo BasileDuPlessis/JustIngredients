@@ -30,11 +30,10 @@ use super::media_handlers::{handle_document_message, handle_photo_message};
 // Import dialogue manager functions
 use super::dialogue_manager::{
     handle_add_ingredient_input, handle_ingredient_edit_input, handle_ingredient_review_input,
-    handle_quantity_correction_input, handle_recipe_name_after_confirm_input,
-    handle_recipe_name_input, handle_recipe_rename_input, handle_saved_ingredient_edit_input,
-    AddIngredientInputParams, DialogueContext, IngredientEditInputParams,
-    IngredientReviewInputParams, QuantityCorrectionInputParams, RecipeNameAfterConfirmInputParams,
-    RecipeNameInputParams, RecipeRenameInputParams, SavedIngredientEditInputParams,
+    handle_recipe_name_after_confirm_input, handle_recipe_rename_input,
+    handle_saved_ingredient_edit_input, AddIngredientInputParams, DialogueContext,
+    IngredientEditInputParams, IngredientReviewInputParams, RecipeNameAfterConfirmInputParams,
+    RecipeRenameInputParams, SavedIngredientEditInputParams,
 };
 
 // Import HandlerContext
@@ -81,36 +80,6 @@ async fn handle_text_message(
         }
 
         match dialogue_state {
-            Some(RecipeDialogueState::WaitingForRecipeName {
-                extracted_text,
-                ingredients,
-                language_code: dialogue_lang_code,
-            }) => {
-                // Use dialogue language code if available, otherwise fall back to message language
-                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
-
-                // Handle recipe name input
-                return handle_recipe_name_input(
-                    DialogueContext {
-                        bot,
-                        msg,
-                        dialogue,
-                        localization,
-                    },
-                    RecipeNameInputParams {
-                        pool,
-                        recipe_name_input: text,
-                        extracted_text,
-                        ingredients,
-                        ctx: &HandlerContext {
-                            bot,
-                            localization,
-                            language_code: effective_language_code,
-                        },
-                    },
-                )
-                .await;
-            }
             Some(RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
                 ingredients,
                 language_code: dialogue_lang_code,
@@ -145,12 +114,12 @@ async fn handle_text_message(
                 .await;
             }
             Some(RecipeDialogueState::ReviewIngredients {
-                recipe_name,
+                recipe_name: _,
                 ingredients,
                 language_code: dialogue_lang_code,
                 message_id: review_message_id,
                 extracted_text,
-                recipe_name_from_caption: _,
+                recipe_name_from_caption,
             }) => {
                 // Use dialogue language code if available, otherwise fall back to message language
                 let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
@@ -166,7 +135,7 @@ async fn handle_text_message(
                     IngredientReviewInputParams {
                         pool,
                         review_input: text,
-                        recipe_name,
+                        recipe_name_from_caption,
                         ingredients,
                         ctx: &HandlerContext {
                             bot,
@@ -340,43 +309,6 @@ async fn handle_text_message(
                 .await?;
                 return Ok(());
             }
-            Some(RecipeDialogueState::AwaitingQuantityCorrection {
-                recipe_name,
-                ingredients,
-                ingredient_index,
-                language_code: dialogue_lang_code,
-                extracted_text,
-                recipe_name_from_caption,
-                ..
-            }) => {
-                // Use dialogue language code if available, otherwise fall back to message language
-                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
-
-                // Handle quantity correction input
-                return handle_quantity_correction_input(
-                    DialogueContext {
-                        bot,
-                        msg,
-                        dialogue,
-                        localization,
-                    },
-                    QuantityCorrectionInputParams {
-                        pool,
-                        quantity_input: text,
-                        recipe_name,
-                        ingredients,
-                        ingredient_index,
-                        ctx: &HandlerContext {
-                            bot,
-                            localization,
-                            language_code: effective_language_code,
-                        },
-                        extracted_text,
-                        recipe_name_from_caption,
-                    },
-                )
-                .await;
-            }
             Some(RecipeDialogueState::Start) | None => {
                 // Continue with normal command handling
             }
@@ -453,11 +385,7 @@ async fn handle_command(
 /// The bot maintains complex conversation state using `RecipeDialogueState`:
 ///
 /// ```text
-/// Start ────photo received────► WaitingForRecipeName
-///    │                              │
-///    │                              │ user provides name
-///    │                              ▼
-///    └───────────────► ReviewIngredients ────user confirms───► WaitingForRecipeNameAfterConfirm
+/// Start ──photo read──► ReviewIngredients ────user confirms, no name───► WaitingForRecipeNameAfterConfirm
 ///                              │                                      │
 ///                              │ user edits                           │ user provides name
 ///                              ▼                                      ▼
@@ -468,7 +396,6 @@ async fn handle_command(
 ///
 /// ### Text Messages
 /// - **Any State**: Commands win (see `commands::route_text`) and end the running action
-/// - **WaitingForRecipeName**: Process recipe name input with validation
 /// - **ReviewIngredients**: Handle ingredient review commands (edit/delete/confirm)
 /// - **EditingIngredient**: Process ingredient edit input
 /// - **WaitingForRecipeNameAfterConfirm**: Handle post-confirmation recipe naming

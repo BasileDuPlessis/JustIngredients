@@ -492,210 +492,158 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         pool,
         ..
     } = params;
+    let (Some(ingredients), Some(pool), Some(message)) =
+        (ingredients_slice, pool, q.message.as_ref())
+    else {
+        return Ok(());
+    };
+    confirm_review(ReviewConfirmation {
+        bot: ctx.bot,
+        localization: ctx.localization,
+        pool,
+        dialogue,
+        chat_id: message.chat().id,
+        owner_id: q.from.id.0 as i64,
+        // The message the button is on is the review list
+        review_message_id: Some(message.id()),
+        ingredients,
+        extracted_text,
+        known_name: recipe_name_from_caption.and_then(|name| name.as_deref()),
+        language_code: dialogue_lang_code.as_deref(),
+    })
+    .await
+}
 
-    let ingredients =
-        ingredients_slice.expect("Ingredients slice should be provided for confirm callback");
-    let pool = pool.expect("Database pool should be provided for confirm callback");
+/// A review being confirmed, by ✅ or by a typed confirmation word.
+#[derive(Debug)]
+pub struct ReviewConfirmation<'a> {
+    pub bot: &'a Bot,
+    pub localization: &'a Arc<crate::localization::LocalizationManager>,
+    pub pool: &'a PgPool,
+    pub dialogue: &'a RecipeDialogue,
+    pub chat_id: ChatId,
+    /// Telegram id of the user, owner of the saved recipe.
+    pub owner_id: i64,
+    /// The review list, deleted at the end of the action.
+    pub review_message_id: Option<teloxide::types::MessageId>,
+    pub ingredients: &'a [crate::text_processing::MeasurementMatch],
+    pub extracted_text: &'a str,
+    /// Name from the caption or the page title; asked for when missing.
+    pub known_name: Option<&'a str>,
+    pub language_code: Option<&'a str>,
+}
 
+/// What ✅ and a typed "valider" both do. Flagged quantities must be checked first (the review
+/// stays open); then the recipe is saved under the known name, or the name is asked.
+pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
     // Quantities the extractor was unsure about, or out of range, must be checked before
     // saving; saving them as they are would store a wrong or zero quantity (IMP-004).
-    let to_check = quantities_to_check(ingredients);
+    let to_check = quantities_to_check(c.ingredients);
     if !to_check.is_empty() {
-        if let Some(message) = q.message.as_ref() {
-            send_transient(
-                ctx.bot,
-                message.chat().id,
-                t_args_lang(
-                    ctx.localization,
-                    "review-quantities-to-check",
-                    &[("ingredients", &to_check.join(", "))],
-                    dialogue_lang_code.as_deref(),
-                ),
-            )
-            .await?;
-        }
+        send_transient(
+            c.bot,
+            c.chat_id,
+            t_args_lang(
+                c.localization,
+                "review-quantities-to-check",
+                &[("ingredients", &to_check.join(", "))],
+                c.language_code,
+            ),
+        )
+        .await?;
         return Ok(());
     }
 
     // Record user engagement metric for recipe confirmation
     crate::observability::record_user_engagement_metrics(
-        q.from.id.0 as i64,
+        c.owner_id,
         crate::observability::UserAction::RecipeConfirm,
         None, // No session duration for individual actions
-        dialogue_lang_code.as_deref(),
+        c.language_code,
     );
 
     // The review ends here: its list goes with the action's messages
-    if let Some(message) = q.message.as_ref() {
-        cleanup::track(message.chat().id, message.id());
+    if let Some(id) = c.review_message_id {
+        cleanup::track(c.chat_id, id);
     }
 
-    // Check if we have a recipe name from caption
-    if let Some(caption_recipe_name) = recipe_name_from_caption.and_then(|opt| opt.as_ref()) {
-        // STREAMLINED WORKFLOW: Skip recipe name input when caption is available
-        debug!(user_id = %q.from.id, recipe_name = %caption_recipe_name, "Using recipe name from caption, skipping name input");
-
-        // Save ingredients directly to database
-        let recipe_id = match save_ingredients_to_database(
-            pool,
-            q.from.id.0 as i64,
-            extracted_text,
-            ingredients,
-            caption_recipe_name,
-            dialogue_lang_code.as_deref(),
-        )
-        .await
-        {
-            Ok(recipe_id) => recipe_id,
-            Err(e) => {
-                error_logging::log_database_error(
-                    &e,
-                    "save_ingredients_to_database",
-                    Some(q.from.id.0 as i64),
-                    None,
-                );
-                ctx.bot
-                    .send_message(
-                        q.message
-                            .as_ref()
-                            .expect("Callback query should have a message")
-                            .chat()
-                            .id,
-                        t_lang(
-                            ctx.localization,
-                            "save-failed-retry",
-                            dialogue_lang_code.as_deref(),
-                        ),
-                    )
-                    .await?;
-                return Ok(());
-            }
-        };
-
-        // Remove the keyboard: the list is deleted at the end, and stays inactive if it cannot be
-        match ctx
-            .bot
-            .edit_message_reply_markup(
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .chat()
-                    .id,
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .id(),
-            )
-            .await
-        {
-            Ok(_) => (),
-            Err(e) => {
-                error_logging::log_internal_error(
-                    &e,
-                    "handle_confirm_button",
-                    "Failed to remove keyboard from ingredients message",
-                    Some(q.from.id.0 as i64),
-                );
-            }
-        }
-
-        // The saved recipe card replaces the review list, then the home message
-        let Some(chat_id) = q.message.as_ref().map(|message| message.chat().id) else {
-            dialogue.exit().await?;
-            return Ok(());
-        };
-        send_saved_recipe(
-            ctx.bot,
-            chat_id,
-            recipe_id,
-            caption_recipe_name,
-            ingredients,
-            ctx.localization,
-            dialogue_lang_code.as_deref(),
-        )
-        .await;
-        send_home(
-            ctx.bot,
-            pool,
-            chat_id,
-            ctx.localization,
-            dialogue_lang_code.as_deref(),
-        )
-        .await;
-
-        // End the dialogue - workflow complete
-        dialogue.exit().await?;
-    } else {
-        // LEGACY WORKFLOW: No caption available, ask for recipe name
-        debug!(user_id = %q.from.id, "No caption available, proceeding with recipe name input");
-
-        // Remove the keyboard: the list is deleted at the end, and stays inactive if it cannot be
-        match ctx
-            .bot
-            .edit_message_reply_markup(
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .chat()
-                    .id,
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .id(),
-            )
-            .await
-        {
-            Ok(_) => (),
-            Err(e) => {
-                error_logging::log_internal_error(
-                    &e,
-                    "handle_confirm_button",
-                    "Failed to remove keyboard from ingredients message",
-                    Some(q.from.id.0 as i64),
-                );
-            }
-        }
-
-        // Send recipe name prompt as a new message
+    let Some(name) = c.known_name else {
+        // No caption nor title: ask for the name
+        debug!(user_id = %c.owner_id, "No caption or title, asking for the recipe name");
+        remove_review_keyboard(&c).await;
         let recipe_name_prompt = format!(
             "🏷️ {}\n\n{}",
-            t_lang(
-                ctx.localization,
-                "recipe-name-prompt",
-                dialogue_lang_code.as_deref()
-            ),
-            t_lang(
-                ctx.localization,
-                "recipe-name-prompt-hint",
-                dialogue_lang_code.as_deref()
-            )
+            t_lang(c.localization, "recipe-name-prompt", c.language_code),
+            t_lang(c.localization, "recipe-name-prompt-hint", c.language_code)
         );
-
-        let prompt_msg = ctx
-            .bot
-            .send_message(
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .chat()
-                    .id,
-                recipe_name_prompt,
-            )
-            .await?;
-
-        // Transition to waiting for recipe name after confirmation
-        dialogue
+        let prompt_msg = c.bot.send_message(c.chat_id, recipe_name_prompt).await?;
+        c.dialogue
             .update(RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
-                ingredients: ingredients.to_vec(),
-                language_code: dialogue_lang_code.clone(),
-                extracted_text: extracted_text.to_string(),
-                recipe_name_from_caption: recipe_name_from_caption.cloned().flatten(), // Preserve caption info from ReviewIngredients state
-                message_id: Some(prompt_msg.id.0 as i32), // Store prompt message ID
+                ingredients: c.ingredients.to_vec(),
+                language_code: c.language_code.map(str::to_string),
+                extracted_text: c.extracted_text.to_string(),
+                recipe_name_from_caption: None,
+                message_id: Some(prompt_msg.id.0 as i32),
             })
             .await?;
-    }
+        return Ok(());
+    };
 
+    debug!(user_id = %c.owner_id, "Recipe name from the caption or the title, saving at once");
+    let recipe_id = match save_ingredients_to_database(
+        c.pool,
+        c.owner_id,
+        c.extracted_text,
+        c.ingredients,
+        name,
+        c.language_code,
+    )
+    .await
+    {
+        Ok(recipe_id) => recipe_id,
+        Err(_) => {
+            // Logged by the save; nothing was written: the review stays open to try again
+            send_transient(
+                c.bot,
+                c.chat_id,
+                t_lang(c.localization, "save-failed-retry", c.language_code),
+            )
+            .await?;
+            return Ok(());
+        }
+    };
+
+    // The saved recipe card replaces the review list, then the home message
+    remove_review_keyboard(&c).await;
+    send_saved_recipe(
+        c.bot,
+        c.chat_id,
+        recipe_id,
+        name,
+        c.ingredients,
+        c.localization,
+        c.language_code,
+    )
+    .await;
+    send_home(c.bot, c.pool, c.chat_id, c.localization, c.language_code).await;
+    c.dialogue.exit().await?;
     Ok(())
+}
+
+/// The list is deleted at the end of the action; until then (or if it cannot be) its buttons
+/// must not act any more.
+async fn remove_review_keyboard(c: &ReviewConfirmation<'_>) {
+    let Some(id) = c.review_message_id else {
+        return;
+    };
+    if let Err(e) = c.bot.edit_message_reply_markup(c.chat_id, id).await {
+        error_logging::log_internal_error(
+            &e,
+            "confirm_review",
+            "Failed to remove keyboard from ingredients message",
+            Some(c.owner_id),
+        );
+    }
 }
 
 /// Handle cancel review button in review ingredients state

@@ -143,7 +143,8 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
 - `delete_<i>`: removes the line. When none is left, the message offers ➕ (`add_ingredient`,
   same as above) and ❌ `cancel_review`. Old messages may still send `add_more`, handled like
   `add_ingredient`.
-- `confirm`: **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
+- `confirm` (and a typed confirm word, see below; both call `review_callbacks::confirm_review`):
+  **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
   with their names and stays in the review until they are edited or deleted. Then the review
   message is recorded for cleanup (deleted with the home message at the end) and:
   - name from the caption or the page title: saved at once; the review loses its buttons; the
@@ -159,10 +160,9 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
   `workflow-search-coming-soon`); both are still handled.
 
 Typed text in `ReviewIngredients`: a confirm word ("confirm", "ok", "yes", "save", "valider",
-"valide", "confirmer", "oui", "enregistrer") asks each flagged quantity in
-turn (`AwaitingQuantityCorrection`; a number in range, or `-`/"none"/"aucune" for none) and then
-saves under the current name (caption, title or "Recipe") without asking for a name; a cancel word
-cancels; anything else answers `review-help`. Cancel words, everywhere a prompt is open: "cancel",
+"valide", "confirmer", "oui", "enregistrer") does exactly what ✅ does (quantity guard, then save
+under the caption or title name, or ask for the name); a cancel word cancels; anything else
+answers `review-help`. Cancel words, everywhere a prompt is open: "cancel",
 "stop", "back", "annuler", "annule", "retour", "arrêter" (`is_cancellation_command`).
 
 Saving (`save_ingredients_to_database` → `db::save_recipe`): the user, the recipe with its name
@@ -272,13 +272,11 @@ of the message that opened it.
 | `Start` (default) | no state | Commands and echo |
 | `ReviewIngredients` | Successful extraction; end of an edit | "confirm"/"ok"/"yes"/"save", "cancel"/"stop", else help |
 | `EditingIngredient` | `qty_<i>`, `name_<i>`, `edit_<i>` or `add_ingredient` in a review | Quantity, name or whole line (`field`); a new line when adding |
-| `AwaitingQuantityCorrection` | Typed "confirm" with flagged lines | Quantity or `-` |
-| `WaitingForRecipeNameAfterConfirm` | `confirm` without a caption name | Recipe name |
+| `WaitingForRecipeNameAfterConfirm` | `confirm` (button or typed) without a caption or title name | Recipe name |
 | `RenamingRecipe` | `recipe_action:rename` | New name |
 | `EditingSavedIngredients` | `recipe_action:edit_ingredients` | Refused (use the buttons) |
 | `EditingSavedIngredient` | `qty_<i>`, `name_<i>` or `edit_<i>` on a saved recipe | Quantity, name or whole line (`field`) |
 | `AddingIngredientToSavedRecipe` | `add_ingredient` on a saved recipe | New ingredient line |
-| `WaitingForRecipeName` | Never entered (only tests build it) | Recipe name |
 
 ## Errors
 Extraction errors map to locale keys in `extraction_error_key` (`image_processing.rs`):

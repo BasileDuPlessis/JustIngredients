@@ -40,10 +40,12 @@ fn test_recipe_naming_dialogue_workflow() {
         },
     ];
 
-    let waiting_state = RecipeDialogueState::WaitingForRecipeName {
+    let waiting_state = RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
         extracted_text: extracted_text.to_string(),
         ingredients: ingredients.clone(),
         language_code: Some("en".to_string()),
+        recipe_name_from_caption: None,
+        message_id: None,
     };
 
     // Step 3: User provides recipe name
@@ -53,10 +55,11 @@ fn test_recipe_naming_dialogue_workflow() {
     assert_eq!(validation_result.unwrap(), recipe_name);
 
     // Step 4: Verify dialogue state contains all necessary data
-    if let RecipeDialogueState::WaitingForRecipeName {
+    if let RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
         extracted_text: text,
         ingredients: ingr,
         language_code,
+        ..
     } = waiting_state
     {
         assert_eq!(text, extracted_text);
@@ -65,7 +68,7 @@ fn test_recipe_naming_dialogue_workflow() {
         assert_eq!(ingr[1].ingredient_name, "eggs");
         assert_eq!(language_code, Some("en".to_string()));
     } else {
-        panic!("Expected WaitingForRecipeName state");
+        panic!("Expected WaitingForRecipeNameAfterConfirm state");
     }
 
     // Step 5: Test validation edge cases
@@ -1188,14 +1191,16 @@ fn test_unified_multi_word_ingredient_bot_workflow() {
     ];
 
     // Simulate dialogue state with multi-word ingredients
-    let waiting_state = RecipeDialogueState::WaitingForRecipeName {
+    let waiting_state = RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
         extracted_text: ocr_text.to_string(),
         ingredients: ingredients.clone(),
         language_code: Some("en".to_string()),
+        recipe_name_from_caption: None,
+        message_id: None,
     };
 
     // Verify dialogue state contains complete multi-word ingredient names
-    if let RecipeDialogueState::WaitingForRecipeName {
+    if let RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
         ingredients: ingr, ..
     } = waiting_state
     {
@@ -1211,7 +1216,7 @@ fn test_unified_multi_word_ingredient_bot_workflow() {
         assert!(ingr[1].measurement.is_none()); // quantity-only
         assert_eq!(ingr[2].measurement, Some("cup".to_string()));
     } else {
-        panic!("Expected WaitingForRecipeName state");
+        panic!("Expected WaitingForRecipeNameAfterConfirm state");
     }
 
     // Test that ingredient display formatting works with multi-word names
@@ -1231,102 +1236,4 @@ fn test_unified_multi_word_ingredient_bot_workflow() {
     }
 
     println!("✅ Unified multi-word ingredient bot workflow test passed");
-}
-
-/// Test quantity correction dialogue workflow
-#[test]
-fn test_quantity_correction_dialogue_workflow() {
-    use just_ingredients::dialogue::RecipeDialogueState;
-    use just_ingredients::validation::parse_quantity;
-
-    // Simulate the quantity correction workflow
-
-    // Step 1: Create ingredients with one requiring confirmation
-    let ingredients = vec![
-        just_ingredients::MeasurementMatch {
-            quantity: "0".to_string(), // Invalid quantity that needs correction
-            measurement: Some("cups".to_string()),
-            ingredient_name: "flour".to_string(),
-            line_number: 0,
-            start_pos: 0,
-            end_pos: 6,
-            requires_quantity_confirmation: true,
-        },
-        just_ingredients::MeasurementMatch {
-            quantity: "3".to_string(),
-            measurement: None,
-            ingredient_name: "eggs".to_string(),
-            line_number: 1,
-            start_pos: 8,
-            end_pos: 9,
-            requires_quantity_confirmation: false,
-        },
-    ];
-
-    // Step 2: Simulate user confirming ingredients - should trigger quantity correction
-    // (This would happen in handle_ingredient_review_input when user types "confirm")
-
-    // Step 3: Bot should transition to AwaitingQuantityCorrection state
-    let correction_state = RecipeDialogueState::AwaitingQuantityCorrection {
-        recipe_name: "Test Recipe".to_string(),
-        ingredients: ingredients.clone(),
-        ingredient_index: 0, // First ingredient needs correction
-        language_code: Some("en".to_string()),
-        message_id: Some(123),
-        extracted_text: "Test OCR text".to_string(),
-        recipe_name_from_caption: None,
-    };
-
-    // Verify the state is correctly structured
-    if let RecipeDialogueState::AwaitingQuantityCorrection {
-        recipe_name,
-        ingredients: state_ingredients,
-        ingredient_index,
-        language_code,
-        message_id,
-        extracted_text,
-        recipe_name_from_caption,
-    } = correction_state
-    {
-        assert_eq!(recipe_name, "Test Recipe");
-        assert_eq!(state_ingredients.len(), 2);
-        assert_eq!(state_ingredients[0].ingredient_name, "flour");
-        assert!(state_ingredients[0].requires_quantity_confirmation);
-        assert_eq!(ingredient_index, 0);
-        assert_eq!(language_code, Some("en".to_string()));
-        assert_eq!(message_id, Some(123));
-        assert_eq!(extracted_text, "Test OCR text");
-        assert_eq!(recipe_name_from_caption, None);
-    } else {
-        panic!("Expected AwaitingQuantityCorrection state");
-    }
-
-    // Step 4: Simulate user providing valid quantity input
-    let user_input = "2.5";
-    let parsed_quantity = parse_quantity(user_input);
-    assert_eq!(parsed_quantity, Some(2.5));
-
-    // Step 5: Simulate updating the ingredient
-    let mut updated_ingredients = ingredients.clone();
-    if let Some(ingredient) = updated_ingredients.get_mut(0) {
-        ingredient.quantity = parsed_quantity.unwrap().to_string();
-        ingredient.requires_quantity_confirmation = false;
-    }
-
-    // Verify the ingredient was updated correctly
-    assert_eq!(updated_ingredients[0].quantity, "2.5");
-    assert!(!updated_ingredients[0].requires_quantity_confirmation);
-    assert_eq!(updated_ingredients[1].quantity, "3"); // Unchanged
-    assert!(!updated_ingredients[1].requires_quantity_confirmation);
-
-    // Step 6: Test invalid quantity input
-    let invalid_input = "invalid";
-    let invalid_parsed = parse_quantity(invalid_input);
-    assert_eq!(invalid_parsed, None);
-
-    // Step 7: Test cancellation
-    let cancel_input = "cancel";
-    assert!(cancel_input.to_lowercase().contains("cancel"));
-
-    println!("✅ Quantity correction dialogue workflow test passed");
 }

@@ -44,7 +44,8 @@ fn is_message_not_modified_error(error: &teloxide::RequestError) -> bool {
 pub struct IngredientReviewInputParams<'a> {
     pub pool: Arc<PgPool>,
     pub review_input: &'a str,
-    pub recipe_name: String,
+    /// Name from the caption or the page title, if any.
+    pub recipe_name_from_caption: Option<String>,
     pub ingredients: Vec<MeasurementMatch>,
     pub ctx: &'a HandlerContext<'a>,
     pub extracted_text: String,
@@ -101,16 +102,6 @@ pub struct DialogueContext<'a> {
     pub msg: &'a Message,
     pub dialogue: RecipeDialogue,
     pub localization: &'a Arc<crate::localization::LocalizationManager>,
-}
-
-/// Parameters for recipe name input handling
-#[derive(Debug)]
-pub struct RecipeNameInputParams<'a> {
-    pub pool: Arc<PgPool>,
-    pub recipe_name_input: &'a str,
-    pub extracted_text: String,
-    pub ingredients: Vec<MeasurementMatch>,
-    pub ctx: &'a HandlerContext<'a>,
 }
 
 /// Parameters for recipe name input after confirmation
@@ -177,110 +168,6 @@ pub struct SavedIngredientEditInputParams<'a> {
     pub field: IngredientField,
     pub original_message_id: Option<i32>, // ID of the original recipe display message to replace
     pub user_input_message_id: Option<i32>, // ID of the user's input message for reply functionality
-}
-
-/// Handle recipe name input during dialogue
-pub async fn handle_recipe_name_input(
-    ctx: DialogueContext<'_>,
-    params: RecipeNameInputParams<'_>,
-) -> Result<()> {
-    let start_time = std::time::Instant::now();
-    let DialogueContext {
-        bot,
-        msg,
-        dialogue,
-        localization: _,
-    } = ctx;
-    let RecipeNameInputParams {
-        pool: _pool,
-        recipe_name_input,
-        extracted_text,
-        ingredients,
-        ctx: handler_ctx,
-    } = params;
-
-    let ingredients_count = ingredients.len();
-
-    // Validate recipe name
-    match validate_recipe_name(recipe_name_input) {
-        Ok(validated_name) => {
-            // Recipe name is valid, transition to ingredient review state
-            let review_message = render_review(
-                &ingredients,
-                handler_ctx.language_code,
-                handler_ctx.localization,
-            );
-
-            let keyboard = create_ingredient_review_keyboard(
-                &ingredients,
-                handler_ctx.language_code,
-                handler_ctx.localization,
-            );
-
-            let sent_message = send_html(bot, msg.chat.id, review_message)
-                .reply_markup(keyboard)
-                .await?;
-
-            // Update dialogue state to review ingredients
-            dialogue
-                .update(RecipeDialogueState::ReviewIngredients {
-                    recipe_name: validated_name.to_string(),
-                    ingredients,
-                    language_code: handler_ctx.language_code.map(|s| s.to_string()),
-                    message_id: Some(sent_message.id.0 as i32),
-                    extracted_text,
-                    recipe_name_from_caption: None, // Recipe name came from user input, not caption
-                })
-                .await?;
-        }
-        Err(AppError::Validation(error_msg)) if error_msg == "empty" => {
-            bot.send_message(
-                msg.chat.id,
-                t_lang(
-                    handler_ctx.localization,
-                    "recipe-name-invalid",
-                    handler_ctx.language_code,
-                ),
-            )
-            .await?;
-            // Keep dialogue active, user can try again
-        }
-        Err(AppError::Validation(error_msg)) if error_msg == "too_long" => {
-            bot.send_message(
-                msg.chat.id,
-                t_lang(
-                    handler_ctx.localization,
-                    "recipe-name-too-long",
-                    handler_ctx.language_code,
-                ),
-            )
-            .await?;
-            // Keep dialogue active, user can try again
-        }
-        Err(_) => {
-            bot.send_message(
-                msg.chat.id,
-                t_lang(
-                    handler_ctx.localization,
-                    "recipe-name-invalid",
-                    handler_ctx.language_code,
-                ),
-            )
-            .await?;
-            // Keep dialogue active, user can try again
-        }
-    }
-
-    let duration = start_time.elapsed();
-    crate::observability::record_dialogue_metrics(
-        msg.chat.id.0,
-        crate::observability::DialogueType::RecipeNaming,
-        true, // completed
-        ingredients_count,
-        duration,
-    );
-
-    Ok(())
 }
 
 /// Handle recipe name input after ingredient confirmation during dialogue
@@ -922,7 +809,7 @@ pub async fn handle_ingredient_review_input(
     let IngredientReviewInputParams {
         pool,
         review_input,
-        recipe_name,
+        recipe_name_from_caption,
         ingredients,
         ctx: handler_ctx,
         extracted_text,
@@ -932,104 +819,23 @@ pub async fn handle_ingredient_review_input(
 
     match input.as_str() {
         input if is_confirmation_word(input) => {
-            // The review ends here: its list goes with the action's messages
-            if let Some(id) = review_message_id {
-                cleanup::track(msg.chat.id, teloxide::types::MessageId(id));
-            }
-            // Check if any ingredient requires quantity confirmation
-            if let Some((index, ingredient)) = ingredients
-                .iter()
-                .enumerate()
-                .find(|(_, ing)| ing.requires_quantity_confirmation)
-            {
-                // Found an ingredient that needs quantity confirmation
-                // Transition to AwaitingQuantityCorrection state
-                let correction_state = RecipeDialogueState::AwaitingQuantityCorrection {
-                    recipe_name: recipe_name.clone(),
-                    ingredients: ingredients.clone(),
-                    ingredient_index: index,
-                    language_code: handler_ctx.language_code.map(|s| s.to_string()),
-                    message_id: None, // Will be set when we send the prompt
-                    extracted_text: extracted_text.clone(),
-                    recipe_name_from_caption: None, // Not applicable here
-                };
-
-                dialogue.update(correction_state).await?;
-
-                // Send the quantity correction prompt
-                let prompt_message = t_args_lang(
-                    handler_ctx.localization,
-                    "quantity-correction-prompt",
-                    &[("ingredient", &ingredient.ingredient_name)],
-                    handler_ctx.language_code,
-                );
-
-                let sent_message = send_transient(bot, msg.chat.id, prompt_message).await?;
-                let message_id = sent_message.id.0 as i32;
-
-                // Update the state with the message ID
-                if let Some(RecipeDialogueState::AwaitingQuantityCorrection {
-                    message_id: ref mut state_message_id,
-                    ..
-                }) = dialogue.get().await?
-                {
-                    *state_message_id = Some(message_id);
-                }
-
-                return Ok(());
-            }
-
-            // No ingredients require confirmation, proceed with saving
-            match save_ingredients_to_database(
-                &pool,
-                msg.chat.id.0,
-                &extracted_text,
-                &ingredients,
-                &recipe_name,
-                handler_ctx.language_code,
+            // Exactly what ✅ does: quantity check, then save under the known name or ask it
+            super::callbacks::review_callbacks::confirm_review(
+                super::callbacks::review_callbacks::ReviewConfirmation {
+                    bot,
+                    localization: handler_ctx.localization,
+                    pool: &pool,
+                    dialogue: &dialogue,
+                    chat_id: msg.chat.id,
+                    owner_id: msg.chat.id.0,
+                    review_message_id: review_message_id.map(teloxide::types::MessageId),
+                    ingredients: &ingredients,
+                    extracted_text: &extracted_text,
+                    known_name: recipe_name_from_caption.as_deref(),
+                    language_code: handler_ctx.language_code,
+                },
             )
-            .await
-            {
-                Err(_) => {
-                    // Logged by the save; nothing was written: keep the dialogue to try again
-                    send_transient(
-                        bot,
-                        msg.chat.id,
-                        t_lang(
-                            handler_ctx.localization,
-                            "save-failed-retry",
-                            handler_ctx.language_code,
-                        ),
-                    )
-                    .await?;
-
-                    return Ok(());
-                }
-                Ok(recipe_id) => {
-                    // The saved recipe card is the result of the review
-                    send_saved_recipe(
-                        bot,
-                        msg.chat.id,
-                        recipe_id,
-                        &recipe_name,
-                        &ingredients,
-                        handler_ctx.localization,
-                        handler_ctx.language_code,
-                    )
-                    .await;
-                }
-            }
-
-            // End the dialogue
-            dialogue.exit().await?;
-            send_home(
-                bot,
-                &pool,
-                msg.chat.id,
-                handler_ctx.localization,
-                handler_ctx.language_code,
-            )
-            .await;
+            .await?;
         }
         input if is_cancellation_command(input) => {
             // User cancelled, end dialogue without saving
@@ -1417,187 +1223,6 @@ async fn return_to_saved_ingredients_review(
             message_id,
         })
         .await?;
-
-    Ok(())
-}
-
-/// Parameters for quantity correction input handling
-#[derive(Debug)]
-pub struct QuantityCorrectionInputParams<'a> {
-    pub pool: Arc<PgPool>,
-    pub quantity_input: &'a str,
-    pub recipe_name: String,
-    pub ingredients: Vec<MeasurementMatch>,
-    pub ingredient_index: usize,
-    pub ctx: &'a HandlerContext<'a>,
-    pub extracted_text: String,
-    pub recipe_name_from_caption: Option<String>,
-}
-
-/// Handle quantity correction input during dialogue
-pub async fn handle_quantity_correction_input(
-    ctx: DialogueContext<'_>,
-    params: QuantityCorrectionInputParams<'_>,
-) -> Result<()> {
-    let DialogueContext {
-        bot,
-        msg,
-        dialogue,
-        localization: _,
-    } = ctx;
-    let QuantityCorrectionInputParams {
-        pool,
-        quantity_input,
-        recipe_name,
-        mut ingredients,
-        ingredient_index,
-        ctx: handler_ctx,
-        extracted_text,
-        recipe_name_from_caption,
-    } = params;
-
-    let input = quantity_input.trim();
-
-    // Check for cancellation commands
-    if is_cancellation_command(&input.to_lowercase()) {
-        // User cancelled, end dialogue without saving
-        bot.send_message(
-            msg.chat.id,
-            t_lang(
-                handler_ctx.localization,
-                "review-cancelled",
-                handler_ctx.language_code,
-            ),
-        )
-        .await?;
-        dialogue.exit().await?;
-        send_home(
-            bot,
-            &pool,
-            msg.chat.id,
-            handler_ctx.localization,
-            handler_ctx.language_code,
-        )
-        .await;
-        return Ok(());
-    }
-
-    // Parse the quantity input
-    // A number in the accepted range, or "-" for no quantity; 0, negative or huge numbers
-    // would be saved as they are or fail the database insert and lose the recipe.
-    match crate::validation::parse_quantity_answer(input) {
-        Some(corrected_quantity) => {
-            if let Some(ingredient) = ingredients.get_mut(ingredient_index) {
-                ingredient.quantity = corrected_quantity;
-                ingredient.requires_quantity_confirmation = false;
-            }
-
-            // Check if there are more ingredients that need confirmation
-            if let Some((next_index, next_ingredient)) = ingredients
-                .iter()
-                .enumerate()
-                .find(|(i, ing)| *i > ingredient_index && ing.requires_quantity_confirmation)
-            {
-                // Found another ingredient that needs confirmation
-                let correction_state = RecipeDialogueState::AwaitingQuantityCorrection {
-                    recipe_name: recipe_name.clone(),
-                    ingredients: ingredients.clone(),
-                    ingredient_index: next_index,
-                    language_code: handler_ctx.language_code.map(|s| s.to_string()),
-                    message_id: None, // Will be set when we send the prompt
-                    extracted_text: extracted_text.clone(),
-                    recipe_name_from_caption: recipe_name_from_caption.clone(),
-                };
-
-                dialogue.update(correction_state).await?;
-
-                // Send the next quantity correction prompt
-                let prompt_message = t_args_lang(
-                    handler_ctx.localization,
-                    "quantity-correction-prompt",
-                    &[("ingredient", &next_ingredient.ingredient_name)],
-                    handler_ctx.language_code,
-                );
-
-                let sent_message = send_transient(bot, msg.chat.id, prompt_message).await?;
-                let new_message_id = sent_message.id.0 as i32;
-
-                // Update the state with the message ID
-                if let Some(RecipeDialogueState::AwaitingQuantityCorrection {
-                    message_id: ref mut state_message_id,
-                    ..
-                }) = dialogue.get().await?
-                {
-                    *state_message_id = Some(new_message_id);
-                }
-            } else {
-                // No more ingredients need confirmation, proceed with saving
-                match save_ingredients_to_database(
-                    &pool,
-                    msg.chat.id.0,
-                    &extracted_text,
-                    &ingredients,
-                    &recipe_name,
-                    handler_ctx.language_code,
-                )
-                .await
-                {
-                    Err(_) => {
-                        // Logged by the save; nothing was written: keep the dialogue to try again
-                        send_transient(
-                            bot,
-                            msg.chat.id,
-                            t_lang(
-                                handler_ctx.localization,
-                                "save-failed-retry",
-                                handler_ctx.language_code,
-                            ),
-                        )
-                        .await?;
-
-                        return Ok(());
-                    }
-                    Ok(recipe_id) => {
-                        // The saved recipe card is the result of the review
-                        send_saved_recipe(
-                            bot,
-                            msg.chat.id,
-                            recipe_id,
-                            &recipe_name,
-                            &ingredients,
-                            handler_ctx.localization,
-                            handler_ctx.language_code,
-                        )
-                        .await;
-                    }
-                }
-
-                // End the dialogue
-                dialogue.exit().await?;
-                send_home(
-                    bot,
-                    &pool,
-                    msg.chat.id,
-                    handler_ctx.localization,
-                    handler_ctx.language_code,
-                )
-                .await;
-            }
-        }
-        None => {
-            // Invalid quantity - send error message
-            send_transient(
-                bot,
-                msg.chat.id,
-                t_lang(
-                    handler_ctx.localization,
-                    "edit-invalid-quantity",
-                    handler_ctx.language_code,
-                ),
-            )
-            .await?;
-        }
-    }
 
     Ok(())
 }

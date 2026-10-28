@@ -24,11 +24,6 @@ pub enum IngredientField {
 pub enum RecipeDialogueState {
     #[default]
     Start,
-    WaitingForRecipeName {
-        extracted_text: String,
-        ingredients: Vec<MeasurementMatch>,
-        language_code: Option<String>,
-    },
     ReviewIngredients {
         recipe_name: String,
         ingredients: Vec<MeasurementMatch>,
@@ -87,15 +82,6 @@ pub enum RecipeDialogueState {
         current_matches: Vec<MeasurementMatch>, // Working copy for editing
         language_code: Option<String>,
         message_id: Option<i32>,
-    },
-    AwaitingQuantityCorrection {
-        recipe_name: String,
-        ingredients: Vec<MeasurementMatch>,
-        ingredient_index: usize,
-        language_code: Option<String>,
-        message_id: Option<i32>,
-        extracted_text: String,
-        recipe_name_from_caption: Option<String>,
     },
 }
 
