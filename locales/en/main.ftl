@@ -176,10 +176,6 @@ edit-recipe-name = Rename Recipe
 edit-ingredients = Edit Ingredients
 delete-recipe = Delete Recipe
 back-to-recipes = Back to Recipes
-recipe-details = Recipe Details
-ingredients-count = Ingredients
-created-date = Created
-avg-ingredients-per-recipe = Avg Ingredients/Recipe
 
 # Recipe management messages
 rename-recipe-title = Rename Recipe
@@ -196,7 +192,6 @@ rename-cancelled = Renaming cancelled. The recipe keeps its name.
 
 # Recipe viewing messages
 recipe-not-found = Recipe not found
-recipe-not-found-help = This recipe may have been deleted or you may not have access to it.
 
 # Error messages for recipe operations
 error-deleting-recipe = Failed to delete recipe

@@ -35,6 +35,7 @@ pub fn recipe_button_label(
 }
 
 /// One button per recipe of the page, then ⬅️ Page n of m ➡️ when there are several pages.
+/// Recipes with the same name saved the same day also show the time ("Tarte · 27 oct. 2026 21:36").
 pub fn recipe_list_keyboard(
     recipes: &[RecipeSummary],
     page: usize,
@@ -42,11 +43,23 @@ pub fn recipe_list_keyboard(
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> InlineKeyboardMarkup {
+    use chrono::Timelike;
+    let labels: Vec<String> = recipes
+        .iter()
+        .map(|recipe| recipe_button_label(recipe, language_code, localization))
+        .collect();
     let mut rows: Vec<Vec<InlineKeyboardButton>> = recipes
         .iter()
-        .map(|recipe| {
+        .zip(&labels)
+        .map(|(recipe, label)| {
+            let label = if labels.iter().filter(|other| *other == label).count() > 1 {
+                let local = super::ui_builder::paris_time(recipe.created_at);
+                format!("{label} {:02}:{:02}", local.hour(), local.minute())
+            } else {
+                label.clone()
+            };
             vec![InlineKeyboardButton::callback(
-                recipe_button_label(recipe, language_code, localization),
+                label,
                 format!("recipe_instance:{}", recipe.id),
             )]
         })
@@ -78,6 +91,8 @@ pub async fn show_recipe_list(
     localization: &Arc<LocalizationManager>,
 ) -> Result<()> {
     let telegram_id = chat_id.0;
+    // The query refuses offsets over 10,000: beyond, show the last page it can read
+    let page = page.min(usize::try_from(10_000 / RECIPES_PER_PAGE).unwrap_or(0));
     let offset = |page: usize| i64::try_from(page).unwrap_or(0) * RECIPES_PER_PAGE;
     let (mut recipes, total) =
         get_user_recipes_newest_first(pool, telegram_id, RECIPES_PER_PAGE, offset(page)).await?;
@@ -130,11 +145,15 @@ mod tests {
     use chrono::TimeZone;
 
     fn recipe(id: i64, name: &str) -> RecipeSummary {
+        recipe_at(id, name, 20)
+    }
+
+    fn recipe_at(id: i64, name: &str, hour: u32) -> RecipeSummary {
         RecipeSummary {
             id,
             name: name.to_string(),
             created_at: chrono::Utc
-                .with_ymd_and_hms(2026, 10, 27, 20, 36, 0)
+                .with_ymd_and_hms(2026, 10, 27, hour, 36, 0)
                 .single()
                 .unwrap_or_default(),
         }
@@ -147,8 +166,12 @@ mod tests {
     #[test]
     fn each_recipe_has_its_own_button_with_name_and_date() {
         let localization = manager();
-        let recipes = [recipe(12, "Recipe"), recipe(9, "Recipe")];
-        let keyboard = recipe_list_keyboard(&recipes, 0, 2, Some("fr"), &localization);
+        let recipes = [
+            recipe_at(12, "Recipe", 20),
+            recipe_at(9, "Recipe", 7),
+            recipe(5, "Tarte"),
+        ];
+        let keyboard = recipe_list_keyboard(&recipes, 0, 3, Some("fr"), &localization);
         let buttons: Vec<(String, String)> = keyboard
             .inline_keyboard
             .iter()
@@ -165,15 +188,19 @@ mod tests {
             buttons,
             vec![
                 (
-                    "Recipe · 27 oct. 2026".to_string(),
+                    "Recipe · 27 oct. 2026 21:36".to_string(),
                     "recipe_instance:12".to_string()
                 ),
                 (
-                    "Recipe · 27 oct. 2026".to_string(),
+                    "Recipe · 27 oct. 2026 08:36".to_string(),
                     "recipe_instance:9".to_string()
                 ),
+                (
+                    "Tarte · 27 oct. 2026".to_string(),
+                    "recipe_instance:5".to_string()
+                ),
             ],
-            "same names stay two entries, one page: no page row"
+            "same names stay two entries told apart by the time; one page: no page row"
         );
     }
 
@@ -201,6 +228,6 @@ mod tests {
         let long = recipe(1, &"Gâteau ".repeat(10));
         let label = recipe_button_label(&long, Some("en"), &localization);
         assert!(label.ends_with("· Oct 27, 2026"), "{label}");
-        assert!(label.chars().count() <= NAME_MAX_CHARS + " · Oct 27, 2026".len());
+        assert!(label.chars().count() <= NAME_MAX_CHARS + " · Oct 27, 2026".chars().count());
     }
 }

@@ -171,10 +171,6 @@ edit-recipe-name = Renommer la recette
 edit-ingredients = Modifier les ingrédients
 delete-recipe = Supprimer la recette
 back-to-recipes = Retour aux recettes
-recipe-details = Détails de la Recette
-ingredients-count = Ingrédients
-created-date = Créé
-avg-ingredients-per-recipe = Moy. Ingrédients/Recette
 
 # Messages de gestion de recette
 rename-recipe-title = Renommer la recette
@@ -192,7 +188,6 @@ rename-recipe-success-details = Recette renommée de "{$old_name}" à "{$new_nam
 # Messages de consultation des recettes
 # Messages de visualisation de recette
 recipe-not-found = Recette introuvable
-recipe-not-found-help = Cette recette a peut-être été supprimée ou vous n'y avez pas accès.
 
 # Messages d'erreur pour les opérations de recette
 error-deleting-recipe = Échec de la suppression de la recette

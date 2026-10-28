@@ -485,6 +485,34 @@ pub fn format_database_ingredients_list(
 mod tests {
     use super::*;
 
+    #[test]
+    fn the_recipe_card_offers_rename_edit_delete_and_back_only() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let keyboard = create_recipe_details_keyboard(7, Some("fr"), &localization);
+        let data: Vec<Vec<String>> = keyboard
+            .inline_keyboard
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|button| match &button.kind {
+                        teloxide::types::InlineKeyboardButtonKind::CallbackData(data) => {
+                            data.clone()
+                        }
+                        _ => String::new(),
+                    })
+                    .collect()
+            })
+            .collect();
+        assert_eq!(
+            data,
+            vec![
+                vec!["recipe_action:rename:7", "recipe_action:edit_ingredients:7"],
+                vec!["recipe_action:delete:7", "back_to_recipes"],
+            ]
+        );
+    }
+
     fn ingredient(quantity: &str, unit: Option<&str>, flagged: bool) -> MeasurementMatch {
         MeasurementMatch {
             quantity: quantity.to_string(),

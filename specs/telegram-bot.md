@@ -216,7 +216,7 @@ state).
 - **List** (`/liste`, 📚 button, `recipe_list::show_recipe_list`): one button per named recipe
   of the user, newest first, 8 per page, labelled "name · date" (name cut at 30 characters, day
   in the user's language: "Tarte · 27 oct. 2026"); two recipes with the same name are two
-  entries. Callback data `recipe_instance:<id>`. Pagination row: ⬅️ `page:<n>`, "Page x of y"
+  entries, and when they were saved the same day their buttons add the time (Paris). Callback data `recipe_instance:<id>`. Pagination row: ⬅️ `page:<n>`, "Page x of y"
   (`noop`, ignored), ➡️ `page:<n>`; it edits the list message, and a page past the end (recipes
   deleted meanwhile) shows the last one.
 - **Selection** (owner = callback sender): `recipe_instance:<id>` opens the card; a recipe that
