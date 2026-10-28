@@ -115,7 +115,6 @@ review-cancelled = Ingredient review cancelled. No ingredients were saved.
 review-no-ingredients = No ingredients remaining
 review-no-ingredients-help = All ingredients have been deleted. You can add more ingredients by sending another image, or cancel this recipe.
 review-add-more = Add More Ingredients
-review-add-more-instructions = Send another image with ingredients to add them to this recipe.
 confirm = Confirm
 cancel = Cancel
 edit-ingredient-prompt = Enter the corrected ingredient text

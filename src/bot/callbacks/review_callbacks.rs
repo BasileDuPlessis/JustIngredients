@@ -19,7 +19,7 @@ use crate::errors::error_logging;
 use crate::localization::{t_args_lang, t_lang};
 
 // Import dialogue types
-use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
+use crate::dialogue::{IngredientField, RecipeDialogue, RecipeDialogueState};
 
 // Import UI components for the focused editing interface
 use crate::bot::callbacks::ingredient_menu::show_ingredient_keyboard;
@@ -131,8 +131,26 @@ pub async fn handle_review_ingredients_callbacks(
                     pool: Some(&pool),
                 })
                 .await?;
-            } else if data == "add_more" {
-                handle_add_more_button(bot, q, &dialogue_lang_code, dialogue, localization).await?;
+            } else if data == "add_ingredient" || data == "add_more" {
+                handle_add_button(ReviewIngredientsParams {
+                    ctx: &HandlerContext {
+                        bot,
+                        localization,
+                        language_code: dialogue_lang_code.as_deref(),
+                    },
+                    q,
+                    data: None,
+                    ingredients: None,
+                    ingredients_slice: Some(&ingredients),
+                    recipe_name: &recipe_name,
+                    dialogue_lang_code: &dialogue_lang_code,
+                    message_id,
+                    extracted_text: &extracted_text,
+                    recipe_name_from_caption: Some(&recipe_name_from_caption),
+                    dialogue,
+                    pool: None,
+                })
+                .await?;
             } else if data == "cancel_review" {
                 handle_cancel_review_button(
                     bot,
@@ -160,19 +178,67 @@ pub async fn handle_review_ingredients_callbacks(
     Ok(())
 }
 
-/// Handle edit button in review ingredients state
-///
-/// This function implements the "focused editing interface" approach to eliminate user confusion:
-/// - Instead of leaving the full recipe display visible with inactive buttons during editing,
-///   we replace the entire recipe display message with a clean, focused editing prompt
-/// - Only a cancel button is shown, eliminating inactive button confusion
-/// - After editing or canceling, the original recipe display is restored seamlessly
-/// - This provides a clean, unambiguous editing experience without UI state confusion
+/// Handle edit button in review ingredients state: the review list is replaced by a prompt for
+/// the chosen field of the ingredient (see [`open_line_prompt`]).
 async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
+    let ingredients = params
+        .ingredients_slice
+        .expect("Ingredients slice should be provided for edit callback");
+    let Some(IngredientAction::Edit(field, index)) = params.data.and_then(parse_ingredient_action)
+    else {
+        return Ok(());
+    };
+    let Some(ingredient) = ingredients.get(index) else {
+        return Ok(());
+    };
+    // Record user engagement metric for ingredient editing
+    crate::observability::record_user_engagement_metrics(
+        params.q.from.id.0 as i64,
+        crate::observability::UserAction::IngredientEdit,
+        None, // No session duration for individual actions
+        params.dialogue_lang_code.as_deref(),
+    );
+
+    let lang = params.dialogue_lang_code.as_deref();
+    let prompt = format!(
+        "✏️ {}\n\n{}: {}\n\n{}",
+        t_lang(params.ctx.localization, "edit-ingredient-title", lang),
+        t_lang(params.ctx.localization, "edit-ingredient-current", lang),
+        // Same rendering as the review list ("sel" without quantity, not "**  sel**")
+        crate::bot::ui_builder::ingredient_line(ingredient, &ingredient.ingredient_name),
+        t_lang(params.ctx.localization, edit_instruction_key(field), lang)
+    );
+    open_line_prompt(params, index, field, prompt).await
+}
+
+/// ➕ Add ingredient (and the "add more" button of an emptied list): the typed line becomes a
+/// new last ingredient, through the same prompt as an edit.
+async fn handle_add_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
+    let ingredients = params
+        .ingredients_slice
+        .expect("Ingredients slice should be provided for add callback");
+    let lang = params.dialogue_lang_code.as_deref();
+    let prompt = format!(
+        "➕ {}\n\n{}",
+        t_lang(params.ctx.localization, "add-ingredient", lang),
+        t_lang(params.ctx.localization, "add-ingredient-prompt", lang)
+    );
+    let new_index = ingredients.len();
+    open_line_prompt(params, new_index, IngredientField::Line, prompt).await
+}
+
+/// Focused editing: the review list is replaced by `prompt` with a single Cancel button, and the
+/// typed answer replaces `field` of ingredient `index` (a new ingredient when `index` is the
+/// list's length). After the answer or Cancel the list comes back in the same message.
+async fn open_line_prompt(
+    params: ReviewIngredientsParams<'_>,
+    index: usize,
+    field: IngredientField,
+    prompt: String,
+) -> Result<()> {
     let ReviewIngredientsParams {
         ctx,
         q,
-        data,
         ingredients_slice,
         recipe_name,
         dialogue_lang_code,
@@ -182,104 +248,58 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
         dialogue,
         ..
     } = params;
-
     let ingredients =
         ingredients_slice.expect("Ingredients slice should be provided for edit callback");
-    let Some(IngredientAction::Edit(field, index)) = data.and_then(parse_ingredient_action) else {
+    let Some(chat_id) = q.message.as_ref().map(|message| message.chat().id) else {
         return Ok(());
     };
-    if index < ingredients.len() {
-        // Record user engagement metric for ingredient editing
-        crate::observability::record_user_engagement_metrics(
-            q.from.id.0 as i64,
-            crate::observability::UserAction::IngredientEdit,
-            None, // No session duration for individual actions
-            dialogue_lang_code.as_deref(),
-        );
 
-        let ingredient = &ingredients[index];
+    let keyboard =
+        create_ingredient_editing_keyboard(dialogue_lang_code.as_deref(), ctx.localization);
 
-        // Create focused editing prompt message
-        let edit_prompt = format!(
-            "✏️ {}\n\n{}: {}\n\n{}",
-            t_lang(
-                ctx.localization,
-                "edit-ingredient-title",
-                dialogue_lang_code.as_deref()
-            ),
-            t_lang(
-                ctx.localization,
-                "edit-ingredient-current",
-                dialogue_lang_code.as_deref()
-            ),
-            // Same rendering as the review list ("sel" without quantity, not "**  sel**")
-            crate::bot::ui_builder::ingredient_line(ingredient, &ingredient.ingredient_name),
-            t_lang(
-                ctx.localization,
-                edit_instruction_key(field),
-                dialogue_lang_code.as_deref()
-            )
-        );
-
-        // Create focused editing keyboard with cancel button only
-        let keyboard =
-            create_ingredient_editing_keyboard(dialogue_lang_code.as_deref(), ctx.localization);
-
-        // Replace the original recipe display message with focused editing prompt
-        let edited_message = match ctx
+    // Replace the original recipe display message with the focused prompt
+    let edited = match message_id {
+        Some(id) => ctx
             .bot
-            .edit_message_text(
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .chat()
-                    .id,
-                teloxide::types::MessageId(
-                    message_id.expect("Message ID should be present for editing"),
-                ),
-                edit_prompt.clone(),
-            )
+            .edit_message_text(chat_id, teloxide::types::MessageId(id), prompt.clone())
             .reply_markup(keyboard.clone())
             .await
-        {
-            Ok(msg) => msg,
-            Err(e) => {
+            .map_err(|e| {
                 error_logging::log_internal_error(
                     &e,
-                    "handle_edit_button",
+                    "open_line_prompt",
                     "Failed to replace recipe display with editing prompt",
                     Some(q.from.id.0 as i64),
                 );
-                // Fallback: send new message if editing fails
-                ctx.bot
-                    .send_message(
-                        q.message
-                            .as_ref()
-                            .expect("Callback query should have a message")
-                            .chat()
-                            .id,
-                        edit_prompt,
-                    )
-                    .reply_markup(keyboard)
-                    .await?
-            }
-        };
-
-        // Transition to editing state with updated message tracking
-        dialogue
-            .update(RecipeDialogueState::EditingIngredient {
-                recipe_name: recipe_name.to_string(),
-                ingredients: ingredients.to_vec(),
-                editing_index: index,
-                field,
-                language_code: dialogue_lang_code.clone(),
-                message_id: Some(edited_message.id.0 as i32), // Track the editing prompt message
-                original_message_id: message_id, // Original recipe display message to replace
-                extracted_text: extracted_text.to_string(),
-                recipe_name_from_caption: recipe_name_from_caption.cloned().flatten(), // Preserve caption info
             })
-            .await?;
-    }
+            .ok(),
+        None => None,
+    };
+    // Fallback: send a new message if the list could not be edited
+    let prompt_message = match edited {
+        Some(message) => message,
+        None => {
+            ctx.bot
+                .send_message(chat_id, prompt)
+                .reply_markup(keyboard)
+                .await?
+        }
+    };
+
+    // Transition to editing state with updated message tracking
+    dialogue
+        .update(RecipeDialogueState::EditingIngredient {
+            recipe_name: recipe_name.to_string(),
+            ingredients: ingredients.to_vec(),
+            editing_index: index,
+            field,
+            language_code: dialogue_lang_code.clone(),
+            message_id: Some(prompt_message.id.0 as i32), // Track the editing prompt message
+            original_message_id: message_id, // Original recipe display message to replace
+            extracted_text: extracted_text.to_string(),
+            recipe_name_from_caption: recipe_name_from_caption.cloned().flatten(), // Preserve caption info
+        })
+        .await?;
     Ok(())
 }
 
@@ -351,7 +371,7 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
                 ),
                 teloxide::types::InlineKeyboardButton::callback(
                     t_lang(ctx.localization, "cancel", dialogue_lang_code.as_deref()),
-                    "cancel_empty",
+                    "cancel_review",
                 ),
             ]];
 
@@ -675,33 +695,6 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
             .await?;
     }
 
-    Ok(())
-}
-
-/// Handle add more button in review ingredients state
-async fn handle_add_more_button(
-    bot: &Bot,
-    q: &teloxide::types::CallbackQuery,
-    dialogue_lang_code: &Option<String>,
-    dialogue: &RecipeDialogue,
-    localization: &Arc<crate::localization::LocalizationManager>,
-) -> Result<()> {
-    bot.send_message(
-        q.message
-            .as_ref()
-            .expect("Callback query should have a message")
-            .chat()
-            .id,
-        t_lang(
-            localization,
-            "review-add-more-instructions",
-            dialogue_lang_code.as_deref(),
-        ),
-    )
-    .await?;
-
-    // Reset dialogue to start state
-    dialogue.update(RecipeDialogueState::Start).await?;
     Ok(())
 }
 

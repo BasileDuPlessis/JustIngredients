@@ -19,6 +19,21 @@ pub fn to_new_ingredient(ingredient: &MeasurementMatch) -> crate::db::NewIngredi
     }
 }
 
+/// Puts the answer of a line prompt into the list: replaces ingredient `index`, or adds a new
+/// last ingredient when `index` is the list's length. `false` (list unchanged) beyond that.
+pub fn put_ingredient(
+    ingredients: &mut Vec<MeasurementMatch>,
+    index: usize,
+    ingredient: MeasurementMatch,
+) -> bool {
+    match index.cmp(&ingredients.len()) {
+        std::cmp::Ordering::Less => ingredients[index] = ingredient,
+        std::cmp::Ordering::Equal => ingredients.push(ingredient),
+        std::cmp::Ordering::Greater => return false,
+    }
+    true
+}
+
 /// The ingredient after the user's answer to an edit prompt: the whole line is parsed again,
 /// or only the quantity or the name is replaced. Errors carry the locale key to show.
 pub fn apply_edit(
@@ -215,6 +230,26 @@ mod tests {
             matches!(with_name(&line("1", None, "x", false), &"a".repeat(101)),
             Err(AppError::Validation(key)) if key == "edit-ingredient-name-too-long")
         );
+    }
+
+    #[test]
+    fn a_prompt_answer_replaces_an_ingredient_or_adds_one_at_the_end() {
+        let mut list = vec![line("2", Some("g"), "sel", false)];
+        assert!(put_ingredient(
+            &mut list,
+            0,
+            line("3", Some("g"), "sel", false)
+        ));
+        assert!(put_ingredient(&mut list, 1, line("1", None, "oeuf", false)));
+        assert_eq!(list.len(), 2);
+        assert_eq!(list[0].quantity, "3");
+        assert_eq!(list[1].ingredient_name, "oeuf");
+        assert!(!put_ingredient(
+            &mut list,
+            5,
+            line("1", None, "lait", false)
+        ));
+        assert_eq!(list.len(), 2, "beyond the end: unchanged");
     }
 
     #[test]

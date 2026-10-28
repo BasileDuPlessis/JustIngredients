@@ -118,7 +118,7 @@ pub async fn handle_editing_saved_ingredients_callbacks(
                     pool: Some(&pool),
                 })
                 .await?;
-            } else if data == "add_ingredient" {
+            } else if data == "add_ingredient" || data == "add_more" {
                 handle_add_ingredient_button(bot, q, &language_code, dialogue, localization)
                     .await?;
             } else if data == "cancel_review" {
@@ -325,11 +325,11 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
                         "review-add-more",
                         language_code.as_deref(),
                     ),
-                    "add_more",
+                    "add_ingredient",
                 ),
                 teloxide::types::InlineKeyboardButton::callback(
                     t_lang(ctx.localization, "cancel", language_code.as_deref()),
-                    "cancel_empty",
+                    "cancel_review",
                 ),
             ]];
 

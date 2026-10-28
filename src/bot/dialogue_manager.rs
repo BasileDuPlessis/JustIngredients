@@ -804,10 +804,8 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
         recipe_name_from_caption,
     } = params;
 
-    // Update the ingredient at the editing index
-    if editing_index < ingredients.len() {
-        ingredients[editing_index] = new_ingredient;
-
+    // Update the ingredient at the editing index; the index after the last one adds it
+    if crate::ingredient_editing::put_ingredient(&mut ingredients, editing_index, new_ingredient) {
         // Return to review state with updated ingredients
         let review_message = render_review(&ingredients, ctx.language_code, ctx.localization);
 

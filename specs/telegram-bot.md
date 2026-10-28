@@ -137,8 +137,12 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
   for none (`parse_quantity_answer`) and clears the ⚠️ flag; a name answer replaces only the name
   (1–100 characters); a line answer ("3 cups flour") is parsed by `parse_ingredient_from_text`
   and is no longer flagged. A cancel word (see below) or the button restore the review.
-- `delete_<i>`: removes the line. When none is left, the message offers `add_more` (asks for
-  another photo and resets the state to `Start`; the review is dropped) and `cancel_empty`.
+- `add_ingredient`: the same focused prompt (`add-ingredient-prompt`), state `EditingIngredient`
+  with `editing_index` = the list's length; the parsed line becomes the last ingredient
+  (`ingredient_editing::put_ingredient`).
+- `delete_<i>`: removes the line. When none is left, the message offers ➕ (`add_ingredient`,
+  same as above) and ❌ `cancel_review`. Old messages may still send `add_more`, handled like
+  `add_ingredient`.
 - `confirm`: **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
   with their names and stays in the review until they are edited or deleted. Then the review
   message is recorded for cleanup (deleted with the home message at the end) and:
@@ -245,8 +249,7 @@ it) answers `button-expired` and loses its keyboard.
 | Data | Handled in | Action |
 |---|---|---|
 | `item_<i>`, `back_review`, `qty_<i>`, `name_<i>`, `edit_<i>`, `delete_<i>`, `confirm`, `cancel_review` | `ReviewIngredients`, `EditingSavedIngredients` | Review or saved-recipe editing (above) |
-| `add_more` | `ReviewIngredients` | Ask for another photo, state `Start` |
-| `add_ingredient` | `EditingSavedIngredients` | Add a line to a saved recipe (no effect during a review) |
+| `add_ingredient`, `add_more` (old messages) | `ReviewIngredients`, `EditingSavedIngredients` | Add a line (focused prompt in a review, `AddingIngredientToSavedRecipe` for a saved recipe) |
 | `cancel_ingredient_editing` | `EditingIngredient`, `EditingSavedIngredient` | Leave the focused edit prompt |
 | `select_recipe:`, `select_recipe_h:` | any | Open a recipe by name |
 | `recipe_instance:<id>` | any | Open a recipe by id (same-name list, home message) |
@@ -257,9 +260,8 @@ it) answers `button-expired` and loses its keyboard.
 | `workflow_list_recipes`, `workflow_search_recipes` | any | Recipe list (home "all my recipes" button), search placeholder; `workflow_add_another` is handled but never sent |
 | `cancel_processing` | any | Retired (2026-10-28): answered as a stale button (`button-expired`, keyboard removed) |
 
-`cancel_empty` and `noop` are sent but have no handler; `add_more`, offered when the last line of
-a saved recipe is deleted, has no handler in `EditingSavedIngredients` either (U2.5). In `ReviewIngredients`, `workflow_*`
-data is handled twice (by the state handler and by the prefix handler).
+`noop` is sent but has no handler. In `ReviewIngredients`, `workflow_*` data is handled twice (by
+the state handler and by the prefix handler).
 
 ## Dialogue States
 `RecipeDialogueState` (`src/dialogue.rs`); every variant except `Start` keeps the language code
@@ -267,9 +269,9 @@ of the message that opened it.
 
 | State | Entered by | Text input |
 |---|---|---|
-| `Start` (default) | `add_more`; also no state | Commands and echo |
+| `Start` (default) | no state | Commands and echo |
 | `ReviewIngredients` | Successful extraction; end of an edit | "confirm"/"ok"/"yes"/"save", "cancel"/"stop", else help |
-| `EditingIngredient` | `qty_<i>`, `name_<i>` or `edit_<i>` in a review | Quantity, name or whole line (`field`) |
+| `EditingIngredient` | `qty_<i>`, `name_<i>`, `edit_<i>` or `add_ingredient` in a review | Quantity, name or whole line (`field`); a new line when adding |
 | `AwaitingQuantityCorrection` | Typed "confirm" with flagged lines | Quantity or `-` |
 | `WaitingForRecipeNameAfterConfirm` | `confirm` without a caption name | Recipe name |
 | `RenamingRecipe` | `recipe_action:rename` | New name |

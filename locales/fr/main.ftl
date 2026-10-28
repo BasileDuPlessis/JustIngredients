@@ -110,7 +110,6 @@ review-cancelled = Révision des ingrédients annulée. Aucun ingrédient n'a é
 review-no-ingredients = Aucun ingrédient restant
 review-no-ingredients-help = Tous les ingrédients ont été supprimés. Vous pouvez ajouter plus d'ingrédients en envoyant une autre image, ou annuler cette recette.
 review-add-more = Ajouter plus d'ingrédients
-review-add-more-instructions = Envoyez une autre image avec des ingrédients pour les ajouter à cette recette.
 edit-ingredient-prompt = Entrez le texte d'ingrédient corrigé
 current-ingredient = Ingrédient actuel
 edit-empty = Le texte d'ingrédient ne peut pas être vide.
