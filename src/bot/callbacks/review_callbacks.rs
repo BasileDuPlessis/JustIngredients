@@ -161,17 +161,8 @@ pub async fn handle_review_ingredients_callbacks(
                     &pool,
                 )
                 .await?;
-            } else if data.starts_with("workflow_") {
-                super::workflow_callbacks::handle_workflow_button(
-                    bot,
-                    q,
-                    data,
-                    &pool,
-                    dialogue,
-                    localization,
-                )
-                .await?;
             }
+            // workflow_* buttons are handled once, by the prefix handler of callback_handler
         }
     }
 
@@ -655,37 +646,49 @@ async fn handle_cancel_review_button(
     localization: &Arc<crate::localization::LocalizationManager>,
     pool: &PgPool,
 ) -> Result<()> {
-    let message = q
-        .message
-        .as_ref()
-        .expect("Callback query should have a message");
-    let chat_id = message.chat().id;
-
-    // Edit the existing message to show cancellation and remove all buttons
-    bot.edit_message_text(
-        chat_id,
-        message.id(),
-        t_lang(
-            localization,
-            "review-cancelled",
-            dialogue_lang_code.as_deref(),
-        ),
-    )
-    .reply_markup(InlineKeyboardMarkup::new(Vec::<
-        Vec<teloxide::types::InlineKeyboardButton>,
-    >::new())) // Remove all inline keyboard buttons
-    .await?;
-
-    // End the dialogue
-    dialogue.exit().await?;
-    send_home(
+    let Some(message) = q.message.as_ref() else {
+        return Ok(());
+    };
+    cancel_review(
         bot,
-        pool,
-        chat_id,
         localization,
+        pool,
+        dialogue,
+        message.chat().id,
+        Some(message.id()),
         dialogue_lang_code.as_deref(),
     )
-    .await;
+    .await
+}
+
+/// What ❌ and a typed cancel word both do: the review list becomes `review-cancelled` without
+/// buttons (a new message if it cannot be edited), the dialogue ends and the home message follows.
+pub async fn cancel_review(
+    bot: &Bot,
+    localization: &Arc<crate::localization::LocalizationManager>,
+    pool: &PgPool,
+    dialogue: &RecipeDialogue,
+    chat_id: ChatId,
+    review_message_id: Option<teloxide::types::MessageId>,
+    language_code: Option<&str>,
+) -> Result<()> {
+    let cancelled = t_lang(localization, "review-cancelled", language_code);
+    let edited = match review_message_id {
+        Some(id) => bot
+            .edit_message_text(chat_id, id, cancelled.clone())
+            .reply_markup(InlineKeyboardMarkup::new(Vec::<
+                Vec<teloxide::types::InlineKeyboardButton>,
+            >::new()))
+            .await
+            .is_ok(),
+        None => false,
+    };
+    if !edited {
+        bot.send_message(chat_id, cancelled).await?;
+    }
+
+    dialogue.exit().await?;
+    send_home(bot, pool, chat_id, localization, language_code).await;
     Ok(())
 }
 

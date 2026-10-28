@@ -838,25 +838,17 @@ pub async fn handle_ingredient_review_input(
             .await?;
         }
         input if is_cancellation_command(input) => {
-            // User cancelled, end dialogue without saving
-            bot.send_message(
-                msg.chat.id,
-                t_lang(
-                    handler_ctx.localization,
-                    "review-cancelled",
-                    handler_ctx.language_code,
-                ),
-            )
-            .await?;
-            dialogue.exit().await?;
-            send_home(
+            // Exactly what ❌ does: the list loses its buttons, then the home message
+            super::callbacks::review_callbacks::cancel_review(
                 bot,
-                &pool,
-                msg.chat.id,
                 handler_ctx.localization,
+                &pool,
+                &dialogue,
+                msg.chat.id,
+                review_message_id.map(teloxide::types::MessageId),
                 handler_ctx.language_code,
             )
-            .await;
+            .await?;
         }
         _ => {
             // Unknown command, show help

@@ -154,7 +154,8 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
     `WaitingForRecipeNameAfterConfirm`. The typed name (a cancel word cancels; empty
     or over 255 bytes refused) is saved; the prompt is deleted with the review messages and the
     saved recipe card is sent, followed by the home message.
-- `cancel_review`: `review-cancelled`, dialogue ended, home message.
+- `cancel_review` (and a typed cancel word; both call `review_callbacks::cancel_review`): the
+  review list becomes `review-cancelled` without buttons, dialogue ended, home message.
 - Older messages may still carry the post-save buttons that the home message replaced:
   📚 `workflow_list_recipes` (recipe list) and 🔍 `workflow_search_recipes` (answers
   `workflow-search-coming-soon`); both are still handled.
@@ -260,8 +261,10 @@ it) answers `button-expired` and loses its keyboard.
 | `workflow_list_recipes`, `workflow_search_recipes` | any | Recipe list (home "all my recipes" button), search placeholder; `workflow_add_another` is handled but never sent |
 | `cancel_processing` | any | Retired (2026-10-28): answered as a stale button (`button-expired`, keyboard removed) |
 
-`noop` is sent but has no handler. In `ReviewIngredients`, `workflow_*` data is handled twice (by
-the state handler and by the prefix handler).
+`noop` (the line shown at the top of an ingredient menu) is inert on purpose: the query is
+answered and nothing else happens. `workflow_*` data is handled once, by the prefix handler. A
+command typed during a review (`/liste`, `/annuler`) ends it, but the review list is not one of
+the action's tracked messages, so it stays; its buttons then answer `button-expired`.
 
 ## Dialogue States
 `RecipeDialogueState` (`src/dialogue.rs`); every variant except `Start` keeps the language code

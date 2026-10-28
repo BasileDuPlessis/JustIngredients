@@ -217,7 +217,14 @@ Handlers stay thin: rendering and decisions go into pure, unit-tested functions.
 - How to validate: no dead button; message replaced by the review or an error.
 
 ### Task U2.5: One confirm behaviour, no dead buttons (findings 19, 21) (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-28): ✅ and a typed confirm word call one `confirm_review` (name asked when
+  there is no caption or title; flagged quantities sent back to the ⚠️ lines), ❌ and a typed
+  cancel word call one `cancel_review` (the list loses its buttons); ➕ works in the first review
+  (same focused prompt as an edit); the emptied list offers ➕ and a working ❌ (first review and
+  saved recipe); `cancel_empty`, the duplicate `workflow_*` dispatch, `AwaitingQuantityCorrection`
+  and `WaitingForRecipeName` are gone. `noop` stays inert on purpose. Not covered by a handler
+  test (no fake Telegram, IMP-031): both paths call the same function. Left: a command typed
+  during a review leaves the list, whose buttons then answer "no longer active".
 - Description: typed "confirm" behaves like the button (asks the name when there is no caption or
   title); ➕ Add ingredient works in the first review; remove `cancel_empty`, the duplicate
   `workflow_*` dispatch and the unused `WaitingForRecipeName` state.
