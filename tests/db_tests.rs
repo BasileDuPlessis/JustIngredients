@@ -794,12 +794,15 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
 
     // Check that migrations table was created and version is updated
     let version = migrations::get_current_version(pool).await?;
-    assert_eq!(version, 1);
+    assert_eq!(version, 2);
 
     // Verify that tables were created
     validate_database_schema(pool).await?;
 
-    // Roll back with the down script of migration 1: version 0, tables removed
+    // Roll back with the down scripts: version 1 keeps the tables, version 0 removes them
+    migrations::rollback_to_version(pool, 1).await?;
+    assert_eq!(migrations::get_current_version(pool).await?, 1);
+    validate_database_schema(pool).await?;
     migrations::rollback_to_version(pool, 0).await?;
     assert_eq!(migrations::get_current_version(pool).await?, 0);
     assert!(validate_database_schema(pool).await.is_err());
@@ -1067,6 +1070,64 @@ async fn test_long_recipe_names_resolve_by_fingerprint_for_their_owner(pool: PgP
         resolve_recipe_selection(&pool, 222, &data).await?,
         None,
         "another user's fingerprint does not resolve"
+    );
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn deleting_a_recipe_alone_deletes_its_ingredients(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let new = |name| NewIngredient {
+        name,
+        quantity: Some(2.0),
+        unit: Some("g"),
+    };
+    let saved = save_recipe(
+        &pool,
+        4242,
+        Some("fr"),
+        "200 g farine\n2 g sel",
+        "Pain",
+        &[new("farine"), new("sel")],
+    )
+    .await?;
+
+    let raw_texts: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT raw_text FROM ingredients WHERE recipe_id = $1")
+            .bind(saved.recipe_id)
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(
+        raw_texts,
+        vec![None, None],
+        "the text is kept once, on the recipe"
+    );
+
+    sqlx::query("DELETE FROM recipes WHERE id = $1")
+        .bind(saved.recipe_id)
+        .execute(&pool)
+        .await?;
+    let left: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM ingredients WHERE recipe_id = $1")
+        .bind(saved.recipe_id)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(left, 0);
+
+    // The table is tiny, so forbid sequential scans to see whether the index serves the query
+    let mut conn = pool.acquire().await?;
+    sqlx::query("SET enable_seqscan = off")
+        .execute(&mut *conn)
+        .await?;
+    let plan: Vec<String> = sqlx::query_scalar(
+        "EXPLAIN SELECT id FROM recipes WHERE telegram_id = 4242 ORDER BY created_at DESC, id DESC",
+    )
+    .fetch_all(&mut *conn)
+    .await?;
+    assert!(
+        plan.iter()
+            .any(|line| line.contains("recipes_telegram_id_created_at_idx")),
+        "{plan:?}"
     );
     Ok(())
 }

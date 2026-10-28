@@ -169,8 +169,8 @@ pub async fn update_recipe(
 pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<bool> {
     debug!(recipe_id = %recipe_id, "Deleting recipe");
 
-    // First, delete all ingredients associated with this recipe (only if the caller owns it)
-    // This is necessary due to the foreign key constraint between ingredients and recipes
+    // Ingredients first (only if the caller owns the recipe). Migration 2 makes the foreign key
+    // cascade; deleting them explicitly also works on a database where it did not apply.
     // One transaction: never a recipe left without its ingredients, or the reverse
     let mut tx = pool
         .begin()
@@ -228,8 +228,8 @@ pub struct SavedRecipe {
 /// Saves a new recipe of `telegram_id` with its name and ingredients in one transaction: either
 /// everything is written or nothing is, so a failing ingredient leaves no partial recipe. The
 /// owner's `users` row is created on first use with `ON CONFLICT`, which is safe when two first
-/// requests arrive together. `content` is the extracted text, also kept as each ingredient's
-/// `raw_text`.
+/// requests arrive together. `content` is the extracted text, stored once on the recipe
+/// (`ingredients.raw_text` stays NULL).
 pub async fn save_recipe(
     pool: &PgPool,
     telegram_id: i64,
@@ -267,15 +267,14 @@ pub async fn save_recipe(
 
     for ingredient in ingredients {
         sqlx::query(
-            "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit, raw_text) \
-             VALUES ($1, $2, $3, $4, $5, $6)",
+            "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit) \
+             VALUES ($1, $2, $3, $4, $5)",
         )
         .bind(user_id)
         .bind(recipe_id)
         .bind(ingredient.name)
         .bind(ingredient.quantity)
         .bind(ingredient.unit)
-        .bind(content)
         .execute(&mut *tx)
         .await
         .with_context(|| format!("Failed to insert the ingredient '{}'", ingredient.name))?;
@@ -357,8 +356,8 @@ pub async fn apply_ingredient_changes(
         .context("Failed to get or create the recipe owner")?;
         for ingredient in additions {
             sqlx::query(
-                "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit, raw_text) \
-                 VALUES ($1, $2, $3, $4, $5, '')",
+                "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit) \
+                 VALUES ($1, $2, $3, $4, $5)",
             )
             .bind(user_id)
             .bind(recipe_id)
@@ -1467,10 +1466,11 @@ pub mod migrations {
 
     /// Get all available migrations in order
     pub fn get_migrations() -> Vec<Migration> {
-        vec![Migration {
-            version: 1,
-            name: "create_initial_tables",
-            up: r#"
+        vec![
+            Migration {
+                version: 1,
+                name: "create_initial_tables",
+                up: r#"
                     -- Create users table
                     CREATE TABLE IF NOT EXISTS users (
                         id BIGSERIAL PRIMARY KEY,
@@ -1508,14 +1508,36 @@ pub mod migrations {
                     CREATE INDEX IF NOT EXISTS ingredients_user_id_idx ON ingredients(user_id);
                     CREATE INDEX IF NOT EXISTS ingredients_recipe_id_idx ON ingredients(recipe_id);
                 "#,
-            down: Some(
-                r#"
+                down: Some(
+                    r#"
                     DROP TABLE IF EXISTS ingredients;
                     DROP TABLE IF EXISTS recipes;
                     DROP TABLE IF EXISTS users;
                 "#,
-            ),
-        }]
+                ),
+            },
+            Migration {
+                version: 2,
+                name: "recipes_owner_index_and_ingredient_cascade",
+                // Every user-facing query filters recipes by owner, newest first; deleting a recipe
+                // deletes its ingredients.
+                up: r#"
+                    CREATE INDEX IF NOT EXISTS recipes_telegram_id_created_at_idx
+                        ON recipes (telegram_id, created_at DESC, id DESC);
+                    ALTER TABLE ingredients DROP CONSTRAINT IF EXISTS ingredients_recipe_id_fkey;
+                    ALTER TABLE ingredients ADD CONSTRAINT ingredients_recipe_id_fkey
+                        FOREIGN KEY (recipe_id) REFERENCES recipes(id) ON DELETE CASCADE;
+                "#,
+                down: Some(
+                    r#"
+                    ALTER TABLE ingredients DROP CONSTRAINT IF EXISTS ingredients_recipe_id_fkey;
+                    ALTER TABLE ingredients ADD CONSTRAINT ingredients_recipe_id_fkey
+                        FOREIGN KEY (recipe_id) REFERENCES recipes(id);
+                    DROP INDEX IF EXISTS recipes_telegram_id_created_at_idx;
+                "#,
+                ),
+            },
+        ]
     }
 
     /// Split SQL string into individual statements by semicolons

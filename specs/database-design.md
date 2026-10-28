@@ -165,7 +165,7 @@ pub async fn get_current_version(pool: &PgPool) -> Result<i32>
 pub async fn rollback_to_version(pool: &PgPool, target_version: i32) -> Result<()>
 ```
 
-Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There is one migration today (version 1, `create_initial_tables`). Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch.
+Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There are two: version 1 `create_initial_tables`, and version 2 `recipes_owner_index_and_ingredient_cascade` (owner index on `recipes`, `ON DELETE CASCADE` on `ingredients.recipe_id`); each has a down script. Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch.
 
 ### Constraints
 - **Data Types**: Appropriate PostgreSQL types for performance
@@ -204,6 +204,8 @@ CREATE TABLE recipes (
     content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
 );
 CREATE INDEX recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
+-- Migration 2: every user-facing query filters by owner, newest first
+CREATE INDEX recipes_telegram_id_created_at_idx ON recipes (telegram_id, created_at DESC, id DESC);
 ```
 
 ### Ingredients Table
@@ -211,11 +213,11 @@ CREATE INDEX recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
 CREATE TABLE ingredients (
     id BIGSERIAL PRIMARY KEY,
     user_id BIGINT NOT NULL REFERENCES users(id),
-    recipe_id BIGINT REFERENCES recipes(id),
+    recipe_id BIGINT REFERENCES recipes(id) ON DELETE CASCADE,  -- cascade since migration 2
     name VARCHAR(255) NOT NULL,
     quantity DECIMAL(10,3),
     unit VARCHAR(50),
-    raw_text TEXT,
+    raw_text TEXT,                  -- NULL since 2026-10-28; older rows repeat recipes.content
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
 );
