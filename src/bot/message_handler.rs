@@ -5,6 +5,7 @@ use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
 use tracing::debug;
+use tracing::Instrument;
 
 // Import localization
 use crate::localization::{t_args_lang, t_lang};
@@ -545,13 +546,16 @@ pub async fn message_handler(
         "message_handler",
         msg.from.as_ref().map(|u| u.id.0 as i64),
     );
-    let _enter = span.enter();
+    // Instrumented, not entered: an entered span would tag other tasks across .await
+    async {
+        if is_duplicate_message(deduplicator, msg.chat.id, msg.id)? {
+            return Ok(());
+        }
 
-    if is_duplicate_message(deduplicator, msg.chat.id, msg.id)? {
-        return Ok(());
+        dispatch_message(bot, msg, pool, dialogue, localization, extractor).await
     }
-
-    dispatch_message(bot, msg, pool, dialogue, localization, extractor).await
+    .instrument(span)
+    .await
 }
 
 /// Records the request in the deduplicator and returns `true` when it was already seen.
@@ -660,22 +664,25 @@ pub async fn message_handler_with_cache(
         "message_handler_with_cache",
         msg.from.as_ref().map(|u| u.id.0 as i64),
     );
-    let _enter = span.enter();
+    // Instrumented, not entered: an entered span would tag other tasks across .await
+    async {
+        if is_duplicate_message(deduplicator.as_ref(), msg.chat.id, msg.id)? {
+            return Ok(());
+        }
 
-    if is_duplicate_message(deduplicator.as_ref(), msg.chat.id, msg.id)? {
-        return Ok(());
+        let start_time = std::time::Instant::now();
+
+        // The regular dispatcher records its own message metrics. The duplicate check above
+        // already ran and must not run again.
+        dispatch_message(bot, msg, pool, dialogue, localization, extractor).await?;
+
+        let duration = start_time.elapsed();
+        observability::record_request_metrics("telegram_message_cached", 200, duration);
+
+        Ok(())
     }
-
-    let start_time = std::time::Instant::now();
-
-    // The regular dispatcher records its own message metrics. The duplicate check above
-    // already ran and must not run again.
-    dispatch_message(bot, msg, pool, dialogue, localization, extractor).await?;
-
-    let duration = start_time.elapsed();
-    observability::record_request_metrics("telegram_message_cached", 200, duration);
-
-    Ok(())
+    .instrument(span)
+    .await
 }
 
 #[cfg(test)]

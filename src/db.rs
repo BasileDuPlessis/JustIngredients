@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use sqlx::postgres::PgPool;
 use sqlx::Row;
+use tracing::Instrument;
 use tracing::{debug, error, info};
 
 // Import cache types
@@ -58,7 +59,8 @@ pub async fn init_database_schema(pool: &PgPool) -> Result<()> {
 /// Create a new recipe in the database
 pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Result<i64> {
     let span = crate::observability::db_span("create_recipe", "recipes");
-    let _enter = span.enter();
+    // Instrumented, not entered: an entered span would tag other tasks across .await
+    async {
 
     let start_time = std::time::Instant::now();
     debug!(telegram_id = %telegram_id, "Creating new recipe");
@@ -88,6 +90,9 @@ pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Re
         }
         Err(e) => Err(e),
     }
+    }
+    .instrument(span)
+    .await
 }
 
 /// Read a recipe owned by `telegram_id` from the database by ID
@@ -632,7 +637,8 @@ pub async fn create_ingredient(
     raw_text: &str,
 ) -> Result<i64> {
     let span = crate::observability::db_span("create_ingredient", "ingredients");
-    let _enter = span.enter();
+    // Instrumented, not entered: an entered span would tag other tasks across .await
+    async {
 
     let start_time = std::time::Instant::now();
     debug!("Creating new ingredient for user_id: {user_id}");
@@ -681,6 +687,9 @@ pub async fn create_ingredient(
             Err(e)
         }
     }
+    }
+    .instrument(span)
+    .await
 }
 
 /// Read a single ingredient by ID, if it belongs to a recipe owned by `telegram_id`
@@ -954,7 +963,8 @@ pub async fn get_recipes_by_name(
     recipe_name: &str,
 ) -> Result<Vec<Recipe>> {
     let span = crate::observability::db_span("get_recipes_by_name", "recipes");
-    let _enter = span.enter();
+    // Instrumented, not entered: an entered span would tag other tasks across .await
+    async {
 
     let start_time = std::time::Instant::now();
     debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, "Getting recipes by name");
@@ -989,6 +999,9 @@ pub async fn get_recipes_by_name(
 
     debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, count = recipes.len(), duration_ms = %duration.as_millis(), "Recipes by name retrieved successfully");
     Ok(recipes)
+    }
+    .instrument(span)
+    .await
 }
 
 /// Check if a recipe name has duplicates for a user
@@ -998,7 +1011,8 @@ pub async fn has_duplicate_recipes(
     recipe_name: &str,
 ) -> Result<bool> {
     let span = crate::observability::db_span("has_duplicate_recipes", "recipes");
-    let _enter = span.enter();
+    // Instrumented, not entered: an entered span would tag other tasks across .await
+    async {
 
     debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, "Checking for duplicate recipes");
 
@@ -1015,6 +1029,9 @@ pub async fn has_duplicate_recipes(
 
     debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, count = %count, has_duplicates = %has_duplicates, "Duplicate check completed");
     Ok(has_duplicates)
+    }
+    .instrument(span)
+    .await
 }
 
 /// Distinct recipe names of a user, to resolve selection buttons that carry a name fingerprint.

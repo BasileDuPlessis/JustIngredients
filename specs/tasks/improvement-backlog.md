@@ -537,7 +537,8 @@ they can be pulled into 1-hour micro-tasks without another review.
   using `--allow clippy::expect_used`.
 
 ### IMP-019: `span.enter()` held across `.await` (9 sites)
-- [ ] Done
+- [x] Done
+- Status: Done (2026-10-28): the 8 remaining sites (4 in `db.rs`, 2 handlers each in `message_handler.rs` and `callback_handler.rs`) run their body as `async { … }.instrument(span).await`; `rg "span.enter\(\)" src` is empty. No concurrency test was added.
 - Priority: P2. Effort: S. Area: Async / Tracing.
 - Location: `src/bot/message_handler.rs:511`, `src/bot/message_handler.rs:584`,
   `src/bot/callbacks/callback_handler.rs:49`, `src/bot/callbacks/callback_handler.rs:196`,
