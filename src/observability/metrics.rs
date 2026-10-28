@@ -207,7 +207,10 @@ async fn handle_request(
 ) -> hyper::Response<String> {
     use hyper::StatusCode;
 
-    if !state.rate_limiter.is_allowed(&client_key(&req, peer)) {
+    // Fly's machine and service checks call /health/live every 15 s each; it does no I/O, so it
+    // is not counted (they would use most of a client's 10 requests per minute)
+    let counted = req.uri().path() != "/health/live";
+    if counted && !state.rate_limiter.is_allowed(&client_key(&req, peer)) {
         return text_response(StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded");
     }
     if !check_request_size(&req) {

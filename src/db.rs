@@ -265,7 +265,7 @@ pub async fn save_recipe(
     .await
     .context("Failed to insert the recipe")?;
 
-    for ingredient in ingredients {
+    for (position, ingredient) in ingredients.iter().enumerate() {
         sqlx::query(
             "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit) \
              VALUES ($1, $2, $3, $4, $5)",
@@ -277,7 +277,8 @@ pub async fn save_recipe(
         .bind(ingredient.unit)
         .execute(&mut *tx)
         .await
-        .with_context(|| format!("Failed to insert the ingredient '{}'", ingredient.name))?;
+        // The position, not the name: errors are logged and must not carry recipe content
+        .with_context(|| format!("Failed to insert ingredient {}", position + 1))?;
     }
 
     tx.commit().await.context("Failed to commit the recipe")?;
@@ -354,7 +355,7 @@ pub async fn apply_ingredient_changes(
         .fetch_one(&mut *tx)
         .await
         .context("Failed to get or create the recipe owner")?;
-        for ingredient in additions {
+        for (position, ingredient) in additions.iter().enumerate() {
             sqlx::query(
                 "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit) \
                  VALUES ($1, $2, $3, $4, $5)",
@@ -366,7 +367,7 @@ pub async fn apply_ingredient_changes(
             .bind(ingredient.unit)
             .execute(&mut *tx)
             .await
-            .with_context(|| format!("Failed to add the ingredient '{}'", ingredient.name))?;
+            .with_context(|| format!("Failed to add ingredient {}", position + 1))?;
         }
     }
 
@@ -680,7 +681,6 @@ pub async fn create_ingredient(
                         "recipe_id",
                         &recipe_id.map_or("None".to_string(), |id| id.to_string()),
                     ),
-                    ("name", &name.to_string()),
                 ]),
             );
             Err(e)
@@ -796,7 +796,7 @@ pub async fn delete_ingredient(
 pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> {
     debug!("Listing ingredients for user_id: {user_id}");
 
-    let rows = sqlx::query("SELECT id, user_id, recipe_id, name, quantity::float8, unit, created_at, updated_at FROM ingredients WHERE user_id = $1 ORDER BY created_at DESC")
+    let rows = sqlx::query("SELECT id, user_id, recipe_id, name, quantity::float8, unit, created_at, updated_at FROM ingredients WHERE user_id = $1 ORDER BY created_at DESC, id DESC")
         .bind(user_id)
         .fetch_all(pool)
         .await
@@ -833,7 +833,7 @@ pub async fn get_recipe_ingredients(
 ) -> Result<Vec<Ingredient>> {
     debug!("Getting ingredients for recipe_id: {recipe_id}");
 
-    let rows = sqlx::query("SELECT i.id, i.user_id, i.recipe_id, i.name, i.quantity::float8, i.unit, i.created_at, i.updated_at FROM ingredients i JOIN recipes r ON r.id = i.recipe_id WHERE i.recipe_id = $1 AND r.telegram_id = $2 ORDER BY i.created_at ASC")
+    let rows = sqlx::query("SELECT i.id, i.user_id, i.recipe_id, i.name, i.quantity::float8, i.unit, i.created_at, i.updated_at FROM ingredients i JOIN recipes r ON r.id = i.recipe_id WHERE i.recipe_id = $1 AND r.telegram_id = $2 ORDER BY i.created_at ASC, i.id ASC")
         .bind(recipe_id)
         .bind(telegram_id)
         .fetch_all(pool)

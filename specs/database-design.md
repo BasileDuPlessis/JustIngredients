@@ -104,7 +104,7 @@ pub async fn read_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64
 pub async fn update_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64, name: Option<&str>, quantity: Option<f64>, unit: Option<&str>) -> Result<bool>
 pub async fn delete_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64) -> Result<bool>
 pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> // by users.id, not called by the bot
-pub async fn get_recipe_ingredients(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Vec<Ingredient>>
+pub async fn get_recipe_ingredients(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Vec<Ingredient>> // ORDER BY created_at, id: a recipe saved in one transaction gives all its ingredients the same created_at
 
 // The user *_cached functions keep results 5 minutes; the bot reads recipes and ingredients
 // without a cache (the recipe caches were removed on 2026-10-28, IMP-010)

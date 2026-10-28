@@ -71,7 +71,9 @@ failure is logged as an error and the bot still starts (photos then fail with
   entries, 24 h); "not a recipe" answers and answers without ingredients are not cached.
   Each user (the image's `requested_by`, set by the bot) gets `EXTRACTION_DAILY_LIMIT_PER_USER`
   paid calls per UTC day; the next photo gets `error-extraction-daily-limit` without a call.
-  Cache hits are free. Counts are in memory: a restart resets them.
+  Cache hits are free, and a call refused before any request (`CircuitOpen`, `Config`) is given
+  back; other failures count (the request may have been billed). Counts are in memory: a restart
+  resets them.
 
 ## Errors
 `ExtractionError` messages never contain the key or a URL with credentials. User messages come

@@ -217,6 +217,8 @@ async fn main() -> Result<()> {
     validate_http_client_config()?;
 
     // Start metrics, OpenTelemetry and the health check server (logging is already running)
+    // Readiness waits for a Telegram success from the start, not only once the heartbeat runs
+    observability::health_checks::expect_telegram();
     observability::start_observability_with_health_checks(
         Some(Arc::clone(&shared_pool)),
         Some(bot_token.clone()),
@@ -279,6 +281,8 @@ async fn main() -> Result<()> {
 
     // teloxide panics if its first getMe fails: check the token first, waiting for Telegram
     telegram_connection::connect_with_retry(&bot, TELEGRAM_CONNECT_BACKOFF).await?;
+    // Ready at once, not only after the heartbeat's next call (up to a minute later)
+    observability::health_checks::record_telegram_success();
 
     // The command menu only helps users find the commands: without it the bot still works
     tokio::spawn({

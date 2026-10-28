@@ -56,6 +56,15 @@ impl DailyUsage {
         *calls += 1;
         true
     }
+
+    /// Gives back a call counted on `day` that did not reach the service.
+    fn give_back(&mut self, user: i64, day: u64) {
+        if self.day == day {
+            if let Some(calls) = self.calls.get_mut(&user) {
+                *calls = calls.saturating_sub(1);
+            }
+        }
+    }
 }
 
 /// Wraps an extractor with a concurrency limit, a result cache and a per-user daily limit.
@@ -125,8 +134,20 @@ impl GuardedExtractor {
             return Ok(cached);
         }
 
-        self.take_daily_call(image.requester())?;
-        let extraction = self.inner.extract(image).await?;
+        let day = self.take_daily_call(image.requester())?;
+        let extraction = match self.inner.extract(image).await {
+            Ok(extraction) => extraction,
+            Err(error) => {
+                // Refused before any request (breaker open, configuration): not a paid call
+                if matches!(
+                    error,
+                    ExtractionError::CircuitOpen | ExtractionError::Config(_)
+                ) {
+                    self.give_back_daily_call(image.requester(), day);
+                }
+                return Err(error);
+            }
+        };
         // Only useful answers are cached: "not a recipe" or no ingredient may be a model miss,
         // and sending the same photo again must try again.
         if extraction.is_recipe && !extraction.ingredients.is_empty() {
@@ -136,20 +157,30 @@ impl GuardedExtractor {
     }
 
     /// Counts a paid call toward the requester's daily limit, failing when it is reached.
-    fn take_daily_call(&self, requester: Option<i64>) -> Result<(), ExtractionError> {
-        let (Some(limit), Some(user)) = (self.daily_limit, requester) else {
-            return Ok(());
-        };
+    /// Returns the UTC day it was counted on.
+    fn take_daily_call(&self, requester: Option<i64>) -> Result<u64, ExtractionError> {
         let day = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .map_or(0, |since| since.as_secs() / 86_400);
-        // Plain counters: a panic while holding the lock cannot leave them inconsistent.
-        let mut usage = self.usage.lock().unwrap_or_else(PoisonError::into_inner);
-        if usage.take(user, day, limit) {
-            Ok(())
+        let (Some(limit), Some(user)) = (self.daily_limit, requester) else {
+            return Ok(day);
+        };
+        if self.lock_usage().take(user, day, limit) {
+            Ok(day)
         } else {
             Err(ExtractionError::DailyLimitReached { limit })
         }
+    }
+
+    fn give_back_daily_call(&self, requester: Option<i64>, day: u64) {
+        if let (Some(_), Some(user)) = (self.daily_limit, requester) {
+            self.lock_usage().give_back(user, day);
+        }
+    }
+
+    fn lock_usage(&self) -> MutexGuard<'_, DailyUsage> {
+        // Plain counters: a panic while holding the lock cannot leave them inconsistent.
+        self.usage.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn lock(&self) -> MutexGuard<'_, ResultCache> {
@@ -350,6 +381,32 @@ mod tests {
         guarded.extract(&image(1)?.requested_by(7)).await?;
         guarded.extract(&image(3)?.requested_by(8)).await?;
         assert_eq!(fake.calls.load(Ordering::SeqCst), 3);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn a_call_refused_before_the_service_is_not_counted() -> Result<(), ExtractionError> {
+        let failing = Arc::new(FakeExtractor {
+            fail: true,
+            ..FakeExtractor::default()
+        });
+        let guarded = GuardedExtractor::new(failing, 2).with_daily_limit(1);
+        // The fake fails with Timeout: the call may have been paid, so it counts
+        assert!(guarded.extract(&image(1)?.requested_by(7)).await.is_err());
+        assert!(matches!(
+            guarded.extract(&image(2)?.requested_by(7)).await,
+            Err(ExtractionError::DailyLimitReached { .. })
+        ));
+
+        let mut usage = DailyUsage::default();
+        assert!(usage.take(7, 100, 1));
+        usage.give_back(7, 100);
+        assert!(usage.take(7, 100, 1), "given back");
+        usage.give_back(7, 99);
+        assert!(
+            !usage.take(7, 100, 1),
+            "a give-back for another day is ignored"
+        );
         Ok(())
     }
 

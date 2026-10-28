@@ -188,11 +188,18 @@ pub fn check_telegram_health() -> Result<()> {
     }
 }
 
+/// Declares that the bot needs Telegram: from now on readiness requires a successful call.
+/// Call it before the health server starts, so that a bot still starting (or about to exit on
+/// a rejected token) is never reported ready. Only the first call counts.
+pub fn expect_telegram() {
+    let _ = HEARTBEAT_STARTED.set(now_ms());
+}
+
 /// Calls `getMe` every minute so health checks reflect whether the bot can reach Telegram
 /// (network, revoked token), not only whether the process runs.
 pub fn start_telegram_heartbeat(bot: teloxide::Bot) -> tokio::task::JoinHandle<()> {
     use teloxide::requests::Requester;
-    let _ = HEARTBEAT_STARTED.set(now_ms());
+    expect_telegram();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(TELEGRAM_HEARTBEAT_INTERVAL);
         loop {

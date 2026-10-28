@@ -51,14 +51,15 @@ deployment is started by hand and approved.
 ## HTTP Endpoints
 One server on `HEALTH_PORT` (8080), bound to all interfaces only when
 `METRICS_BIND_ALL_INTERFACES=true` (localhost otherwise), limited to 10 requests per minute per
-client, checked before routing: the client is `Fly-Client-IP` (set by Fly's proxy) when present,
+client, checked before routing (except `/health/live`, which does no I/O and is called by Fly's
+two checks every 15 s): the client is `Fly-Client-IP` (set by Fly's proxy) when present,
 else the TCP peer; at most 1,024 clients are remembered, the least recently seen is forgotten
 first. Bodies are fixed texts: failure reasons go to the logs only. Code: `src/observability/metrics.rs`, `src/observability/health_checks.rs`.
 
 | Endpoint | Behaviour |
 |---|---|
 | `GET /health/live` | 200 `OK` while the Telegram heartbeat is fresh; 503 `NOT LIVE` after 5 minutes without a successful Telegram call (`getMe` every minute, 5-minute grace at startup). |
-| `GET /health/ready` | 200 when the database answers `SELECT 1`, a Telegram call has succeeded since the start and recently (no startup grace), and the bot token is well formed; 503 `NOT READY` otherwise, the reason logged as a warning. Gemini is not called. |
+| `GET /health/ready` | 200 when the database answers `SELECT 1`, a Telegram call has succeeded since the start and recently (no startup grace: required from before the server starts, and the startup `getMe` counts), and the bot token is well formed; 503 `NOT READY` otherwise, the reason logged as a warning. Gemini is not called. |
 | `GET /metrics` | Prometheus text format. Requires `Authorization: Bearer <METRICS_AUTH_TOKEN>`, compared in constant time; 401 otherwise, and always 401 when the token is not set (a warning is logged at startup). |
 
 Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` or `/live`).

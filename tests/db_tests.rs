@@ -1131,3 +1131,53 @@ async fn deleting_a_recipe_alone_deletes_its_ingredients(pool: PgPool) -> Result
     );
     Ok(())
 }
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn edited_ingredients_keep_their_place(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    // Saved in one transaction: every ingredient gets the same created_at, so only the id
+    // tiebreaker of get_recipe_ingredients fixes their order. Without it the order depends on
+    // the table layout; this test could not make it fail locally, it guards the requirement.
+    // 40 lines: with fewer, the table order may hide a missing tiebreaker
+    let names: Vec<String> = (1..=40).map(|n| format!("ingrédient {n}")).collect();
+    let new: Vec<NewIngredient> = names
+        .iter()
+        .map(|name| NewIngredient {
+            name,
+            quantity: Some(1.0),
+            unit: None,
+        })
+        .collect();
+    let saved = save_recipe(&pool, 777, Some("fr"), "texte", "Crêpes", &new).await?;
+    let before = get_recipe_ingredients(&pool, 777, saved.recipe_id).await?;
+    let ids: Vec<i64> = before.iter().map(|ingredient| ingredient.id).collect();
+
+    // Editing the second and the first ingredient must not move them
+    for id in [ids[1], ids[4], ids[0]] {
+        apply_ingredient_changes(
+            &pool,
+            777,
+            saved.recipe_id,
+            Some("fr"),
+            &[IngredientUpdate {
+                id,
+                ingredient: NewIngredient {
+                    name: "modifié",
+                    quantity: Some(2.0),
+                    unit: Some("g"),
+                },
+            }],
+            &[],
+            &[],
+        )
+        .await?;
+    }
+    let after: Vec<i64> = get_recipe_ingredients(&pool, 777, saved.recipe_id)
+        .await?
+        .iter()
+        .map(|ingredient| ingredient.id)
+        .collect();
+    assert_eq!(after, ids);
+    Ok(())
+}
