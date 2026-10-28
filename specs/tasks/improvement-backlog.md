@@ -312,7 +312,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   3. Manual check on staging: Add ingredient works in a new-recipe review.
 
 ### IMP-008: Commands are swallowed inside dialogue states; no `/cancel`
-- [ ] Done
+- [x] Done (2026-10-28): commands win in every dialogue state (UX Task U1.6); cancel words in French and English ("annuler", "retour", "arrêter"…), confirm words too ("valider", "oui"…); `/annuler` (`/cancel`) ends the action and shows the home message, and is in the menu.
 - Priority: P1. Effort: S. Area: Dialogue.
 - Location: `src/bot/message_handler.rs:59-355` (state match before commands),
   `src/bot/message_handler.rs:357-368` (commands), `src/bot/dialogue_manager.rs:725-727`

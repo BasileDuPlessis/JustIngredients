@@ -33,6 +33,7 @@ help-final = Need help? Just send me an image! 😊
 # Commands (Telegram menu, welcome and help messages)
 command-list = My recipes
 command-help = Help and tips
+command-cancel = Cancel the current action
 search-coming-soon = Search is coming soon. Meanwhile, /list shows all your recipes.
 unknown-command = I don't know this command. Here are the ones I know:
 
@@ -130,7 +131,7 @@ edit-invalid-quantity = Invalid quantity. Please use a positive number (e.g., "2
 quantity-correction-prompt = We couldn't read the exact amount for {$ingredient}. Please type the quantity (or - if there is none):
 review-quantities-to-check = ⚠️ Please check the quantity of: {$ingredients}. Tap an ingredient to fix it, then confirm again.
 error-invalid-edit = Invalid ingredient index for editing.
-review-help = Please reply with "confirm" to save these ingredients, or "cancel" to discard them.
+review-help = Use the buttons, or reply "confirm" to save these ingredients or "cancel" to discard them.
 
 # Document messages
 document-image = Received image document from user {$user_id}

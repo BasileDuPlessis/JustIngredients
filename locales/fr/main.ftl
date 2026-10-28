@@ -30,6 +30,7 @@ help-final = Besoin d'aide ? Envoyez-moi simplement une image ! 😊
 # Commandes (menu Telegram, messages d'accueil et d'aide)
 command-list = Mes recettes
 command-help = Aide et conseils
+command-cancel = Annuler l'action en cours
 search-coming-soon = La recherche arrive bientôt. En attendant, /liste affiche toutes vos recettes.
 unknown-command = Je ne connais pas cette commande. Voici celles que je connais :
 
@@ -122,7 +123,7 @@ review-quantities-to-check = ⚠️ Vérifiez la quantité de : {$ingredients}. 
 error-invalid-edit = Index d'ingrédient invalide pour l'édition.
 confirm = Confirmer
 cancel = Annuler
-review-help = Veuillez répondre avec "confirm" pour sauvegarder ces ingrédients, ou "cancel" pour les annuler.
+review-help = Utilisez les boutons, ou répondez "valider" pour enregistrer ces ingrédients ou "annuler" pour abandonner.
 
 # Messages de document
 document-image = Document image reçu de l'utilisateur {$user_id}

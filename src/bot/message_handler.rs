@@ -417,6 +417,11 @@ async fn handle_command(
         Some(Command::Search(_)) => {
             handle_search_command(bot, msg, localization, language_code).await
         }
+        // The running action, if any, was ended by the caller: back to the home message
+        Some(Command::Cancel) => {
+            crate::bot::home::send_home(bot, &pool, msg.chat.id, localization, language_code).await;
+            Ok(())
+        }
         None => handle_unknown_command(bot, msg, localization, language_code).await,
     }
 }

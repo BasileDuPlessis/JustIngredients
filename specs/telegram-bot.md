@@ -64,6 +64,7 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 | `/liste`, `/list`, `/recipes` | First page of the recipe list. |
 | `/start` | Welcome message. |
 | `/aide`, `/help` | Help message. |
+| `/annuler`, `/cancel` | Ends the running action (like any command) and sends the home message. |
 | `/cherche`, `/search` | "Search is coming soon" (`search-coming-soon`); the words are parsed but not used yet. |
 | Unknown `/command` | `unknown-command` and the menu commands. |
 | Other text, no dialogue | Echo "Received: <text>" plus a tip to send a photo (`text-response`, `text-tip`). No search. |
@@ -75,7 +76,8 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 Commands are read by `commands::parse_command`: case-insensitive, an `@botname` suffix is
 ignored, words after the command are kept for search and ignored otherwise. At startup the bot
 sets the Telegram command menu (`setMyCommands`) in the background, a failure is only logged:
-`/liste` and `/aide` for French users, `/list` and `/help` for everyone else. `/cherche` joins
+`/liste`, `/annuler` and `/aide` for French users, `/list`, `/cancel` and `/help` for everyone
+else. `/cherche` joins
 the menu with search (UX Task U4.2). The welcome and help messages list the same commands, in
 the user's language.
 
@@ -126,7 +128,7 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
   or `Line` (`ingredient_editing::apply_edit`). A quantity answer is a number in range or `-`
   for none (`parse_quantity_answer`) and clears the ⚠️ flag; a name answer replaces only the name
   (1–100 characters); a line answer ("3 cups flour") is parsed by `parse_ingredient_from_text`
-  and is no longer flagged. "cancel", "stop" or "back" (or the button) restore the review.
+  and is no longer flagged. A cancel word (see below) or the button restore the review.
 - `delete_<i>`: removes the line. When none is left, the message offers `add_more` (asks for
   another photo and resets the state to `Start`; the review is dropped) and `cancel_empty`.
 - `confirm`: **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
@@ -136,7 +138,7 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
     saved recipe card follows (`home::send_saved_recipe`: ✅ bold name, ingredients, recipe card
     buttons), then the [home message](#home-message);
   - otherwise: buttons removed, `recipe-name-prompt` sent, state
-    `WaitingForRecipeNameAfterConfirm`. The typed name ("cancel", "stop", "back" cancel; empty
+    `WaitingForRecipeNameAfterConfirm`. The typed name (a cancel word cancels; empty
     or over 255 bytes refused) is saved; the prompt is deleted with the review messages and the
     saved recipe card is sent, followed by the home message.
 - `cancel_review`: `review-cancelled`, dialogue ended, home message.
@@ -144,10 +146,12 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
   📚 `workflow_list_recipes` (recipe list) and 🔍 `workflow_search_recipes` (answers
   `workflow-search-coming-soon`); both are still handled.
 
-Typed text in `ReviewIngredients`: "confirm", "ok", "yes" or "save" asks each flagged quantity in
+Typed text in `ReviewIngredients`: a confirm word ("confirm", "ok", "yes", "save", "valider",
+"valide", "confirmer", "oui", "enregistrer") asks each flagged quantity in
 turn (`AwaitingQuantityCorrection`; a number in range, or `-`/"none"/"aucune" for none) and then
-saves under the current name (caption or "Recipe") without asking for a name; "cancel" or "stop"
-cancels; anything else answers `review-help`.
+saves under the current name (caption, title or "Recipe") without asking for a name; a cancel word
+cancels; anything else answers `review-help`. Cancel words, everywhere a prompt is open: "cancel",
+"stop", "back", "annuler", "annule", "retour", "arrêter" (`is_cancellation_command`).
 
 Saving (`save_ingredients_to_database` → `db::save_recipe`): the user, the recipe with its name
 (content = the transcription) and its ingredients in one transaction, nothing written on error;
@@ -187,7 +191,7 @@ Before sending it, `send_home` deletes what the action left behind (`bot::cleanu
   remain.
 
 Kept: saved or cancelled notices, recipe cards and lists. A review cancelled with ❌ before
-confirming keeps its list edited to `review-cancelled`; typing "cancel" or "stop" sends a new
+confirming keeps its list edited to `review-cancelled`; typing a cancel word ("cancel", "stop", "back", "annuler", "annule", "retour", "arrêter") or "stop" sends a new
 notice and leaves the list with inactive buttons (U2.5). Only recorded messages are deleted; records older than 48 h are skipped
 (Telegram refuses them), at most 200 per chat, in memory (lost on restart, like the dialogue
 state).

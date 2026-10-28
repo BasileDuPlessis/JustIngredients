@@ -740,8 +740,28 @@ pub async fn handle_recipe_rename_input(
 }
 
 /// Check if input is a cancellation command
+/// Words that cancel the running prompt, in English and French (input already lowercased).
 fn is_cancellation_command(input: &str) -> bool {
-    matches!(input, "cancel" | "stop" | "back")
+    matches!(
+        input,
+        "cancel" | "stop" | "back" | "annuler" | "annule" | "retour" | "arrêter" | "arreter"
+    )
+}
+
+/// Words that confirm a review typed instead of the ✅ button (input already lowercased).
+fn is_confirmation_word(input: &str) -> bool {
+    matches!(
+        input,
+        "confirm"
+            | "ok"
+            | "yes"
+            | "save"
+            | "valider"
+            | "valide"
+            | "confirmer"
+            | "oui"
+            | "enregistrer"
+    )
 }
 
 /// Handle cancellation of ingredient editing
@@ -953,7 +973,7 @@ pub async fn handle_ingredient_review_input(
     let input = review_input.trim().to_lowercase();
 
     match input.as_str() {
-        "confirm" | "ok" | "yes" | "save" => {
+        input if is_confirmation_word(input) => {
             // The review ends here: its list goes with the action's messages
             if let Some(id) = review_message_id {
                 cleanup::track(msg.chat.id, teloxide::types::MessageId(id));
@@ -1056,7 +1076,7 @@ pub async fn handle_ingredient_review_input(
             )
             .await;
         }
-        "cancel" | "stop" => {
+        input if is_cancellation_command(input) => {
             // User cancelled, end dialogue without saving
             bot.send_message(
                 msg.chat.id,
@@ -1628,4 +1648,37 @@ pub async fn handle_quantity_correction_input(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn cancel_and_confirm_words_are_understood_in_french_and_english() {
+        for word in [
+            "cancel", "stop", "back", "annuler", "annule", "retour", "arrêter", "arreter",
+        ] {
+            assert!(is_cancellation_command(word), "{word}");
+        }
+        for word in [
+            "confirm",
+            "ok",
+            "yes",
+            "save",
+            "valider",
+            "valide",
+            "confirmer",
+            "oui",
+            "enregistrer",
+        ] {
+            assert!(is_confirmation_word(word), "{word}");
+        }
+        for word in ["farine", "annulé ce matin", "200 g"] {
+            assert!(
+                !is_cancellation_command(word) && !is_confirmation_word(word),
+                "{word}"
+            );
+        }
+    }
 }

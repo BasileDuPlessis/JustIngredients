@@ -21,6 +21,8 @@ pub enum Command {
     List,
     /// `/cherche`, `/search`, with the words that follow (possibly empty).
     Search(String),
+    /// `/annuler`, `/cancel`: stop the running action and go back home.
+    Cancel,
 }
 
 /// Reads a message text as a command, or returns `None` when it is not a known command.
@@ -41,6 +43,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "aide" | "help" => Some(Command::Help),
         "liste" | "list" | "recipes" => Some(Command::List),
         "cherche" | "search" => Some(Command::Search(args.to_string())),
+        "annuler" | "cancel" => Some(Command::Cancel),
         _ => None,
     }
 }
@@ -73,8 +76,16 @@ pub fn route_text(text: &str, in_action: bool) -> TextRoute {
 /// `/cherche` joins the menu once search works (UX plan, Task U4.2).
 fn menu_entries(language: &str) -> &'static [(&'static str, &'static str)] {
     match language {
-        "fr" => &[("liste", "command-list"), ("aide", "command-help")],
-        _ => &[("list", "command-list"), ("help", "command-help")],
+        "fr" => &[
+            ("liste", "command-list"),
+            ("annuler", "command-cancel"),
+            ("aide", "command-help"),
+        ],
+        _ => &[
+            ("list", "command-list"),
+            ("cancel", "command-cancel"),
+            ("help", "command-help"),
+        ],
     }
 }
 
@@ -123,6 +134,8 @@ mod tests {
         assert_eq!(parse_command("/help"), Some(Command::Help));
         assert_eq!(parse_command("/liste"), Some(Command::List));
         assert_eq!(parse_command("/list"), Some(Command::List));
+        assert_eq!(parse_command("/annuler"), Some(Command::Cancel));
+        assert_eq!(parse_command("/Cancel"), Some(Command::Cancel));
         assert_eq!(parse_command("/recipes"), Some(Command::List));
         assert_eq!(
             parse_command("/cherche"),
