@@ -404,47 +404,14 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
                 Some(validated_name),
                 Some(ingredients.len()),
             );
-            // Edit the prompt message with error if possible, otherwise send new message
-            if let Some(prompt_msg_id) = message_id {
-                match ctx
-                    .bot
-                    .edit_message_text(
-                        msg.chat.id,
-                        teloxide::types::MessageId(prompt_msg_id),
-                        t_lang(
-                            ctx.localization,
-                            "error-processing-failed",
-                            ctx.language_code,
-                        ),
-                    )
-                    .await
-                {
-                    Ok(_) => (),
-                    Err(_) => {
-                        ctx.bot
-                            .send_message(
-                                msg.chat.id,
-                                t_lang(
-                                    ctx.localization,
-                                    "error-processing-failed",
-                                    ctx.language_code,
-                                ),
-                            )
-                            .await?;
-                    }
-                }
-            } else {
-                ctx.bot
-                    .send_message(
-                        msg.chat.id,
-                        t_lang(
-                            ctx.localization,
-                            "error-processing-failed",
-                            ctx.language_code,
-                        ),
-                    )
-                    .await?;
-            }
+            // Nothing was written (one transaction): keep the dialogue so the name can be sent again
+            send_transient(
+                ctx.bot,
+                msg.chat.id,
+                t_lang(ctx.localization, "save-failed-retry", ctx.language_code),
+            )
+            .await?;
+            return Ok(());
         }
         Ok(recipe_id) => {
             // The saved recipe card is the result; the name prompt goes with the review messages
@@ -1040,15 +1007,20 @@ pub async fn handle_ingredient_review_input(
                         Some(&recipe_name),
                         Some(ingredients.len()),
                     );
-                    bot.send_message(
+                    // Nothing was written (one transaction): keep the dialogue to try again
+
+                    send_transient(
+                        bot,
                         msg.chat.id,
                         t_lang(
                             handler_ctx.localization,
-                            "error-processing-failed",
+                            "save-failed-retry",
                             handler_ctx.language_code,
                         ),
                     )
                     .await?;
+
+                    return Ok(());
                 }
                 Ok(recipe_id) => {
                     // The saved recipe card is the result of the review
@@ -1595,15 +1567,20 @@ pub async fn handle_quantity_correction_input(
                             Some(&recipe_name),
                             Some(ingredients.len()),
                         );
-                        bot.send_message(
+                        // Nothing was written (one transaction): keep the dialogue to try again
+
+                        send_transient(
+                            bot,
                             msg.chat.id,
                             t_lang(
                                 handler_ctx.localization,
-                                "error-processing-failed",
+                                "save-failed-retry",
                                 handler_ctx.language_code,
                             ),
                         )
                         .await?;
+
+                        return Ok(());
                     }
                     Ok(recipe_id) => {
                         // The saved recipe card is the result of the review

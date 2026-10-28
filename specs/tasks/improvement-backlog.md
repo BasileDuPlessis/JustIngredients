@@ -605,6 +605,7 @@ they can be pulled into 1-hour micro-tasks without another review.
 
 ### IMP-023: Small dialogue handler bugs (rename, cancel text, lost state)
 - [ ] Done
+- Status: Partly done (2026-10-28): a failed save keeps the review or the name prompt open and answers `save-failed-retry` (nothing is written, one transaction), on all four save paths. Rename bugs fixed in U1.4 and U1.7. Left: typed confirm drops the caption (U2.5), the quantity prompt id edits a copy of the state.
 - Priority: P2. Effort: S. Area: Dialogue.
 - Location: `src/bot/dialogue_manager.rs:680-720`, `src/bot/dialogue_manager.rs:615`,
   `src/bot/dialogue_manager.rs:985-991`, `src/bot/dialogue_manager.rs:1590-1596`,

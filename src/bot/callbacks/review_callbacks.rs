@@ -543,7 +543,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
                             .id,
                         t_lang(
                             ctx.localization,
-                            "error-processing-failed",
+                            "save-failed-retry",
                             dialogue_lang_code.as_deref(),
                         ),
                     )

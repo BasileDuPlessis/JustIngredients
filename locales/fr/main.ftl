@@ -74,6 +74,7 @@ unknown-ingredient = Ingrédient inconnu
 total-ingredients-found = Total des ingrédients trouvés
 original-text = Texte extrait original
 error-processing-failed = Échec du traitement des ingrédients
+save-failed-retry = L'enregistrement a échoué, rien n'a été enregistré. Réessayez dans un instant.
 error-try-again = Veuillez réessayer avec une image différente.
 
 # Messages de traitement

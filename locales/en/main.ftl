@@ -77,6 +77,7 @@ unknown-ingredient = Unknown ingredient
 total-ingredients-found = Total ingredients found
 original-text = Original extracted text
 error-processing-failed = Failed to process ingredients
+save-failed-retry = Saving failed and nothing was saved. Please try again in a moment.
 error-try-again = Please try again with a different image.
 
 # Processing messages

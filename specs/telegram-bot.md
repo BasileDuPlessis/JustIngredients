@@ -283,7 +283,8 @@ Extraction errors map to locale keys in `extraction_error_key` (`image_processin
 | `error-extraction-unavailable` | `Config`, `Timeout`, `Network`, 5xx, invalid key or model, `CircuitOpen` |
 
 Other keys: `extraction-not-a-recipe`, `no-ingredients-found`, `error-download-failed`,
-`error-unsupported-format`, `error-no-mime-type`, `error-processing-failed` (save failed).
+`error-unsupported-format`, `error-no-mime-type`, `save-failed-retry` (the save failed and nothing was
+written: the review or name prompt stays open to try again), `error-processing-failed`.
 Configuration errors (invalid key, unknown model) are logged as errors, the others as warnings;
 all are counted in `errors_total{type, component=<backend>}`. Handler errors are logged by the
 dispatcher.
