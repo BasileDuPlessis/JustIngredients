@@ -10,6 +10,7 @@ use tracing::warn;
 use super::cleanup;
 use super::commands::command_lines;
 use super::html::{send_html, Html};
+use super::ui_builder::{create_recipe_details_keyboard, render_saved_recipe};
 use super::ui_components::truncate_text;
 use crate::db::{get_user_recipes_newest_first, RecipeSummary};
 use crate::localization::{t_args_lang, t_lang, LocalizationManager};
@@ -64,6 +65,24 @@ pub fn render_home(
     }
     let keyboard = (!rows.is_empty()).then(|| InlineKeyboardMarkup::new(rows));
     (text, keyboard)
+}
+
+/// Sends the card of a recipe that was just saved (name, ingredients, card buttons). Never fails:
+/// the recipe is saved, so errors are only logged.
+pub async fn send_saved_recipe(
+    bot: &Bot,
+    chat_id: ChatId,
+    recipe_id: i64,
+    recipe_name: &str,
+    ingredients: &[crate::text_processing::MeasurementMatch],
+    localization: &Arc<LocalizationManager>,
+    language_code: Option<&str>,
+) {
+    let card = render_saved_recipe(recipe_name, ingredients, language_code, localization);
+    let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
+    if let Err(e) = send_html(bot, chat_id, card).reply_markup(keyboard).await {
+        warn!(error = %e, "Failed to send the saved recipe card");
+    }
 }
 
 /// Ends an action in a private chat (the chat id is the recipe owner): deletes the messages the

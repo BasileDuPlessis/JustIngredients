@@ -437,6 +437,24 @@ pub fn render_recipe_card(
         ))
 }
 
+/// The card of a recipe that was just saved (HTML): ✅, bold name and the ingredients. It stays
+/// in the chat, with the recipe card buttons, when the review messages are deleted.
+pub fn render_saved_recipe(
+    recipe_name: &str,
+    ingredients: &[MeasurementMatch],
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Html {
+    Html::text("✅ ")
+        + Html::bold(recipe_name)
+        + Html::text("\n\n")
+        + Html::text(&format_ingredients_list(
+            ingredients,
+            language_code,
+            localization,
+        ))
+}
+
 /// The recipe card shown again after its ingredients were edited (HTML): bold name and the
 /// ingredient list.
 pub fn render_recipe_summary(
@@ -575,6 +593,18 @@ mod tests {
             empty.as_str().ends_with("No Ingredients Detected"),
             "{}",
             empty.as_str()
+        );
+    }
+
+    #[test]
+    fn the_saved_recipe_card_has_a_check_mark_a_bold_name_and_the_ingredients() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let card =
+            render_saved_recipe("Crêpes & co", &[named("farine")], Some("fr"), &localization);
+        assert_eq!(
+            card.as_str(),
+            "✅ <b>Crêpes &amp; co</b>\n\n1. 2 g → farine\n"
         );
     }
 

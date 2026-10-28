@@ -25,7 +25,7 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 use crate::bot::callbacks::ingredient_menu::show_ingredient_keyboard;
 use crate::bot::cleanup::{self, send_transient};
 use crate::bot::create_ingredient_review_keyboard;
-use crate::bot::home::send_home;
+use crate::bot::home::{send_home, send_saved_recipe};
 use crate::bot::ui_builder::{
     edit_instruction_key, parse_ingredient_action, render_review, IngredientAction,
 };
@@ -516,7 +516,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         debug!(user_id = %q.from.id, recipe_name = %caption_recipe_name, "Using recipe name from caption, skipping name input");
 
         // Save ingredients directly to database
-        if let Err(e) = save_ingredients_to_database(
+        let recipe_id = match save_ingredients_to_database(
             pool,
             q.from.id.0 as i64,
             extracted_text,
@@ -526,28 +526,31 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         )
         .await
         {
-            error_logging::log_database_error(
-                &e,
-                "save_ingredients_to_database",
-                Some(q.from.id.0 as i64),
-                None,
-            );
-            ctx.bot
-                .send_message(
-                    q.message
-                        .as_ref()
-                        .expect("Callback query should have a message")
-                        .chat()
-                        .id,
-                    t_lang(
-                        ctx.localization,
-                        "error-processing-failed",
-                        dialogue_lang_code.as_deref(),
-                    ),
-                )
-                .await?;
-            return Ok(());
-        }
+            Ok(recipe_id) => recipe_id,
+            Err(e) => {
+                error_logging::log_database_error(
+                    &e,
+                    "save_ingredients_to_database",
+                    Some(q.from.id.0 as i64),
+                    None,
+                );
+                ctx.bot
+                    .send_message(
+                        q.message
+                            .as_ref()
+                            .expect("Callback query should have a message")
+                            .chat()
+                            .id,
+                        t_lang(
+                            ctx.localization,
+                            "error-processing-failed",
+                            dialogue_lang_code.as_deref(),
+                        ),
+                    )
+                    .await?;
+                return Ok(());
+            }
+        };
 
         // Remove the keyboard: the list is deleted at the end, and stays inactive if it cannot be
         match ctx
@@ -576,27 +579,21 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
             }
         }
 
-        // Send confirmation as a new message, then the home message
+        // The saved recipe card replaces the review list, then the home message
         let Some(chat_id) = q.message.as_ref().map(|message| message.chat().id) else {
             dialogue.exit().await?;
             return Ok(());
         };
-        // `workflow-recipe-saved` already starts with ✅
-        let confirmation_message = format!(
-            "{}\n\n📝 {}",
-            t_lang(
-                ctx.localization,
-                "workflow-recipe-saved",
-                dialogue_lang_code.as_deref()
-            ),
-            t_args_lang(
-                ctx.localization,
-                "caption-recipe-saved",
-                &[("recipe_name", caption_recipe_name.as_str())],
-                dialogue_lang_code.as_deref()
-            )
-        );
-        ctx.bot.send_message(chat_id, confirmation_message).await?;
+        send_saved_recipe(
+            ctx.bot,
+            chat_id,
+            recipe_id,
+            caption_recipe_name,
+            ingredients,
+            ctx.localization,
+            dialogue_lang_code.as_deref(),
+        )
+        .await;
         send_home(
             ctx.bot,
             pool,

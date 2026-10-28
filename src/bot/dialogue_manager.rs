@@ -33,7 +33,7 @@ use super::ui_builder::{
 
 // Import HandlerContext
 use super::cleanup::{self, send_transient};
-use super::home::send_home;
+use super::home::{send_home, send_saved_recipe};
 use super::HandlerContext;
 
 /// Check if the error is a "message not modified" Telegram API error
@@ -388,7 +388,7 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
     } = params;
 
     // Recipe name is valid, save ingredients to database
-    if let Err(e) = save_ingredients_to_database(
+    match save_ingredients_to_database(
         pool,
         msg.chat.id.0,
         extracted_text,
@@ -398,84 +398,71 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
     )
     .await
     {
-        error_logging::log_recipe_error(
-            &e,
-            "save_ingredients_to_database",
-            msg.chat.id.0,
-            Some(validated_name),
-            Some(ingredients.len()),
-        );
-        // Edit the prompt message with error if possible, otherwise send new message
-        if let Some(prompt_msg_id) = message_id {
-            match ctx
-                .bot
-                .edit_message_text(
-                    msg.chat.id,
-                    teloxide::types::MessageId(prompt_msg_id),
-                    t_lang(
-                        ctx.localization,
-                        "error-processing-failed",
-                        ctx.language_code,
-                    ),
-                )
-                .await
-            {
-                Ok(_) => (),
-                Err(_) => {
-                    ctx.bot
-                        .send_message(
-                            msg.chat.id,
-                            t_lang(
-                                ctx.localization,
-                                "error-processing-failed",
-                                ctx.language_code,
-                            ),
-                        )
-                        .await?;
+        Err(e) => {
+            error_logging::log_recipe_error(
+                &e,
+                "save_ingredients_to_database",
+                msg.chat.id.0,
+                Some(validated_name),
+                Some(ingredients.len()),
+            );
+            // Edit the prompt message with error if possible, otherwise send new message
+            if let Some(prompt_msg_id) = message_id {
+                match ctx
+                    .bot
+                    .edit_message_text(
+                        msg.chat.id,
+                        teloxide::types::MessageId(prompt_msg_id),
+                        t_lang(
+                            ctx.localization,
+                            "error-processing-failed",
+                            ctx.language_code,
+                        ),
+                    )
+                    .await
+                {
+                    Ok(_) => (),
+                    Err(_) => {
+                        ctx.bot
+                            .send_message(
+                                msg.chat.id,
+                                t_lang(
+                                    ctx.localization,
+                                    "error-processing-failed",
+                                    ctx.language_code,
+                                ),
+                            )
+                            .await?;
+                    }
                 }
+            } else {
+                ctx.bot
+                    .send_message(
+                        msg.chat.id,
+                        t_lang(
+                            ctx.localization,
+                            "error-processing-failed",
+                            ctx.language_code,
+                        ),
+                    )
+                    .await?;
             }
-        } else {
-            ctx.bot
-                .send_message(
-                    msg.chat.id,
-                    t_lang(
-                        ctx.localization,
-                        "error-processing-failed",
-                        ctx.language_code,
-                    ),
-                )
-                .await?;
         }
-    } else {
-        // Success! Edit the prompt message with confirmation
-        let success_message = t_args_lang(
-            ctx.localization,
-            "recipe-complete",
-            &[
-                ("recipe_name", validated_name),
-                ("ingredient_count", &ingredients.len().to_string()),
-            ],
-            ctx.language_code,
-        );
-
-        if let Some(prompt_msg_id) = message_id {
-            match ctx
-                .bot
-                .edit_message_text(
-                    msg.chat.id,
-                    teloxide::types::MessageId(prompt_msg_id),
-                    success_message.clone(),
-                )
-                .await
-            {
-                Ok(_) => (),
-                Err(_) => {
-                    // Fallback: send new message if editing fails
-                    ctx.bot.send_message(msg.chat.id, success_message).await?;
-                }
+        Ok(recipe_id) => {
+            // The saved recipe card is the result; the name prompt goes with the review messages
+            if let Some(prompt_msg_id) = message_id {
+                cleanup::track(msg.chat.id, teloxide::types::MessageId(prompt_msg_id));
             }
-        } else {
-            ctx.bot.send_message(msg.chat.id, success_message).await?;
+            send_saved_recipe(
+                ctx.bot,
+                msg.chat.id,
+                recipe_id,
+                validated_name,
+                ingredients,
+                ctx.localization,
+                ctx.language_code,
+            )
+            .await;
         }
     }
 
@@ -1017,7 +1004,7 @@ pub async fn handle_ingredient_review_input(
             }
 
             // No ingredients require confirmation, proceed with saving
-            if let Err(e) = save_ingredients_to_database(
+            match save_ingredients_to_database(
                 &pool,
                 msg.chat.id.0,
                 &extracted_text,
@@ -1027,34 +1014,37 @@ pub async fn handle_ingredient_review_input(
             )
             .await
             {
-                error_logging::log_recipe_error(
-                    &e,
-                    "save_ingredients_to_database",
-                    msg.chat.id.0,
-                    Some(&recipe_name),
-                    Some(ingredients.len()),
-                );
-                bot.send_message(
-                    msg.chat.id,
-                    t_lang(
+                Err(e) => {
+                    error_logging::log_recipe_error(
+                        &e,
+                        "save_ingredients_to_database",
+                        msg.chat.id.0,
+                        Some(&recipe_name),
+                        Some(ingredients.len()),
+                    );
+                    bot.send_message(
+                        msg.chat.id,
+                        t_lang(
+                            handler_ctx.localization,
+                            "error-processing-failed",
+                            handler_ctx.language_code,
+                        ),
+                    )
+                    .await?;
+                }
+                Ok(recipe_id) => {
+                    // The saved recipe card is the result of the review
+                    send_saved_recipe(
+                        bot,
+                        msg.chat.id,
+                        recipe_id,
+                        &recipe_name,
+                        &ingredients,
                         handler_ctx.localization,
-                        "error-processing-failed",
                         handler_ctx.language_code,
-                    ),
-                )
-                .await?;
-            } else {
-                // Success! Send confirmation message
-                let success_message = t_args_lang(
-                    handler_ctx.localization,
-                    "recipe-complete",
-                    &[
-                        ("recipe_name", recipe_name.as_str()),
-                        ("ingredient_count", &ingredients.len().to_string()),
-                    ],
-                    handler_ctx.language_code,
-                );
-                bot.send_message(msg.chat.id, success_message).await?;
+                    )
+                    .await;
+                }
             }
 
             // End the dialogue
@@ -1112,7 +1102,7 @@ pub async fn handle_ingredient_review_input(
     Ok(())
 }
 
-/// Save ingredients to database
+/// Save ingredients to database; returns the id of the new recipe.
 pub async fn save_ingredients_to_database(
     pool: &PgPool,
     telegram_id: i64,
@@ -1120,7 +1110,7 @@ pub async fn save_ingredients_to_database(
     ingredients: &[MeasurementMatch],
     recipe_name: &str,
     language_code: Option<&str>,
-) -> Result<()> {
+) -> Result<i64> {
     let start_time = std::time::Instant::now();
 
     info!(telegram_id = %telegram_id, ingredient_count = %ingredients.len(), "Starting ingredient save process");
@@ -1249,7 +1239,7 @@ pub async fn save_ingredients_to_database(
         "Ingredient save process completed successfully"
     );
 
-    Ok(())
+    Ok(recipe_id)
 }
 
 /// Handle adding new ingredient input for saved recipes
@@ -1643,7 +1633,7 @@ pub async fn handle_quantity_correction_input(
                 }
             } else {
                 // No more ingredients need confirmation, proceed with saving
-                if let Err(e) = save_ingredients_to_database(
+                match save_ingredients_to_database(
                     &pool,
                     msg.chat.id.0,
                     &extracted_text,
@@ -1653,34 +1643,37 @@ pub async fn handle_quantity_correction_input(
                 )
                 .await
                 {
-                    error_logging::log_recipe_error(
-                        &e,
-                        "save_ingredients_to_database",
-                        msg.chat.id.0,
-                        Some(&recipe_name),
-                        Some(ingredients.len()),
-                    );
-                    bot.send_message(
-                        msg.chat.id,
-                        t_lang(
+                    Err(e) => {
+                        error_logging::log_recipe_error(
+                            &e,
+                            "save_ingredients_to_database",
+                            msg.chat.id.0,
+                            Some(&recipe_name),
+                            Some(ingredients.len()),
+                        );
+                        bot.send_message(
+                            msg.chat.id,
+                            t_lang(
+                                handler_ctx.localization,
+                                "error-processing-failed",
+                                handler_ctx.language_code,
+                            ),
+                        )
+                        .await?;
+                    }
+                    Ok(recipe_id) => {
+                        // The saved recipe card is the result of the review
+                        send_saved_recipe(
+                            bot,
+                            msg.chat.id,
+                            recipe_id,
+                            &recipe_name,
+                            &ingredients,
                             handler_ctx.localization,
-                            "error-processing-failed",
                             handler_ctx.language_code,
-                        ),
-                    )
-                    .await?;
-                } else {
-                    // Success! Send confirmation message
-                    let success_message = t_args_lang(
-                        handler_ctx.localization,
-                        "recipe-complete",
-                        &[
-                            ("recipe_name", recipe_name.as_str()),
-                            ("ingredient_count", &ingredients.len().to_string()),
-                        ],
-                        handler_ctx.language_code,
-                    );
-                    bot.send_message(msg.chat.id, success_message).await?;
+                        )
+                        .await;
+                    }
                 }
 
                 // End the dialogue

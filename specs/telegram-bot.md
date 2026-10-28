@@ -132,12 +132,13 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
 - `confirm`: **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
   with their names and stays in the review until they are edited or deleted. Then the review
   message is recorded for cleanup (deleted with the home message at the end) and:
-  - name from the caption: saved at once; the review loses its buttons; a confirmation
-    follows, then the [home message](#home-message);
+  - name from the caption or the page title: saved at once; the review loses its buttons; the
+    saved recipe card follows (`home::send_saved_recipe`: ✅ bold name, ingredients, recipe card
+    buttons), then the [home message](#home-message);
   - otherwise: buttons removed, `recipe-name-prompt` sent, state
     `WaitingForRecipeNameAfterConfirm`. The typed name ("cancel", "stop", "back" cancel; empty
-    or over 255 bytes refused) is saved and the prompt is edited to `recipe-complete`, followed
-    by the home message.
+    or over 255 bytes refused) is saved; the prompt is deleted with the review messages and the
+    saved recipe card is sent, followed by the home message.
 - `cancel_review`: `review-cancelled`, dialogue ended, home message.
 - Older messages may still carry the post-save buttons that the home message replaced:
   📚 `workflow_list_recipes` (recipe list) and 🔍 `workflow_search_recipes` (answers
@@ -182,7 +183,8 @@ Before sending it, `send_home` deletes what the action left behind (`bot::cleanu
   ingredients are reviewed and goes when the review ends (saved, cancelled or interrupted by a
   command). A photo whose extraction fails is not recorded;
 - the review message (ingredient list), recorded when the review is confirmed (✅ button or
-  typed "confirm"): after saving, the confirmation and the home message remain.
+  typed "confirm"), and the name prompt: after saving, the saved recipe card and the home message
+  remain.
 
 Kept: saved or cancelled notices, recipe cards and lists. A review cancelled with ❌ before
 confirming keeps its list edited to `review-cancelled`; typing "cancel" or "stop" sends a new
