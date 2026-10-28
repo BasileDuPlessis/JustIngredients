@@ -434,7 +434,7 @@ impl MeasurementDetector {
     /// let detector = MeasurementDetector::new();
     /// ```
     pub fn new() -> Result<Self, regex::Error> {
-        info!("Creating new MeasurementDetector with default configuration");
+        debug!("Creating new MeasurementDetector with default configuration");
         Ok(Self {
             pattern: Arc::clone(&DEFAULT_REGEX),
             config: MeasurementConfig::default(),
@@ -517,7 +517,7 @@ impl MeasurementDetector {
             Arc::clone(&DEFAULT_REGEX)
         };
 
-        info!("Creating MeasurementDetector with custom config: postprocessing={}, max_length={}, count_measurements={}",
+        debug!("Creating MeasurementDetector with custom config: postprocessing={}, max_length={}, count_measurements={}",
               config.enable_ingredient_postprocessing, config.max_ingredient_length, config.include_count_measurements);
 
         Ok(Self { pattern, config })
@@ -803,7 +803,7 @@ impl MeasurementDetector {
                 // Additional safeguard: skip if ingredient contains suspicious patterns
                 // that might indicate over-matching (like multiple measurements)
                 if ingredient.chars().filter(|c| c.is_ascii_digit()).count() > 2 {
-                    warn!(
+                    debug!(
                         "Skipping match with suspicious ingredient containing multiple digits: '{}'",
                         capture.get(0).expect("Full match should always be available in regex capture").as_str()
                     );
@@ -881,7 +881,7 @@ impl MeasurementDetector {
             matches_count,
         );
 
-        info!("Found {} measurement matches in text", matches_count);
+        debug!("Found {} measurement matches in text", matches_count);
         matches
     }
 
@@ -1201,7 +1201,7 @@ impl MeasurementDetector {
             } else {
                 name = truncated;
             }
-            warn!(
+            debug!(
                 "Ingredient name truncated due to length limit ({} > {}): '{}' -> '{}'",
                 original_name.len(),
                 self.config.max_ingredient_length,

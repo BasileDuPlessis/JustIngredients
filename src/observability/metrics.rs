@@ -736,9 +736,8 @@ pub fn record_recipe_metrics(
     // Recipe name length distribution
     metrics::histogram!("recipe_name_length").record(recipe_name.len() as f64);
 
-    tracing::info!(
+    tracing::debug!(
         user_id = %user_id,
-        recipe_name = %recipe_name,
         ingredient_count = %ingredient_count,
         naming_method = %naming_method_str,
         processing_duration_ms = %processing_duration.as_millis(),
@@ -862,7 +861,7 @@ pub fn record_dialogue_metrics(
     metrics::histogram!("dialogue_completion_rate", "type" => dialogue_type_str.to_string())
         .record(completion_rate);
 
-    tracing::info!(
+    tracing::debug!(
         user_id = %user_id,
         dialogue_type = %dialogue_type_str,
         completed = %completed,
@@ -920,9 +919,8 @@ pub fn record_recipe_discovery_metrics(
             .increment(1);
     }
 
-    tracing::info!(
+    tracing::debug!(
         user_id = %user_id,
-        search_query = ?search_query,
         result_count = %result_count,
         search_duration_ms = %search_duration.as_millis(),
         "Recipe discovery metrics recorded"

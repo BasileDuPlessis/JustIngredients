@@ -38,7 +38,9 @@ deployment is started by hand and approved.
 
 ## Fly Configuration (`deploy/fly.toml`, same in `fly-staging.toml`)
 - `[env]`: `HEALTH_PORT=8080`, `LOG_FORMAT=pretty`, `RUST_LOG=info,sqlx=warn`,
-  `METRICS_BIND_ALL_INTERFACES=true`.
+  `METRICS_BIND_ALL_INTERFACES=true`. At `info` a use case logs one line with ids and counts
+  (photo read, review sent, recipe saved); recipe and ingredient names, captions and search
+  text are never logged at `info`, `warn` or `error`, and `error` is kept for failures.
 - `[[restart]] policy = 'always'`: the bot restarts whenever it exits (the default policy gave
   up during a Postgres restart on 2026-10-16 and left the bot down for 10 days).
 - Checks: `GET /health/live` every 15 s (timeout 2 s, grace 30 s), as a machine check and an
@@ -76,7 +78,7 @@ Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` 
 - **GitHub repository secrets**: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for the production
   deploy notification and the uptime alert.
 - Optional variables with defaults: `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECS`, `GEMINI_THINKING_LEVEL`,
-  `GEMINI_MAX_CONCURRENCY`, `HEALTH_PORT`, `METRICS_PORT`, `METRICS_AUTH_TOKEN`,
+  `GEMINI_MAX_CONCURRENCY`, `EXTRACTION_DAILY_LIMIT_PER_USER`, `HEALTH_PORT`, `METRICS_PORT`, `METRICS_AUTH_TOKEN`,
   `METRICS_BIND_ALL_INTERFACES`, `DATABASE_MAX_CONNECTIONS`, `DATABASE_MIN_CONNECTIONS`,
   `DATABASE_CONNECT_TIMEOUT_SECS`, `MEASUREMENT_UNITS_CONFIG_PATH`, `OBSERVABILITY_LOG_LEVEL`,
   `RUST_LOG`; see `.env.example`.

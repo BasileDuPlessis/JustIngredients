@@ -75,24 +75,6 @@ pub mod error_logging {
         );
     }
 
-    /// Log recipe processing errors with recipe-specific context
-    pub fn log_recipe_error(
-        error: &impl std::fmt::Display,
-        operation: &str,
-        user_id: i64,
-        recipe_name: Option<&str>,
-        ingredient_count: Option<usize>,
-    ) {
-        error!(
-            error = %error,
-            operation = %operation,
-            user_id = %user_id,
-            recipe_name = ?recipe_name,
-            ingredient_count = ?ingredient_count,
-            "Recipe processing failed"
-        );
-    }
-
     /// Log network/communication errors with connection context
     pub fn log_network_error(
         error: &impl std::fmt::Display,
@@ -122,24 +104,6 @@ pub mod error_logging {
             path = ?path,
             file_size_bytes = ?file_size,
             "File system operation failed"
-        );
-    }
-
-    /// Log validation errors with input context
-    pub fn log_validation_error(
-        error: &impl std::fmt::Display,
-        operation: &str,
-        user_id: Option<i64>,
-        input_type: &str,
-        input_value: Option<&str>,
-    ) {
-        error!(
-            error = %error,
-            operation = %operation,
-            user_id = ?user_id,
-            input_type = %input_type,
-            input_value = ?input_value.map(|v| if v.len() > 100 { format!("{}...", &v[..100]) } else { v.to_string() }),
-            "Validation failed"
         );
     }
 

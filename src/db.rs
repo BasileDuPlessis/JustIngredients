@@ -152,7 +152,7 @@ pub async fn update_recipe(
         debug!(recipe_id = %recipe_id, "Recipe updated successfully");
         Ok(true)
     } else {
-        info!("No recipe found with ID: {recipe_id}");
+        debug!("No recipe found with ID: {recipe_id}");
         Ok(false)
     }
 }
@@ -198,7 +198,7 @@ pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> R
         debug!(recipe_id = %recipe_id, "Recipe deleted successfully");
         Ok(true)
     } else {
-        info!("No recipe found with ID: {recipe_id}");
+        debug!("No recipe found with ID: {recipe_id}");
         Ok(false)
     }
 }
@@ -396,14 +396,14 @@ pub async fn get_or_create_user(
     debug!(telegram_id = %telegram_id, "Starting get_or_create_user");
 
     // Try to get existing user
-    info!(telegram_id = %telegram_id, "Attempting to find existing user");
+    debug!(telegram_id = %telegram_id, "Attempting to find existing user");
     match get_user_by_telegram_id(pool, telegram_id).await {
         Ok(Some(user)) => {
-            info!(telegram_id = %telegram_id, user_id = %user.id, "Found existing user, returning");
+            debug!(telegram_id = %telegram_id, user_id = %user.id, "Found existing user, returning");
             return Ok(user);
         }
         Ok(None) => {
-            info!(telegram_id = %telegram_id, "No existing user found, will create new user");
+            debug!(telegram_id = %telegram_id, "No existing user found, will create new user");
         }
         Err(e) => {
             error!(telegram_id = %telegram_id, error = %e, "Error looking up existing user");
@@ -413,7 +413,7 @@ pub async fn get_or_create_user(
 
     // Create new user
     let language_code = language_code.unwrap_or("en");
-    info!(telegram_id = %telegram_id, language_code = %language_code, "Attempting to create new user");
+    debug!(telegram_id = %telegram_id, language_code = %language_code, "Attempting to create new user");
 
     let insert_result = sqlx::query(
         "INSERT INTO users (telegram_id, language_code) VALUES ($1, $2) RETURNING id, telegram_id, language_code, created_at, updated_at"
@@ -433,7 +433,7 @@ pub async fn get_or_create_user(
                 updated_at: row.get(4),
             };
 
-            info!(telegram_id = %telegram_id, user_id = %user.id, returned_telegram_id = %user.telegram_id, "User insert succeeded, verifying data");
+            debug!(telegram_id = %telegram_id, user_id = %user.id, returned_telegram_id = %user.telegram_id, "User insert succeeded, verifying data");
 
             // Verify that the created user has the correct telegram_id
             if user.telegram_id != telegram_id {
@@ -450,7 +450,7 @@ pub async fn get_or_create_user(
                 ));
             }
 
-            info!(user_id = %user.id, telegram_id = %user.telegram_id, "User created and verified successfully");
+            debug!(user_id = %user.id, telegram_id = %user.telegram_id, "User created and verified successfully");
             Ok(user)
         }
         Err(e) => {
@@ -479,11 +479,11 @@ pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<
                 created_at: row.get(3),
                 updated_at: row.get(4),
             };
-            info!("User found with ID: {}", user.id);
+            debug!("User found with ID: {}", user.id);
             Ok(Some(user))
         }
         None => {
-            info!("No user found with telegram_id: {telegram_id}");
+            debug!("No user found with telegram_id: {telegram_id}");
             Ok(None)
         }
     }
@@ -635,7 +635,7 @@ pub async fn create_ingredient(
     let _enter = span.enter();
 
     let start_time = std::time::Instant::now();
-    info!("Creating new ingredient for user_id: {user_id}");
+    debug!("Creating new ingredient for user_id: {user_id}");
 
     let result = sqlx::query(
         "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit, raw_text) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
@@ -661,7 +661,7 @@ pub async fn create_ingredient(
     match result {
         Ok(row) => {
             let ingredient_id: i64 = row.get(0);
-            info!(ingredient_id = %ingredient_id, duration_ms = %duration.as_millis(), user_id = %user_id, recipe_id = ?recipe_id, name = %name, "Ingredient created successfully");
+            debug!(ingredient_id = %ingredient_id, duration_ms = %duration.as_millis(), user_id = %user_id, recipe_id = ?recipe_id, "Ingredient created successfully");
             Ok(ingredient_id)
         }
         Err(e) => {
@@ -691,7 +691,7 @@ pub async fn read_ingredient(
     telegram_id: i64,
     ingredient_id: i64,
 ) -> Result<Option<Ingredient>> {
-    info!("Reading ingredient with ID: {ingredient_id}");
+    debug!("Reading ingredient with ID: {ingredient_id}");
 
     let row = sqlx::query(
         "SELECT i.id, i.user_id, i.recipe_id, i.name, i.quantity::float8, i.unit, i.created_at, i.updated_at FROM ingredients i JOIN recipes r ON r.id = i.recipe_id WHERE i.id = $1 AND r.telegram_id = $2"
@@ -714,11 +714,11 @@ pub async fn read_ingredient(
                 created_at: row.get(6),
                 updated_at: row.get(7),
             };
-            info!("Ingredient found: {:?}", ingredient);
+            debug!(ingredient_id = %ingredient_id, "Ingredient found");
             Ok(Some(ingredient))
         }
         None => {
-            info!("No ingredient found with ID: {ingredient_id}");
+            debug!("No ingredient found with ID: {ingredient_id}");
             Ok(None)
         }
     }
@@ -735,7 +735,7 @@ pub async fn update_ingredient(
     quantity: Option<f64>,
     unit: Option<&str>,
 ) -> Result<bool> {
-    info!("Updating ingredient with ID: {ingredient_id}");
+    debug!("Updating ingredient with ID: {ingredient_id}");
 
     let result = sqlx::query("UPDATE ingredients SET name = COALESCE($1, name), quantity = COALESCE($2, quantity), unit = COALESCE($3, unit), updated_at = CURRENT_TIMESTAMP WHERE id = $4 AND EXISTS (SELECT 1 FROM recipes r WHERE r.id = ingredients.recipe_id AND r.telegram_id = $5)")
         .bind(name)
@@ -749,10 +749,10 @@ pub async fn update_ingredient(
 
     let rows_affected = result.rows_affected();
     if rows_affected > 0 {
-        info!("Ingredient updated successfully with ID: {ingredient_id}");
+        debug!("Ingredient updated successfully with ID: {ingredient_id}");
         Ok(true)
     } else {
-        info!("No ingredient found with ID: {ingredient_id}");
+        debug!("No ingredient found with ID: {ingredient_id}");
         Ok(false)
     }
 }
@@ -765,7 +765,7 @@ pub async fn delete_ingredient(
     telegram_id: i64,
     ingredient_id: i64,
 ) -> Result<bool> {
-    info!("Deleting ingredient with ID: {ingredient_id}");
+    debug!("Deleting ingredient with ID: {ingredient_id}");
 
     let result = sqlx::query("DELETE FROM ingredients WHERE id = $1 AND EXISTS (SELECT 1 FROM recipes r WHERE r.id = ingredients.recipe_id AND r.telegram_id = $2)")
         .bind(ingredient_id)
@@ -776,17 +776,17 @@ pub async fn delete_ingredient(
 
     let rows_affected = result.rows_affected();
     if rows_affected > 0 {
-        info!("Ingredient deleted successfully with ID: {ingredient_id}");
+        debug!("Ingredient deleted successfully with ID: {ingredient_id}");
         Ok(true)
     } else {
-        info!("No ingredient found with ID: {ingredient_id}");
+        debug!("No ingredient found with ID: {ingredient_id}");
         Ok(false)
     }
 }
 
 /// List all ingredients for a user
 pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> {
-    info!("Listing ingredients for user_id: {user_id}");
+    debug!("Listing ingredients for user_id: {user_id}");
 
     let rows = sqlx::query("SELECT id, user_id, recipe_id, name, quantity::float8, unit, created_at, updated_at FROM ingredients WHERE user_id = $1 ORDER BY created_at DESC")
         .bind(user_id)
@@ -808,7 +808,7 @@ pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec
         })
         .collect();
 
-    info!(
+    debug!(
         "Found {} ingredients for user_id: {user_id}",
         ingredients.len()
     );
@@ -823,7 +823,7 @@ pub async fn get_recipe_ingredients(
     telegram_id: i64,
     recipe_id: i64,
 ) -> Result<Vec<Ingredient>> {
-    info!("Getting ingredients for recipe_id: {recipe_id}");
+    debug!("Getting ingredients for recipe_id: {recipe_id}");
 
     let rows = sqlx::query("SELECT i.id, i.user_id, i.recipe_id, i.name, i.quantity::float8, i.unit, i.created_at, i.updated_at FROM ingredients i JOIN recipes r ON r.id = i.recipe_id WHERE i.recipe_id = $1 AND r.telegram_id = $2 ORDER BY i.created_at ASC")
         .bind(recipe_id)
@@ -846,7 +846,7 @@ pub async fn get_recipe_ingredients(
         })
         .collect();
 
-    info!(
+    debug!(
         "Found {} ingredients for recipe_id: {recipe_id}",
         ingredients.len()
     );
@@ -878,7 +878,7 @@ pub async fn update_recipe_name(
         debug!(recipe_id = %recipe_id, "Recipe recipe name updated successfully");
         Ok(true)
     } else {
-        info!("No recipe found with ID: {recipe_id}");
+        debug!("No recipe found with ID: {recipe_id}");
         Ok(false)
     }
 }
@@ -923,7 +923,7 @@ pub async fn read_recipe_with_name(
 
 /// Search recipes using full-text search
 pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Result<Vec<Recipe>> {
-    info!("Searching recipes for telegram_id: {telegram_id} with query: {query}");
+    debug!(telegram_id = %telegram_id, "Searching recipes");
 
     let rows = sqlx::query("SELECT id, telegram_id, content, recipe_name, created_at FROM recipes WHERE telegram_id = $1 AND content_tsv @@ plainto_tsquery('english', $2) ORDER BY created_at DESC")
         .bind(telegram_id)
@@ -943,7 +943,7 @@ pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Res
         })
         .collect();
 
-    info!(telegram_id = %telegram_id, query = %query, result_count = recipes.len(), "Recipe search completed");
+    debug!(telegram_id = %telegram_id, result_count = recipes.len(), "Recipe search completed");
     Ok(recipes)
 }
 

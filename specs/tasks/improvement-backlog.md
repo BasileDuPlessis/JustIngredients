@@ -748,7 +748,8 @@ they can be pulled into 1-hour micro-tasks without another review.
   function, and these tests run in CI (IMP-013).
 
 ### IMP-032: Logging hygiene: user content at `info`, `error!` on normal paths
-- [ ] Done
+- [x] Done
+- Status: Done (2026-10-28): per-step traces of `db.rs`, the save, the photo flow, the metric recorders and the measurement detector are `debug`; names, captions and search text are gone from `info`/`warn`/`error`; a failed save logs one `error` (the duplicate `log_recipe_error` and the unused `log_validation_error` were removed). Left: check on staging that a save gives at most 2 `info` lines.
 - Priority: P2. Effort: S. Area: Logging.
 - Location: `src/bot/dialogue_manager.rs:1087-1175` (about 10 `info!` per save, including ingredient
   names and "CRITICAL" messages), `src/bot/callbacks/editing_callbacks.rs:536-544` (`error!`

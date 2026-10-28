@@ -396,15 +396,8 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
     )
     .await
     {
-        Err(e) => {
-            error_logging::log_recipe_error(
-                &e,
-                "save_ingredients_to_database",
-                msg.chat.id.0,
-                Some(validated_name),
-                Some(ingredients.len()),
-            );
-            // Nothing was written (one transaction): keep the dialogue so the name can be sent again
+        Err(_) => {
+            // Logged by the save; nothing was written: keep the dialogue to send the name again
             send_transient(
                 ctx.bot,
                 msg.chat.id,
@@ -999,16 +992,8 @@ pub async fn handle_ingredient_review_input(
             )
             .await
             {
-                Err(e) => {
-                    error_logging::log_recipe_error(
-                        &e,
-                        "save_ingredients_to_database",
-                        msg.chat.id.0,
-                        Some(&recipe_name),
-                        Some(ingredients.len()),
-                    );
-                    // Nothing was written (one transaction): keep the dialogue to try again
-
+                Err(_) => {
+                    // Logged by the save; nothing was written: keep the dialogue to try again
                     send_transient(
                         bot,
                         msg.chat.id,
@@ -1103,7 +1088,7 @@ pub async fn save_ingredients_to_database(
 ) -> Result<i64> {
     let start_time = std::time::Instant::now();
 
-    info!(telegram_id = %telegram_id, ingredient_count = %ingredients.len(), "Starting ingredient save process");
+    debug!(telegram_id = %telegram_id, ingredient_count = %ingredients.len(), "Starting ingredient save process");
 
     // User, recipe, name and ingredients in one transaction: nothing is left half-saved
     let new_ingredients: Vec<crate::db::NewIngredient> = ingredients
@@ -1122,7 +1107,7 @@ pub async fn save_ingredients_to_database(
     {
         Ok(saved) => saved,
         Err(e) => {
-            error!(telegram_id = %telegram_id, recipe_name = %recipe_name, error = %e, "Recipe save failed, nothing was written");
+            error!(telegram_id = %telegram_id, ingredient_count = ingredients.len(), error = %e, "Recipe save failed, nothing was written");
             return Err(e);
         }
     };
@@ -1559,16 +1544,8 @@ pub async fn handle_quantity_correction_input(
                 )
                 .await
                 {
-                    Err(e) => {
-                        error_logging::log_recipe_error(
-                            &e,
-                            "save_ingredients_to_database",
-                            msg.chat.id.0,
-                            Some(&recipe_name),
-                            Some(ingredients.len()),
-                        );
-                        // Nothing was written (one transaction): keep the dialogue to try again
-
+                    Err(_) => {
+                        // Logged by the save; nothing was written: keep the dialogue to try again
                         send_transient(
                             bot,
                             msg.chat.id,

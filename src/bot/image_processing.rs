@@ -217,19 +217,17 @@ pub async fn download_and_process_image(
 
     // Recipe name: the caption, else the title read on the page; otherwise "Recipe" and the
     // name is asked after confirmation.
-    let (recipe_name_candidate, recipe_name_from_caption) = match known_recipe_name(
-        caption.as_deref(),
-        title.as_deref(),
-    ) {
-        Some(name) => {
-            info!(user_id = %chat_id, recipe_name = %name, "Recipe name from the caption or the page title");
-            (name.clone(), Some(name))
-        }
-        None => {
-            debug!(user_id = %chat_id, "No caption or title, the name will be asked");
-            ("Recipe".to_string(), None)
-        }
-    };
+    let (recipe_name_candidate, recipe_name_from_caption) =
+        match known_recipe_name(caption.as_deref(), title.as_deref()) {
+            Some(name) => {
+                debug!(user_id = %chat_id, "Recipe name from the caption or the page title");
+                (name.clone(), Some(name))
+            }
+            None => {
+                debug!(user_id = %chat_id, "No caption or title, the name will be asked");
+                ("Recipe".to_string(), None)
+            }
+        };
 
     // Update dialogue state to review ingredients with caption-derived recipe name
     dialogue
@@ -246,7 +244,7 @@ pub async fn download_and_process_image(
     // The photo stays while the ingredients are reviewed, then goes with the review's messages
     crate::bot::cleanup::track(chat_id, photo_message_id);
 
-    info!(user_id = %chat_id, "Ingredients review interface sent successfully");
+    debug!(user_id = %chat_id, "Ingredients review interface sent successfully");
     Ok(extracted_text)
 }
 
