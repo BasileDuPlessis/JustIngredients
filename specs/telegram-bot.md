@@ -29,7 +29,8 @@ are in English or French, following the Telegram app language.
 - Before the dispatcher starts, `telegram_connection::connect_with_retry` calls `getMe`: while
   Telegram is unreachable it retries (1 s doubling up to 30 s, for 10 minutes, then exits and Fly
   restarts it); a rejected token exits at once with `Telegram rejected TELEGRAM_BOT_TOKEN`. The
-  dispatcher uses `try_dispatch_with_listener`, so no startup path panics.
+  dispatcher uses `try_dispatch_with_listener`, so no startup path panics. The heartbeat starts
+  before this wait, so `/health/ready` answers 503 until Telegram has answered.
 
 ### Components
 ```

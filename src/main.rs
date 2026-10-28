@@ -273,11 +273,12 @@ async fn main() -> Result<()> {
 
     let bot = Bot::with_client(bot_token, client);
 
+    // Health checks report whether the bot can reach Telegram, not only that it runs. Started
+    // first, so that readiness fails while the bot is still waiting for Telegram below.
+    let _telegram_heartbeat = observability::start_telegram_heartbeat(bot.clone());
+
     // teloxide panics if its first getMe fails: check the token first, waiting for Telegram
     telegram_connection::connect_with_retry(&bot, TELEGRAM_CONNECT_BACKOFF).await?;
-
-    // Health checks report whether the bot can reach Telegram, not only that it runs
-    let _telegram_heartbeat = observability::start_telegram_heartbeat(bot.clone());
 
     // The command menu only helps users find the commands: without it the bot still works
     tokio::spawn({
