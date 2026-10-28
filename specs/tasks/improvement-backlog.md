@@ -843,7 +843,8 @@ they can be pulled into 1-hour micro-tasks without another review.
   `too_many_lines` warnings in `src/bot` go away.
 
 ### IMP-037: `docs/schema.sql` does not match the live migration
-- [ ] Done
+- [x] Done
+- Status: Done (2026-10-28): `docs/schema.sql` regenerated with `pg_dump --schema-only` from a database created by migrations 1 and 2; loading it into an empty database and starting the app passes the schema validation. The old dump showed the same `ingredients_recipe_id_fkey` name, so migration 2 replaces it there too. Left: checking the production schema for leftovers (`ocr_entries`, `ingredients.ocr_entry_id`) needs the owner's go-ahead.
 - Priority: P3. Effort: S. Area: Docs.
 - Location: `docs/schema.sql` (`ocr_entries` table, `ingredients.ocr_entry_id`,
   `ingredients.recipe_name`, duplicated `*_fkey1` constraints) vs `src/db.rs:1300-1349`.
