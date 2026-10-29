@@ -70,7 +70,7 @@ revient en bas, dans la nouvelle vue, avec ses boutons ; sinon la liste revient.
 │ 📅 29 oct. 2026                          │
 │ • 180 g farine                           │
 │ • 305 g lait                             │
-│ • 40 g beurre                            │
+│ • 45 g beurre                            │
 │ • 13 g sucre                             │
 │ • 8 g levure chimique                    │
 │ • ½ c. à c. sel                          │
@@ -90,7 +90,7 @@ Une recette américaine enregistrée en tasses :
 Comme dans la recette    Tout en poids (g)     Unités françaises     Unités américaines
 • 1,5 tasse farine       • 180 g farine        • 180 g farine        • 1 ½ cups farine
 • 1,25 tasse lait        • 305 g lait          • 30 cl lait          • 1 ¼ cups lait
-• 3 c. à s. beurre       • 40 g beurre         • 3 c. à s. beurre    • 3 tbsp beurre
+• 3 c. à s. beurre       • 45 g beurre         • 3 c. à s. beurre    • 3 tbsp beurre
 • 1 c. à s. sucre        • 13 g sucre          • 1 c. à s. sucre     • 1 tbsp sucre
 • 2 c. à c. levure       • 8 g levure          • 2 c. à c. levure    • 2 tsp levure
 • 0,5 c. à c. sel        • ½ c. à c. sel       • ½ c. à c. sel       • ½ tsp sel
@@ -129,51 +129,99 @@ Arrondis « de cuisine » :
   oz au demi, lb au quart.
 
 Nombres : virgule décimale dans les vues françaises (« 1,5 tasse »), fractions dans la vue
-américaine (« 1 ½ cups »). Une tasse US vaut 23,66 cl, une c. à s. 1,5 cl, une c. à c. 0,5 cl.
+américaine (« 1 ½ cups »). Les valeurs des unités et des ingrédients sont dans la table de
+conversion ci-dessous.
 
 « Anglaises » s'entend ici au sens américain : les recettes en anglais lues par le bot viennent
 surtout de sites américains, et les recettes britanniques actuelles sont déjà en g et ml.
 
-## Densités (constantes)
+## La table de conversion
 
-Valeurs courantes des tableaux de pâtisserie (King Arthur Baking), à ajuster si tu as tes
-propres repères. Le nom est reconnu en français et en anglais, sans accents ni pluriels (comme la
-recherche) ; l'entrée la plus précise gagne (« sucre glace » avant « sucre », « beurre de
-cacahuète » avant « beurre »).
+Deux tables de constantes, dans un module `src/conversion.rs` (testé), reprises ici à
+l'identique : les **unités** ramenées en grammes ou en millilitres, et les **densités** en g/l
+des principaux ingrédients. Toute conversion passe par elles : volume → ml → (densité) → g, et
+l'inverse. Pour en ajouter ou corriger une valeur, c'est une ligne dans chaque table.
 
-**Solides** (1 tasse US =) :
+### 1. Unités (françaises et anglaises)
 
-| Ingrédient (fr / en) | 1 tasse = |
-|---|---|
-| farine / flour | 120 g |
-| sucre, sucre en poudre / sugar | 200 g |
-| sucre glace / powdered sugar, icing sugar | 115 g |
-| cassonade, sucre roux, vergeoise / brown sugar | 215 g |
-| beurre / butter | 225 g |
-| beurre de cacahuète / peanut butter | 270 g |
-| miel / honey | 335 g |
-| sirop d'érable / maple syrup | 310 g |
-| yaourt, fromage blanc / yogurt | 225 g |
-| cacao / cocoa | 85 g |
-| maïzena, fécule / cornstarch | 115 g |
-| poudre d'amande, amandes en poudre / almond flour | 95 g |
-| flocons d'avoine / oats | 90 g |
-| riz / rice | 200 g |
-| semoule, couscous / semolina, couscous | 170 g |
-| pépites de chocolat / chocolate chips | 170 g |
-| noix, noix de pécan hachées / chopped walnuts, pecans | 115 g |
-| raisins secs / raisins | 150 g |
-| noix de coco râpée / shredded coconut | 85 g |
-| fromage râpé / shredded cheese | 115 g |
+| Unité (fr) | Unit (en) | Stockée | Vaut |
+|---|---|---|---|
+| gramme | gram | `g` | 1 g |
+| kilogramme | kilogram | `kg` | 1 000 g |
+| milligramme | milligram | `mg` | 0,001 g |
+| livre | pound | `lb` | 453,6 g |
+| once | ounce | `oz` | 28,35 g |
+| millilitre | milliliter | `ml` | 1 ml |
+| centilitre | centiliter | `ml` (converti à l'entrée) | 10 ml |
+| décilitre | deciliter | `ml` (converti à l'entrée) | 100 ml |
+| litre | liter | `l` | 1 000 ml |
+| cuillère à café (c. à c.) | teaspoon | `tsp` | 5 ml |
+| cuillère à soupe (c. à s.) | tablespoon | `tbsp` | 15 ml |
+| tasse | cup (US) | `cup` | 236,6 ml (23,66 cl) |
+| pinte | pint (US) | `pint` | 473,2 ml |
+| quart | quart (US) | `quart` | 946,4 ml |
+| gallon | gallon (US) | `gallon` | 3 785 ml |
 
-**Petites quantités** (1 c. à c. =) : sel 6 g, levure chimique / baking powder 4 g,
-bicarbonate / baking soda 5 g, levure boulangère sèche / dry yeast 3 g, cannelle et épices
-moulues / cinnamon, ground spices 2,5 g, extrait de vanille / vanilla extract 4 g.
+Les cuillères américaines (14,8 ml et 4,9 ml) et françaises (15 ml et 5 ml) diffèrent de moins
+de 2 % : une seule valeur, la française, pour des résultats ronds (1 c. à s. = 1,5 cl). Les
+unités de comptage (pincée, gousse, zeste, sachet, brin…) n'ont pas de valeur : elles ne se
+convertissent pas.
 
-**Liquides** (1 l =) : eau / water 1 000 g, lait / milk 1 030 g, crème / cream 1 000 g,
-huile / oil 920 g, vin / wine 990 g, bouillon / broth, stock 1 000 g, jus / juice 1 040 g,
-lait de coco / coconut milk 1 000 g, café, thé / coffee, tea 1 000 g, vinaigre / vinegar
-1 010 g, sauce soja / soy sauce 1 200 g, rhum / rum 940 g.
+### 2. Densités des ingrédients (g/l)
+
+« Liquide » : affiché en cl / l dans la vue française, en cups dans la vue américaine ;
+« solide » : en g dans la vue française, en cups dans la vue américaine. Les colonnes « 1
+tasse » et « 1 c. à s. » sont calculées depuis la densité (tasse US de 236,6 ml, c. à s. de
+15 ml), pour se repérer. Valeurs des tableaux de pâtisserie courants (King Arthur Baking) et
+des densités physiques pour les liquides, à ajuster si tu as tes propres repères.
+
+| Ingrédient (fr) | Ingredient (en) | Type | g/l | 1 tasse | 1 c. à s. |
+|---|---|---|---|---|---|
+| farine | flour | solide | 505 | 120 g | 8 g |
+| sucre, sucre en poudre | sugar, granulated sugar | solide | 845 | 200 g | 13 g |
+| sucre glace | powdered sugar, icing sugar | solide | 485 | 115 g | 7 g |
+| cassonade, sucre roux, vergeoise | brown sugar | solide | 910 | 215 g | 14 g |
+| beurre | butter | solide | 960 | 227 g | 14 g |
+| beurre de cacahuète | peanut butter | solide | 1 140 | 270 g | 17 g |
+| miel | honey | solide | 1 415 | 335 g | 21 g |
+| sirop d'érable | maple syrup | liquide | 1 310 | 310 g | 20 g |
+| yaourt, fromage blanc | yogurt | solide | 1 040 | 246 g | 16 g |
+| cacao | cocoa | solide | 360 | 85 g | 5 g |
+| maïzena, fécule | cornstarch | solide | 480 | 114 g | 7 g |
+| poudre d'amande, amandes en poudre | almond flour, ground almonds | solide | 400 | 95 g | 6 g |
+| flocons d'avoine | oats, rolled oats | solide | 380 | 90 g | 6 g |
+| riz | rice | solide | 845 | 200 g | 13 g |
+| lentilles | lentils | solide | 845 | 200 g | 13 g |
+| semoule, couscous, quinoa | semolina, couscous, quinoa | solide | 720 | 170 g | 11 g |
+| pépites de chocolat | chocolate chips | solide | 720 | 170 g | 11 g |
+| noix, noix de pécan, noisettes (hachées) | walnuts, pecans, hazelnuts (chopped) | solide | 485 | 115 g | 7 g |
+| raisins secs | raisins | solide | 635 | 150 g | 10 g |
+| noix de coco râpée | shredded coconut | solide | 360 | 85 g | 5 g |
+| fromage râpé | shredded cheese | solide | 485 | 115 g | 7 g |
+| parmesan râpé | grated parmesan | solide | 425 | 100 g | 6 g |
+| sel | salt | solide | 1 215 | 287 g | 18 g (1 c. à c. = 6 g) |
+| levure chimique | baking powder | solide | 810 | 192 g | 12 g (1 c. à c. = 4 g) |
+| bicarbonate | baking soda | solide | 1 015 | 240 g | 15 g (1 c. à c. = 5 g) |
+| levure boulangère sèche | dry yeast | solide | 610 | 144 g | 9 g (1 c. à c. = 3 g) |
+| cannelle, épices moulues | cinnamon, ground spices | solide | 505 | 120 g | 8 g (1 c. à c. = 2,5 g) |
+| extrait de vanille | vanilla extract | liquide | 880 | 208 g | 13 g (1 c. à c. = 4,4 g) |
+| eau | water | liquide | 1 000 | 237 g | 15 g |
+| lait | milk | liquide | 1 030 | 244 g | 15 g |
+| crème, crème liquide, crème fraîche | cream, heavy cream | liquide | 1 000 | 237 g | 15 g |
+| huile | oil | liquide | 920 | 218 g | 14 g |
+| vin | wine | liquide | 990 | 234 g | 15 g |
+| bouillon | broth, stock | liquide | 1 000 | 237 g | 15 g |
+| jus | juice | liquide | 1 040 | 246 g | 16 g |
+| lait de coco | coconut milk | liquide | 1 000 | 237 g | 15 g |
+| café, thé | coffee, tea | liquide | 1 000 | 237 g | 15 g |
+| vinaigre | vinegar | liquide | 1 010 | 239 g | 15 g |
+| sauce soja | soy sauce | liquide | 1 150 | 272 g | 17 g |
+| rhum | rum | liquide | 950 | 225 g | 14 g |
+
+Reconnaissance du nom : sans accents, majuscules ni pluriels, mot entier (comme la recherche),
+en français et en anglais ; l'entrée la plus précise gagne (« sucre glace » avant « sucre »,
+« beurre de cacahuète » avant « beurre », « lait de coco » avant « lait »). Un ingrédient absent
+de la table garde son unité dans les vues qui demanderaient une densité.
 
 ## Plus tard, pas dans cette phase
 
@@ -220,5 +268,5 @@ Conclusions :
    enregistrées. D'accord ?
 4. Après un choix dans `/unites`, la **fiche** qu'on regardait revient dans la nouvelle vue (ou
    la liste s'il n'y en avait pas). D'accord ?
-5. Le **tableau des densités** te convient ?
+5. La **table de conversion** te convient (unités et densités, ingrédients à ajouter) ?
 6. La **remise en ordre** des 26 unités enregistrées avant la normalisation : d'accord ?
