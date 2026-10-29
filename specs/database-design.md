@@ -240,12 +240,14 @@ CREATE TABLE schema_migrations (
 );
 ```
 
-## Full-Text Search Implementation
+## Search
 
-The column, index and query exist and are covered by a database test, but no bot handler calls
-`search_recipes`: the search button answers "coming soon". The English configuration does not
-stem French words or ignore accents, and recipe names and ingredient names are not searched.
-A French-aware search is planned in [UX Improvements](tasks/ux-improvements.md) Phase U4.
+The bot's search (UX plan U4) reads the user's named recipes with their ingredient names in one
+query (`searchable_recipes()`: `array_agg` over a left join, newest first) and matches the words in
+Rust (`crate::search`: case, French accents and ligatures, plurals and small words ignored). A user
+has at most a few hundred recipes, so no Postgres extension (`unaccent` needs rights the app user
+may not have) and no index are needed. The former English full-text query `search_recipes` was
+removed; its generated column and GIN index below are no longer read.
 
 ### FTS Configuration
 ```sql

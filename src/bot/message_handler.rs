@@ -8,7 +8,7 @@ use tracing::debug;
 use tracing::Instrument;
 
 // Import localization
-use crate::localization::{t_args_lang, t_lang};
+use crate::localization::t_lang;
 
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
@@ -333,32 +333,18 @@ async fn handle_text_message(
             }
         }
 
-        // Free text and the answer go when the next action ends; the list stays last
+        // Free text outside an action is a search in the user's recipes (U4.2); the typed text
+        // goes with the previous answers
         cleanup::track(msg.chat.id, msg.id).await;
-        let answer = cleanup::send_transient(
+        crate::bot::recipe_list::show_search_results(
             bot,
+            &pool,
             msg.chat.id,
-            format!(
-                "{} {}",
-                t_args_lang(
-                    localization,
-                    "text-response",
-                    &[("text", text)],
-                    language_code
-                ),
-                t_lang(localization, "text-tip", language_code)
-            ),
+            text,
+            language_code,
+            localization,
         )
         .await?;
-        crate::bot::home::answer_at_bottom(
-            bot,
-            msg.chat.id,
-            answer.id,
-            false,
-            localization,
-            language_code,
-        )
-        .await;
     }
     Ok(())
 }
@@ -384,9 +370,8 @@ async fn handle_command(
         Some(Command::List) => {
             handle_recipes_command(bot, msg, pool, language_code, localization).await
         }
-        Some(Command::Search(_)) => {
-            handle_search_command(bot, msg, localization, language_code).await?;
-            Ok(())
+        Some(Command::Search(words)) => {
+            handle_search_command(bot, msg, &pool, &words, localization, language_code).await
         }
         // The running action, if any, was ended by the caller: the list comes back
         Some(Command::Cancel) => {

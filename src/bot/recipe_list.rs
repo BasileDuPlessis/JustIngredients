@@ -118,8 +118,9 @@ pub fn render_list_header(
         "📚 {}",
         t_lang(localization, "your-recipes", language_code)
     )) + Html::text(&format!(
-        "\n{count}\n{}",
-        t_lang(localization, "home-send-photo", language_code)
+        "\n{count}\n{}\n{}",
+        t_lang(localization, "home-send-photo", language_code),
+        t_lang(localization, "list-search-hint", language_code)
     ))
 }
 
@@ -172,6 +173,105 @@ pub async fn show_recipe_list(
             Ok(Some(sent.id))
         }
     }
+}
+
+/// Results shown at most; more ask to refine the search.
+pub const MAX_SEARCH_RESULTS: usize = 8;
+
+/// Longest query quoted in the results title, in characters.
+const QUERY_MAX_CHARS: usize = 40;
+
+/// The results of a search (U4): the title with the count, one button per found recipe (the
+/// list's labels), then "📚 Liste des recettes".
+pub fn render_search_results(
+    query: &str,
+    found: &[&crate::search::SearchableRecipe],
+    language_code: Option<&str>,
+    localization: &Arc<LocalizationManager>,
+) -> (Html, InlineKeyboardMarkup) {
+    let quoted = truncate_text(query.trim(), QUERY_MAX_CHARS);
+    let title = match found.len() {
+        0 => t_args_lang(
+            localization,
+            "search-no-results",
+            &[("query", &quoted)],
+            language_code,
+        ),
+        1 => t_args_lang(
+            localization,
+            "search-one-result",
+            &[("query", &quoted)],
+            language_code,
+        ),
+        count => t_args_lang(
+            localization,
+            "search-results",
+            &[("count", &count.to_string()), ("query", &quoted)],
+            language_code,
+        ),
+    };
+    let mut text = Html::bold(&title);
+    if found.len() > MAX_SEARCH_RESULTS {
+        text += Html::text(&format!(
+            "\n{}",
+            t_args_lang(
+                localization,
+                "search-more-results",
+                &[("shown", &MAX_SEARCH_RESULTS.to_string())],
+                language_code,
+            )
+        ));
+    }
+    let shown: Vec<RecipeSummary> = found
+        .iter()
+        .take(MAX_SEARCH_RESULTS)
+        .map(|recipe| RecipeSummary {
+            id: recipe.id,
+            name: recipe.name.clone(),
+            created_at: recipe.created_at,
+        })
+        .collect();
+    let labels = recipe_button_labels(&shown, language_code, localization);
+    let mut rows: Vec<Vec<InlineKeyboardButton>> = shown
+        .iter()
+        .zip(labels)
+        .map(|(recipe, label)| {
+            vec![InlineKeyboardButton::callback(
+                label,
+                format!("recipe_instance:{}", recipe.id),
+            )]
+        })
+        .collect();
+    rows.push(vec![super::ui_builder::recipes_list_button(
+        language_code,
+        localization,
+    )]);
+    (text, InlineKeyboardMarkup::new(rows))
+}
+
+/// Searches the user's recipes for `query` and shows the results at the bottom, in place of what
+/// had buttons there (the list, the active card, an earlier answer). They are recorded as a list:
+/// opening a result or "📚 Liste des recettes" replaces them like the list.
+pub async fn show_search_results(
+    bot: &Bot,
+    pool: &PgPool,
+    chat_id: ChatId,
+    query: &str,
+    language_code: Option<&str>,
+    localization: &Arc<LocalizationManager>,
+) -> Result<()> {
+    // Private chats only: the chat id is the user's id, the recipes' owner
+    let recipes = crate::db::searchable_recipes(pool, chat_id.0).await?;
+    let found = crate::search::search(&recipes, query);
+    let (text, keyboard) = render_search_results(query, &found, language_code, localization);
+    super::cleanup::delete_action_messages(bot, chat_id).await;
+    super::cleanup::delete_lists(bot, chat_id).await;
+    let sent = send_html(bot, chat_id, text)
+        .reply_markup(keyboard)
+        .disable_notification(true)
+        .await?;
+    super::cleanup::set_list(chat_id, sent.id).await;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -253,6 +353,42 @@ mod tests {
         assert!(header.as_str().contains("📸"), "{}", header.as_str());
         let empty = render_list_header(0, Some("en"), &localization);
         assert!(!empty.as_str().contains('0'), "{}", empty.as_str());
+    }
+
+    fn found(id: i64, name: &str) -> crate::search::SearchableRecipe {
+        crate::search::SearchableRecipe {
+            id,
+            name: name.to_string(),
+            created_at: recipe(id, name).created_at,
+            ingredients: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn search_results_list_the_recipes_then_the_list_button() {
+        let localization = manager();
+        let (text, keyboard) = render_search_results("farine", &[], Some("fr"), &localization);
+        assert!(
+            text.as_str().contains("Aucune recette"),
+            "{}",
+            text.as_str()
+        );
+        assert_eq!(keyboard.inline_keyboard.len(), 1, "only the list button");
+
+        let recipes: Vec<crate::search::SearchableRecipe> = (1..=10)
+            .map(|id| found(id, &format!("Pain {id}")))
+            .collect();
+        let refs: Vec<&crate::search::SearchableRecipe> = recipes.iter().collect();
+        let (text, keyboard) = render_search_results("pain <b>", &refs, Some("fr"), &localization);
+        assert!(text.as_str().contains("10 recettes"), "{}", text.as_str());
+        assert!(text.as_str().contains("&lt;b&gt;"), "the query is escaped");
+        assert!(text.as_str().contains("précisez"), "more than 8: refine");
+        assert_eq!(keyboard.inline_keyboard.len(), MAX_SEARCH_RESULTS + 1);
+        let last = &keyboard.inline_keyboard[MAX_SEARCH_RESULTS][0];
+        assert!(matches!(
+            &last.kind,
+            teloxide::types::InlineKeyboardButtonKind::CallbackData(data) if data == "show_list"
+        ));
     }
 
     #[test]

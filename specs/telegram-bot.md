@@ -75,9 +75,9 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 | `/start` | Welcome message at the bottom (it replaces the list or the active card) with "📚 Liste des recettes"; it goes at the next action's end. |
 | `/aide`, `/help` | Help message at the bottom with "📚 Liste des recettes" (`home::answer_at_bottom`); it goes at the next action's end. |
 | `/annuler`, `/cancel` | Ends the running action (like any command) and moves the recipe list down. |
-| `/cherche`, `/search` | "Search is coming soon" (`search-coming-soon`) at the bottom with the list button, transient; the words are parsed but not used yet. |
+| `/cherche <mots>`, `/search` | Searches the user's recipes (`recipe_list::show_search_results`, `crate::search`): names and ingredient names, ignoring case, accents, plurals and small words; every word must be found; names rank above ingredients, then the newest. The results replace the bottom message: a bold title with the count, up to 8 recipe buttons (`recipe_instance:<id>`, list labels), "precisez" beyond 8, then 📚 `show_list`; recorded as a list. Without words: `search-prompt` with the list button. |
 | Unknown `/command` | `unknown-command` and the menu commands at the bottom with the list button, transient. |
-| Other text, no dialogue | Echo "Received: <text>" plus a tip to send a photo (`text-response`, `text-tip`) at the bottom with the list button; the text and the answer are transient. No search. |
+| Other text, no dialogue | A search, like `/cherche <text>` (U4.2); the typed text goes with the previous answers. |
 | Other text in a dialogue | Handled by the current state (see [Dialogue States](#dialogue-states)). |
 | Photo | Largest size, caption used as recipe name candidate. Handled whatever the state: a successful extraction replaces the current dialogue with a new review. |
 | Document | Only `image/*` MIME types, caption ignored; otherwise `error-unsupported-format` or `error-no-mime-type`. |

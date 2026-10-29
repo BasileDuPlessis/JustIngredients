@@ -633,7 +633,7 @@ mod tests {
 
         // Benchmark search
         let start = Instant::now();
-        let _search_results = db::search_recipes(&db_pool, test_user_id, "flour")
+        let _search_results = db::searchable_recipes(&db_pool, test_user_id)
             .await
             .expect("Failed to search");
         let search_duration = start.elapsed();

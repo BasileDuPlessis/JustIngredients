@@ -147,10 +147,12 @@ pub async fn handle_help_command(
     Ok(())
 }
 
-/// Handle the search command (`/cherche`, `/search`): search is not available yet
+/// `/cherche <mots>` (`/search`): the results at the bottom; without words, how to search.
 pub async fn handle_search_command(
     bot: &Bot,
     msg: &Message,
+    pool: &PgPool,
+    words: &str,
     localization: &Arc<crate::localization::LocalizationManager>,
     language_code: Option<&str>,
 ) -> Result<()> {
@@ -162,24 +164,34 @@ pub async fn handle_search_command(
             language_code,
         );
     }
-
-    let sent = bot
-        .send_message(
+    if words.trim().is_empty() {
+        let sent = bot
+            .send_message(
+                msg.chat.id,
+                t_lang(localization, "search-prompt", language_code),
+            )
+            .await?;
+        super::cleanup::track(msg.chat.id, sent.id).await;
+        super::home::answer_at_bottom(
+            bot,
             msg.chat.id,
-            t_lang(localization, "search-coming-soon", language_code),
+            sent.id,
+            false,
+            localization,
+            language_code,
         )
-        .await?;
-    super::cleanup::track(msg.chat.id, sent.id).await;
-    super::home::answer_at_bottom(
+        .await;
+        return Ok(());
+    }
+    super::recipe_list::show_search_results(
         bot,
+        pool,
         msg.chat.id,
-        sent.id,
-        false,
-        localization,
+        words,
         language_code,
+        localization,
     )
-    .await;
-    Ok(())
+    .await
 }
 
 /// Handle a command the bot does not know: say so and list the commands

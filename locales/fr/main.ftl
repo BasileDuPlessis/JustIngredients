@@ -31,7 +31,6 @@ help-final = Besoin d'aide ? Envoyez-moi simplement une image ! 😊
 command-list = Mes recettes
 command-help = Aide et conseils
 command-cancel = Annuler l'action en cours
-search-coming-soon = La recherche arrive bientôt. En attendant, /liste affiche toutes vos recettes.
 unknown-command = Je ne connais pas cette commande. Voici celles que je connais :
 private-chat-only = Je fonctionne seulement en conversation privée : écrivez-moi directement.
 button-expired = Ce bouton n'est plus actif. Renvoyez la photo, ou ouvrez la recette depuis la liste en bas.
@@ -90,8 +89,6 @@ unsupported-feature4 = ❓ Envoyer /aide pour des instructions détaillées
 unsupported-final = Essayez d'envoyer une image avec du texte ! 📝
 
 # Réponses texte régulières
-text-response = Reçu : {$text}
-text-tip = 💡 Conseil : Envoyez-moi une photo de la liste d'ingrédients d'une recette, je la lirai pour vous !
 
 # Messages de dialogue pour le nom de recette
 recipe-name-prompt = 🏷️ Comment souhaitez-vous nommer cette recette ?
@@ -147,6 +144,12 @@ of = sur
 
 # Messages de commande recettes
 your-recipes = Vos recettes
+search-prompt = 🔍 Tapez un nom de recette ou un ingrédient, par exemple « farine ».
+search-no-results = 🔍 Aucune recette ne correspond à « {$query} »
+search-one-result = 🔍 1 recette pour « {$query} »
+search-results = 🔍 {$count} recettes pour « {$query} »
+search-more-results = Les {$shown} premières sont affichées : précisez votre recherche.
+list-search-hint = 🔍 Tapez un mot pour chercher une recette.
 recipes-list-button = 📚 Liste des recettes
 recipe-details-coming-soon = Détails de la recette bientôt disponibles !
 
@@ -155,7 +158,6 @@ workflow-recipe-saved = ✅ Recette sauvegardée avec succès !
 workflow-what-next = Que souhaitez-vous faire ensuite ?
 workflow-list-recipes = Lister mes recettes
 workflow-search-recipes = Rechercher des recettes
-workflow-search-coming-soon = Recherche de recettes bientôt disponible ! Pour l'instant, utilisez le bouton 'Lister mes recettes'.
 caption-recipe-saved = Recette sauvegardée sous : "{$recipe_name}"
 
 # Messages de gestion des recettes dupliquées

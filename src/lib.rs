@@ -17,6 +17,7 @@ pub mod localization;
 pub mod observability;
 pub mod observability_config;
 pub mod retry;
+pub mod search;
 pub mod secret;
 pub mod telegram_connection;
 pub mod text_processing;

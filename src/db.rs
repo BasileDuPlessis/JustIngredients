@@ -1057,32 +1057,6 @@ pub async fn read_recipe_with_name(
     }
 }
 
-/// Search recipes using full-text search
-pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Result<Vec<Recipe>> {
-    debug!(telegram_id = %telegram_id, "Searching recipes");
-
-    let rows = sqlx::query("SELECT id, telegram_id, content, recipe_name, created_at FROM recipes WHERE telegram_id = $1 AND content_tsv @@ plainto_tsquery('english', $2) ORDER BY created_at DESC")
-        .bind(telegram_id)
-        .bind(query)
-        .fetch_all(pool)
-        .await
-        .context("Failed to search recipes")?;
-
-    let recipes: Vec<Recipe> = rows
-        .into_iter()
-        .map(|row| Recipe {
-            id: row.get(0),
-            telegram_id: row.get(1),
-            content: std::sync::Arc::new(row.get(2)),
-            recipe_name: row.get::<Option<String>, _>(3).map(std::sync::Arc::new),
-            created_at: row.get(4),
-        })
-        .collect();
-
-    debug!(telegram_id = %telegram_id, result_count = recipes.len(), "Recipe search completed");
-    Ok(recipes)
-}
-
 /// Check if a recipe name has duplicates for a user
 pub async fn has_duplicate_recipes(
     pool: &PgPool,
@@ -1119,6 +1093,36 @@ pub struct RecipeSummary {
     pub id: i64,
     pub name: String,
     pub created_at: DateTime<Utc>,
+}
+
+/// The user's named recipes with their ingredient names, newest first, for the search
+/// (`crate::search`).
+pub async fn searchable_recipes(
+    pool: &PgPool,
+    telegram_id: i64,
+) -> Result<Vec<crate::search::SearchableRecipe>> {
+    let rows: Vec<(i64, String, DateTime<Utc>, Vec<String>)> = sqlx::query_as(
+        "SELECT r.id, r.recipe_name, r.created_at, \
+                COALESCE(array_agg(i.name ORDER BY i.id) FILTER (WHERE i.name IS NOT NULL), '{}') \
+         FROM recipes r LEFT JOIN ingredients i ON i.recipe_id = r.id \
+         WHERE r.telegram_id = $1 AND r.recipe_name IS NOT NULL \
+         GROUP BY r.id ORDER BY r.created_at DESC, r.id DESC",
+    )
+    .bind(telegram_id)
+    .fetch_all(pool)
+    .await
+    .context("Failed to read the recipes to search")?;
+    Ok(rows
+        .into_iter()
+        .map(
+            |(id, name, created_at, ingredients)| crate::search::SearchableRecipe {
+                id,
+                name,
+                created_at,
+                ingredients,
+            },
+        )
+        .collect())
 }
 
 /// Recipes of a user, newest first, and the user's total number of recipes.

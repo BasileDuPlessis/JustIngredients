@@ -395,14 +395,21 @@ single exit ("❌ Annuler" during an action, "📚 Liste des recettes" otherwise
 ## Phase U4: Search
 
 ### Task U4.1: French-aware search (finding 11) (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29), approach changed: `db::searchable_recipes` reads names and ingredient
+  names in one query and `crate::search` matches in Rust (case, accents, ligatures, plurals,
+  small words ignored; names rank above ingredients). No `unaccent` (needs extension rights the
+  app user may not have on Fly) and no index: a user has at most a few hundred recipes. Tests:
+  unit tests of the matching, a DB test ("creme" finds "Crème brûlée", "farine" by ingredient,
+  another user's recipe never appears). The English `search_recipes` was removed.
 - Description: search on recipe names and ingredient names with a `simple` text configuration
   plus `unaccent` (French and English recipes), owner-scoped, ranked; index migration.
 - How to validate: DB tests: "creme" finds "crème brûlée", "farine" finds recipes by ingredient,
   another user's recipes never appear.
 
 ### Task U4.2: Search command, button and free text (finding 11) (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29): `/cherche <mots>`, free text outside an action and the 🔍 of older home
+  messages; results at the bottom (up to 8 recipe buttons, then 📚 Liste des recettes), recorded
+  as a list so opening a result replaces them; the list header says how to search.
 - Description: `/cherche <mots>` (and `/search`), the search button asks for words, and any text sent
   outside a dialogue is searched; results use the recipe list component of U3.1.
 - How to validate: handler-level tests of parsing; manual search in Telegram.

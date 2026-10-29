@@ -144,35 +144,6 @@ async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
 
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
-async fn test_full_text_search(pool: PgPool) -> Result<()> {
-    init_database_schema(&pool).await?;
-    test_full_text_search_impl(&pool).await
-}
-
-async fn test_full_text_search_impl(pool: &PgPool) -> Result<()> {
-    create_recipe(pool, 12345, "flour 2 cups sugar 1 cup").await?;
-    create_recipe(pool, 12345, "butter 100 grams milk 250 ml").await?;
-    create_recipe(pool, 67890, "chocolate 200 grams").await?;
-
-    // Search for entries containing "flour"
-    let results = search_recipes(pool, 12345, "flour").await?;
-    assert_eq!(results.len(), 1);
-    assert!(results[0].content.contains("flour"));
-
-    // Search for entries containing "grams"
-    let results = search_recipes(pool, 12345, "grams").await?;
-    assert_eq!(results.len(), 1);
-    assert!(results[0].content.contains("butter"));
-
-    // Search for non-existent term
-    let results = search_recipes(pool, 12345, "nonexistent").await?;
-    assert_eq!(results.len(), 0);
-
-    Ok(())
-}
-
-#[sqlx::test(migrations = false)]
-#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn test_save_recipe_is_all_or_nothing(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
     let ingredients = [
@@ -1268,5 +1239,65 @@ async fn duplicate_names_are_numbered_without_new_collisions(pool: PgPool) -> Re
         "another user's recipe is not numbered"
     );
     assert_eq!(number_duplicate_recipe_names(&pool).await?, 0, "idempotent");
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn search_finds_names_and_ingredients_of_the_user_only(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let ingredient = |name| NewIngredient {
+        name,
+        quantity: Some(1.0),
+        unit: None,
+    };
+    save_recipe(
+        &pool,
+        5,
+        Some("fr"),
+        "t",
+        "Crème brûlée",
+        &[ingredient("œufs"), ingredient("sucre")],
+    )
+    .await?;
+    save_recipe(
+        &pool,
+        5,
+        Some("fr"),
+        "t",
+        "Pain",
+        &[ingredient("farine"), ingredient("eau")],
+    )
+    .await?;
+    save_recipe(&pool, 5, Some("fr"), "t", "Riz au lait", &[]).await?;
+    save_recipe(
+        &pool,
+        6,
+        Some("fr"),
+        "t",
+        "Crème anglaise",
+        &[ingredient("farine")],
+    )
+    .await?;
+
+    let recipes = searchable_recipes(&pool, 5).await?;
+    assert_eq!(
+        recipes.len(),
+        3,
+        "the user's recipes only, also without ingredients"
+    );
+    let names = |query: &str| -> Vec<String> {
+        just_ingredients::search::search(&recipes, query)
+            .iter()
+            .map(|recipe| recipe.name.clone())
+            .collect()
+    };
+    assert_eq!(names("creme"), vec!["Crème brûlée"]);
+    assert_eq!(names("farine"), vec!["Pain"], "by ingredient");
+    assert_eq!(names("riz"), vec!["Riz au lait"]);
+    assert!(
+        names("anglaise").is_empty(),
+        "another user's recipe never appears"
+    );
     Ok(())
 }

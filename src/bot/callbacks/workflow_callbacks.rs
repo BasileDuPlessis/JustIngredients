@@ -216,19 +216,30 @@ pub async fn handle_workflow_button(
                 q.from.language_code.as_deref(),
             );
 
-            bot.send_message(
-                q.message
-                    .as_ref()
-                    .expect("Callback query should have a message")
-                    .chat()
-                    .id,
-                t_lang(
+            // The 🔍 of older home messages: how to search, at the bottom
+            if let Some(message) = &q.message {
+                let chat_id = message.chat().id;
+                let sent = bot
+                    .send_message(
+                        chat_id,
+                        t_lang(
+                            localization,
+                            "search-prompt",
+                            q.from.language_code.as_deref(),
+                        ),
+                    )
+                    .await?;
+                crate::bot::cleanup::track(chat_id, sent.id).await;
+                crate::bot::home::answer_at_bottom(
+                    bot,
+                    chat_id,
+                    sent.id,
+                    false,
                     localization,
-                    "workflow-search-coming-soon",
                     q.from.language_code.as_deref(),
-                ),
-            )
-            .await?;
+                )
+                .await;
+            }
         }
         _ => {}
     }

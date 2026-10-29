@@ -32,7 +32,6 @@ help-final = Need help? Just send me an image! 😊
 command-list = My recipes
 command-help = Help and tips
 command-cancel = Cancel the current action
-search-coming-soon = Search is coming soon. Meanwhile, /list shows all your recipes.
 unknown-command = I don't know this command. Here are the ones I know:
 private-chat-only = I only work in private chats: message me directly.
 button-expired = This button is no longer active. Send the photo again, or open the recipe from the list at the bottom.
@@ -91,8 +90,6 @@ unsupported-feature4 = ❓ Send /help for detailed instructions
 unsupported-final = Try sending me an image with text! 📝
 
 # Regular text responses
-text-response = Received: {$text}
-text-tip = 💡 Tip: Send me a photo of a recipe's ingredient list and I'll read it for you!
 
 # Recipe name dialogue messages
 recipe-name-prompt = 🏷️ What would you like to call this recipe?
@@ -152,6 +149,12 @@ of = of
 
 # Recipes command messages
 your-recipes = Your Recipes
+search-prompt = 🔍 Type a recipe name or an ingredient, for example “flour”.
+search-no-results = 🔍 No recipe matches “{$query}”
+search-one-result = 🔍 1 recipe for “{$query}”
+search-results = 🔍 {$count} recipes for “{$query}”
+search-more-results = The first {$shown} are shown: refine your search.
+list-search-hint = 🔍 Type a word to search your recipes.
 recipes-list-button = 📚 Recipe list
 recipe-details-coming-soon = Recipe details coming soon!
 
@@ -160,7 +163,6 @@ workflow-recipe-saved = ✅ Recipe saved successfully!
 workflow-what-next = What would you like to do next?
 workflow-list-recipes = List My Recipes
 workflow-search-recipes = Search Recipes
-workflow-search-coming-soon = Recipe search coming soon! For now, use the 'List My Recipes' button.
 caption-recipe-saved = Recipe saved as: "{$recipe_name}"
 
 # Duplicate recipe handling messages
