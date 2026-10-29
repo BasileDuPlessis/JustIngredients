@@ -3,7 +3,7 @@ use chrono::{DateTime, Utc};
 use sqlx::postgres::PgPool;
 use sqlx::Row;
 use tracing::Instrument;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 
 // Import cache types
 use crate::cache::Cache;
@@ -358,36 +358,34 @@ pub async fn set_unit_view(
 /// → l, cl and dl → ml with the quantity converted, spoons in words → tbsp and tsp, count units
 /// lowercased ("PINCÉES" → "pincées"). Runs at startup; does nothing once every unit is
 /// normalized. Returns the number of ingredients changed.
+///
+/// Each ingredient is written on its own (the result does not depend on the others, and a second
+/// run finds nothing to do), so one that cannot be written is logged and the others are; only
+/// what `units::renormalized` finds safe is written. A blank unit becomes none.
 pub async fn normalize_saved_units(pool: &PgPool) -> Result<u64> {
-    let mut tx = pool
-        .begin()
-        .await
-        .context("Failed to start normalizing saved units")?;
     let saved: Vec<(i64, Option<f64>, String)> = sqlx::query_as(
         "SELECT id, quantity::float8, unit FROM ingredients WHERE unit IS NOT NULL ORDER BY id",
     )
-    .fetch_all(&mut *tx)
+    .fetch_all(pool)
     .await
     .context("Failed to read the saved units")?;
 
     let mut changed = 0;
     for (id, quantity, unit) in saved {
-        let normalized = crate::units::normalize_measurement(quantity, Some(&unit));
-        if normalized.unit.as_deref() == Some(unit.as_str()) && normalized.quantity == quantity {
+        let Some(normalized) = crate::units::renormalized(quantity, &unit) else {
             continue;
-        }
-        sqlx::query("UPDATE ingredients SET quantity = $1, unit = $2 WHERE id = $3")
+        };
+        let written = sqlx::query("UPDATE ingredients SET quantity = $1, unit = $2 WHERE id = $3")
             .bind(normalized.quantity)
             .bind(normalized.unit.as_deref())
             .bind(id)
-            .execute(&mut *tx)
-            .await
-            .with_context(|| format!("Failed to normalize the unit of the ingredient {id}"))?;
-        changed += 1;
+            .execute(pool)
+            .await;
+        match written {
+            Ok(_) => changed += 1,
+            Err(e) => warn!(ingredient = id, error = %e, "Could not normalize a saved unit"),
+        }
     }
-    tx.commit()
-        .await
-        .context("Failed to commit the normalized units")?;
     Ok(changed)
 }
 
@@ -1524,10 +1522,12 @@ pub async fn chat_message_kind(
         .context("Failed to look up a chat message")
 }
 
-/// The recipe of the newest message of `chat` recorded as `kind` (the active card's recipe).
+/// The recipe of the newest message of `chat` recorded as `kind` with a recipe (the active
+/// card's recipe, the one a unit chooser brings back).
 pub async fn latest_recipe_message(pool: &PgPool, chat_id: i64, kind: &str) -> Result<Option<i64>> {
     let recipe: Option<Option<i64>> = sqlx::query_scalar(
-        "SELECT recipe_id FROM chat_messages WHERE chat_id = $1 AND kind = $2 \
+        "SELECT recipe_id FROM chat_messages \
+         WHERE chat_id = $1 AND kind = $2 AND recipe_id IS NOT NULL \
          ORDER BY message_id DESC LIMIT 1",
     )
     .bind(chat_id)

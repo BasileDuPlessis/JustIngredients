@@ -54,8 +54,13 @@ pub struct ShownMeasure {
 /// Under this weight a measure stays as saved: a kitchen scale weighs to the gram.
 const SMALLEST_WEIGHED_GRAMS: f64 = 1.0;
 
-/// The measure of a saved ingredient in `view`, for a French-speaking user or not. Units saved
-/// before normalization ("G", "cl", "cuillères à soupe") are read like normalized ones.
+/// Under a sixteenth of a teaspoon a US measure stays as saved: no spoon measures it.
+const SMALLEST_TEASPOONS: f64 = 0.0625;
+
+/// The measure of a saved ingredient in `view`, for a French-speaking user or not (unit names
+/// and decimal comma). Units saved before normalization ("G", "cl", "cuillères à soupe") are
+/// read like normalized ones. Saved metric values convert exactly (500 ml → 50 cl); only what a
+/// density or a US unit gives is rounded.
 pub fn show_measure(
     quantity: Option<f64>,
     unit: Option<&str>,
@@ -75,7 +80,7 @@ pub fn show_measure(
                 .quantity
                 .map(|q| decimal(q, french))
                 .unwrap_or_default(),
-            normalized.unit.unwrap_or_default(),
+            unit.map(crate::units::clean_unit).unwrap_or_default(),
         ]);
     };
     let labels = if view == UnitView::Us || !french {
@@ -83,24 +88,24 @@ pub fn show_measure(
     } else {
         Labels::French
     };
-    let as_saved = || ShownMeasure {
-        text: measure_text(quantity, canonical, labels),
-        converted: false,
-    };
+    let as_saved = measure_text(quantity, canonical, labels, french);
     let amount = unit_amount(canonical).times(quantity);
     let ingredient = find_ingredient(name);
     let shown = match view {
         UnitView::Recipe => None,
-        UnitView::Weight => weight_view(amount, ingredient),
+        UnitView::Weight => weight_view(amount, canonical, ingredient, french),
         UnitView::French => french_view(amount, canonical, ingredient, french),
-        UnitView::Us => us_view(amount, canonical, ingredient),
+        UnitView::Us => us_view(amount, canonical, ingredient, french),
     };
     match shown {
-        Some(text) => {
-            let converted = text != as_saved().text;
-            ShownMeasure { text, converted }
-        }
-        None => as_saved(),
+        Some(text) => ShownMeasure {
+            converted: text != as_saved,
+            text,
+        },
+        None => ShownMeasure {
+            text: as_saved,
+            converted: false,
+        },
     }
 }
 
@@ -116,17 +121,39 @@ fn unchanged(parts: &[String]) -> ShownMeasure {
     }
 }
 
-/// Grams of what can be weighed: masses, and volumes of an ingredient of the table, from 1 g.
-fn weight_view(amount: Amount, ingredient: Option<&Ingredient>) -> Option<String> {
-    let grams = match amount {
-        Amount::Mass(grams) => grams,
-        Amount::Volume(millilitres) => ingredient?.grams(millilitres),
-    };
-    (grams >= SMALLEST_WEIGHED_GRAMS).then(|| format!("{} g", round_grams(grams)))
+fn is_metric_mass(unit: CanonicalUnit) -> bool {
+    matches!(
+        unit,
+        CanonicalUnit::Gram | CanonicalUnit::Kilogram | CanonicalUnit::Milligram
+    )
 }
 
-/// Masses in g (kg from 1 kg), liquids in cl and l, solids of the table in g; spoons, milligrams
-/// and cups of an unknown ingredient as saved.
+fn is_metric_volume(unit: CanonicalUnit) -> bool {
+    matches!(unit, CanonicalUnit::Milliliter | CanonicalUnit::Liter)
+}
+
+/// Grams of what can be weighed, from 1 g: grams as saved, kg and mg exactly, lb, oz and
+/// volumes of an ingredient of the table rounded.
+fn weight_view(
+    amount: Amount,
+    unit: CanonicalUnit,
+    ingredient: Option<&Ingredient>,
+    french: bool,
+) -> Option<String> {
+    let (grams, exact) = match amount {
+        Amount::Mass(_) if unit == CanonicalUnit::Gram => return None,
+        Amount::Mass(grams) => (grams, is_metric_mass(unit)),
+        Amount::Volume(millilitres) => (ingredient?.grams(millilitres), false),
+    };
+    if grams < SMALLEST_WEIGHED_GRAMS {
+        return None;
+    }
+    let grams = if exact { grams } else { round_grams(grams) };
+    Some(format!("{} g", thousands(&decimal(grams, french), french)))
+}
+
+/// Metric masses as saved, lb and oz in g; spoons kept; metric volumes in cl and l; US volumes
+/// of an ingredient of the table in g (a solid) or cl (a liquid), of another as saved.
 fn french_view(
     amount: Amount,
     unit: CanonicalUnit,
@@ -134,88 +161,102 @@ fn french_view(
     french: bool,
 ) -> Option<String> {
     match amount {
-        Amount::Mass(_) if unit == CanonicalUnit::Milligram => None,
-        Amount::Mass(grams) => Some(metric_grams(grams, french)),
+        Amount::Mass(_) if is_metric_mass(unit) => None,
+        Amount::Mass(grams) => metric_grams(grams, french),
         Amount::Volume(_)
             if matches!(unit, CanonicalUnit::Tablespoon | CanonicalUnit::Teaspoon) =>
         {
             None
         }
+        Amount::Volume(millilitres) if is_metric_volume(unit) => {
+            Some(metric_volume(millilitres, true, french))
+        }
         Amount::Volume(millilitres) => match ingredient {
             Some(ingredient) if !ingredient.liquid => {
-                Some(metric_grams(ingredient.grams(millilitres), french))
+                metric_grams(ingredient.grams(millilitres), french)
             }
-            Some(_) => Some(metric_volume(millilitres, french)),
-            None if matches!(unit, CanonicalUnit::Milliliter | CanonicalUnit::Liter) => {
-                Some(metric_volume(millilitres, french))
-            }
+            Some(_) => Some(metric_volume(millilitres, false, french)),
             None => None,
         },
     }
 }
 
-/// Ingredients of the table in cups, tablespoons or teaspoons, other masses in oz and lb, metric
-/// volumes in cups; US units as saved.
-fn us_view(amount: Amount, unit: CanonicalUnit, ingredient: Option<&Ingredient>) -> Option<String> {
+/// oz and lb as saved; masses of an ingredient of the table in cups, tablespoons or teaspoons,
+/// other masses in oz and lb; metric volumes in cups, tablespoons or teaspoons.
+fn us_view(
+    amount: Amount,
+    unit: CanonicalUnit,
+    ingredient: Option<&Ingredient>,
+    french: bool,
+) -> Option<String> {
     match amount {
+        Amount::Mass(_) if matches!(unit, CanonicalUnit::Pound | CanonicalUnit::Ounce) => None,
         Amount::Mass(grams) => match ingredient {
-            Some(ingredient) => us_volume(ingredient.millilitres(grams)),
-            None => us_mass(grams),
+            Some(ingredient) => us_volume(ingredient.millilitres(grams), french),
+            None => us_mass(grams, french),
         },
-        Amount::Volume(millilitres)
-            if matches!(unit, CanonicalUnit::Milliliter | CanonicalUnit::Liter) =>
-        {
-            us_volume(millilitres)
-        }
+        Amount::Volume(millilitres) if is_metric_volume(unit) => us_volume(millilitres, french),
         Amount::Volume(_) => None,
     }
 }
 
 /// To the gram under 100 g, to 5 g above.
-fn round_grams(grams: f64) -> i64 {
+fn round_grams(grams: f64) -> f64 {
     if grams < 100.0 {
-        (grams.round() as i64).max(1)
+        grams.round().max(1.0)
     } else {
-        ((grams / 5.0).round() * 5.0) as i64
+        (grams / 5.0).round() * 5.0
     }
 }
 
-/// "180 g", "1,25 kg" from 1 kg.
-fn metric_grams(grams: f64, french: bool) -> String {
+/// A computed weight: "180 g", "1,25 kg" from 1 kg; `None` under 1 g.
+fn metric_grams(grams: f64, french: bool) -> Option<String> {
+    if grams < SMALLEST_WEIGHED_GRAMS {
+        return None;
+    }
     let rounded = round_grams(grams);
-    if rounded >= 1000 {
-        format!("{} kg", decimal(rounded as f64 / 1000.0, french))
+    Some(if rounded >= 1000.0 {
+        format!("{} kg", decimal(rounded / 1000.0, french))
     } else {
         format!("{rounded} g")
-    }
+    })
 }
 
-/// "8 ml" under 1 cl, "30 cl", "4,5 cl" (to the half under 10 cl), "1,3 l" from 1 l.
-fn metric_volume(millilitres: f64, french: bool) -> String {
+/// "8 ml" under 1 cl, then cl, then l from 1 l. A saved metric volume converts exactly ("33 ml"
+/// → "3,3 cl"); a computed one is rounded to the half cl under 10 cl, to the cl above and to
+/// the tenth of a litre.
+fn metric_volume(millilitres: f64, exact: bool, french: bool) -> String {
     if millilitres < 10.0 {
-        format!("{} ml", millilitres.round().max(1.0))
-    } else if millilitres < 1000.0 {
-        let centilitres = millilitres / 10.0;
-        let rounded = if centilitres < 10.0 {
-            (centilitres * 2.0).round() / 2.0
+        let millilitres = if exact {
+            millilitres
         } else {
-            centilitres.round()
+            millilitres.round().max(1.0)
         };
-        format!("{} cl", decimal(rounded, french))
-    } else {
-        format!(
-            "{} l",
-            decimal((millilitres / 100.0).round() / 10.0, french)
-        )
+        return format!("{} ml", decimal(millilitres, french));
     }
+    let centilitres = millilitres / 10.0;
+    let centilitres = if exact {
+        centilitres
+    } else if centilitres < 10.0 {
+        (centilitres * 2.0).round() / 2.0
+    } else {
+        centilitres.round()
+    };
+    if centilitres < 100.0 {
+        return format!("{} cl", decimal(centilitres, french));
+    }
+    let litres = if exact {
+        millilitres / 1000.0
+    } else {
+        (millilitres / 100.0).round() / 10.0
+    };
+    format!("{} l", decimal(litres, french))
 }
 
-/// Quarts from 4 cups, cups from ¼ cup, then tablespoons and teaspoons.
-fn us_volume(millilitres: f64) -> Option<String> {
+/// Cups from ¼ cup, then tablespoons, then teaspoons; under a sixteenth of a teaspoon as saved.
+fn us_volume(millilitres: f64, french: bool) -> Option<String> {
     let cups = millilitres / CUP_ML;
-    let (value, unit) = if cups >= 4.0 {
-        (to_quarter(millilitres / 946.353), CanonicalUnit::Quart)
-    } else if cups >= 0.25 - 0.02 {
+    let (value, unit) = if cups >= 0.25 - 0.02 {
         (to_cup_fraction(cups), CanonicalUnit::Cup)
     } else if millilitres >= 15.0 - 1.0 {
         (
@@ -223,16 +264,17 @@ fn us_volume(millilitres: f64) -> Option<String> {
             CanonicalUnit::Tablespoon,
         )
     } else {
-        (
-            to_quarter(millilitres / 5.0).max(0.125),
-            CanonicalUnit::Teaspoon,
-        )
+        let teaspoons = millilitres / 5.0;
+        if teaspoons < SMALLEST_TEASPOONS {
+            return None;
+        }
+        (to_quarter(teaspoons).max(0.125), CanonicalUnit::Teaspoon)
     };
-    Some(measure_text(value, unit, Labels::English))
+    Some(measure_text(value, unit, Labels::English, french))
 }
 
 /// Ounces to the half under 1 lb, pounds to the quarter above; under half an ounce as saved.
-fn us_mass(grams: f64) -> Option<String> {
+fn us_mass(grams: f64, french: bool) -> Option<String> {
     let ounces = grams / 28.3495;
     if ounces < 0.5 {
         None
@@ -241,12 +283,14 @@ fn us_mass(grams: f64) -> Option<String> {
             (ounces * 2.0).round() / 2.0,
             CanonicalUnit::Ounce,
             Labels::English,
+            french,
         ))
     } else {
         Some(measure_text(
             to_quarter(ounces / 16.0),
             CanonicalUnit::Pound,
             Labels::English,
+            french,
         ))
     }
 }
@@ -272,16 +316,12 @@ enum Labels {
 }
 
 /// "1 ½ cups", "½ c. à c.", "1,5 kg", "200 ml": spoons, cups and US masses in fractions,
-/// metric units in decimals.
-fn measure_text(quantity: f64, unit: CanonicalUnit, labels: Labels) -> String {
-    let french = labels == Labels::French;
-    let number = match unit {
-        CanonicalUnit::Gram
-        | CanonicalUnit::Kilogram
-        | CanonicalUnit::Milligram
-        | CanonicalUnit::Milliliter
-        | CanonicalUnit::Liter => decimal(quantity, french),
-        _ => fraction(quantity).unwrap_or_else(|| decimal(quantity, french)),
+/// metric units in decimals (with a comma for a French-speaking user, whatever the labels).
+fn measure_text(quantity: f64, unit: CanonicalUnit, labels: Labels, french: bool) -> String {
+    let number = if is_metric_mass(unit) || is_metric_volume(unit) {
+        decimal(quantity, french)
+    } else {
+        fraction(quantity).unwrap_or_else(|| decimal(quantity, french))
     };
     format!("{number} {}", label(unit, quantity, labels))
 }
@@ -318,7 +358,27 @@ fn decimal(value: f64, french: bool) -> String {
     }
 }
 
-/// "1 ½", "¾", "2" for a whole number plus an eighth, a quarter or a third; `None` otherwise.
+/// "1200" → "1 200" (a no-break space) in French, "1,200" in English.
+fn thousands(number: &str, french: bool) -> String {
+    let (whole, rest) = number
+        .find([',', '.'])
+        .map_or((number, ""), |at| number.split_at(at));
+    if whole.len() <= 3 || !whole.bytes().all(|b| b.is_ascii_digit()) {
+        return number.to_string();
+    }
+    let separator = if french { '\u{a0}' } else { ',' };
+    let mut grouped = String::new();
+    for (index, digit) in whole.chars().enumerate() {
+        if index > 0 && (whole.len() - index) % 3 == 0 {
+            grouped.push(separator);
+        }
+        grouped.push(digit);
+    }
+    grouped + rest
+}
+
+/// "1 ½", "¾", "2" for a whole number plus an eighth, a quarter or a third; `None` otherwise,
+/// and under a sixteenth (shown in decimals).
 fn fraction(value: f64) -> Option<String> {
     const GLYPHS: [(f64, &str); 9] = [
         (0.0, ""),
@@ -331,13 +391,15 @@ fn fraction(value: f64) -> Option<String> {
         (0.875, "⅞"),
         (1.0, ""),
     ];
+    if value < 0.0625 {
+        return None;
+    }
     let whole = value.floor();
     let (part, glyph) = GLYPHS
         .iter()
         .find(|(part, _)| ((value - whole) - part).abs() < 0.01)?;
     let whole = whole + if *part == 1.0 { 1.0 } else { 0.0 };
     Some(match (whole as i64, *glyph) {
-        (0, "") => "0".to_string(),
         (0, glyph) => glyph.to_string(),
         (whole, "") => whole.to_string(),
         (whole, glyph) => format!("{whole} {glyph}"),
@@ -516,14 +578,37 @@ mod tests {
         assert_eq!(text(1.0, "cup", "beurre", UnitView::Weight, true), "225 g");
         assert_eq!(text(1.2, "kg", "farine", UnitView::French, true), "1,2 kg");
         assert_eq!(text(1.2, "kg", "farine", UnitView::French, false), "1.2 kg");
-        assert_eq!(text(1.2, "kg", "farine", UnitView::Weight, true), "1200 g");
+        assert_eq!(
+            text(1.2, "kg", "farine", UnitView::Weight, true),
+            "1\u{a0}200 g"
+        );
+        assert_eq!(
+            text(1.234, "kg", "farine", UnitView::Weight, false),
+            "1,234 g"
+        );
         assert_eq!(text(45.0, "ml", "lait", UnitView::French, true), "4,5 cl");
+        assert_eq!(
+            text(33.0, "ml", "lait", UnitView::French, true),
+            "3,3 cl",
+            "exact"
+        );
         assert_eq!(
             text(5.0, "ml", "extrait de vanille", UnitView::French, true),
             "5 ml"
         );
-        assert_eq!(text(1.25, "l", "eau", UnitView::French, true), "1,3 l");
-        assert_eq!(text(2.0, "l", "eau", UnitView::Us, true), "2 quarts");
+        assert_eq!(text(1.25, "l", "eau", UnitView::French, true), "1,25 l");
+        assert_eq!(text(997.0, "ml", "eau", UnitView::French, true), "99,7 cl");
+        assert_eq!(
+            text(4.21, "cup", "lait", UnitView::French, true),
+            "1 l",
+            "not 100 cl"
+        );
+        assert_eq!(
+            text(2.0, "l", "eau", UnitView::Us, true),
+            "8 ½ cups",
+            "no quarts"
+        );
+        assert_eq!(text(1.0, "kg", "farine", UnitView::Us, false), "8 ⅓ cups");
         assert_eq!(text(1.0, "lb", "bœuf", UnitView::French, true), "455 g");
         assert_eq!(text(250.0, "g", "bœuf", UnitView::Us, true), "9 oz");
         assert_eq!(text(500.0, "g", "bœuf", UnitView::Us, true), "1 lb");
@@ -533,16 +618,63 @@ mod tests {
             "under ½ oz"
         );
         assert_eq!(
+            text(5.0, "mg", "sel", UnitView::Us, true),
+            "5 mg",
+            "no spoon for it"
+        );
+        assert_eq!(
             text(0.25, "tsp", "cannelle", UnitView::Weight, true),
             "¼ c. à c.",
             "under 1 g"
         );
+        assert_eq!(
+            text(0.004, "tsp", "sel", UnitView::Recipe, true),
+            "0,004 c. à c."
+        );
+        assert_eq!(text(1.2, "cup", "farine", UnitView::Us, true), "1,2 cups");
         assert_eq!(
             text(2.0, "cup", "farine", UnitView::Recipe, true),
             "2 tasses"
         );
         assert_eq!(text(2.0, "cup", "flour", UnitView::Recipe, false), "2 cups");
         assert_eq!(text(500.0, "mg", "sel", UnitView::French, true), "500 mg");
+        assert_eq!(text(1500.0, "mg", "sel", UnitView::Weight, true), "1,5 g");
+    }
+
+    #[test]
+    fn saved_metric_values_are_never_rounded() {
+        let shown = |quantity, unit: &'static str, name, view| {
+            show_measure(Some(quantity), Some(unit), name, view, true)
+        };
+        for view in UnitView::ALL {
+            let shown = shown(113.0, "g", "beurre", view);
+            if view != UnitView::Us {
+                assert_eq!(shown.text, "113 g", "{view:?}");
+                assert!(!shown.converted, "{view:?}");
+            }
+        }
+        assert_eq!(shown(0.5, "g", "safran", UnitView::French).text, "0,5 g");
+        assert_eq!(shown(1.5, "g", "sel", UnitView::Weight).text, "1,5 g");
+        assert_eq!(
+            shown(200.0, "ml", "crème fraîche", UnitView::French).text,
+            "20 cl",
+            "a metric volume stays a volume"
+        );
+        assert_eq!(
+            shown(0.001, "cup", "farine", UnitView::French).text,
+            "0,001 tasse",
+            "under 1 g: as saved"
+        );
+    }
+
+    #[test]
+    fn the_us_view_keeps_ounces_and_pounds() {
+        let text = |quantity, unit: &'static str, name| {
+            show_measure(Some(quantity), Some(unit), name, UnitView::Us, false).text
+        };
+        assert_eq!(text(8.0, "oz", "cream cheese"), "8 oz");
+        assert_eq!(text(1.0, "lb", "flour"), "1 lb");
+        assert_eq!(text(16.0, "oz", "chocolate"), "16 oz");
     }
 
     #[test]

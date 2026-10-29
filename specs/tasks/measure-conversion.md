@@ -19,7 +19,7 @@ Version 3 du 2026-10-29, validée par l'utilisateur (décisions ci-dessous) : c'
 4. Après un choix dans `/unites`, la fiche qu'on regardait revient dans la nouvelle vue (ou la
    liste).
 5. La table des densités couvre les ingrédients les plus courants (recherche du 2026-10-29,
-   125 entrées).
+   129 entrées après la relecture RU8).
 6. Les unités enregistrées avant la normalisation sont remises en ordre une fois.
 
 ## Le principe
@@ -126,26 +126,30 @@ ou boulangère, la densité n'est pas la même.
 
 ## Les défauts de chaque vue
 
+Après la relecture RU8 : une valeur métrique enregistrée n'est jamais arrondie, et ce qui ne se
+mesure pas (sous 1 g, sous 1/16 de c. à c.) reste tel qu'enregistré.
+
 | Mesure enregistrée | Tout en poids (g) | Unités françaises (g, cl) | Unités américaines (cups, oz) |
 |---|---|---|---|
-| g, kg, mg | g (1 200 g, pas de kg : c'est ce que montre la balance) | g, kg à partir d'1 kg | solide du tableau (farine, sucre…) en cups dès ¼ cup, sinon tbsp / tsp ; le reste en oz sous 1 lb, lb au-delà |
+| g | inchangé | inchangé | solide du tableau (farine, sucre…) en cups dès ¼ cup, sinon tbsp / tsp ; le reste en oz sous 1 lb, lb au-delà (inchangé sous ½ oz) |
+| kg, mg | g exacts (1,2 kg → 1 200 g, c'est ce que montre la balance), inchangé sous 1 g | inchangé | comme g |
 | lb, oz | g | g | inchangé |
-| ml, l (liquide) | g par densité (eau, lait ≈ 1) | cl, l à partir d'1 l | cups (¼ cup et plus), sinon tbsp / tsp |
-| cup, pint, quart (liquide) | g par densité | cl, l à partir d'1 l | inchangé |
-| cup (solide du tableau) | g par densité | g par densité | inchangé |
-| cup (solide inconnu) | inchangé | inchangé | inchangé |
+| ml, l | g par densité (eau, lait ≈ 1) pour un ingrédient du tableau | cl, l à partir d'1 l, valeur exacte (33 ml → 3,3 cl), solide ou liquide | cups (¼ cup et plus), sinon tbsp / tsp |
+| cup, pint, quart, gallon | g par densité pour un ingrédient du tableau | solide du tableau : g ; liquide du tableau : cl / l ; inconnu : inchangé | inchangé |
 | c. à s., c. à c. | g par densité, sauf sous 1 g (la balance est précise au gramme) | inchangé | tbsp, tsp |
 | unités de comptage (pincée, gousses), sans unité (2 œufs), sans quantité (sel) | inchangé | inchangé | inchangé |
 
-Arrondis « de cuisine » :
-- grammes : au gramme sous 100 g, aux 5 g au-dessus (226 g → 225 g) ;
+Arrondis « de cuisine », seulement pour une valeur calculée (par densité ou depuis une unité
+américaine) :
+- grammes : au gramme sous 100 g, aux 5 g au-dessus (226 g → 225 g), kg à partir d'1 kg dans la
+  vue française ;
 - cl : au demi-cl sous 10 cl, au cl au-dessus (23,7 cl → 24 cl) ; l au dixième (1,25 l → 1,3 l) ;
-- cups au quart ou au tiers le plus proche (2,08 → 2 cups), tbsp au demi, tsp au quart ;
-  oz au demi, lb au quart.
+- cups au quart ou au tiers le plus proche (2,08 → 2 cups, 8,45 → 8 ½ cups : pas de quarts),
+  tbsp au demi, tsp au quart (⅛ au minimum) ; oz au demi, lb au quart.
 
 Nombres : fractions pour les cuillères, les tasses et les mesures américaines (« ½ c. à c. »,
-« 1 ½ cups »), virgule décimale pour les unités métriques en français (« 1,5 kg »). Les valeurs des unités et des ingrédients sont dans la table de
-conversion ci-dessous.
+« 1 ½ cups »), virgule décimale pour un utilisateur français, même dans la vue américaine
+(« 1,2 cups », « 1,5 kg »), espace des milliers (« 1 200 g »).
 
 « Anglaises » s'entend ici au sens américain : les recettes en anglais lues par le bot viennent
 surtout de sites américains, et les recettes britanniques actuelles sont déjà en g et ml.
@@ -209,6 +213,8 @@ courants des recettes françaises et des recettes américaines en tasses.
 | poudre de noisette | hazelnut flour | solide | 376 | 89 g | 5,6 g | 1,9 g |
 | chapelure | breadcrumbs | solide | 473 | 112 g | 7,1 g | 2,4 g |
 | flocons d'avoine | oats, rolled oats | solide | 376 | 89 g | 5,6 g | 1,9 g |
+| céréales, corn flakes, cornflakes, flocons de maïs, pétales de maïs, riz soufflé | cereal, corn flakes, cornflakes, rice krispies, puffed rice | solide | 118 | 28 g | 1,8 g | 0,6 g |
+| pop-corn, popcorn, maïs soufflé | popcorn, popped corn | solide | 22 | 5,2 g | 0,3 g | 0,1 g |
 | **Sucres et sirops** | | | | | | |
 | sucre, sucre en poudre, sucre semoule | sugar, granulated sugar | solide | 837 | 198 g | 13 g | 4,2 g |
 | sucre glace | powdered sugar, icing sugar, confectioners sugar | solide | 478 | 113 g | 7,2 g | 2,4 g |
@@ -217,8 +223,9 @@ courants des recettes françaises et des recettes américaines en tasses.
 | sirop d'érable, sirop de maïs | maple syrup, corn syrup | liquide | 1 319 | 312 g | 20 g | 6,6 g |
 | sirop d'agave | agave syrup | liquide | 1 420 | 336 g | 21 g | 7,1 g |
 | mélasse | molasses | liquide | 1 437 | 340 g | 22 g | 7,2 g |
+| sirop de canne, sirop de sucre de canne, sirop de sucre | cane syrup, simple syrup, sugar syrup | liquide | 1 330 | 315 g | 20 g | 6,7 g |
 | confiture | jam, preserves | solide | 1 437 | 340 g | 22 g | 7,2 g |
-| lait concentré sucré | sweetened condensed milk | solide | 1 319 | 312 g | 20 g | 6,6 g |
+| lait concentré sucré | sweetened condensed milk, condensed milk | solide | 1 319 | 312 g | 20 g | 6,6 g |
 | **Matières grasses** | | | | | | |
 | beurre, margarine | butter, margarine | solide | 955 | 226 g | 14 g | 4,8 g |
 | saindoux | lard | solide | 955 | 226 g | 14 g | 4,8 g |
@@ -291,7 +298,8 @@ courants des recettes françaises et des recettes américaines en tasses.
 | **Levures, sel et épices** | | | | | | |
 | sel, sel fin | salt, table salt | solide | 1 217 | 288 g | 18 g | 6,1 g |
 | gros sel, sel de mer | coarse salt, kosher salt, sea salt | solide | 1 082 | 256 g | 16 g | 5,4 g |
-| levure chimique | baking powder | solide | 812 | 192 g | 12 g | 4,1 g |
+| levure chimique, poudre à lever | baking powder | solide | 812 | 192 g | 12 g | 4,1 g |
+| crème de tartre | cream of tartar | solide | 609 | 144 g | 9,1 g | 3 g |
 | bicarbonate, bicarbonate de soude | baking soda | solide | 1 217 | 288 g | 18 g | 6,1 g |
 | levure boulangère, levure de boulanger, levure sèche | yeast, dry yeast, instant yeast | solide | 609 | 144 g | 9,1 g | 3 g |
 | cannelle | cinnamon | solide | 527 | 125 g | 7,9 g | 2,6 g |
@@ -300,7 +308,7 @@ courants des recettes françaises et des recettes américaines en tasses.
 | **Céréales et légumineuses** | | | | | | |
 | riz | rice | solide | 837 | 198 g | 13 g | 4,2 g |
 | riz cuit | cooked rice | solide | 719 | 170 g | 11 g | 3,6 g |
-| pâtes, macaronis | pasta, macaroni | solide | 444 | 105 g | 6,7 g | 2,2 g |
+| pâtes sèches, macaronis, coquillettes | pasta, macaroni | solide | 444 | 105 g | 6,7 g | 2,2 g |
 | semoule | semolina | solide | 689 | 163 g | 10 g | 3,4 g |
 | couscous | couscous | solide | 731 | 173 g | 11 g | 3,7 g |
 | boulgour | bulgur | solide | 642 | 152 g | 9,6 g | 3,2 g |
@@ -340,6 +348,12 @@ entiers, en français et en anglais. Le nom le plus précis gagne (« farine de 
 égalité, le premier mot compte en français (« lait d'amande » → lait) et le dernier en anglais
 (« almond milk » → milk). Un ingrédient absent de la table garde son unité dans les vues qui
 demanderaient une densité.
+
+Certains noms contiennent un nom de la table mais désignent autre chose : ils ne sont jamais
+convertis (`NOT_INGREDIENTS_*` de `src/conversion.rs`) : pâte (feuilletée, brisée, d'amande…),
+levure de bière, (noix de) Saint-Jacques, noix de beurre, crème de marrons, crème glacée, glace,
+fond de tarte, soupe, zeste ; ice cream, soup, zest, pastry, dough, pie crust. « Pâte à
+tartiner » et « sucre glace », plus précis, restent dans la table.
 
 ## Plus tard, pas dans cette phase
 

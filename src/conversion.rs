@@ -129,6 +129,31 @@ pub const INGREDIENTS: &[Ingredient] = &[
     ingredient(&["poudre de noisette"], &["hazelnut flour"], SOLID, 376),
     ingredient(&["chapelure"], &["breadcrumbs"], SOLID, 473),
     ingredient(&["flocons d'avoine"], &["oats", "rolled oats"], SOLID, 376),
+    ingredient(
+        &[
+            "céréales",
+            "corn flakes",
+            "cornflakes",
+            "flocons de maïs",
+            "pétales de maïs",
+            "riz soufflé",
+        ],
+        &[
+            "cereal",
+            "corn flakes",
+            "cornflakes",
+            "rice krispies",
+            "puffed rice",
+        ],
+        SOLID,
+        118,
+    ),
+    ingredient(
+        &["pop-corn", "popcorn", "maïs soufflé"],
+        &["popcorn", "popped corn"],
+        SOLID,
+        22,
+    ),
     // Sucres et sirops
     ingredient(
         &["sucre", "sucre en poudre", "sucre semoule"],
@@ -157,10 +182,20 @@ pub const INGREDIENTS: &[Ingredient] = &[
     ),
     ingredient(&["sirop d'agave"], &["agave syrup"], LIQUID, 1420),
     ingredient(&["mélasse"], &["molasses"], LIQUID, 1437),
+    ingredient(
+        &[
+            "sirop de canne",
+            "sirop de sucre de canne",
+            "sirop de sucre",
+        ],
+        &["cane syrup", "simple syrup", "sugar syrup"],
+        LIQUID,
+        1330,
+    ),
     ingredient(&["confiture"], &["jam", "preserves"], SOLID, 1437),
     ingredient(
         &["lait concentré sucré"],
-        &["sweetened condensed milk"],
+        &["sweetened condensed milk", "condensed milk"],
         SOLID,
         1319,
     ),
@@ -361,7 +396,13 @@ pub const INGREDIENTS: &[Ingredient] = &[
         SOLID,
         1082,
     ),
-    ingredient(&["levure chimique"], &["baking powder"], SOLID, 812),
+    ingredient(
+        &["levure chimique", "poudre à lever"],
+        &["baking powder"],
+        SOLID,
+        812,
+    ),
+    ingredient(&["crème de tartre"], &["cream of tartar"], SOLID, 609),
     ingredient(
         &["bicarbonate", "bicarbonate de soude"],
         &["baking soda"],
@@ -411,7 +452,12 @@ pub const INGREDIENTS: &[Ingredient] = &[
     // Céréales et légumineuses
     ingredient(&["riz"], &["rice"], SOLID, 837),
     ingredient(&["riz cuit"], &["cooked rice"], SOLID, 719),
-    ingredient(&["pâtes", "macaronis"], &["pasta", "macaroni"], SOLID, 444),
+    ingredient(
+        &["pâtes sèches", "macaronis", "coquillettes"],
+        &["pasta", "macaroni"],
+        SOLID,
+        444,
+    ),
     ingredient(&["semoule"], &["semolina"], SOLID, 689),
     ingredient(&["couscous"], &["couscous"], SOLID, 731),
     ingredient(&["boulgour"], &["bulgur"], SOLID, 642),
@@ -477,26 +523,61 @@ pub const INGREDIENTS: &[Ingredient] = &[
     ingredient(&["fraises"], &["strawberries"], SOLID, 706),
 ];
 
-/// Every name of the table as search words, with its ingredient and language.
+/// Names that contain a name of the table but are something else ("pâte feuilletée" is no
+/// pasta, "noix de Saint-Jacques" no walnut, "ice cream" no cream): never converted. They win
+/// like any name: "pâte à tartiner" is still the spread, "sucre glace" still the sugar.
+const NOT_INGREDIENTS_FRENCH: &[&str] = &[
+    "pâte",
+    "levure de bière",
+    "saint-jacques",
+    "noix de beurre",
+    "crème de marrons",
+    "crème glacée",
+    "glace",
+    "fond de tarte",
+    "soupe",
+    "zeste",
+];
+const NOT_INGREDIENTS_ENGLISH: &[&str] =
+    &["ice cream", "soup", "zest", "pastry", "dough", "pie crust"];
+
+/// Every name of the table as search words, with its ingredient (`None` for the names that are
+/// no ingredient of the table) and language.
 struct Name {
     words: Vec<String>,
     french: bool,
-    ingredient: &'static Ingredient,
+    ingredient: Option<&'static Ingredient>,
 }
 
 fn names() -> &'static [Name] {
     static NAMES: OnceLock<Vec<Name>> = OnceLock::new();
     NAMES.get_or_init(|| {
-        INGREDIENTS
+        // First, so that they win a tie
+        let not_ingredients = NOT_INGREDIENTS_FRENCH
             .iter()
-            .flat_map(|ingredient| {
-                let french = ingredient.french.iter().map(move |name| (name, true));
-                let english = ingredient.english.iter().map(move |name| (name, false));
-                french.chain(english).map(move |(name, french)| Name {
-                    words: crate::search::query_words(name),
-                    french,
-                    ingredient,
-                })
+            .map(|name| (name, true, None))
+            .chain(
+                NOT_INGREDIENTS_ENGLISH
+                    .iter()
+                    .map(|name| (name, false, None)),
+            );
+        let ingredients = INGREDIENTS.iter().flat_map(|ingredient| {
+            let french = ingredient
+                .french
+                .iter()
+                .map(move |name| (name, true, Some(ingredient)));
+            let english = ingredient
+                .english
+                .iter()
+                .map(move |name| (name, false, Some(ingredient)));
+            french.chain(english)
+        });
+        not_ingredients
+            .chain(ingredients)
+            .map(|(name, french, ingredient)| Name {
+                words: crate::search::query_words(name),
+                french,
+                ingredient,
             })
             .filter(|name| !name.words.is_empty())
             .collect()
@@ -523,12 +604,12 @@ pub fn find_ingredient(name: &str) -> Option<&'static Ingredient> {
         // The first of equal candidates, in table order
         .fold(
             None,
-            |best: Option<((usize, i64), &Ingredient)>, candidate| match best {
+            |best: Option<((usize, i64), Option<&'static Ingredient>)>, candidate| match best {
                 Some(best) if best.0 >= candidate.0 => Some(best),
                 _ => Some(candidate),
             },
         )
-        .map(|(_, ingredient)| ingredient)
+        .and_then(|(_, ingredient)| ingredient)
 }
 
 /// Where `phrase` appears in `words` as consecutive words.
@@ -603,10 +684,55 @@ mod tests {
     }
 
     #[test]
+    fn names_that_are_something_else_find_nothing() {
+        for name in [
+            "pâte feuilletée",
+            "pâte brisée",
+            "pâte d'amande",
+            "pâtes",
+            "noix de Saint-Jacques",
+            "noix de beurre",
+            "crème de marrons",
+            "levure de bière",
+            "glace à la vanille",
+            "fond de tarte",
+            "soupe de potiron",
+            "ice cream",
+            "cream of mushroom soup",
+            "puff pastry",
+            "cookie dough",
+        ] {
+            assert_eq!(usual_name(name), None, "{name}");
+        }
+        for name in NOT_INGREDIENTS_FRENCH.iter().chain(NOT_INGREDIENTS_ENGLISH) {
+            assert_eq!(usual_name(name), None, "{name}");
+        }
+    }
+
+    #[test]
+    fn breakfast_cereals_syrups_and_more() {
+        assert_eq!(usual_name("corn flakes"), Some("céréales"));
+        assert_eq!(usual_name("flocons de maïs"), Some("céréales"));
+        assert_eq!(usual_name("rice krispies"), Some("céréales"));
+        assert_eq!(usual_name("pop-corn"), Some("pop-corn"));
+        assert_eq!(
+            usual_name("sirop de sucre de canne"),
+            Some("sirop de canne")
+        );
+        assert_eq!(usual_name("cream of tartar"), Some("crème de tartre"));
+        assert_eq!(usual_name("condensed milk"), Some("lait concentré sucré"));
+        assert_eq!(usual_name("pâtes sèches"), Some("pâtes sèches"));
+        assert_eq!(usual_name("pastry flour"), Some("farine"));
+        assert_eq!(usual_name("pâte à tartiner"), Some("pâte à tartiner"));
+        assert_eq!(usual_name("sucre glace"), Some("sucre glace"));
+        assert_eq!(usual_name("poudre à lever"), Some("levure chimique"));
+    }
+
+    #[test]
     fn every_name_of_the_table_finds_its_own_ingredient() {
         for ingredient in INGREDIENTS {
             assert!(
-                (100..=2000).contains(&ingredient.grams_per_litre),
+                (20..=2000).contains(&ingredient.grams_per_litre),
                 "{:?}",
                 ingredient.french
             );

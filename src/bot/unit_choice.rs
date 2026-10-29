@@ -89,14 +89,15 @@ pub async fn show_chooser(
             warn!(error = %e, "Could not read the unit view");
             UnitView::default()
         });
-    let recipe = super::cleanup::active_card_recipe(chat_id).await;
+    let recipe = super::cleanup::recipe_at_bottom(chat_id).await;
     let (text, keyboard) = render_chooser(current, recipe, language_code, localization);
     let sent = bot
         .send_message(chat_id, text)
         .reply_markup(keyboard)
         .await?;
-    super::cleanup::track(chat_id, sent.id).await;
     super::home::keep_at_bottom(bot, chat_id, sent.id).await;
+    // Recorded again with its recipe, which a second `/unites` brings back too
+    super::cleanup::track_chooser(chat_id, sent.id, recipe).await;
     Ok(())
 }
 
@@ -117,6 +118,10 @@ pub async fn handle_choice(
         return Ok(());
     };
     let chat_id = msg.chat.id;
+    // A chooser already used (a second tap) or cleared by a later action does nothing
+    if super::cleanup::is_recorded(chat_id, msg.id).await == Some(false) {
+        return Ok(());
+    }
     crate::db::set_unit_view(pool, chat_id.0, language_code, view).await?;
     let line = t_args_lang(
         localization,
@@ -124,10 +129,15 @@ pub async fn handle_choice(
         &[("view", &t_lang(localization, view_key(view), language_code))],
         language_code,
     );
-    super::cleanup::untrack(chat_id, msg.id).await;
     if let Err(e) = bot.edit_message_text(chat_id, msg.id, line).await {
         warn!(error = %e, "Could not turn the unit chooser into its line");
+        // Its buttons must not stay usable in the history
+        if let Err(e) = bot.edit_message_reply_markup(chat_id, msg.id).await {
+            warn!(error = %e, "Could not remove the buttons of the unit chooser");
+        }
     }
+    // It stays in the history
+    super::cleanup::untrack(chat_id, msg.id).await;
     match recipe {
         Some(recipe_id) => {
             super::cards::show_card(

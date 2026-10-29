@@ -190,10 +190,12 @@ async fn main() -> Result<()> {
     if numbered > 0 {
         info!(recipes = numbered, "Numbered duplicate recipe names");
     }
-    // Units saved before they were normalized ("G", "litres", "cl"): written like new ones
-    let normalized = db::normalize_saved_units(&pool).await?;
-    if normalized > 0 {
-        info!(ingredients = normalized, "Normalized saved units");
+    // Units saved before they were normalized ("G", "litres", "cl"): written like new ones.
+    // Never stops the startup: the cards read these units anyway.
+    match db::normalize_saved_units(&pool).await {
+        Ok(0) => {}
+        Ok(normalized) => info!(ingredients = normalized, "Normalized saved units"),
+        Err(e) => warn!(error = %e, "Could not normalize the saved units"),
     }
 
     // Wrap pool in Arc for sharing across async tasks

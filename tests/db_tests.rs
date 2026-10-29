@@ -1095,6 +1095,13 @@ async fn chat_messages_are_taken_once_per_chat_and_kind(pool: PgPool) -> Result<
         Some(3)
     );
     assert_eq!(latest_recipe_message(&pool, 7, "active_card").await?, None);
+    record_chat_message(&pool, 42, 30, "transient", Some(5)).await?;
+    record_chat_message(&pool, 42, 31, "transient", None).await?;
+    assert_eq!(
+        latest_recipe_message(&pool, 42, "transient").await?,
+        Some(5),
+        "the newest with a recipe"
+    );
 
     // Messages of older versions were never recorded
     record_chat_message(&pool, 42, 12, "list", None).await?;
@@ -1257,7 +1264,7 @@ async fn the_unit_view_is_saved_per_user_french_by_default(pool: PgPool) -> Resu
 async fn units_saved_before_normalization_are_rewritten_once(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
     // The spellings found in production on 2026-10-29, saved as they were then
-    let saved: [(&str, Option<f64>, Option<&str>); 12] = [
+    let saved: [(&str, Option<f64>, Option<&str>); 15] = [
         ("farine", Some(250.0), Some("g")),
         ("sucre", Some(5.0), Some("G")),
         ("beurre", Some(50.0), Some("gram")),
@@ -1270,6 +1277,9 @@ async fn units_saved_before_normalization_are_rewritten_once(pool: PgPool) -> Re
         ("sel", Some(1.0), Some("PINCÉES")),
         ("levure", Some(1.0), Some("SACHET")),
         ("œufs", Some(3.0), None),
+        ("eau", Some(2.0), Some("")),
+        ("lait", None, Some("cl")),
+        ("crème", Some(0.333), Some("cl")),
     ];
     let ingredients: Vec<NewIngredient<'_>> = saved
         .iter()
@@ -1283,8 +1293,8 @@ async fn units_saved_before_normalization_are_rewritten_once(pool: PgPool) -> Re
 
     assert_eq!(
         normalize_saved_units(&pool).await?,
-        10,
-        "all but g and no unit"
+        13,
+        "all but g and no unit; a blank unit becomes none"
     );
     let after: Vec<(Option<f64>, Option<String>)> =
         get_recipe_ingredients(&pool, 99, recipe.recipe_id)
@@ -1293,21 +1303,24 @@ async fn units_saved_before_normalization_are_rewritten_once(pool: PgPool) -> Re
             .map(|ingredient| (ingredient.quantity, ingredient.unit))
             .collect();
     let expected: Vec<(Option<f64>, Option<String>)> = [
-        (250.0, Some("g")),
-        (5.0, Some("g")),
-        (50.0, Some("g")),
-        (100.0, Some("g")),
-        (80.0, Some("ml")),
-        (1.5, Some("l")),
-        (250.0, Some("ml")),
-        (1.0, Some("tsp")),
-        (2.0, Some("tbsp")),
-        (1.0, Some("pincées")),
-        (1.0, Some("sachet")),
-        (3.0, None),
+        (Some(250.0), Some("g")),
+        (Some(5.0), Some("g")),
+        (Some(50.0), Some("g")),
+        (Some(100.0), Some("g")),
+        (Some(80.0), Some("ml")),
+        (Some(1.5), Some("l")),
+        (Some(250.0), Some("ml")),
+        (Some(1.0), Some("tsp")),
+        (Some(2.0), Some("tbsp")),
+        (Some(1.0), Some("pincées")),
+        (Some(1.0), Some("sachet")),
+        (Some(3.0), None),
+        (Some(2.0), None),
+        (None, Some("ml")),
+        (Some(3.33), Some("ml")),
     ]
     .into_iter()
-    .map(|(quantity, unit)| (Some(quantity), unit.map(str::to_string)))
+    .map(|(quantity, unit)| (quantity, unit.map(str::to_string)))
     .collect();
     assert_eq!(after, expected);
     assert_eq!(normalize_saved_units(&pool).await?, 0, "idempotent");

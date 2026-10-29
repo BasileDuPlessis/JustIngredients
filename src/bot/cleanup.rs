@@ -178,15 +178,26 @@ pub async fn list_became_card(bot: &Bot, chat: ChatId, id: MessageId, recipe_id:
     delete_or_strip(bot, chat, messages).await;
 }
 
-/// The recipe of the card at the bottom with its buttons, if any.
-pub async fn active_card_recipe(chat: ChatId) -> Option<i64> {
+/// The recipe to show again after the unit chooser: the card at the bottom with its buttons,
+/// or the one an earlier chooser still at the bottom remembered (`/unites` typed twice).
+pub async fn recipe_at_bottom(chat: ChatId) -> Option<i64> {
     let pool = pool()?;
-    crate::db::latest_recipe_message(pool, chat.0, ACTIVE_CARD)
-        .await
-        .unwrap_or_else(|e| {
-            debug!(error = %e, "Could not read the active card");
-            None
-        })
+    for kind in [ACTIVE_CARD, TRANSIENT] {
+        match crate::db::latest_recipe_message(pool, chat.0, kind).await {
+            Ok(Some(recipe)) => return Some(recipe),
+            Ok(None) => {}
+            Err(e) => debug!(error = %e, "Could not read the recipe at the bottom"),
+        }
+    }
+    None
+}
+
+/// Records the unit chooser of the current action, with the recipe it brings back.
+pub async fn track_chooser(chat: ChatId, id: MessageId, recipe_id: Option<i64>) {
+    let Some(pool) = pool() else { return };
+    if let Err(e) = crate::db::record_chat_message(pool, chat.0, id.0, TRANSIENT, recipe_id).await {
+        debug!(error = %e, "Could not record the unit chooser");
+    }
 }
 
 /// Remembers the card just sent at the bottom with its buttons.

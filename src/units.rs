@@ -409,9 +409,65 @@ pub fn normalize_measurement(
     }
 }
 
+/// Quantities from this value up do not fit `ingredients.quantity DECIMAL(10,3)`.
+const UNSTORABLE_QUANTITY: f64 = 10_000_000.0;
+
+/// What a saved quantity and unit become once normalized like new ones (the cleanup of units
+/// saved before normalization): `None` when there is nothing to change, or nothing safe to
+/// write. Safe means a finite quantity that fits the column, and a result that normalizing again
+/// would not change ("T," would become "t", then "tsp": left as saved).
+pub fn renormalized(quantity: Option<f64>, unit: &str) -> Option<NormalizedMeasurement> {
+    if quantity.is_some_and(|q| !q.is_finite()) {
+        return None;
+    }
+    let normalized = normalize_measurement(quantity, Some(unit));
+    if normalized.unit.as_deref() == Some(unit) && normalized.quantity == quantity {
+        return None;
+    }
+    let again = normalize_measurement(normalized.quantity, normalized.unit.as_deref());
+    let storable = normalized
+        .quantity
+        .is_none_or(|q| q.is_finite() && q.abs() < UNSTORABLE_QUANTITY);
+    (again == normalized && storable).then_some(normalized)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_units_are_renormalized_only_when_safe() {
+        let after = |quantity, unit| {
+            renormalized(quantity, unit).map(|normalized| (normalized.quantity, normalized.unit))
+        };
+        assert_eq!(
+            after(Some(5.0), "G"),
+            Some((Some(5.0), Some("g".to_string())))
+        );
+        assert_eq!(
+            after(Some(8.0), "cl"),
+            Some((Some(80.0), Some("ml".to_string())))
+        );
+        assert_eq!(after(None, "cl"), Some((None, Some("ml".to_string()))));
+        assert_eq!(
+            after(Some(1.0), "PINCÉES"),
+            Some((Some(1.0), Some("pincées".to_string())))
+        );
+        assert_eq!(
+            after(Some(2.0), ""),
+            Some((Some(2.0), None)),
+            "blank: no unit"
+        );
+        assert_eq!(after(Some(250.0), "g"), None, "already normalized");
+        assert_eq!(after(Some(2.0), "gousse"), None);
+        assert_eq!(after(Some(1.0), "T,"), None, "unstable: t, then tsp");
+        assert_eq!(after(Some(f64::NAN), "G"), None);
+        assert_eq!(
+            after(Some(100_000.0), "dl"),
+            None,
+            "10 000 000 ml does not fit"
+        );
+    }
 
     #[test]
     fn spellings_map_to_canonical_units() {

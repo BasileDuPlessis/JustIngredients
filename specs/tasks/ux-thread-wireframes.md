@@ -217,6 +217,24 @@ l'action suivante.
 │ [ 📚 Liste des recettes ]                │
 ```
 
+## 9. Je choisis l'affichage des unités (`/unites`, phase U8)
+
+Comme `/aide`, le sélecteur prend la place du message du bas ; il a ses propres boutons, dont
+« 📚 Liste des recettes » en dernier. Un choix le transforme en ligne d'historique (« ⚖️
+Unités : … »), et la fiche qui était en bas avant `/unites` revient dans la nouvelle vue (ou
+la liste). Le détail est dans [measure-conversion.md](measure-conversion.md).
+
+```
+│ … historique …                           │
+├──────────────────────────────────────────┤
+│ ⚖️ Affichage des unités                  │ ▼ bas du fil
+│ [ Comme dans la recette ]                │
+│ [ Tout en poids (g) ]                    │
+│ [ ✓ Unités françaises (g, cl) ]          │
+│ [ Unités américaines (cups, oz) ]        │
+│ [ 📚 Liste des recettes ]                │
+```
+
 ## Ce que je retire de la v25 actuelle
 
 - La liste n'est plus renvoyée en dessous de la fiche quand j'ouvre une recette (écran 2).
