@@ -428,7 +428,8 @@ single exit ("❌ Annuler" during an action, "📚 Liste des recettes" otherwise
 - Export/share a recipe as text (finding 13); several photos at once.
 - Measure conversion (user request of 2026-10-29): offer to show every measure in French units
   (g, cl, l…), and a volume-to-weight converter ("1 cup butter" → "… g de beurre") with constant
-  densities for the main ingredients (farine, beurre, lait, sucre…). Not designed yet.
+  densities for the main ingredients (farine, beurre, lait, sucre…). Proposal with wireframes,
+  to validate: [measure-conversion.md](measure-conversion.md).
 - Adding several ingredients at once by pasting several lines (refused today: `edit-one-line`).
 
 ---
