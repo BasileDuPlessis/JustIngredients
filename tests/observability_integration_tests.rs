@@ -17,11 +17,11 @@ mod tests {
 
         // Test that metrics can be recorded without full initialization
         observability::record_telegram_message("integration_test");
-        observability::record_ocr_metrics(true, Duration::from_millis(100), 1024);
+        observability::record_llm_request("gemini-test", "success", Duration::from_millis(100), 0);
         observability::record_db_metrics("SELECT", Duration::from_millis(10));
 
         // Test span creation
-        let span = observability::ocr_span("integration_test_operation");
+        let span = observability::telegram_span("integration_test_operation", None);
         let _enter = span.enter();
 
         // Brief pause to allow async operations to complete
@@ -77,7 +77,12 @@ mod tests {
             observability::record_telegram_message("time_test");
 
             let success = i % 10 != 0; // 90% success rate
-            observability::record_ocr_metrics(success, Duration::from_millis(100 + i), 1024 + i);
+            observability::record_llm_request(
+                "gemini-test",
+                if success { "success" } else { "timeout" },
+                Duration::from_millis(100 + i),
+                0,
+            );
 
             observability::record_db_metrics("SELECT", Duration::from_millis(5 + i));
 
@@ -86,12 +91,6 @@ mod tests {
 
             // Small delay between operations
             sleep(Duration::from_millis(1)).await;
-        }
-
-        // Update circuit breaker state a few times
-        for i in 0..5 {
-            observability::update_circuit_breaker_state(i % 2 == 0);
-            sleep(Duration::from_millis(2)).await;
         }
 
         // All metrics recorded successfully over time
@@ -112,12 +111,18 @@ mod tests {
             let handle = tokio::spawn(async move {
                 for i in 0..operations_per_task {
                     // Create spans
-                    let span = observability::ocr_span(&format!("load_test_{}_{}", task_id, i));
+                    let span =
+                        observability::telegram_span(&format!("load_test_{}_{}", task_id, i), None);
                     let _enter = span.enter();
 
                     // Record various metrics
                     observability::record_telegram_message("load_test");
-                    observability::record_ocr_metrics(true, Duration::from_millis(50), 2048);
+                    observability::record_llm_request(
+                        "gemini-test",
+                        "success",
+                        Duration::from_millis(50),
+                        0,
+                    );
                     observability::record_db_metrics("INSERT", Duration::from_millis(20));
                     observability::record_request_metrics("POST", 201, Duration::from_millis(30));
 
@@ -152,11 +157,16 @@ mod tests {
 
         // Create many spans and record many metrics
         for i in 0..1000 {
-            let span = observability::ocr_span(&format!("cleanup_test_{}", i));
+            let span = observability::telegram_span(&format!("cleanup_test_{}", i), None);
             let _enter = span.enter();
 
             observability::record_telegram_message("cleanup");
-            observability::record_ocr_metrics(true, Duration::from_millis(10), 1024);
+            observability::record_llm_request(
+                "gemini-test",
+                "success",
+                Duration::from_millis(10),
+                0,
+            );
         }
 
         // Force garbage collection by creating a scope
@@ -189,10 +199,10 @@ mod tests {
         sleep(Duration::from_millis(10)).await;
 
         // OCR processing
-        let ocr_span = observability::ocr_span("photo_processing");
-        let _ocr_enter = ocr_span.enter();
+        let span = observability::telegram_span("photo_processing", None);
+        let _enter = span.enter();
 
-        observability::record_ocr_metrics(true, Duration::from_millis(500), 2048);
+        observability::record_llm_request("gemini-test", "success", Duration::from_millis(500), 0);
         sleep(Duration::from_millis(20)).await;
 
         // Database operations
@@ -217,7 +227,12 @@ mod tests {
         // Simulate OCR failures
         for i in 0..10 {
             let success = i < 7; // 70% success rate
-            observability::record_ocr_metrics(success, Duration::from_millis(200 + i * 50), 1024);
+            observability::record_llm_request(
+                "gemini-test",
+                if success { "success" } else { "timeout" },
+                Duration::from_millis(200 + i * 50),
+                0,
+            );
 
             if !success {
                 // Simulate error handling
@@ -241,13 +256,6 @@ mod tests {
             }
         }
 
-        // Simulate circuit breaker activation
-        observability::update_circuit_breaker_state(false); // Normal
-        sleep(Duration::from_millis(10)).await;
-        observability::update_circuit_breaker_state(true); // Open
-        sleep(Duration::from_millis(10)).await;
-        observability::update_circuit_breaker_state(false); // Recovered
-
         // Error scenarios handled correctly
     }
 
@@ -259,7 +267,7 @@ mod tests {
 
         // Record some metrics
         observability::record_telegram_message("export_test");
-        observability::record_ocr_metrics(true, Duration::from_millis(100), 1024);
+        observability::record_llm_request("gemini-test", "success", Duration::from_millis(100), 0);
         observability::record_db_metrics("SELECT", Duration::from_millis(10));
         observability::record_request_metrics("GET", 200, Duration::from_millis(25));
 
@@ -277,7 +285,7 @@ mod tests {
         let _init_checks = observability::init_observability_with_health_checks;
 
         // Test that span creation works with various inputs
-        let _span1 = observability::ocr_span("test");
+        let _span1 = observability::telegram_span("test", None);
         let _span2 = observability::db_span("test", "table");
         let _span3 = observability::telegram_span("test", None);
         let _span4 = observability::telegram_span("test", Some(12345));

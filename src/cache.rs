@@ -1,25 +1,21 @@
 //! Caching infrastructure for performance optimization
 //!
 //! This module provides various caching strategies to improve application performance
-//! by reducing expensive operations like OCR processing and database queries.
+//! by reducing repeated database queries.
 //!
 //! ## Cache Types
 //!
 //! - **Memory Cache**: In-memory TTL-based cache for fast access
-//! - **OCR Result Cache**: Specialized cache for OCR processing results
 //! - **Database Query Cache**: Cache for frequently accessed database queries
 //!
 //! ## Usage Examples
 //!
 //! ```rust,no_run
-//! use just_ingredients::cache::{Cache, MemoryCache, OcrResultCache};
+//! use just_ingredients::cache::{Cache, MemoryCache};
 //!
 //! // Create a memory cache for string keys and values
 //! let mut cache: MemoryCache<String, String> = MemoryCache::new();
 //! cache.insert("key".to_string(), "value".to_string(), std::time::Duration::from_secs(300));
-//!
-//! // Cache OCR results
-//! let ocr_cache = OcrResultCache::new(std::time::Duration::from_secs(3600)); // 1 hour
 //! ```
 
 use std::collections::HashMap;
@@ -289,88 +285,6 @@ where
     }
 }
 
-/// OCR result cache key
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct OcrCacheKey {
-    /// Hash of the image content
-    pub image_hash: Arc<String>,
-    /// OCR configuration hash (to invalidate when config changes)
-    pub config_hash: Arc<String>,
-}
-
-impl OcrCacheKey {
-    /// Create a new OCR cache key
-    pub fn new(image_hash: String, config_hash: String) -> Self {
-        Self {
-            image_hash: Arc::new(image_hash),
-            config_hash: Arc::new(config_hash),
-        }
-    }
-
-    /// Create a new OCR cache key from string references
-    pub fn from_refs(image_hash: &str, config_hash: &str) -> Self {
-        Self {
-            image_hash: Arc::new(image_hash.to_string()),
-            config_hash: Arc::new(config_hash.to_string()),
-        }
-    }
-}
-
-/// OCR result cache value
-#[derive(Debug, Clone)]
-pub struct OcrCacheValue {
-    /// Extracted text
-    pub text: Arc<String>,
-    /// Processing time
-    pub processing_time_ms: u64,
-    /// Cached at timestamp
-    pub cached_at: Instant,
-}
-
-/// Specialized cache for OCR results
-pub struct OcrResultCache {
-    cache: MemoryCache<OcrCacheKey, OcrCacheValue>,
-}
-
-impl OcrResultCache {
-    /// Create a new OCR result cache
-    pub fn new(_default_ttl: Duration) -> Self {
-        Self {
-            cache: MemoryCache::new(),
-        }
-    }
-
-    /// Get cached OCR result
-    pub fn get(&self, key: &OcrCacheKey) -> Option<OcrCacheValue> {
-        self.cache.get(key)
-    }
-
-    /// Cache OCR result
-    pub fn insert(&mut self, key: OcrCacheKey, value: OcrCacheValue, ttl: Duration) {
-        self.cache.insert(key, value, ttl);
-    }
-
-    /// Remove OCR result from cache
-    pub fn remove(&mut self, key: &OcrCacheKey) -> Option<OcrCacheValue> {
-        self.cache.remove(key)
-    }
-
-    /// Clean up expired entries
-    pub fn cleanup(&mut self) {
-        self.cache.cleanup();
-    }
-
-    /// Get cache statistics
-    pub fn stats(&self) -> CacheStats {
-        self.cache.stats()
-    }
-
-    /// Clear all cached results
-    pub fn clear(&mut self) {
-        self.cache.clear();
-    }
-}
-
 /// Database query cache key
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct DbCacheKey {
@@ -557,8 +471,6 @@ impl DbQueryCache {
 
 /// Global cache manager for coordinating multiple caches
 pub struct CacheManager {
-    /// OCR result cache
-    pub ocr_cache: OcrResultCache,
     /// Database query cache
     pub db_cache: DbQueryCache,
     /// User data cache
@@ -575,7 +487,6 @@ impl CacheManager {
     /// Create a new cache manager with default settings
     pub fn new() -> Self {
         Self {
-            ocr_cache: OcrResultCache::new(Duration::from_secs(3600)), // 1 hour
             db_cache: DbQueryCache::new(Duration::from_secs(300), 50 * 1024 * 1024), // 5 min, 50MB
             user_cache: MemoryCache::new(),
             recipe_cache: MemoryCache::new(),
@@ -586,14 +497,12 @@ impl CacheManager {
 
     /// Create a cache manager with custom settings
     pub fn with_config(
-        ocr_ttl: Duration,
         db_ttl: Duration,
         db_max_size_bytes: usize,
         _user_ttl: Duration,
         _recipe_ttl: Duration,
     ) -> Self {
         Self {
-            ocr_cache: OcrResultCache::new(ocr_ttl),
             db_cache: DbQueryCache::new(db_ttl, db_max_size_bytes),
             user_cache: MemoryCache::new(),
             recipe_cache: MemoryCache::new(),
@@ -617,7 +526,6 @@ impl CacheManager {
 
     /// Clean up all expired entries across all caches
     pub fn cleanup_all(&mut self) {
-        self.ocr_cache.cleanup();
         self.db_cache.cleanup();
         // Note: user_cache and recipe_cache cleanup would need to be implemented
         // if they had their own cleanup methods
@@ -626,7 +534,6 @@ impl CacheManager {
     /// Get comprehensive cache statistics
     pub fn stats(&self) -> CacheManagerStats {
         CacheManagerStats {
-            ocr_cache: self.ocr_cache.stats(),
             db_cache: self.db_cache.stats(),
             user_cache_entries: self.user_cache.len(),
             recipe_cache_entries: self.recipe_cache.len(),
@@ -637,7 +544,6 @@ impl CacheManager {
 
     /// Clear all caches
     pub fn clear_all(&mut self) {
-        self.ocr_cache.clear();
         self.db_cache.clear();
         self.user_cache.clear();
         self.recipe_cache.clear();
@@ -653,8 +559,6 @@ impl Default for CacheManager {
 /// Comprehensive cache statistics for the cache manager
 #[derive(Debug, Clone)]
 pub struct CacheManagerStats {
-    /// OCR cache statistics
-    pub ocr_cache: CacheStats,
     /// Database cache statistics
     pub db_cache: CacheStats,
     /// Number of user entries in cache
@@ -722,16 +626,6 @@ mod tests {
 
         assert_eq!(cache.get(&"key1"), None);
         assert_eq!(cache.get(&"key2"), Some("value2"));
-    }
-
-    #[test]
-    fn test_ocr_cache_key() {
-        let key1 = OcrCacheKey::new("hash1".to_string(), "config1".to_string());
-        let key2 = OcrCacheKey::new("hash1".to_string(), "config1".to_string());
-        let key3 = OcrCacheKey::new("hash2".to_string(), "config1".to_string());
-
-        assert_eq!(key1, key2);
-        assert_ne!(key1, key3);
     }
 
     #[test]

@@ -153,20 +153,6 @@ fn validate_http_client_config() -> Result<()> {
     Ok(())
 }
 
-/// Validate text processing configuration at startup
-fn validate_text_processing_config() -> Result<()> {
-    // Load and validate measurement units configuration
-    let config = just_ingredients::text_processing::load_measurement_units_config();
-
-    // Validate the configuration
-    config.validate().map_err(|e| {
-        anyhow::anyhow!("Text processing configuration validation failed: {}. Please check your config/measurement_units.json file.", e)
-    })?;
-
-    info!("Text processing configuration validated successfully");
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load environment variables from .env file first
@@ -217,9 +203,6 @@ async fn main() -> Result<()> {
     // Initialize request deduplicator to prevent duplicate message processing
     let deduplicator = crate::deduplication::create_shared_deduplicator(300, 10000); // 5 min TTL, 10k entries
     info!("Request deduplicator initialized for duplicate message prevention");
-
-    // Validate text processing configuration
-    validate_text_processing_config()?;
 
     // Validate HTTP client configuration
     validate_http_client_config()?;

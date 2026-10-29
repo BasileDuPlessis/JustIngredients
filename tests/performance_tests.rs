@@ -1,21 +1,19 @@
 //! # Comprehensive Performance Benchmarks
 //!
 //! Comprehensive performance benchmarking suite for the JustIngredients bot.
-//! Covers OCR processing, database operations, end-to-end workflows, and system performance.
+//! Covers typed ingredient lines, database operations, observability overhead and concurrent load.
 //! Every test is ignored by default (IMP-046): run them with `cargo test --test performance_tests -- --ignored`.
 
 #[cfg(test)]
 mod tests {
     use just_ingredients::observability;
-    use just_ingredients::text_processing::MeasurementDetector;
+    use just_ingredients::validation::parse_ingredient_from_text;
     use std::time::{Duration, Instant};
 
     /// Baseline performance test without observability
     #[test]
     #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_baseline_performance_without_observability() {
-        let detector = MeasurementDetector::new().unwrap();
-
         let test_text = r#"
         Recipe ingredients:
         2 cups flour
@@ -31,7 +29,10 @@ mod tests {
         let start = Instant::now();
 
         for _ in 0..iterations {
-            let _measurements = detector.extract_ingredient_measurements(test_text);
+            let _measurements: Vec<_> = test_text
+                .lines()
+                .filter_map(|line| parse_ingredient_from_text(line).ok())
+                .collect();
         }
 
         let duration = start.elapsed();
@@ -53,8 +54,6 @@ mod tests {
     #[test]
     #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
     fn test_performance_with_observability_enabled() {
-        let detector = MeasurementDetector::new().unwrap();
-
         let test_text = r#"
         Recipe ingredients:
         2 cups flour
@@ -71,12 +70,15 @@ mod tests {
 
         for i in 0..iterations {
             // Add observability overhead
-            let span = observability::ocr_span(&format!("perf_test_{}", i));
+            let span = observability::db_span(&format!("perf_test_{}", i), "recipes");
             let _enter = span.enter();
 
-            observability::record_ocr_metrics(true, Duration::from_millis(10), 1024);
+            observability::record_db_metrics("perf_test", Duration::from_millis(10));
 
-            let _measurements = detector.extract_ingredient_measurements(test_text);
+            let _measurements: Vec<_> = test_text
+                .lines()
+                .filter_map(|line| parse_ingredient_from_text(line).ok())
+                .collect();
 
             observability::record_request_metrics("POST", 200, Duration::from_millis(50));
         }
@@ -89,7 +91,7 @@ mod tests {
             avg_time_per_operation, iterations
         );
 
-        // The overhead should be reasonable (< 10% of total operation time for typical OCR operations)
+        // The overhead should be reasonable (< 10% of total operation time)
         // This is a sanity check - actual acceptable overhead depends on requirements
         assert!(
             avg_time_per_operation > 0,
@@ -117,11 +119,11 @@ mod tests {
         // Measure time with observability
         let start_with_obs = Instant::now();
         for i in 0..iterations {
-            let span = observability::ocr_span(&format!("overhead_test_{}", i % 100)); // Reuse span names
+            let span = observability::db_span(&format!("overhead_test_{}", i % 100), "recipes"); // Reuse span names
             let _enter = span.enter();
 
             observability::record_telegram_message("overhead_test");
-            observability::record_ocr_metrics(true, Duration::from_micros(i as u64 % 1000), 1024);
+            observability::record_db_metrics("perf_test", Duration::from_micros(i as u64 % 1000));
 
             let _ = i * 2; // Same minimal work
         }
@@ -158,11 +160,11 @@ mod tests {
         println!("📊 Tracing span size: {} bytes", span_size);
 
         // Create some observability objects and measure their size
-        let _ocr_span = observability::ocr_span("memory_test");
+        let _db_span = observability::db_span("memory_test", "recipes");
         let _db_span = observability::db_span("memory_test", "test_table");
 
         // These are rough estimates - actual memory usage is more complex
-        println!("📊 OCR span created successfully");
+        println!("📊 Database span created successfully");
         println!("📊 DB span created successfully");
 
         // Memory usage should be reasonable
@@ -181,11 +183,11 @@ mod tests {
 
         while start.elapsed() < duration {
             // Simulate continuous observability usage
-            let span = observability::ocr_span("cpu_test");
+            let span = observability::db_span("cpu_test", "recipes");
             let _enter = span.enter();
 
             observability::record_telegram_message("cpu_load_test");
-            observability::record_ocr_metrics(true, Duration::from_millis(10), 1024);
+            observability::record_db_metrics("perf_test", Duration::from_millis(10));
             observability::record_db_metrics("SELECT", Duration::from_micros(500));
             observability::record_request_metrics("GET", 200, Duration::from_millis(25));
 
@@ -227,12 +229,14 @@ mod tests {
                 let mut local_operations = 0;
 
                 for i in 0..operations_per_task {
-                    let span =
-                        observability::ocr_span(&format!("concurrent_{}_{}", task_id, i % 10));
+                    let span = observability::db_span(
+                        &format!("concurrent_{}_{}", task_id, i % 10),
+                        "recipes",
+                    );
                     let _enter = span.enter();
 
                     observability::record_telegram_message("concurrent_test");
-                    observability::record_ocr_metrics(true, Duration::from_millis(5), 512);
+                    observability::record_db_metrics("perf_test", Duration::from_millis(5));
 
                     local_operations += 1;
                 }
@@ -277,10 +281,13 @@ mod tests {
             for task_id in 0..concurrency {
                 let handle = tokio::spawn(async move {
                     for i in 0..operations_per_level {
-                        let span = observability::ocr_span(&format!("scale_{}_{}", task_id, i % 5));
+                        let span = observability::db_span(
+                            &format!("scale_{}_{}", task_id, i % 5),
+                            "recipes",
+                        );
                         let _enter = span.enter();
 
-                        observability::record_ocr_metrics(true, Duration::from_millis(10), 1024);
+                        observability::record_db_metrics("perf_test", Duration::from_millis(10));
                         observability::record_db_metrics("SELECT", Duration::from_millis(5));
                     }
                 });
@@ -311,77 +318,6 @@ mod tests {
         }
     }
 
-    /// Test that observability doesn't affect core OCR processing speed significantly
-    #[test]
-    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
-    fn test_ocr_processing_speed_impact() {
-        let detector = MeasurementDetector::new().unwrap();
-
-        // Test text of varying complexity
-        let test_cases = vec![
-            ("Simple", "2 cups flour\n3 eggs"),
-            ("Medium", "2 cups all-purpose flour\n1 cup granulated sugar\n3 large eggs\n1/2 cup unsalted butter\n1 teaspoon vanilla extract\n2 tablespoons milk"),
-            ("Complex", r#"
-                2 1/4 cups all-purpose flour
-                1 teaspoon baking soda
-                1 teaspoon salt
-                1 cup unsalted butter, softened
-                3/4 cup granulated sugar
-                3/4 cup packed brown sugar
-                2 large eggs
-                2 teaspoons vanilla extract
-                2 cups semisweet chocolate chips
-                1 cup chopped walnuts (optional)
-            "#),
-        ];
-
-        for (complexity, text) in test_cases {
-            let iterations = 100;
-
-            // Measure without observability
-            let start_baseline = Instant::now();
-            for _ in 0..iterations {
-                let _ = detector.extract_ingredient_measurements(text);
-            }
-            let baseline = start_baseline.elapsed();
-
-            // Measure with observability
-            let start_with_obs = Instant::now();
-            for i in 0..iterations {
-                let span = observability::ocr_span(&format!("ocr_speed_test_{}", i % 10));
-                let _enter = span.enter();
-
-                let measurements = detector.extract_ingredient_measurements(text);
-                observability::record_ocr_metrics(true, Duration::from_millis(50), 1024);
-
-                // Verify we get results
-                assert!(
-                    !measurements.is_empty(),
-                    "Should extract measurements from {} text",
-                    complexity
-                );
-            }
-            let with_obs = start_with_obs.elapsed();
-
-            let overhead = with_obs.saturating_sub(baseline);
-            let overhead_percentage =
-                (overhead.as_nanos() as f64 / baseline.as_nanos() as f64) * 100.0;
-
-            println!(
-                "📊 OCR Speed Impact ({}): Baseline: {:?}, With obs: {:?}, Overhead: {:.1}%",
-                complexity, baseline, with_obs, overhead_percentage
-            );
-
-            // Overhead should be reasonable (< 100% for complex text processing after optimizations)
-            assert!(
-                overhead_percentage < 100.0,
-                "OCR processing overhead too high for {}: {:.1}%",
-                complexity,
-                overhead_percentage
-            );
-        }
-    }
-
     /// Test observability garbage collection and cleanup performance
     #[tokio::test]
     #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
@@ -393,11 +329,11 @@ mod tests {
         // Create many spans and metrics that should be cleaned up
         for i in 0..iterations {
             {
-                let span = observability::ocr_span(&format!("cleanup_perf_{}", i));
+                let span = observability::db_span(&format!("cleanup_perf_{}", i), "recipes");
                 let _enter = span.enter();
 
                 observability::record_telegram_message("cleanup_test");
-                observability::record_ocr_metrics(true, Duration::from_millis(1), 512);
+                observability::record_db_metrics("perf_test", Duration::from_millis(1));
                 observability::record_db_metrics("SELECT", Duration::from_micros(100));
             } // Span goes out of scope here
         }
@@ -421,7 +357,7 @@ mod tests {
         );
     }
 
-    // ===== COMPREHENSIVE OCR PROCESSING BENCHMARKS =====
+    // ===== DATABASE BENCHMARKS =====
 
     // ===== DATABASE OPERATION BENCHMARKS =====
 
@@ -574,9 +510,9 @@ mod tests {
 
         for i in 0..iterations {
             let recipe_name = format!("{} {}", test_recipe_name, i);
-            let ocr_text = format!("2 cups flour\n1 cup sugar\n3 eggs\nRecipe: {}", recipe_name);
+            let content = format!("2 cups flour\n1 cup sugar\n3 eggs\nRecipe: {}", recipe_name);
 
-            let recipe_id = db::create_recipe(&db_pool, test_user_id, &ocr_text)
+            let recipe_id = db::create_recipe(&db_pool, test_user_id, &content)
                 .await
                 .expect("Failed to create recipe");
 
@@ -664,127 +600,6 @@ mod tests {
 
     // ===== END-TO-END WORKFLOW BENCHMARKS =====
 
-    /// Benchmark complete OCR-to-database workflow
-    #[tokio::test]
-    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
-    async fn test_end_to_end_ocr_workflow_performance() {
-        use just_ingredients::db;
-        use just_ingredients::text_processing::MeasurementDetector;
-        use std::env;
-
-        if env::var("DATABASE_URL").is_err() {
-            println!("⚠️ Skipping end-to-end benchmarks - DATABASE_URL not set");
-            return;
-        }
-
-        let database_url = env::var("DATABASE_URL").unwrap();
-        let db_pool = sqlx::postgres::PgPool::connect(&database_url)
-            .await
-            .expect("Failed to create DB pool");
-        let detector = MeasurementDetector::new().unwrap();
-
-        let test_user_id = 999999997;
-        let iterations = 20;
-
-        // Create test user
-        db::get_or_create_user(&db_pool, test_user_id, Some("en"))
-            .await
-            .expect("Failed to create user");
-
-        let start = Instant::now();
-
-        for i in 0..iterations {
-            let ocr_text = format!(
-                r#"
-                Recipe ingredients for test {}:
-                2 cups all-purpose flour
-                1 cup granulated sugar
-                3 large eggs
-                1/2 cup unsalted butter
-                1 teaspoon vanilla extract
-                2 tablespoons milk
-                1/2 teaspoon baking soda
-                1/4 teaspoon salt
-            "#,
-                i
-            );
-
-            let recipe_name = format!("End-to-End Test Recipe {}", i);
-
-            // Simulate complete workflow: OCR -> Text Processing -> Database
-            let span = observability::ocr_span("e2e_workflow");
-            let _enter = span.enter();
-
-            // 1. "OCR" processing (simulated)
-            let cleaned_text = ocr_text.trim();
-
-            // 2. Text processing
-            let measurements = detector.extract_ingredient_measurements(cleaned_text);
-
-            // 3. Database operations
-            let recipe_id = db::create_recipe(&db_pool, test_user_id, cleaned_text)
-                .await
-                .expect("Failed to create recipe");
-
-            // Set recipe name
-            db::update_recipe_name(&db_pool, test_user_id, recipe_id, &recipe_name)
-                .await
-                .ok();
-
-            // 4. Store ingredients
-            for measurement in measurements {
-                db::create_ingredient(
-                    &db_pool,
-                    test_user_id,
-                    Some(recipe_id),
-                    &measurement.ingredient_name,
-                    measurement.quantity.parse::<f64>().ok(),
-                    measurement.measurement.as_deref(),
-                    &format!(
-                        "{} {}",
-                        measurement.quantity,
-                        measurement.measurement.as_deref().unwrap_or("")
-                    ),
-                )
-                .await
-                .ok();
-            }
-
-            observability::record_ocr_metrics(
-                true,
-                Duration::from_millis(100),
-                cleaned_text.len() as u64,
-            );
-        }
-
-        let duration = start.elapsed();
-        let workflows_per_second = iterations as f64 / duration.as_secs_f64();
-        let avg_time_per_workflow = duration.as_millis() / iterations as u128;
-
-        println!(
-            "📊 End-to-End Workflow: {:.1} workflows/sec, {}ms avg ({} iterations, {:?})",
-            workflows_per_second, avg_time_per_workflow, iterations, duration
-        );
-
-        // Cleanup test data
-        let _ = sqlx::query!("DELETE FROM ingredients WHERE recipe_id IN (SELECT id FROM recipes WHERE telegram_id = $1)", test_user_id)
-            .execute(&db_pool)
-            .await;
-        let _ = sqlx::query!("DELETE FROM recipes WHERE telegram_id = $1", test_user_id)
-            .execute(&db_pool)
-            .await;
-        let _ = sqlx::query!("DELETE FROM users WHERE telegram_id = $1", test_user_id)
-            .execute(&db_pool)
-            .await;
-
-        // End-to-end workflow should be reasonably fast
-        assert!(
-            workflows_per_second > 1.0,
-            "End-to-end workflow too slow: {:.1} workflows/sec",
-            workflows_per_second
-        );
-    }
-
     /// Benchmark concurrent user load simulation
     #[tokio::test]
     #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
@@ -820,10 +635,10 @@ mod tests {
 
                 for i in 0..operations_per_user {
                     let recipe_name = format!("Concurrent Recipe {} {}", user_id_offset, i);
-                    let ocr_text = "2 cups flour\n3 eggs";
+                    let content = "2 cups flour\n3 eggs";
 
                     // Perform operations
-                    let recipe_id = db::create_recipe(&pool, user_id, ocr_text)
+                    let recipe_id = db::create_recipe(&pool, user_id, content)
                         .await
                         .expect("Failed to create recipe");
 
@@ -903,60 +718,6 @@ mod tests {
 
     // ===== MEMORY AND RESOURCE BENCHMARKS =====
 
-    /// Benchmark memory usage patterns
-    #[test]
-    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
-    fn test_memory_usage_patterns() {
-        use just_ingredients::text_processing::MeasurementDetector;
-        use std::mem;
-
-        let detector = MeasurementDetector::new().unwrap();
-
-        // Test memory usage with different text sizes
-        let large_text = include_str!("../examples/recipe_parser.rs").repeat(10);
-        let test_cases = vec![
-            ("Small", "2 cups flour"),
-            (
-                "Medium",
-                "2 cups flour\n1 cup sugar\n3 eggs\n1/2 cup butter",
-            ),
-            ("Large", &large_text),
-        ];
-
-        for (size, text) in test_cases {
-            let text_size_kb = text.len() / 1024;
-
-            let start = Instant::now();
-            let measurements = detector.extract_ingredient_measurements(text);
-            let duration = start.elapsed();
-
-            let measurement_count = measurements.len();
-
-            println!(
-                "📊 Memory Pattern ({}): {}KB text, {} measurements, {:?} processing time",
-                size, text_size_kb, measurement_count, duration
-            );
-
-            // Processing should complete in reasonable time
-            assert!(
-                duration.as_millis() < 1000,
-                "Processing too slow for {} text: {:?}",
-                size,
-                duration
-            );
-        }
-
-        // Check memory overhead of key structures
-        let detector_size = mem::size_of_val(&detector);
-        println!("📊 MeasurementDetector size: {} bytes", detector_size);
-
-        assert!(
-            detector_size < 10000,
-            "Detector too large: {} bytes",
-            detector_size
-        );
-    }
-
     /// Benchmark automated test execution performance
     #[test]
     #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
@@ -1005,10 +766,7 @@ mod tests {
 
         // This test serves as a summary and runs all performance validations
         let components = vec![
-            (
-                "OCR Processing",
-                "Text extraction and measurement detection",
-            ),
+            ("Ingredient Lines", "Typed line parsing"),
             ("Database Operations", "CRUD operations and queries"),
             ("Path Validation", "Security checks and sanitization"),
             ("End-to-End Workflows", "Complete request processing"),
@@ -1027,274 +785,5 @@ mod tests {
         println!("📊 Ready for production deployment.");
 
         // This test always passes - it's just a report
-    }
-
-    /// Performance benchmark: Single-line vs Multi-line ingredient parsing
-    #[test]
-    #[ignore = "timing-sensitive: compares two noisy measurements to within 5%, flaky on shared CI runners; run with --ignored"]
-    fn test_multi_line_vs_single_line_performance() {
-        let detector = MeasurementDetector::new().unwrap();
-
-        // Test data: Single-line recipe (baseline)
-        let single_line_recipe = r#"
-        Recipe ingredients:
-        2 cups flour
-        1 cup sugar
-        3 eggs
-        1/2 cup butter
-        1 teaspoon vanilla
-        2 tablespoons milk
-        1 teaspoon baking soda
-        1 teaspoon salt
-        "#;
-
-        // Test data: Multi-line recipe (with same ingredients split across lines)
-        let multi_line_recipe = r#"
-        Recipe ingredients:
-        2 cups all-purpose
-        flour
-        1 cup granulated
-        sugar
-        3 large eggs
-        1/2 cup unsalted
-        butter
-        1 teaspoon pure
-        vanilla extract
-        2 tablespoons whole
-        milk
-        1 teaspoon baking
-        soda
-        1 teaspoon kosher
-        salt
-        "#;
-
-        let iterations = 1000;
-
-        // Benchmark single-line processing
-        let start_single = Instant::now();
-        for _ in 0..iterations {
-            let _measurements = detector.extract_ingredient_measurements(single_line_recipe);
-        }
-        let single_duration = start_single.elapsed();
-        let avg_single_time = single_duration.as_nanos() / iterations;
-
-        // Benchmark multi-line processing
-        let start_multi = Instant::now();
-        for _ in 0..iterations {
-            let _measurements = detector.extract_ingredient_measurements(multi_line_recipe);
-        }
-        let multi_duration = start_multi.elapsed();
-        let avg_multi_time = multi_duration.as_nanos() / iterations;
-
-        // Calculate performance degradation
-        let degradation_percent = if avg_single_time > 0 {
-            ((avg_multi_time as f64 - avg_single_time as f64) / avg_single_time as f64) * 100.0
-        } else {
-            0.0
-        };
-
-        println!("📊 Multi-line Performance Benchmark Results:");
-        println!(
-            "📊 Single-line: {}ns avg ({} iterations)",
-            avg_single_time, iterations
-        );
-        println!(
-            "📊 Multi-line:  {}ns avg ({} iterations)",
-            avg_multi_time, iterations
-        );
-        println!("📊 Performance degradation: {:.2}%", degradation_percent);
-
-        // Assert that multi-line processing doesn't degrade performance by more than 5%
-        assert!(
-            degradation_percent < 5.0,
-            "Multi-line processing degraded performance by {:.2}% (max allowed: 5%)",
-            degradation_percent
-        );
-
-        // Also ensure multi-line processing finds the same number of ingredients
-        let single_matches = detector.extract_ingredient_measurements(single_line_recipe);
-        let multi_matches = detector.extract_ingredient_measurements(multi_line_recipe);
-
-        println!("📊 Single-line ingredients found: {}", single_matches.len());
-        println!("📊 Multi-line ingredients found: {}", multi_matches.len());
-
-        // Both should find 8 ingredients (allowing for slight differences in parsing)
-        assert!(
-            (single_matches.len() as i32 - multi_matches.len() as i32).abs() <= 1,
-            "Ingredient count mismatch: single={}, multi={}",
-            single_matches.len(),
-            multi_matches.len()
-        );
-    }
-
-    /// Memory usage profiling for large recipes
-    #[test]
-    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
-    fn test_memory_usage_large_recipes() {
-        let detector = MeasurementDetector::new().unwrap();
-
-        // Create a large recipe with many multi-line ingredients
-        let mut large_recipe = String::from("INGREDIENTS:\n");
-
-        // Add 50 ingredients, some single-line, some multi-line
-        let ingredients = vec![
-            "2 cups all-purpose flour",
-            "1 cup granulated\nsugar",
-            "3 large eggs",
-            "1/2 cup unsalted\nbutter",
-            "1 teaspoon pure\nvanilla extract",
-            "2 tablespoons whole\nmilk",
-            "1 teaspoon baking\nsoda",
-            "1 teaspoon kosher\nsalt",
-            "2 cups old-fashioned\nrolled oats",
-            "1 cup brown\nsugar",
-            "1/2 cup vegetable\noil",
-            "2 teaspoons ground\ncinnamon",
-            "1 teaspoon baking\npowder",
-            "1/2 teaspoon ground\nnutmeg",
-            "1 cup chopped\nwalnuts",
-            "2 cups fresh\nblueberries",
-            "1 cup semi-sweet\nchocolate chips",
-            "3 tablespoons melted\nbutter",
-            "1/4 cup honey",
-            "2 teaspoons vanilla\nextract",
-            "1 cup heavy\ncream",
-            "1/2 cup sour\ncream",
-            "2 tablespoons cornstarch",
-            "1 teaspoon almond\nextract",
-            "3 cups shredded\ncoconut",
-            "1 cup dried\ncranberries",
-            "2 tablespoons chia\nseeds",
-            "1/4 cup maple\nsyrup",
-            "1 teaspoon sea\nsalt",
-            "2 cups cooked\nquinoa",
-            "1 cup diced\npineapple",
-            "3 tablespoons lime\njuice",
-            "1/2 cup chopped\ncilantro",
-            "2 teaspoons ground\ncumin",
-            "1 teaspoon chili\npowder",
-            "3 cups black\nbeans",
-            "1 cup corn\nkernels",
-            "2 tablespoons olive\noil",
-            "1 teaspoon smoked\npaprika",
-            "4 cloves minced\ngarlic",
-            "1 cup diced\nonions",
-            "2 cups vegetable\nbroth",
-            "1 can diced\ntomatoes",
-            "2 tablespoons tomato\npaste",
-            "1 teaspoon dried\noregano",
-            "1/2 teaspoon black\npepper",
-            "1 cup shredded\ncheese",
-            "2 tablespoons fresh\nparsley",
-            "1/4 cup grated\nparmesan",
-        ];
-
-        for ingredient in &ingredients {
-            large_recipe.push_str(ingredient);
-            large_recipe.push('\n');
-        }
-
-        let iterations = 100;
-
-        // Measure memory usage pattern (approximate)
-        let start_memory_test = Instant::now();
-        let mut total_matches = 0;
-
-        for _ in 0..iterations {
-            let matches = detector.extract_ingredient_measurements(&large_recipe);
-            total_matches += matches.len();
-        }
-
-        let memory_test_duration = start_memory_test.elapsed();
-        let avg_processing_time = memory_test_duration.as_nanos() / iterations;
-
-        println!("📊 Large Recipe Memory Usage Test:");
-        println!(
-            "📊 Recipe size: {} characters, {} ingredients",
-            large_recipe.len(),
-            ingredients.len()
-        );
-        println!("📊 Iterations: {}", iterations);
-        println!("📊 Average processing time: {}ns", avg_processing_time);
-        println!("📊 Total matches found: {}", total_matches);
-        println!(
-            "📊 Average matches per iteration: {}",
-            total_matches / iterations as usize
-        );
-
-        // Performance should be reasonable for large recipes (< 10ms per processing)
-        assert!(
-            avg_processing_time < 10_000_000,
-            "Large recipe processing too slow: {}ns (should be < 10ms)",
-            avg_processing_time
-        );
-
-        // Should find approximately the right number of ingredients
-        let expected_matches_per_iteration = ingredients.len();
-        let actual_avg_matches = total_matches / iterations as usize;
-
-        assert!(
-            (actual_avg_matches as i32 - expected_matches_per_iteration as i32).abs() <= 2,
-            "Unexpected match count: expected ~{}, got {}",
-            expected_matches_per_iteration,
-            actual_avg_matches
-        );
-    }
-
-    /// Scalability test: Performance with increasing recipe complexity
-    #[test]
-    #[ignore = "benchmark with wall-clock limits, flaky on shared CI runners (IMP-046); run with --ignored"]
-    fn test_scalability_with_recipe_complexity() {
-        let detector = MeasurementDetector::new().unwrap();
-
-        // Test with recipes of increasing size
-        let recipe_sizes = vec![5, 10, 20, 50];
-
-        for &num_ingredients in &recipe_sizes {
-            let mut recipe = String::from("INGREDIENTS:\n");
-
-            // Generate recipe with specified number of ingredients
-            for i in 0..num_ingredients {
-                if i % 3 == 0 {
-                    // Single-line ingredient
-                    recipe.push_str(&format!("{} cups ingredient{}\n", (i % 3) + 1, i));
-                } else {
-                    // Multi-line ingredient
-                    recipe.push_str(&format!(
-                        "{} cups multi-word\ningredient{}\n",
-                        (i % 3) + 1,
-                        i
-                    ));
-                }
-            }
-
-            let iterations = 100;
-            let start = Instant::now();
-
-            for _ in 0..iterations {
-                let _matches = detector.extract_ingredient_measurements(&recipe);
-            }
-
-            let duration = start.elapsed();
-            let avg_time = duration.as_nanos() / iterations;
-
-            println!(
-                "📊 Recipe size {} ingredients: {}ns avg processing time",
-                num_ingredients, avg_time
-            );
-
-            // Performance should scale reasonably (not exponentially worse)
-            // For this test, we just ensure it completes in reasonable time
-            assert!(
-                avg_time < 50_000_000, // < 50ms
-                "Recipe with {} ingredients too slow: {}ns",
-                num_ingredients,
-                avg_time
-            );
-        }
-
-        println!(
-            "📊 Scalability test passed - performance scales reasonably with recipe complexity"
-        );
     }
 }

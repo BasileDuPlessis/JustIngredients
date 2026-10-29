@@ -348,13 +348,6 @@ pub async fn start_metrics_server_with_health_checks(
     Ok(())
 }
 
-/// Record OCR operation metrics
-pub fn record_ocr_metrics(success: bool, duration: std::time::Duration, image_size: u64) {
-    metrics::counter!("ocr_operations_total", "result" => if success { "success" } else { "failure" }).increment(1);
-    metrics::histogram!("ocr_duration_seconds").record(duration.as_secs_f64());
-    metrics::histogram!("ocr_image_size_bytes").record(image_size as f64);
-}
-
 /// Records one image sent to the extraction service: outcome (`success` or an
 /// `ExtractionError::kind`), latency including retries, and retries.
 pub fn record_llm_request(
@@ -389,55 +382,6 @@ pub fn record_llm_usage(
         metrics::counter!("llm_estimated_cost_micro_usd_total", "model" => model.to_string())
             .increment(cost);
     }
-}
-
-/// Parameters for OCR performance metrics recording
-#[derive(Debug, Clone)]
-pub struct OcrPerformanceMetricsParams {
-    pub success: bool,
-    pub total_duration: std::time::Duration,
-    pub ocr_duration: std::time::Duration,
-    pub image_size: u64,
-    pub attempt_count: u32,
-    pub memory_estimate_mb: f64,
-}
-
-/// Record detailed OCR performance metrics including memory and throughput
-pub fn record_ocr_performance_metrics(params: OcrPerformanceMetricsParams) {
-    let OcrPerformanceMetricsParams {
-        success,
-        total_duration,
-        ocr_duration,
-        image_size,
-        attempt_count,
-        memory_estimate_mb,
-    } = params;
-
-    // Basic metrics
-    record_ocr_metrics(success, total_duration, image_size);
-
-    // Detailed performance metrics
-    metrics::histogram!("ocr_processing_duration_seconds").record(ocr_duration.as_secs_f64());
-    metrics::histogram!("ocr_overhead_duration_seconds")
-        .record((total_duration - ocr_duration).as_secs_f64());
-    metrics::histogram!("ocr_memory_estimate_mb").record(memory_estimate_mb);
-    metrics::histogram!("ocr_retry_attempts").record(attempt_count as f64);
-
-    // Throughput metrics (operations per second)
-    let ops_per_sec = if total_duration.as_secs_f64() > 0.0 {
-        1.0 / total_duration.as_secs_f64()
-    } else {
-        0.0
-    };
-    metrics::histogram!("ocr_throughput_ops_per_sec").record(ops_per_sec);
-
-    // Efficiency metrics (processing time vs total time)
-    let efficiency = if total_duration.as_secs_f64() > 0.0 {
-        ocr_duration.as_secs_f64() / total_duration.as_secs_f64()
-    } else {
-        0.0
-    };
-    metrics::histogram!("ocr_efficiency_ratio").record(efficiency);
 }
 
 /// Record database operation metrics
@@ -546,11 +490,6 @@ pub fn record_uptime(uptime_secs: f64) {
     metrics::gauge!("application_uptime_seconds").set(uptime_secs);
 }
 
-/// Update circuit breaker state metric
-pub fn update_circuit_breaker_state(is_open: bool) {
-    metrics::gauge!("circuit_breaker_state").set(if is_open { 1.0 } else { 0.0 });
-}
-
 /// Record Telegram message processing metrics
 pub fn record_telegram_message(message_type: &str) {
     let message_type = message_type.to_string();
@@ -586,36 +525,6 @@ pub fn record_telegram_performance_metrics(
     if user_id.is_some() {
         metrics::counter!("telegram_active_users_total").increment(1);
     }
-}
-
-/// Record text processing performance metrics
-pub fn record_text_processing_metrics(
-    operation: &str,
-    duration: std::time::Duration,
-    text_length: usize,
-    line_count: usize,
-    matches_found: usize,
-) {
-    let operation = operation.to_string();
-    metrics::counter!("text_processing_operations_total", "operation" => operation.clone())
-        .increment(1);
-    metrics::histogram!("text_processing_duration_seconds", "operation" => operation.clone())
-        .record(duration.as_secs_f64());
-    metrics::histogram!("text_processing_input_length", "operation" => operation.clone())
-        .record(text_length as f64);
-    metrics::histogram!("text_processing_line_count", "operation" => operation.clone())
-        .record(line_count as f64);
-    metrics::histogram!("text_processing_matches_found", "operation" => operation.clone())
-        .record(matches_found as f64);
-
-    // Throughput metrics (characters processed per second)
-    let throughput = if duration.as_secs_f64() > 0.0 {
-        text_length as f64 / duration.as_secs_f64()
-    } else {
-        0.0
-    };
-    metrics::histogram!("text_processing_throughput_chars_per_sec", "operation" => operation)
-        .record(throughput);
 }
 
 /// Record UI interaction metrics

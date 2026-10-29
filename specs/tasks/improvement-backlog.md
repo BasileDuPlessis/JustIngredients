@@ -1000,7 +1000,14 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: unit test with a fake extractor: the N+1th photo of the day is refused without a call.
 
 ### IMP-048: OCR leftovers kept only for tests
-- [ ] Done
+- [x] Done (2026-10-29): the OCR metrics, the breaker gauge, `ocr_span`, the OCR cache and the
+  unused `record_text_processing_metrics` are deleted; the tests record `record_llm_request`,
+  `record_db_metrics` and `telegram_span` instead. With them went the whole OCR text processing:
+  `MeasurementDetector` (its `[lO\d]+/\d+` corrections and multi-line helpers),
+  `config/measurement_units.json` and `MEASUREMENT_UNITS_CONFIG_PATH`, the OCR examples and
+  about 2,400 lines of OCR tests. Typed lines are read by a small parser on the units of
+  `units.rs` (`validation::parse_ingredient_from_text`), which also fixes "2,5 kg", "1 ½ cup",
+  "2 lbs", "c. à soupe" and "Farine : 200 g". `text_processing.rs` keeps `MeasurementMatch` only.
 - Priority: P3. Effort: S. Area: Observability.
 - Related: LLM migration Task 5.1 (Tesseract removed on 2026-10-27).
 - Location: `src/observability/metrics.rs` (`record_ocr_metrics`, `record_ocr_performance_metrics`,

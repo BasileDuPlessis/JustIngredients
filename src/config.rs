@@ -8,7 +8,6 @@
 use crate::errors::{AppError, AppResult};
 use crate::extraction::ExtractionConfig;
 use crate::observability_config::ObservabilityConfig;
-use crate::text_processing::{MeasurementConfig, MeasurementUnitsConfig};
 use serde::{Deserialize, Serialize};
 use std::env;
 
@@ -236,7 +235,7 @@ impl ServerConfig {
 }
 
 /// Unified application configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct AppConfig {
     /// Bot configuration
     pub bot: BotConfig,
@@ -246,10 +245,6 @@ pub struct AppConfig {
     pub server: ServerConfig,
     /// Observability configuration
     pub observability: ObservabilityConfig,
-    /// Text processing configuration
-    pub text_processing: MeasurementConfig,
-    /// Measurement units configuration
-    pub measurement_units: MeasurementUnitsConfig,
     /// Ingredient extraction (Gemini client) configuration
     pub extraction: ExtractionConfig,
 }
@@ -328,12 +323,6 @@ impl AppConfig {
         // Load observability configuration (uses existing defaults and validation)
         config.observability = ObservabilityConfig::default();
 
-        // Load text processing configuration (uses existing defaults and validation)
-        config.text_processing = MeasurementConfig::default();
-
-        // Load measurement units configuration (from file)
-        config.measurement_units = crate::text_processing::load_measurement_units_config();
-
         // Load extraction configuration (Gemini client)
         config.extraction = ExtractionConfig::from_env()?;
 
@@ -346,8 +335,6 @@ impl AppConfig {
         self.database.validate()?;
         self.server.validate()?;
         self.observability.validate()?;
-        self.text_processing.validate()?;
-        self.measurement_units.validate()?;
         self.extraction.validate()?;
         Ok(())
     }
@@ -361,20 +348,6 @@ impl AppConfig {
             self.observability.enable_metrics_export,
             self.extraction.gemini.model
         )
-    }
-}
-
-impl Default for AppConfig {
-    fn default() -> Self {
-        Self {
-            bot: BotConfig::default(),
-            database: DatabaseConfig::default(),
-            server: ServerConfig::default(),
-            observability: ObservabilityConfig::default(),
-            text_processing: MeasurementConfig::default(),
-            measurement_units: crate::text_processing::load_measurement_units_config(),
-            extraction: ExtractionConfig::default(),
-        }
     }
 }
 

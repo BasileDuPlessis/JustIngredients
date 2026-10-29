@@ -160,11 +160,6 @@ pub async fn init_opentelemetry_tracing() -> Result<()> {
     Ok(())
 }
 
-/// Create a span for OCR operations
-pub fn ocr_span(operation: &str) -> tracing::Span {
-    tracing::info_span!("ocr_operation", operation = operation, component = "ocr")
-}
-
 /// Create a span for database operations
 pub fn db_span(operation: &str, table: &str) -> tracing::Span {
     tracing::info_span!(

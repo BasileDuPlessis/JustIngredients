@@ -20,13 +20,12 @@ mod tests {
 
         // Verify other public functions exist
         let _record_telegram = observability::record_telegram_message;
-        let _ocr_span = observability::ocr_span;
+        let _telegram_span = observability::telegram_span;
         let _db_span = observability::db_span;
         let _telegram_span = observability::telegram_span;
-        let _record_ocr = observability::record_ocr_metrics;
+        let _record_llm = observability::record_llm_request;
         let _record_db = observability::record_db_metrics;
         let _record_request = observability::record_request_metrics;
-        let _update_circuit_breaker = observability::update_circuit_breaker_state;
 
         // All functions exist and are accessible
     }
@@ -41,16 +40,18 @@ mod tests {
         observability::record_telegram_message("text");
 
         // Record OCR metrics
-        observability::record_ocr_metrics(true, std::time::Duration::from_secs(1), 1024);
+        observability::record_llm_request(
+            "gemini-test",
+            "success",
+            std::time::Duration::from_secs(1),
+            0,
+        );
 
         // Record database metrics
         observability::record_db_metrics("SELECT", std::time::Duration::from_millis(50));
 
         // Record request metrics
         observability::record_request_metrics("GET", 200, std::time::Duration::from_millis(25));
-
-        // Update circuit breaker state
-        observability::update_circuit_breaker_state(false);
 
         // All calls completed without panicking
     }
@@ -59,7 +60,6 @@ mod tests {
     #[test]
     fn test_span_creation() {
         // Test that span creation functions work
-        let _ocr_span = observability::ocr_span("test_operation");
         let _db_span = observability::db_span("test_operation", "test_table");
         let _telegram_span = observability::telegram_span("test_operation", Some(12345));
 
@@ -76,7 +76,7 @@ mod tests {
         let _ = init_observability;
         let _ = init_observability_with_health_checks;
         let _ = record_telegram_message;
-        let _ = record_ocr_metrics;
+        let _ = record_llm_request;
         let _ = record_db_metrics;
     }
 
@@ -91,9 +91,14 @@ mod tests {
         observability::record_telegram_message("photo");
 
         // Test OCR metrics
-        observability::record_ocr_metrics(true, Duration::from_millis(500), 2048);
-        observability::record_ocr_metrics(false, Duration::from_secs(2), 1024);
-        observability::record_ocr_metrics(true, Duration::from_millis(300), 1536);
+        observability::record_llm_request("gemini-test", "success", Duration::from_millis(500), 0);
+        observability::record_llm_request(
+            "gemini-test",
+            if false { "success" } else { "timeout" },
+            Duration::from_secs(2),
+            0,
+        );
+        observability::record_llm_request("gemini-test", "success", Duration::from_millis(300), 0);
 
         // Test database metrics
         observability::record_db_metrics("SELECT", Duration::from_millis(10));
@@ -105,21 +110,12 @@ mod tests {
         observability::record_request_metrics("POST", 201, Duration::from_millis(75));
         observability::record_request_metrics("GET", 404, Duration::from_millis(30));
 
-        // Test circuit breaker state
-        observability::update_circuit_breaker_state(false);
-        observability::update_circuit_breaker_state(true);
-        observability::update_circuit_breaker_state(false);
-
         // All metrics recorded successfully without panicking
     }
 
     /// Test trace span creation and context propagation
     #[test]
     fn test_trace_span_creation_and_context() {
-        // Test OCR span creation
-        let ocr_span = observability::ocr_span("test_ocr_operation");
-        assert_eq!(ocr_span.metadata().unwrap().name(), "ocr_operation");
-
         // Test database span creation
         let db_span = observability::db_span("test_db_operation", "users");
         assert_eq!(db_span.metadata().unwrap().name(), "db_operation");
@@ -132,7 +128,6 @@ mod tests {
         );
 
         // Test span context propagation (basic functionality)
-        let _enter_ocr = ocr_span.enter();
         let _enter_db = db_span.enter();
         let _enter_telegram = telegram_span.enter();
 
@@ -204,15 +199,15 @@ mod tests {
         // Test that observability functions work correctly in async context
 
         // Test span creation in async context
-        let ocr_span = observability::ocr_span("async_test_operation");
-        let _enter = ocr_span.enter();
+        let span = observability::telegram_span("async_test_operation", None);
+        let _enter = span.enter();
 
         // Simulate async work with metrics recording
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         // Record metrics during async operation
         observability::record_telegram_message("async_test");
-        observability::record_ocr_metrics(true, Duration::from_millis(100), 512);
+        observability::record_llm_request("gemini-test", "success", Duration::from_millis(100), 0);
 
         // Async integration works correctly
     }
@@ -264,7 +259,7 @@ mod tests {
         let start = Instant::now();
 
         for i in 0..iterations {
-            let span = observability::ocr_span(&format!("perf_test_{}", i));
+            let span = observability::telegram_span(&format!("perf_test_{}", i), None);
             let _enter = span.enter();
             // Simulate some work
             let _ = i * 2;
@@ -292,13 +287,13 @@ mod tests {
         use std::mem;
 
         // Test that observability structures don't use excessive memory
-        let ocr_span = observability::ocr_span("memory_test");
+        let span = observability::telegram_span("memory_test", None);
         let db_span = observability::db_span("memory_test", "test_table");
         let telegram_span = observability::telegram_span("memory_test", Some(12345));
 
         // Spans should be lightweight (rough estimate: < 1KB each)
         // Note: This is a basic sanity check, actual memory usage depends on implementation
-        assert!(mem::size_of_val(&ocr_span) > 0);
+        assert!(mem::size_of_val(&span) > 0);
         assert!(mem::size_of_val(&db_span) > 0);
         assert!(mem::size_of_val(&telegram_span) > 0);
 
@@ -332,12 +327,17 @@ mod tests {
             let counter_clone = Arc::clone(&counter);
             let handle = tokio::spawn(async move {
                 // Create spans
-                let span = observability::ocr_span(&format!("concurrent_test_{}", i));
+                let span = observability::telegram_span(&format!("concurrent_test_{}", i), None);
                 let _enter = span.enter();
 
                 // Record metrics
                 observability::record_telegram_message("concurrent");
-                observability::record_ocr_metrics(true, Duration::from_millis(50), 1024);
+                observability::record_llm_request(
+                    "gemini-test",
+                    "success",
+                    Duration::from_millis(50),
+                    0,
+                );
 
                 // Update counter
                 let mut count = counter_clone.lock().await;
@@ -368,7 +368,7 @@ mod tests {
         observability::record_db_metrics("", Duration::from_secs(0)); // Empty operation
 
         // Test with extreme values
-        observability::record_ocr_metrics(true, Duration::from_secs(3600), u64::MAX); // Very long duration, huge file
+        observability::record_llm_request("gemini-test", "success", Duration::from_secs(3600), 0); // Very long duration, huge file
         observability::record_request_metrics("GET", 999, Duration::from_secs(3600));
         // Invalid status, long duration
 

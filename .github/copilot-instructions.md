@@ -54,8 +54,10 @@ Telegram bot that reads the ingredients of recipe photos with the Gemini vision 
 - `main.rs` - App entry point with bot dispatcher
 - `bot/` - Telegram message handling, dialogue, home message, cleanup, HTML rendering
 - `extraction/` - Gemini client, image preparation, guard (concurrency, cache), mapping
-- `db.rs` - PostgreSQL operations with FTS
-- `text_processing.rs` - Ingredient parsing and measurement detection
+- `db.rs` - PostgreSQL operations
+- `search.rs` - Recipe search (names and ingredients, French-aware)
+- `units.rs` - Canonical units; `validation.rs` - typed ingredient lines and quantities
+- `text_processing.rs` - `MeasurementMatch`, the ingredient line type
 
 ### Key Patterns
 - **Circuit Breaker**: `extraction::breaker` stops calling Gemini after repeated failures

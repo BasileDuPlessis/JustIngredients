@@ -33,8 +33,8 @@ deployment is started by hand and approved.
 - Builder packages: `build-essential`, `pkg-config`, `libssl-dev`. Runtime packages: CA
   certificates and libssl only (no OCR engine).
 - The build fails if `ldd` reports a missing library.
-- `config/` is copied (`MEASUREMENT_UNITS_CONFIG_PATH=/app/config/measurement_units.json`);
-  locales, prompt and schema are embedded in the binary. `RUST_LOG=info,sqlx=warn`.
+- Locales, the extraction prompt and its schema are embedded in the binary: the runtime image
+  holds the binary only. `RUST_LOG=info,sqlx=warn`.
 
 ## Fly Configuration (`deploy/fly.toml`, same in `fly-staging.toml`)
 - `[env]`: `HEALTH_PORT=8080`, `LOG_FORMAT=pretty`, `RUST_LOG=info,sqlx=warn`,
@@ -82,7 +82,7 @@ Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` 
 - Optional variables with defaults: `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECS`, `GEMINI_THINKING_LEVEL`,
   `GEMINI_MAX_CONCURRENCY`, `EXTRACTION_DAILY_LIMIT_PER_USER`, `HEALTH_PORT`, `METRICS_PORT`, `METRICS_AUTH_TOKEN`,
   `METRICS_BIND_ALL_INTERFACES`, `DATABASE_MAX_CONNECTIONS`, `DATABASE_MIN_CONNECTIONS`,
-  `DATABASE_CONNECT_TIMEOUT_SECS`, `MEASUREMENT_UNITS_CONFIG_PATH`, `OBSERVABILITY_LOG_LEVEL`,
+  `DATABASE_CONNECT_TIMEOUT_SECS`, `OBSERVABILITY_LOG_LEVEL`,
   `RUST_LOG`; see `.env.example`.
 - Not read although `.env.example` lists them (IMP-051): `AppConfig` uses
   `ObservabilityConfig::default()`, so `ENVIRONMENT`, `OTLP_ENDPOINT`, `ENABLE_TRACE_SAMPLING`,

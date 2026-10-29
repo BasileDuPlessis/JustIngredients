@@ -29,7 +29,7 @@ pub enum RecipeDialogueState {
         ingredients: Vec<MeasurementMatch>,
         language_code: Option<String>,
         message_id: Option<i32>, // ID of the review message to edit
-        extracted_text: String,  // Store the original OCR text
+        extracted_text: String,  // The ingredient text read from the photo
         recipe_name_from_caption: Option<String>, // Track recipe name from photo caption
     },
     EditingIngredient {
@@ -42,13 +42,13 @@ pub enum RecipeDialogueState {
         language_code: Option<String>,
         message_id: Option<i32>, // ID of the review message to edit after editing
         original_message_id: Option<i32>, // ID of the original recipe display message to replace during focused editing
-        extracted_text: String,           // Store the original OCR text
+        extracted_text: String,           // The ingredient text read from the photo
         recipe_name_from_caption: Option<String>, // Track recipe name from photo caption
     },
     WaitingForRecipeNameAfterConfirm {
         ingredients: Vec<MeasurementMatch>,
         language_code: Option<String>,
-        extracted_text: String, // Store the original OCR text
+        extracted_text: String, // The ingredient text read from the photo
         recipe_name_from_caption: Option<String>, // Track recipe name from photo caption
         message_id: Option<i32>, // ID of the prompt message to edit with confirmation
     },

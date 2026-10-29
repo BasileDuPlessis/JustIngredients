@@ -18,14 +18,14 @@ COPY Cargo.toml Cargo.lock ./
 
 # Dependencies first, against placeholder sources: this layer is reused (CI layer cache) as long
 # as Cargo.toml and Cargo.lock do not change, so a code change only rebuilds the crate itself.
-RUN mkdir -p src examples \
+RUN mkdir -p src \
     && echo 'fn main() {}' > src/main.rs \
     && touch src/lib.rs \
-    && echo 'fn main() {}' > examples/recipe_parser.rs \
     && cargo build --release \
-    && rm -rf src examples
+    && rm -rf src
 
 COPY src ./src
+# The extraction prompt and schema are compiled into the binary (include_str!)
 COPY config ./config
 COPY locales ./locales
 COPY .sqlx ./.sqlx
@@ -47,12 +47,10 @@ RUN apt-get update \
 WORKDIR /app
 
 COPY --from=builder /app/target/release/just-ingredients /usr/local/bin/just-ingredients
-COPY config ./config
 
 # Fail the build instead of shipping an image whose binary cannot start.
 RUN ! ldd /usr/local/bin/just-ingredients | grep 'not found'
 
-ENV MEASUREMENT_UNITS_CONFIG_PATH=/app/config/measurement_units.json
 ENV RUST_LOG=info,sqlx=warn
 
 CMD ["just-ingredients"]

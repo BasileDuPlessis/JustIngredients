@@ -448,14 +448,14 @@ async fn handle_command(
 ///
 /// ### Photo Messages
 /// - Extract caption for automatic recipe naming
-/// - Download and process image via OCR pipeline
+/// - Download the image and read its ingredients (Gemini)
 /// - Transition to ingredient review interface
 /// - Handle caption validation and fallback logic
 ///
 /// ### Document Messages
 /// - Validate image MIME types
 /// - Process supported image formats
-/// - Same OCR pipeline as photos (no caption support)
+/// - Same reading as photos (no caption support)
 ///
 /// ## Language Detection & Localization
 ///
@@ -619,7 +619,7 @@ pub struct MessageServices {
 
 /// Cache-enabled message handler for improved performance
 ///
-/// This version includes caching for database queries and OCR results
+/// This version includes caching for database queries
 /// to reduce processing time and database load.
 pub async fn message_handler_with_cache(
     bot: Bot,

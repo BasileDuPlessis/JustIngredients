@@ -3,7 +3,17 @@
 //! This module contains integration tests for bot interaction flows,
 //! dialogue workflows, and user experience scenarios.
 
-use just_ingredients::text_processing::MeasurementDetector;
+use just_ingredients::validation::parse_ingredient_from_text;
+use just_ingredients::MeasurementMatch;
+
+/// The ingredients of a recipe text: its lines read like typed lines, keeping those with a
+/// quantity (titles and headings are skipped), as a photo would give them.
+fn ingredient_lines(text: &str) -> Vec<MeasurementMatch> {
+    text.lines()
+        .filter_map(|line| parse_ingredient_from_text(line).ok())
+        .filter(|ingredient| !ingredient.quantity.is_empty())
+        .collect()
+}
 
 /// Test recipe naming dialogue workflow
 #[test]
@@ -98,8 +108,7 @@ fn test_multi_language_end_to_end_workflow() {
     2 tablespoons sugar
     "#;
 
-    let detector = MeasurementDetector::new().unwrap();
-    let english_measurements = detector.extract_ingredient_measurements(english_text);
+    let english_measurements = ingredient_lines(english_text);
 
     // Test French workflow
     let french_text = r#"
@@ -112,7 +121,7 @@ fn test_multi_language_end_to_end_workflow() {
     2 cuillères à soupe de sucre
     "#;
 
-    let french_measurements = detector.extract_ingredient_measurements(french_text);
+    let french_measurements = ingredient_lines(french_text);
 
     // Verify both languages work
     assert!(!english_measurements.is_empty());
@@ -148,67 +157,6 @@ fn test_multi_language_end_to_end_workflow() {
     );
 }
 
-/// Test concurrent user workflows simulation
-#[test]
-fn test_concurrent_user_workflows() {
-    use std::sync::{Arc, Mutex};
-    use std::thread;
-
-    // Simulate multiple users processing recipes concurrently
-    let shared_detector = Arc::new(Mutex::new(MeasurementDetector::new().unwrap()));
-    let results = Arc::new(Mutex::new(Vec::new()));
-
-    let mut handles = vec![];
-
-    // Simulate 3 concurrent users
-    for user_id in 0..3 {
-        let detector_clone = Arc::clone(&shared_detector);
-        let results_clone = Arc::clone(&results);
-
-        let handle = thread::spawn(move || {
-            let detector = detector_clone.lock().unwrap();
-
-            // Each user processes different recipe text
-            let recipe_texts = [
-                "2 cups flour\n3 eggs\n1 cup sugar",
-                "500g chicken\n2 carrots\n1 onion",
-                "1 kg potatoes\n3 tomatoes\n200g cheese",
-            ];
-
-            let measurements = detector.extract_ingredient_measurements(recipe_texts[user_id]);
-
-            // Store results
-            let mut results = results_clone.lock().unwrap();
-            results.push((user_id, measurements.len()));
-        });
-
-        handles.push(handle);
-    }
-
-    // Wait for all threads to complete
-    for handle in handles {
-        handle.join().unwrap();
-    }
-
-    // Verify all users got results
-    let results = results.lock().unwrap();
-    assert_eq!(results.len(), 3);
-
-    // Each user should have found measurements
-    for (user_id, measurement_count) in results.iter() {
-        assert!(
-            *measurement_count > 0,
-            "User {} should have found measurements",
-            user_id
-        );
-    }
-
-    println!(
-        "✅ Concurrent workflows: {} users processed recipes successfully",
-        results.len()
-    );
-}
-
 /// Test photo caption workflow integration
 #[test]
 fn test_photo_caption_workflow_integration() {
@@ -219,7 +167,7 @@ fn test_photo_caption_workflow_integration() {
 
     // Step 1: Simulate photo upload with caption
     let caption = Some("Chocolate Chip Cookies".to_string());
-    let ocr_text = r#"
+    let recipe_text = r#"
     Ingredients:
     2 cups flour
     1 cup sugar
@@ -228,8 +176,7 @@ fn test_photo_caption_workflow_integration() {
     "#;
 
     // Step 2: Extract measurements (simulating OCR processing)
-    let detector = MeasurementDetector::new().unwrap();
-    let ingredients = detector.extract_ingredient_measurements(ocr_text);
+    let ingredients = ingredient_lines(recipe_text);
 
     assert!(!ingredients.is_empty());
     assert!(ingredients.len() >= 4); // Should find flour, sugar, eggs, chocolate chips
@@ -262,7 +209,7 @@ fn test_photo_caption_workflow_integration() {
         ingredients: ingredients.clone(),
         language_code: Some("en".to_string()),
         message_id: None,
-        extracted_text: ocr_text.to_string(),
+        extracted_text: recipe_text.to_string(),
         recipe_name_from_caption: Some(recipe_name_candidate.to_string()),
     };
 
@@ -380,11 +327,9 @@ fn test_caption_with_measurement_extraction() {
         ),
     ];
 
-    let detector = MeasurementDetector::new().unwrap();
-
-    for (caption, ocr_text, expected_recipe_name) in test_cases {
+    for (caption, recipe_text, expected_recipe_name) in test_cases {
         // Extract measurements
-        let ingredients = detector.extract_ingredient_measurements(ocr_text);
+        let ingredients = ingredient_lines(recipe_text);
         assert!(
             !ingredients.is_empty(),
             "Should find ingredients in OCR text"
@@ -420,7 +365,7 @@ fn test_backward_compatibility_no_captions() {
     // This test ensures that existing functionality for photos without captions
     // continues to work exactly as before the caption feature was added
 
-    let ocr_text = r#"
+    let recipe_text = r#"
     Recipe without caption:
     2 cups flour
     1 cup sugar
@@ -431,8 +376,7 @@ fn test_backward_compatibility_no_captions() {
     let caption: Option<String> = None;
 
     // Extract measurements (this part is unchanged)
-    let detector = MeasurementDetector::new().unwrap();
-    let ingredients = detector.extract_ingredient_measurements(ocr_text);
+    let ingredients = ingredient_lines(recipe_text);
     assert!(!ingredients.is_empty());
 
     // Recipe name assignment (should use default "Recipe")
@@ -446,7 +390,7 @@ fn test_backward_compatibility_no_captions() {
     assert_eq!(recipe_name, "Recipe");
 
     // Verify the workflow would continue normally
-    let extracted_text = ocr_text.to_string();
+    let extracted_text = recipe_text.to_string();
     let language_code = Some("en".to_string());
 
     // This simulates what would happen in the message handler
@@ -512,16 +456,13 @@ fn test_caption_multi_language_integration() {
 /// Test streamlined workflow - when caption is available, skip recipe name input
 #[test]
 fn test_streamlined_caption_workflow() {
-    use just_ingredients::text_processing::MeasurementDetector;
-
     // Setup test data
-    let detector = MeasurementDetector::new().unwrap();
-    let ocr_text = r#"
+    let recipe_text = r#"
     2 cups flour
     1 cup sugar
     3 eggs
     "#;
-    let ingredients = detector.extract_ingredient_measurements(ocr_text);
+    let ingredients = ingredient_lines(recipe_text);
     assert!(!ingredients.is_empty());
 
     // Test the core logic: when caption exists, use it directly
@@ -569,16 +510,14 @@ fn test_streamlined_caption_workflow() {
 #[test]
 fn test_caption_preservation_after_ingredient_deletion() {
     use just_ingredients::dialogue::RecipeDialogueState;
-    use just_ingredients::text_processing::MeasurementDetector;
 
     // Setup: Simulate photo with caption processed, ingredients extracted
-    let detector = MeasurementDetector::new().unwrap();
-    let ocr_text = r#"
+    let recipe_text = r#"
     2 cups flour
     1 cup sugar
     3 eggs
     "#;
-    let mut ingredients = detector.extract_ingredient_measurements(ocr_text);
+    let mut ingredients = ingredient_lines(recipe_text);
     assert!(!ingredients.is_empty());
 
     let caption = "Chocolate Chip Cookies".to_string();
@@ -590,7 +529,7 @@ fn test_caption_preservation_after_ingredient_deletion() {
         ingredients: ingredients.clone(),
         language_code: Some("en".to_string()),
         message_id: Some(12345),
-        extracted_text: ocr_text.to_string(),
+        extracted_text: recipe_text.to_string(),
         recipe_name_from_caption: recipe_name_from_caption.clone(),
     };
 
@@ -613,7 +552,7 @@ fn test_caption_preservation_after_ingredient_deletion() {
         ingredients: ingredients.clone(),
         language_code: Some("en".to_string()),
         message_id: Some(12345),
-        extracted_text: ocr_text.to_string(),
+        extracted_text: recipe_text.to_string(),
         recipe_name_from_caption: recipe_name_from_caption.clone(), // This should be preserved!
     };
 
@@ -1149,7 +1088,7 @@ fn test_unified_multi_word_ingredient_bot_workflow() {
     use just_ingredients::dialogue::RecipeDialogueState;
     // Test that bot workflows correctly handle multi-word ingredients extracted by unified regex
 
-    let ocr_text = r#"
+    let recipe_text = r#"
     Gourmet Recipe
 
     Ingredients:
@@ -1192,7 +1131,7 @@ fn test_unified_multi_word_ingredient_bot_workflow() {
 
     // Simulate dialogue state with multi-word ingredients
     let waiting_state = RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
-        extracted_text: ocr_text.to_string(),
+        extracted_text: recipe_text.to_string(),
         ingredients: ingredients.clone(),
         language_code: Some("en".to_string()),
         recipe_name_from_caption: None,
