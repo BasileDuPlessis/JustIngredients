@@ -244,8 +244,12 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   (`noop`, ignored), ➡️ `page:<n>`; it edits the list message, and a page past the end (recipes
   deleted meanwhile) shows the last one.
 - **Selection** (owner = callback sender): `recipe_instance:<id>` opens the card
-  (`cards::show_card`): the list goes and the card is sent at the bottom with its buttons,
-  recorded as the active card (`chat_messages` kind `active_card`, at most one per chat; U6.1).
+  (`cards::show_card`): pressed on the recorded list (or search results), the list message is
+  edited into the card with its buttons, in one request (nothing disappears first); otherwise
+  (a home message or list of an older version, or the edit fails) the list goes and the card is
+  sent at the bottom. Either way it is recorded as the active card (`chat_messages` kind
+  `active_card`, at most one per chat; U6.1), and `Recipe card shown` is logged with the read
+  and display times.
   Earlier cards of the recipe stay in the history: every consultation is kept. A recipe that is
   gone or another user's answers `recipe-not-found` until the next action.
 - **Recipe card**: name, creation date (user's language, Paris time: `format_recipe_date`), ingredients. Buttons:

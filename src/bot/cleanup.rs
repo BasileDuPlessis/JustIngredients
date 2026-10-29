@@ -53,10 +53,18 @@ async fn record(chat: ChatId, id: MessageId, kind: &str) {
 }
 
 async fn take(chat: ChatId, kinds: &[&str]) -> Vec<crate::db::ChatMessage> {
+    take_except(chat, kinds, None).await
+}
+
+async fn take_except(
+    chat: ChatId,
+    kinds: &[&str],
+    keep: Option<MessageId>,
+) -> Vec<crate::db::ChatMessage> {
     let Some(pool) = pool() else {
         return Vec::new();
     };
-    crate::db::take_chat_messages(pool, chat.0, kinds)
+    crate::db::take_chat_messages_except(pool, chat.0, kinds, keep.map(|id| id.0))
         .await
         .unwrap_or_else(|e| {
             debug!(error = %e, "Could not read the messages of the action");
@@ -149,6 +157,25 @@ async fn record_card_as(chat: ChatId, id: MessageId, recipe_id: i64, kind: &str)
     {
         debug!(error = %e, "Could not record a recipe card");
     }
+}
+
+/// Whether `id` is the recorded list (or home message) at the bottom: a recipe opened from it
+/// can take its place.
+pub async fn is_list(chat: ChatId, id: MessageId) -> bool {
+    let Some(pool) = pool() else { return false };
+    matches!(
+        crate::db::chat_message_kind(pool, chat.0, id.0).await,
+        Ok(Some(kind)) if kind == LIST || kind == HOME
+    )
+}
+
+/// The list `id` was just edited into the card of `recipe_id`: recorded as the active card
+/// (keeping its send time), and anything else with buttons at the bottom goes as with
+/// [`delete_lists`].
+pub async fn list_became_card(bot: &Bot, chat: ChatId, id: MessageId, recipe_id: i64) {
+    record_active_card(chat, id, recipe_id).await;
+    let messages = take_except(chat, &[HOME, LIST, ACTIVE_CARD], Some(id)).await;
+    delete_or_strip(bot, chat, messages).await;
 }
 
 /// Remembers the card just sent at the bottom with its buttons.

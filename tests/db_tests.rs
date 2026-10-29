@@ -1067,6 +1067,24 @@ async fn chat_messages_are_taken_once_per_chat_and_kind(pool: PgPool) -> Result<
         vec![11]
     );
 
+    // A list turned into a card stays recorded, as the card; the other lists are taken
+    record_chat_message(&pool, 42, 20, "list", None).await?;
+    record_chat_message(&pool, 42, 21, "list", None).await?;
+    assert_eq!(
+        chat_message_kind(&pool, 42, 20).await?.as_deref(),
+        Some("list")
+    );
+    record_chat_message(&pool, 42, 20, "active_card", Some(3)).await?;
+    assert_eq!(
+        ids(take_chat_messages_except(&pool, 42, &["list", "active_card"], Some(20)).await?),
+        vec![21]
+    );
+    assert_eq!(
+        chat_message_kind(&pool, 42, 20).await?.as_deref(),
+        Some("active_card")
+    );
+    assert_eq!(chat_message_kind(&pool, 42, 21).await?, None);
+
     // Messages of older versions were never recorded
     record_chat_message(&pool, 42, 12, "list", None).await?;
     assert!(is_chat_message_recorded(&pool, 42, 12).await?);

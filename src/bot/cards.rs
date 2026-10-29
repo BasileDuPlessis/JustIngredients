@@ -7,7 +7,7 @@ use std::sync::Arc;
 use anyhow::Result;
 use sqlx::postgres::PgPool;
 use teloxide::prelude::*;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::localization::{t_lang, LocalizationManager};
 
@@ -45,8 +45,10 @@ async fn render(
 }
 
 /// Opens a recipe from the button on `pressed`: the card replaces the list at the bottom, with
-/// its buttons (U6.1). Earlier cards of the recipe stay in the history (every consultation is
-/// kept). A recipe that is gone answers `recipe-not-found` until the next action.
+/// its buttons (U6.1). Pressed on the list, the list message itself becomes the card: one
+/// request, and nothing disappears before the card shows. Earlier cards of the recipe stay in
+/// the history (every consultation is kept). A recipe that is gone answers `recipe-not-found`
+/// until the next action.
 pub async fn show_card(
     bot: &Bot,
     pool: &PgPool,
@@ -56,6 +58,7 @@ pub async fn show_card(
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> Result<()> {
+    let started = std::time::Instant::now();
     // Private chats only: the chat id is the user's id, the recipe's owner
     let telegram_id = chat_id.0;
     let Some(card) = render(pool, telegram_id, recipe_id, language_code, localization).await?
@@ -66,15 +69,52 @@ pub async fn show_card(
             .await;
         return Ok(());
     };
-    // Opened from a home message or list of an older version: that message goes
-    if let Some(pressed) = pressed {
-        cleanup::remove_legacy_message(bot, chat_id, pressed).await;
-    }
-    // One message with buttons at the bottom: the list goes, an active card becomes history
-    cleanup::delete_lists(bot, chat_id).await;
+    let rendered = started.elapsed();
     let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
-    let sent = send_html(bot, chat_id, card).reply_markup(keyboard).await?;
-    cleanup::record_active_card(chat_id, sent.id, recipe_id).await;
+
+    // The list pressed becomes the card
+    let in_place = match pressed {
+        Some(list) if cleanup::is_list(chat_id, list).await => {
+            match edit_html(bot, chat_id, list, card.clone())
+                .reply_markup(keyboard.clone())
+                .await
+            {
+                Ok(_) => Some(list),
+                Err(e) => {
+                    debug!(error = %e, "Could not turn the list into the card");
+                    None
+                }
+            }
+        }
+        _ => None,
+    };
+    let shown = started.elapsed();
+    match in_place {
+        Some(card_id) => cleanup::list_became_card(bot, chat_id, card_id, recipe_id).await,
+        None => {
+            // Opened from a home message or list of an older version: that message goes
+            if let Some(pressed) = pressed {
+                cleanup::remove_legacy_message(bot, chat_id, pressed).await;
+            }
+            // One message with buttons at the bottom: the list goes, an active card becomes
+            // history
+            cleanup::delete_lists(bot, chat_id).await;
+            let sent = send_html(bot, chat_id, card).reply_markup(keyboard).await?;
+            cleanup::record_active_card(chat_id, sent.id, recipe_id).await;
+        }
+    }
+    info!(
+        in_place = in_place.is_some(),
+        read_ms = rendered.as_millis() as u64,
+        shown_ms = if in_place.is_some() {
+            shown
+        } else {
+            started.elapsed()
+        }
+        .as_millis() as u64,
+        total_ms = started.elapsed().as_millis() as u64,
+        "Recipe card shown"
+    );
     Ok(())
 }
 

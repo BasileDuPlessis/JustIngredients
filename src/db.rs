@@ -1399,13 +1399,25 @@ pub async fn take_chat_messages(
     chat_id: i64,
     kinds: &[&str],
 ) -> Result<Vec<ChatMessage>> {
+    take_chat_messages_except(pool, chat_id, kinds, None).await
+}
+
+/// [`take_chat_messages`], leaving `keep` recorded (a list just turned into a card).
+pub async fn take_chat_messages_except(
+    pool: &PgPool,
+    chat_id: i64,
+    kinds: &[&str],
+    keep: Option<i32>,
+) -> Result<Vec<ChatMessage>> {
     let kinds: Vec<String> = kinds.iter().map(|kind| (*kind).to_string()).collect();
     let rows = sqlx::query(
         "DELETE FROM chat_messages WHERE chat_id = $1 AND kind = ANY($2) \
+         AND message_id IS DISTINCT FROM $3 \
          RETURNING message_id, kind, recipe_id, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable",
     )
     .bind(chat_id)
     .bind(&kinds)
+    .bind(keep.map(i64::from))
     .fetch_all(pool)
     .await
     .context("Failed to take chat messages")?;
@@ -1421,6 +1433,20 @@ pub async fn take_chat_messages(
         .collect();
     messages.sort_by_key(|message| message.message_id);
     Ok(messages)
+}
+
+/// The kind a message of `chat` is recorded as, `None` when it is not recorded.
+pub async fn chat_message_kind(
+    pool: &PgPool,
+    chat_id: i64,
+    message_id: i32,
+) -> Result<Option<String>> {
+    sqlx::query_scalar("SELECT kind FROM chat_messages WHERE chat_id = $1 AND message_id = $2")
+        .bind(chat_id)
+        .bind(i64::from(message_id))
+        .fetch_optional(pool)
+        .await
+        .context("Failed to look up a chat message")
 }
 
 /// Whether a message of `chat` is recorded.
