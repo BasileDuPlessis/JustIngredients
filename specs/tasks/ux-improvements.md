@@ -419,6 +419,64 @@ single exit ("❌ Annuler" during an action, "📚 Liste des recettes" otherwise
 ### Review gate RU4
 - [x] Done (2026-10-29), see the review log.
 
+## Phase U7: OCR Cleanup (user approval of 2026-10-29)
+
+Done (2026-10-29, in v26): the typed-line parser on `units.rs` replaces the OCR
+`MeasurementDetector` (`adc2465`), the OCR leftovers are removed (`b38b30b`, IMP-048), review
+RU7 fixes in `cefaae3`. See the review log.
+
+## Phase U8: Unit Views (user request of 2026-10-29)
+
+Validated design, wireframes and conversion table: [measure-conversion.md](measure-conversion.md).
+Each user picks how recipe cards show measures (`/unites`, `/units`): as in the recipe, all in
+weight (g), French units (g, cl; the default) or US units (cups, oz). Stored recipes never
+change, except the one-off cleanup of units saved before normalization.
+
+### Task U8.1: Conversion table (<= 1 hour)
+- [ ] Done
+- Description: `src/conversion.rs` with the two constant tables of the design (units in g or
+  ml; 124 ingredient densities in g/l with French and English names, liquid or solid) and the
+  name lookup (folded whole words like the search, most specific name first, ties by the first
+  word in French and the last in English).
+- How to validate: unit tests: a cup of flour is 120 g, a tablespoon of butter 14 g; "lait de
+  coco" is not milk, "farine de riz" is not flour, "almond milk" is milk; unknown names find
+  nothing.
+
+### Task U8.2: The four views (<= 1 hour)
+- [ ] Done
+- Description: a pure function giving the quantity and unit to show for a saved ingredient in a
+  view and language: conversions of the design's defaults table, kitchen rounding, French unit
+  labels and decimal comma, US fractions.
+- How to validate: unit tests with the two example recipes of the design, in the four views.
+
+### Task U8.3: Cleanup of stored units (<= 1 hour)
+- [ ] Done
+- Description: a startup pass (like the duplicate numbering) rewriting units saved before
+  normalization with `units::normalize_measurement` (G, gram, gr → g; litre(s) → l; cl, dl →
+  ml with the quantity converted; spoons in words → tbsp / tsp; count units lowercased);
+  idempotent, logged.
+- How to validate: DB test on the spellings found in production on 2026-10-29; a second run
+  changes nothing.
+
+### Task U8.4: The `/unites` command and the preference (<= 1 hour)
+- [ ] Done
+- Description: migration 5 adds `users.unit_view` (default `french`); `/unites` and `/units` in
+  the parser and the menu; the chooser at the bottom (four views, the current one ticked, 📚);
+  a choice is saved, the chooser becomes the line "⚖️ Unités : …" and the card that was at the
+  bottom before comes back in the new view (or the list).
+- How to validate: migration test from version 4; parsing and menu tests; manual test in
+  Telegram.
+
+### Task U8.5: Cards in the user's view (<= 1 hour)
+- [ ] Done
+- Description: `cards::render` uses the user's view (opening, refresh after a rename or an
+  edit, back to the card), with the line "⚖️ Vue …, valeurs arrondies" when something was
+  converted; the review and the editing lists stay as saved.
+- How to validate: renderer tests; manual test of the four views on staging.
+
+### Review gate RU8
+- [ ] Done
+
 ## Later (not planned yet)
 - Ops: give `monitoring/prometheus.yml` the metrics token and set `METRICS_AUTH_TOKEN` on staging
   (finding 23). Finding 24 done: the unused `GOOGLE_AI_API_KEY` repository secret was deleted by
@@ -426,10 +484,6 @@ single exit ("❌ Annuler" during an action, "📚 Liste des recettes" otherwise
   per environment).
 - Language preference (`/langue`) instead of the Telegram app language (finding 12).
 - Export/share a recipe as text (finding 13); several photos at once.
-- Measure conversion (user request of 2026-10-29): offer to show every measure in French units
-  (g, cl, l…), and a volume-to-weight converter ("1 cup butter" → "… g de beurre") with constant
-  densities for the main ingredients (farine, beurre, lait, sucre…). Proposal with wireframes,
-  to validate: [measure-conversion.md](measure-conversion.md).
 - Adding several ingredients at once by pasting several lines (refused today: `edit-one-line`).
 
 ---

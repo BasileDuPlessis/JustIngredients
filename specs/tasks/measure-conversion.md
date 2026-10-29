@@ -1,6 +1,7 @@
-# Affichage des unités : proposition (à valider)
+# Affichage des unités (validé)
 
-Version 2 du 2026-10-29. Demandes de l'utilisateur :
+Version 3 du 2026-10-29, validée par l'utilisateur (décisions ci-dessous) : c'est la phase U8 du
+[plan UX](ux-improvements.md). Demandes de l'utilisateur :
 - version 1 : « proposer de mettre toutes les mesures en unités françaises : g / cl / l… » et
   « un outil de conversion des volumes en poids (ex. 1 cup butter ⇒ … g de beurre), avec la
   densité des principaux ingrédients en constantes » ;
@@ -8,8 +9,18 @@ Version 2 du 2026-10-29. Demandes de l'utilisateur :
   pratique avec une balance ; tout en unités françaises, cl pour les volumes et g pour les
   poids ; tout en unités anglaises (choisis les défauts) ».
 
-Rien n'est codé : ce document décrit ce que je propose, avec des wireframes, et finit par les
-questions à trancher.
+## Décisions (2026-10-29)
+
+1. Par défaut, la vue **« Unités françaises (g, cl) »** pour tout le monde.
+2. Les défauts du tableau, avec une balance **précise au gramme** : la vue poids ne garde une
+   cuillère que sous 1 g.
+3. La vue s'applique **seulement aux fiches recettes** ; la relecture et la modification
+   montrent les valeurs enregistrées.
+4. Après un choix dans `/unites`, la fiche qu'on regardait revient dans la nouvelle vue (ou la
+   liste).
+5. La table des densités couvre les ingrédients les plus courants (recherche du 2026-10-29,
+   124 entrées).
+6. Les unités enregistrées avant la normalisation sont remises en ordre une fois.
 
 ## Le principe
 
@@ -21,9 +32,9 @@ Quatre vues :
 
 | Vue | Pour qui | En bref |
 |---|---|---|
-| **Comme dans la recette** (par défaut) | tout le monde | les mesures telles que lues ou tapées ; seuls les noms d'unités sont traduits (« tbsp » → « c. à s. » pour un utilisateur français) |
+| **Comme dans la recette** | tout le monde | les mesures telles que lues ou tapées ; seuls les noms d'unités sont traduits (« tbsp » → « c. à s. » pour un utilisateur français) |
 | **Tout en poids (g)** | cuisiner avec une balance | tout ce qui peut se peser en grammes, liquides compris |
-| **Unités françaises (g, cl)** | recettes américaines lues en France | les poids en g, les liquides en cl / l, les cuillères gardées |
+| **Unités françaises (g, cl)** (par défaut) | recettes américaines lues en France | les poids en g, les liquides en cl / l, les cuillères gardées |
 | **Unités américaines (cups, oz)** | recettes françaises lues à l'anglaise | cups, tbsp, tsp, oz, lb, en fractions (½, ¾) |
 
 Elle s'applique aux **fiches recettes** (consultation, c'est là qu'on cuisine). La relecture
@@ -49,9 +60,9 @@ Comme `/aide` : la réponse prend la place du message du bas.
 │ ⚖️ Affichage des unités                  │ ▼ bas du fil
 │ Les recettes ne changent pas : seul      │
 │ l'affichage des fiches suit ce choix.    │
-│ [ ✓ Comme dans la recette ]              │
+│ [ Comme dans la recette ]                │
 │ [ Tout en poids (g) ]                    │
-│ [ Unités françaises (g, cl) ]            │
+│ [ ✓ Unités françaises (g, cl) ]          │
 │ [ Unités américaines (cups, oz) ]        │
 │ [ 📚 Liste des recettes ]                │
 └──────────────────────────────────────────┘
@@ -70,10 +81,10 @@ revient en bas, dans la nouvelle vue, avec ses boutons ; sinon la liste revient.
 │ 📅 29 oct. 2026                          │
 │ • 180 g farine                           │
 │ • 305 g lait                             │
-│ • 45 g beurre                            │
+│ • 43 g beurre                            │
 │ • 13 g sucre                             │
 │ • 8 g levure chimique                    │
-│ • ½ c. à c. sel                          │
+│ • 3 g sel                                │
 │ • 1 œuf                                  │
 │ ⚖️ Vue poids (g), valeurs arrondies      │
 │ [ ✏️ Renommer ]  [ 📝 Modifier ]          │
@@ -90,10 +101,10 @@ Une recette américaine enregistrée en tasses :
 Comme dans la recette    Tout en poids (g)     Unités françaises     Unités américaines
 • 1,5 tasse farine       • 180 g farine        • 180 g farine        • 1 ½ cups farine
 • 1,25 tasse lait        • 305 g lait          • 30 cl lait          • 1 ¼ cups lait
-• 3 c. à s. beurre       • 45 g beurre         • 3 c. à s. beurre    • 3 tbsp beurre
+• 3 c. à s. beurre       • 43 g beurre         • 3 c. à s. beurre    • 3 tbsp beurre
 • 1 c. à s. sucre        • 13 g sucre          • 1 c. à s. sucre     • 1 tbsp sucre
 • 2 c. à c. levure       • 8 g levure          • 2 c. à c. levure    • 2 tsp levure
-• 0,5 c. à c. sel        • ½ c. à c. sel       • ½ c. à c. sel       • ½ tsp sel
+• 0,5 c. à c. sel        • 3 g sel             • ½ c. à c. sel       • ½ tsp sel
 • 1 œuf                  • 1 œuf               • 1 œuf               • 1 œuf
 ```
 
@@ -119,11 +130,11 @@ Comme dans la recette    Tout en poids (g)     Unités françaises     Unités a
 | cup, pint, quart (liquide) | g par densité | cl, l à partir d'1 l | inchangé |
 | cup (solide du tableau) | g par densité | g par densité | inchangé |
 | cup (solide inconnu) | inchangé | inchangé | inchangé |
-| c. à s., c. à c. | g par densité, sauf sous 5 g (une balance de cuisine n'est pas précise en dessous) | inchangé | tbsp, tsp |
+| c. à s., c. à c. | g par densité, sauf sous 1 g (la balance est précise au gramme) | inchangé | tbsp, tsp |
 | unités de comptage (pincée, gousses), sans unité (2 œufs), sans quantité (sel) | inchangé | inchangé | inchangé |
 
 Arrondis « de cuisine » :
-- grammes : au gramme sous 20 g, aux 5 g au-dessus (227 g → 225 g) ;
+- grammes : au gramme sous 100 g, aux 5 g au-dessus (226 g → 225 g) ;
 - cl : au demi-cl sous 10 cl, au cl au-dessus (23,7 cl → 24 cl) ; l au dixième (1,25 l → 1,3 l) ;
 - cups au quart ou au tiers le plus proche (2,08 → 2 cups), tbsp au demi, tsp au quart ;
   oz au demi, lb au quart.
@@ -169,59 +180,161 @@ convertissent pas.
 
 ### 2. Densités des ingrédients (g/l)
 
-« Liquide » : affiché en cl / l dans la vue française, en cups dans la vue américaine ;
-« solide » : en g dans la vue française, en cups dans la vue américaine. Les colonnes « 1
-tasse » et « 1 c. à s. » sont calculées depuis la densité (tasse US de 236,6 ml, c. à s. de
-15 ml), pour se repérer. Valeurs des tableaux de pâtisserie courants (King Arthur Baking) et
-des densités physiques pour les liquides, à ajuster si tu as tes propres repères.
+« Liquide » : affiché en cl / l dans la vue française ; « solide » : en g. Les colonnes « 1
+tasse », « 1 c. à s. » et « 1 c. à c. » sont calculées depuis la densité (tasse US de
+236,6 ml, cuillères de 15 et 5 ml), pour se repérer.
 
-| Ingrédient (fr) | Ingredient (en) | Type | g/l | 1 tasse | 1 c. à s. |
-|---|---|---|---|---|---|
-| farine | flour | solide | 505 | 120 g | 8 g |
-| sucre, sucre en poudre | sugar, granulated sugar | solide | 845 | 200 g | 13 g |
-| sucre glace | powdered sugar, icing sugar | solide | 485 | 115 g | 7 g |
-| cassonade, sucre roux, vergeoise | brown sugar | solide | 910 | 215 g | 14 g |
-| beurre | butter | solide | 960 | 227 g | 14 g |
-| beurre de cacahuète | peanut butter | solide | 1 140 | 270 g | 17 g |
-| miel | honey | solide | 1 415 | 335 g | 21 g |
-| sirop d'érable | maple syrup | liquide | 1 310 | 310 g | 20 g |
-| yaourt, fromage blanc | yogurt | solide | 1 040 | 246 g | 16 g |
-| cacao | cocoa | solide | 360 | 85 g | 5 g |
-| maïzena, fécule | cornstarch | solide | 480 | 114 g | 7 g |
-| poudre d'amande, amandes en poudre | almond flour, ground almonds | solide | 400 | 95 g | 6 g |
-| flocons d'avoine | oats, rolled oats | solide | 380 | 90 g | 6 g |
-| riz | rice | solide | 845 | 200 g | 13 g |
-| lentilles | lentils | solide | 845 | 200 g | 13 g |
-| semoule, couscous, quinoa | semolina, couscous, quinoa | solide | 720 | 170 g | 11 g |
-| pépites de chocolat | chocolate chips | solide | 720 | 170 g | 11 g |
-| noix, noix de pécan, noisettes (hachées) | walnuts, pecans, hazelnuts (chopped) | solide | 485 | 115 g | 7 g |
-| raisins secs | raisins | solide | 635 | 150 g | 10 g |
-| noix de coco râpée | shredded coconut | solide | 360 | 85 g | 5 g |
-| fromage râpé | shredded cheese | solide | 485 | 115 g | 7 g |
-| parmesan râpé | grated parmesan | solide | 425 | 100 g | 6 g |
-| sel | salt | solide | 1 215 | 287 g | 18 g (1 c. à c. = 6 g) |
-| levure chimique | baking powder | solide | 810 | 192 g | 12 g (1 c. à c. = 4 g) |
-| bicarbonate | baking soda | solide | 1 015 | 240 g | 15 g (1 c. à c. = 5 g) |
-| levure boulangère sèche | dry yeast | solide | 610 | 144 g | 9 g (1 c. à c. = 3 g) |
-| cannelle, épices moulues | cinnamon, ground spices | solide | 505 | 120 g | 8 g (1 c. à c. = 2,5 g) |
-| extrait de vanille | vanilla extract | liquide | 880 | 208 g | 13 g (1 c. à c. = 4,4 g) |
-| eau | water | liquide | 1 000 | 237 g | 15 g |
-| lait | milk | liquide | 1 030 | 244 g | 15 g |
-| crème, crème liquide, crème fraîche | cream, heavy cream | liquide | 1 000 | 237 g | 15 g |
-| huile | oil | liquide | 920 | 218 g | 14 g |
-| vin | wine | liquide | 990 | 234 g | 15 g |
-| bouillon | broth, stock | liquide | 1 000 | 237 g | 15 g |
-| jus | juice | liquide | 1 040 | 246 g | 16 g |
-| lait de coco | coconut milk | liquide | 1 000 | 237 g | 15 g |
-| café, thé | coffee, tea | liquide | 1 000 | 237 g | 15 g |
-| vinaigre | vinegar | liquide | 1 010 | 239 g | 15 g |
-| sauce soja | soy sauce | liquide | 1 150 | 272 g | 17 g |
-| rhum | rum | liquide | 950 | 225 g | 14 g |
+Sources (recherche du 2026-10-29) : pour les solides et les pâtes, le tableau de référence de
+King Arthur Baking ([ingredient weight chart](https://www.kingarthurbaking.com/learn/ingredient-weight-chart)),
+complété par les valeurs USDA courantes (concentré de tomate, moutarde, ketchup, ricotta…) ;
+pour les liquides, les densités physiques (King Arthur compte 1 tasse d'eau pour 227 g, la règle
+américaine « 1 cup = 8 oz », alors qu'elle en pèse 237). La liste couvre les ingrédients les plus
+courants des recettes françaises et des recettes américaines en tasses.
 
-Reconnaissance du nom : sans accents, majuscules ni pluriels, mot entier (comme la recherche),
-en français et en anglais ; l'entrée la plus précise gagne (« sucre glace » avant « sucre »,
-« beurre de cacahuète » avant « beurre », « lait de coco » avant « lait »). Un ingrédient absent
-de la table garde son unité dans les vues qui demanderaient une densité.
+| Ingrédient (fr) | Ingredient (en) | Type | g/l | 1 tasse | 1 c. à s. | 1 c. à c. |
+|---|---|---|---|---|---|---|
+| **Farines et féculents** | | | | | | |
+| farine, farine de blé | flour, all-purpose flour, bread flour | solide | 507 | 120 g | 7,6 g | 2,5 g |
+| farine complète | whole wheat flour | solide | 478 | 113 g | 7,2 g | 2,4 g |
+| farine de seigle | rye flour | solide | 448 | 106 g | 6,7 g | 2,2 g |
+| farine de riz | rice flour | solide | 600 | 142 g | 9 g | 3 g |
+| farine de sarrasin | buckwheat flour | solide | 507 | 120 g | 7,6 g | 2,5 g |
+| maïzena, fécule de maïs | cornstarch, corn starch | solide | 473 | 112 g | 7,1 g | 2,4 g |
+| fécule de pomme de terre | potato starch | solide | 642 | 152 g | 9,6 g | 3,2 g |
+| poudre d'amande, amande en poudre | almond flour, ground almonds | solide | 406 | 96 g | 6,1 g | 2 g |
+| poudre de noisette | hazelnut flour | solide | 376 | 89 g | 5,6 g | 1,9 g |
+| chapelure | breadcrumbs | solide | 473 | 112 g | 7,1 g | 2,4 g |
+| flocons d'avoine | oats, rolled oats | solide | 376 | 89 g | 5,6 g | 1,9 g |
+| **Sucres et sirops** | | | | | | |
+| sucre, sucre en poudre, sucre semoule | sugar, granulated sugar | solide | 837 | 198 g | 13 g | 4,2 g |
+| sucre glace | powdered sugar, icing sugar, confectioners sugar | solide | 478 | 113 g | 7,2 g | 2,4 g |
+| cassonade, sucre roux, vergeoise, sucre de canne | brown sugar, cane sugar | solide | 900 | 213 g | 14 g | 4,5 g |
+| miel | honey | solide | 1 420 | 336 g | 21 g | 7,1 g |
+| sirop d'érable | maple syrup | liquide | 1 319 | 312 g | 20 g | 6,6 g |
+| sirop d'agave | agave syrup | liquide | 1 420 | 336 g | 21 g | 7,1 g |
+| mélasse | molasses | liquide | 1 437 | 340 g | 22 g | 7,2 g |
+| confiture | jam, preserves | solide | 1 437 | 340 g | 22 g | 7,2 g |
+| lait concentré sucré | sweetened condensed milk | solide | 1 319 | 312 g | 20 g | 6,6 g |
+| **Matières grasses** | | | | | | |
+| beurre, margarine | butter, margarine | solide | 955 | 226 g | 14 g | 4,8 g |
+| saindoux | lard | solide | 955 | 226 g | 14 g | 4,8 g |
+| huile, huile de tournesol, huile de colza | oil, vegetable oil, sunflower oil | liquide | 920 | 218 g | 14 g | 4,6 g |
+| huile d'olive | olive oil | liquide | 915 | 216 g | 14 g | 4,6 g |
+| huile de coco | coconut oil | solide | 955 | 226 g | 14 g | 4,8 g |
+| beurre de cacahuète | peanut butter | solide | 1 141 | 270 g | 17 g | 5,7 g |
+| **Produits laitiers** | | | | | | |
+| lait | milk | liquide | 1 030 | 244 g | 15 g | 5,2 g |
+| babeurre, lait fermenté | buttermilk | liquide | 1 030 | 244 g | 15 g | 5,2 g |
+| lait concentré | evaporated milk | liquide | 1 065 | 252 g | 16 g | 5,3 g |
+| lait en poudre | milk powder, dry milk | solide | 473 | 112 g | 7,1 g | 2,4 g |
+| crème, crème liquide, crème entière | cream, heavy cream, whipping cream | liquide | 1 000 | 237 g | 15 g | 5 g |
+| crème fraîche, crème épaisse | crème fraîche, sour cream | solide | 1 010 | 239 g | 15 g | 5 g |
+| yaourt, fromage blanc, skyr | yogurt, greek yogurt | solide | 1 040 | 246 g | 16 g | 5,2 g |
+| mascarpone | mascarpone | solide | 1 000 | 237 g | 15 g | 5 g |
+| ricotta | ricotta | solide | 1 040 | 246 g | 16 g | 5,2 g |
+| fromage frais, cream cheese | cream cheese | solide | 981 | 232 g | 15 g | 4,9 g |
+| fromage râpé, gruyère, emmental, mozzarella | shredded cheese, cheddar, mozzarella | solide | 478 | 113 g | 7,2 g | 2,4 g |
+| parmesan | parmesan | solide | 423 | 100 g | 6,3 g | 2,1 g |
+| feta | feta | solide | 482 | 114 g | 7,2 g | 2,4 g |
+| **Liquides** | | | | | | |
+| eau | water | liquide | 1 000 | 237 g | 15 g | 5 g |
+| bouillon, fond | broth, stock | liquide | 1 000 | 237 g | 15 g | 5 g |
+| vin, vin blanc, vin rouge | wine, white wine, red wine | liquide | 990 | 234 g | 15 g | 5 g |
+| bière | beer | liquide | 1 010 | 239 g | 15 g | 5 g |
+| jus, jus d'orange | juice, orange juice | liquide | 1 040 | 246 g | 16 g | 5,2 g |
+| jus de citron | lemon juice, lime juice | liquide | 1 030 | 244 g | 15 g | 5,2 g |
+| café, thé | coffee, tea | liquide | 1 000 | 237 g | 15 g | 5 g |
+| lait de coco | coconut milk | liquide | 1 019 | 241 g | 15 g | 5,1 g |
+| crème de coco | coconut cream | solide | 1 200 | 284 g | 18 g | 6 g |
+| vinaigre | vinegar | liquide | 1 010 | 239 g | 15 g | 5 g |
+| sauce soja | soy sauce | liquide | 1 150 | 272 g | 17 g | 5,8 g |
+| rhum, cognac, kirsch, alcool | rum, brandy, liqueur | liquide | 950 | 225 g | 14 g | 4,8 g |
+| extrait de vanille | vanilla extract | liquide | 947 | 224 g | 14 g | 4,7 g |
+| **Sauces et condiments** | | | | | | |
+| concentré de tomate | tomato paste | solide | 1 107 | 262 g | 17 g | 5,5 g |
+| coulis de tomate, purée de tomate, passata | tomato puree, passata, tomato sauce | solide | 1 057 | 250 g | 16 g | 5,3 g |
+| moutarde | mustard | solide | 1 057 | 250 g | 16 g | 5,3 g |
+| mayonnaise | mayonnaise | solide | 940 | 222 g | 14 g | 4,7 g |
+| ketchup | ketchup | solide | 1 150 | 272 g | 17 g | 5,8 g |
+| pesto | pesto | solide | 947 | 224 g | 14 g | 4,7 g |
+| tahini, purée de sésame | tahini | solide | 1 082 | 256 g | 16 g | 5,4 g |
+| pâte à tartiner, nutella | hazelnut spread, nutella | solide | 1 260 | 298 g | 19 g | 6,3 g |
+| **Chocolat et café** | | | | | | |
+| cacao, cacao en poudre | cocoa, cocoa powder | solide | 355 | 84 g | 5,3 g | 1,8 g |
+| chocolat, pépites de chocolat, chocolat haché | chocolate, chocolate chips, chopped chocolate | solide | 719 | 170 g | 11 g | 3,6 g |
+| café soluble, café en poudre | instant coffee, espresso powder | solide | 473 | 112 g | 7,1 g | 2,4 g |
+| **Fruits secs et graines** | | | | | | |
+| amande, amandes entières | almonds, whole almonds | solide | 600 | 142 g | 9 g | 3 g |
+| amandes effilées | sliced almonds | solide | 364 | 86 g | 5,5 g | 1,8 g |
+| noix, cerneaux de noix | walnuts, chopped walnuts | solide | 478 | 113 g | 7,2 g | 2,4 g |
+| noix de pécan | pecans | solide | 444 | 105 g | 6,7 g | 2,2 g |
+| noisettes | hazelnuts | solide | 600 | 142 g | 9 g | 3 g |
+| noix de cajou | cashews | solide | 478 | 113 g | 7,2 g | 2,4 g |
+| pistaches | pistachios | solide | 507 | 120 g | 7,6 g | 2,5 g |
+| pignons de pin | pine nuts | solide | 600 | 142 g | 9 g | 3 g |
+| cacahuètes | peanuts | solide | 600 | 142 g | 9 g | 3 g |
+| noix de coco râpée | shredded coconut, desiccated coconut | solide | 359 | 85 g | 5,4 g | 1,8 g |
+| raisins secs | raisins | solide | 630 | 149 g | 9,4 g | 3,1 g |
+| abricots secs | dried apricots | solide | 541 | 128 g | 8,1 g | 2,7 g |
+| dattes | dates | solide | 630 | 149 g | 9,4 g | 3,1 g |
+| cranberries séchées, canneberges | dried cranberries | solide | 482 | 114 g | 7,2 g | 2,4 g |
+| graines de sésame, sésame | sesame seeds | solide | 600 | 142 g | 9 g | 3 g |
+| graines de chia | chia seeds | solide | 626 | 148 g | 9,4 g | 3,1 g |
+| graines de lin | flaxseed, flax seeds | solide | 592 | 140 g | 8,9 g | 3 g |
+| graines de tournesol | sunflower seeds | solide | 592 | 140 g | 8,9 g | 3 g |
+| graines de courge | pumpkin seeds | solide | 676 | 160 g | 10 g | 3,4 g |
+| graines de pavot, pavot | poppy seeds | solide | 609 | 144 g | 9,1 g | 3 g |
+| **Levures, sel et épices** | | | | | | |
+| sel, sel fin | salt, table salt | solide | 1 217 | 288 g | 18 g | 6,1 g |
+| gros sel, sel de mer | coarse salt, kosher salt, sea salt | solide | 1 082 | 256 g | 16 g | 5,4 g |
+| levure chimique | baking powder | solide | 812 | 192 g | 12 g | 4,1 g |
+| bicarbonate, bicarbonate de soude | baking soda | solide | 1 217 | 288 g | 18 g | 6,1 g |
+| levure boulangère, levure sèche | yeast, dry yeast, instant yeast | solide | 609 | 144 g | 9,1 g | 3 g |
+| cannelle | cinnamon | solide | 527 | 125 g | 7,9 g | 2,6 g |
+| épices, cumin, curry, paprika, muscade, gingembre moulu, poivre | spices, cumin, curry, paprika, nutmeg, ground ginger, pepper | solide | 467 | 110 g | 7 g | 2,3 g |
+| herbes séchées, thym, origan, herbes de provence | dried herbs, thyme, oregano | solide | 203 | 48 g | 3 g | 1 g |
+| **Céréales et légumineuses** | | | | | | |
+| riz | rice | solide | 837 | 198 g | 13 g | 4,2 g |
+| riz cuit | cooked rice | solide | 719 | 170 g | 11 g | 3,6 g |
+| pâtes, macaronis | pasta, macaroni | solide | 444 | 105 g | 6,7 g | 2,2 g |
+| semoule | semolina | solide | 689 | 163 g | 10 g | 3,4 g |
+| couscous | couscous | solide | 731 | 173 g | 11 g | 3,7 g |
+| boulgour | bulgur | solide | 642 | 152 g | 9,6 g | 3,2 g |
+| quinoa | quinoa | solide | 748 | 177 g | 11 g | 3,7 g |
+| polenta | polenta, cornmeal | solide | 689 | 163 g | 10 g | 3,4 g |
+| lentilles | lentils | solide | 812 | 192 g | 12 g | 4,1 g |
+| pois chiches | chickpeas | solide | 693 | 164 g | 10 g | 3,5 g |
+| **Légumes et fruits (coupés)** | | | | | | |
+| oignon | onion | solide | 600 | 142 g | 9 g | 3 g |
+| échalote | shallot | solide | 659 | 156 g | 9,9 g | 3,3 g |
+| ail | garlic | solide | 947 | 224 g | 14 g | 4,7 g |
+| carotte | carrot | solide | 600 | 142 g | 9 g | 3 g |
+| carotte râpée | grated carrot, shredded carrot | solide | 418 | 99 g | 6,3 g | 2,1 g |
+| céleri | celery | solide | 600 | 142 g | 9 g | 3 g |
+| poivron | bell pepper | solide | 600 | 142 g | 9 g | 3 g |
+| champignons | mushrooms | solide | 330 | 78 g | 5 g | 1,6 g |
+| poireau | leek | solide | 389 | 92 g | 5,8 g | 1,9 g |
+| courgette | zucchini | solide | 571 | 135 g | 8,6 g | 2,9 g |
+| épinards | spinach | solide | 127 | 30 g | 1,9 g | 0,6 g |
+| tomates | tomatoes | solide | 761 | 180 g | 11 g | 3,8 g |
+| maïs | corn | solide | 642 | 152 g | 9,6 g | 3,2 g |
+| petits pois | peas | solide | 592 | 140 g | 8,9 g | 3 g |
+| olives | olives | solide | 600 | 142 g | 9 g | 3 g |
+| herbes fraîches, persil, ciboulette, basilic, coriandre | fresh herbs, parsley, chives, basil, cilantro | solide | 178 | 42 g | 2,7 g | 0,9 g |
+| pommes | apples | solide | 478 | 113 g | 7,2 g | 2,4 g |
+| banane écrasée, banane | banana, mashed banana | solide | 959 | 227 g | 14 g | 4,8 g |
+| compote | applesauce | solide | 1 078 | 255 g | 16 g | 5,4 g |
+| purée de potiron, potiron | pumpkin puree, pumpkin | solide | 1 036 | 245 g | 16 g | 5,2 g |
+| myrtilles, fruits rouges | blueberries, berries | solide | 655 | 155 g | 9,8 g | 3,3 g |
+| framboises | raspberries | solide | 507 | 120 g | 7,6 g | 2,5 g |
+| fraises | strawberries | solide | 706 | 167 g | 11 g | 3,5 g |
+
+Reconnaissance du nom, comme la recherche : sans accents, majuscules ni pluriels, par mots
+entiers, en français et en anglais. Le nom le plus précis gagne (« farine de riz » avant
+« farine » et « riz », « lait de coco » avant « lait », « sucre glace » avant « sucre ») ; à
+égalité, le premier mot compte en français (« lait d'amande » → lait) et le dernier en anglais
+(« almond milk » → milk). Un ingrédient absent de la table garde son unité dans les vues qui
+demanderaient une densité.
 
 ## Plus tard, pas dans cette phase
 
@@ -244,9 +357,9 @@ Requête lancée par l'utilisateur : `SELECT unit, count(*) FROM ingredients GRO
 | zeste(s) (4), pincée / PINCÉES (3), gousse (2), brins (1), SACHET (1) | 11 |
 
 Conclusions :
-- les recettes sont déjà surtout en unités françaises : « Comme dans la recette » reste le bon
-  défaut, et la vue la plus utile sera « Tout en poids (g) » (20 lignes en volume, 12 en
-  cuillères) ;
+- les recettes sont déjà surtout en unités françaises : la vue française par défaut les montre
+  presque telles quelles, et la vue la plus utile sera « Tout en poids (g) » (20 lignes en
+  volume, 12 en cuillères) ;
 - 26 lignes datent d'avant la normalisation des unités (G, gram, gr, litre, litres, dl, cl,
   cuillères en toutes lettres, majuscules). La conversion les lit dans tous les cas, mais la vue
   « comme dans la recette » afficherait « 5 G ». Proposé : **une remise en ordre unique** des
@@ -255,18 +368,3 @@ Conclusions :
   → g ; litre(s) → l ; cl, dl → ml avec la quantité convertie (8 cl → 80 ml, toujours affichés
   en cl à un utilisateur français) ; cuillères → tbsp / tsp ; PINCÉES, SACHET en minuscules.
   C'est la tâche 5 de [measurement-standardization-tasks.md](measurement-standardization-tasks.md).
-
-## Questions
-
-1. Les **quatre vues** et leurs noms te vont ? Par défaut **« Comme dans la recette »** pour
-   tout le monde (je le recommande), ou « Unités françaises » d'office pour les utilisateurs
-   français ?
-2. Les **défauts** du tableau te vont ? En particulier : la vue poids garde les cuillères sous
-   5 g ; la vue française garde les cuillères ; la vue américaine met en cups les solides du
-   tableau (farine, sucre…) et le reste en oz / lb.
-3. La vue s'applique aux **fiches** ; la relecture et la modification montrent les valeurs
-   enregistrées. D'accord ?
-4. Après un choix dans `/unites`, la **fiche** qu'on regardait revient dans la nouvelle vue (ou
-   la liste s'il n'y en avait pas). D'accord ?
-5. La **table de conversion** te convient (unités et densités, ingrédients à ajouter) ?
-6. La **remise en ordre** des 26 unités enregistrées avant la normalisation : d'accord ?
