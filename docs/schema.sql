@@ -1,4 +1,4 @@
--- Schema created by the migrations of src/db.rs (version 4; 4 changes data only), dumped from a fresh database:
+-- Schema created by the migrations of src/db.rs (version 5; 4 changes data only), dumped from a fresh database:
 -- pg_dump --schema-only --no-owner --no-privileges. Regenerate it when a migration is added.
 
 --
@@ -126,7 +126,8 @@ CREATE TABLE public.users (
     telegram_id bigint NOT NULL,
     language_code character varying(10) DEFAULT 'en'::character varying,
     created_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
-    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP
+    updated_at timestamp with time zone DEFAULT CURRENT_TIMESTAMP,
+    unit_view text DEFAULT 'french'::text NOT NULL
 );
 
 

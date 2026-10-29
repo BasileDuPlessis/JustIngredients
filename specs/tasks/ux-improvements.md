@@ -452,7 +452,7 @@ change, except the one-off cleanup of units saved before normalization.
 - How to validate: unit tests with the two example recipes of the design, in the four views.
 
 ### Task U8.3: Cleanup of stored units (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29): `db::normalize_saved_units`, run at startup after the numbering; DB test on the production spellings, idempotent.
 - Description: a startup pass (like the duplicate numbering) rewriting units saved before
   normalization with `units::normalize_measurement` (G, gram, gr → g; litre(s) → l; cl, dl →
   ml with the quantity converted; spoons in words → tbsp / tsp; count units lowercased);
@@ -461,7 +461,7 @@ change, except the one-off cleanup of units saved before normalization.
   changes nothing.
 
 ### Task U8.4: The `/unites` command and the preference (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29): migration 5, `db::unit_view` / `set_unit_view`, `bot::unit_choice` (chooser, `unit_view:<view>:<recipe>`), `home::keep_at_bottom`. Manual test on staging pending.
 - Description: migration 5 adds `users.unit_view` (default `french`); `/unites` and `/units` in
   the parser and the menu; the chooser at the bottom (four views, the current one ticked, 📚);
   a choice is saved, the chooser becomes the line "⚖️ Unités : …" and the card that was at the
@@ -470,7 +470,7 @@ change, except the one-off cleanup of units saved before normalization.
   Telegram.
 
 ### Task U8.5: Cards in the user's view (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29): `render_recipe_card` takes the view, `cards::render` reads it. Manual test on staging pending.
 - Description: `cards::render` uses the user's view (opening, refresh after a rename or an
   edit, back to the card), with the line "⚖️ Vue …, valeurs arrondies" when something was
   converted; the review and the editing lists stay as saved.

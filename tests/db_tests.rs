@@ -657,12 +657,18 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
 
     // Check that migrations table was created and version is updated
     let version = migrations::get_current_version(pool).await?;
-    assert_eq!(version, 4);
+    assert_eq!(version, 5);
 
     // Verify that tables were created
     validate_database_schema(pool).await?;
 
     // Roll back with the down scripts, one version at a time, then all tables
+    migrations::rollback_to_version(pool, 4).await?;
+    assert_eq!(migrations::get_current_version(pool).await?, 4);
+    assert!(
+        validate_database_schema(pool).await.is_err(),
+        "users.unit_view is required"
+    );
     migrations::rollback_to_version(pool, 3).await?;
     assert_eq!(migrations::get_current_version(pool).await?, 3);
     migrations::rollback_to_version(pool, 2).await?;
@@ -1084,6 +1090,11 @@ async fn chat_messages_are_taken_once_per_chat_and_kind(pool: PgPool) -> Result<
         Some("active_card")
     );
     assert_eq!(chat_message_kind(&pool, 42, 21).await?, None);
+    assert_eq!(
+        latest_recipe_message(&pool, 42, "active_card").await?,
+        Some(3)
+    );
+    assert_eq!(latest_recipe_message(&pool, 7, "active_card").await?, None);
 
     // Messages of older versions were never recorded
     record_chat_message(&pool, 42, 12, "list", None).await?;
@@ -1214,6 +1225,92 @@ async fn a_second_recipe_with_the_same_name_is_numbered(pool: PgPool) -> Result<
         rename_recipe(&pool, 66, crepes.recipe_id, "Volée").await?,
         None
     );
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn the_unit_view_is_saved_per_user_french_by_default(pool: PgPool) -> Result<()> {
+    use just_ingredients::unit_view::UnitView;
+    init_database_schema(&pool).await?;
+    assert_eq!(
+        unit_view(&pool, 31).await?,
+        UnitView::French,
+        "unknown user"
+    );
+    // A user without recipes yet is created
+    set_unit_view(&pool, 31, Some("fr"), UnitView::Weight).await?;
+    assert_eq!(unit_view(&pool, 31).await?, UnitView::Weight);
+    // A user with recipes keeps them and changes view
+    save_recipe(&pool, 32, Some("en"), "texte", "Pain", &[]).await?;
+    assert_eq!(unit_view(&pool, 32).await?, UnitView::French);
+    set_unit_view(&pool, 32, Some("en"), UnitView::Us).await?;
+    set_unit_view(&pool, 32, Some("en"), UnitView::Recipe).await?;
+    assert_eq!(unit_view(&pool, 32).await?, UnitView::Recipe);
+    assert_eq!(unit_view(&pool, 31).await?, UnitView::Weight, "per user");
+    assert_eq!(get_user_recipes_newest_first(&pool, 32, 10, 0).await?.1, 1);
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn units_saved_before_normalization_are_rewritten_once(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    // The spellings found in production on 2026-10-29, saved as they were then
+    let saved: [(&str, Option<f64>, Option<&str>); 12] = [
+        ("farine", Some(250.0), Some("g")),
+        ("sucre", Some(5.0), Some("G")),
+        ("beurre", Some(50.0), Some("gram")),
+        ("chocolat", Some(100.0), Some("gr")),
+        ("lait", Some(8.0), Some("cl")),
+        ("eau", Some(1.5), Some("litres")),
+        ("crème", Some(2.5), Some("dl")),
+        ("sel", Some(1.0), Some("cuillère à café")),
+        ("huile", Some(2.0), Some("cuillères à soupe")),
+        ("sel", Some(1.0), Some("PINCÉES")),
+        ("levure", Some(1.0), Some("SACHET")),
+        ("œufs", Some(3.0), None),
+    ];
+    let ingredients: Vec<NewIngredient<'_>> = saved
+        .iter()
+        .map(|(name, quantity, unit)| NewIngredient {
+            name,
+            quantity: *quantity,
+            unit: *unit,
+        })
+        .collect();
+    let recipe = save_recipe(&pool, 99, Some("fr"), "texte", "Gâteau", &ingredients).await?;
+
+    assert_eq!(
+        normalize_saved_units(&pool).await?,
+        10,
+        "all but g and no unit"
+    );
+    let after: Vec<(Option<f64>, Option<String>)> =
+        get_recipe_ingredients(&pool, 99, recipe.recipe_id)
+            .await?
+            .into_iter()
+            .map(|ingredient| (ingredient.quantity, ingredient.unit))
+            .collect();
+    let expected: Vec<(Option<f64>, Option<String>)> = [
+        (250.0, Some("g")),
+        (5.0, Some("g")),
+        (50.0, Some("g")),
+        (100.0, Some("g")),
+        (80.0, Some("ml")),
+        (1.5, Some("l")),
+        (250.0, Some("ml")),
+        (1.0, Some("tsp")),
+        (2.0, Some("tbsp")),
+        (1.0, Some("pincées")),
+        (1.0, Some("sachet")),
+        (3.0, None),
+    ]
+    .into_iter()
+    .map(|(quantity, unit)| (Some(quantity), unit.map(str::to_string)))
+    .collect();
+    assert_eq!(after, expected);
+    assert_eq!(normalize_saved_units(&pool).await?, 0, "idempotent");
     Ok(())
 }
 

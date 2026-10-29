@@ -21,6 +21,8 @@ pub enum Command {
     List,
     /// `/cherche`, `/search`, with the words that follow (possibly empty).
     Search(String),
+    /// `/unites`, `/units`: how recipe cards show measures.
+    Units,
     /// `/annuler`, `/cancel`: stop the running action and go back home.
     Cancel,
 }
@@ -43,6 +45,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "aide" | "help" => Some(Command::Help),
         "liste" | "list" | "recipes" => Some(Command::List),
         "cherche" | "search" => Some(Command::Search(args.to_string())),
+        "unites" | "unités" | "units" => Some(Command::Units),
         "annuler" | "cancel" => Some(Command::Cancel),
         _ => None,
     }
@@ -77,12 +80,14 @@ fn menu_entries(language: &str) -> &'static [(&'static str, &'static str)] {
         "fr" => &[
             ("liste", "command-list"),
             ("cherche", "command-search"),
+            ("unites", "command-units"),
             ("annuler", "command-cancel"),
             ("aide", "command-help"),
         ],
         _ => &[
             ("list", "command-list"),
             ("search", "command-search"),
+            ("units", "command-units"),
             ("cancel", "command-cancel"),
             ("help", "command-help"),
         ],
@@ -145,6 +150,9 @@ mod tests {
             parse_command("/search"),
             Some(Command::Search(String::new()))
         );
+        assert_eq!(parse_command("/unites"), Some(Command::Units));
+        assert_eq!(parse_command("/Unités"), Some(Command::Units));
+        assert_eq!(parse_command("/units"), Some(Command::Units));
     }
 
     #[test]

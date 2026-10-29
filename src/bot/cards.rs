@@ -31,6 +31,13 @@ async fn render(
         return Ok(None);
     };
     let ingredients = crate::db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
+    // Measures in the user's unit view (U8); the default when it cannot be read
+    let view = crate::db::unit_view(pool, telegram_id)
+        .await
+        .unwrap_or_else(|e| {
+            debug!(error = %e, "Could not read the unit view");
+            crate::unit_view::UnitView::default()
+        });
     Ok(Some(render_recipe_card(
         recipe
             .recipe_name
@@ -39,6 +46,7 @@ async fn render(
             .unwrap_or("Unnamed Recipe"),
         recipe.created_at,
         &ingredients,
+        view,
         language_code,
         localization,
     )))

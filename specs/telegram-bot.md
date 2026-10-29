@@ -74,6 +74,7 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 | `/liste`, `/list`, `/recipes` | Moves the recipe list to the bottom (like the end of an action). |
 | `/start` | Welcome message at the bottom (it replaces the list or the active card) with "📚 Liste des recettes"; it goes at the next action's end. |
 | `/aide`, `/help` | Help message at the bottom with "📚 Liste des recettes" (`home::answer_at_bottom`); it goes at the next action's end. |
+| `/unites`, `/units` (also `/unités`) | The unit chooser (`unit_choice::show_chooser`, UX plan U8): "⚖️ Affichage des unités", one button per view (`unit_view:<view>:<recipe>`; the current one ticked: as in the recipe, all in weight, French units — the default —, US units), then 📚. It replaces the bottom message like an answer (`home::keep_at_bottom`), remembering the active card's recipe. A choice is saved in `users.unit_view`, the chooser becomes the history line `unit-view-chosen`, and that card comes back at the bottom in the new view (or the list). |
 | `/annuler`, `/cancel` | Ends the running action (like any command) and moves the recipe list down. |
 | `/cherche <mots>`, `/search` | Searches the user's recipes (`recipe_list::show_search_results`, `crate::search`): names and ingredient names as whole words (a query word of 6 letters or more also finds the words it starts), ignoring case, accents, plurals and small words (also "recette"); every word must be found; names rank above ingredients, then the newest. The results replace the bottom message: a bold title with the count, up to 8 recipe buttons (`recipe_instance:<id>`, list labels), "precisez" beyond 8, then 📚 `show_list`; recorded as a list. Nothing found: the `home-send-photo` tip under the title. Database error: `search-failed` at the bottom with the list button. Without words: `search-prompt` with the list button. |
 | Unknown `/command` | `unknown-command` and the menu commands at the bottom with the list button, transient. |
@@ -86,8 +87,8 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 Commands are read by `commands::parse_command`: case-insensitive, an `@botname` suffix is
 ignored, words after the command are kept for search and ignored otherwise. At startup the bot
 sets the Telegram command menu (`setMyCommands`) in the background, a failure is only logged:
-`/liste`, `/cherche`, `/annuler` and `/aide` for French users, `/list`, `/search`, `/cancel` and
-`/help` for everyone else. The welcome and help messages list the same commands, in
+`/liste`, `/cherche`, `/unites`, `/annuler` and `/aide` for French users, `/list`, `/search`,
+`/units`, `/cancel` and `/help` for everyone else. The welcome and help messages list the same commands, in
 the user's language.
 
 ## Photo Flow
@@ -252,7 +253,10 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   and display times.
   Earlier cards of the recipe stay in the history: every consultation is kept. A recipe that is
   gone or another user's answers `recipe-not-found` until the next action.
-- **Recipe card**: name, creation date (user's language, Paris time: `format_recipe_date`), ingredients. Buttons:
+- **Recipe card**: name, creation date (user's language, Paris time: `format_recipe_date`), ingredients with their
+  measures in the user's unit view (`unit_view::show_measure`, see
+  [the design](tasks/measure-conversion.md)), then "⚖️ Vue …, valeurs arrondies" when the view
+  converted one; the review and the editing lists show the saved values. Buttons:
   ✏️ `recipe_action:rename:<id>`, 📝 `recipe_action:edit_ingredients:<id>`, then
   🗑️ `recipe_action:delete:<id>`, then 📚 `show_list` ("Liste des recettes"): the card goes into
   the history without buttons and the list comes back at the bottom (`handle_show_list`; the ⬅️
@@ -308,6 +312,7 @@ loses its keyboard and is not passed to the state handler.
 | `confirm_delete_recipe:`, `cancel_delete_recipe:` | any | Delete confirmation |
 | `back_to_recipes` | any | Delete the current message |
 | `page:<n>` | any | Recipe list page |
+| `unit_view:<view>:<recipe>` | any | A unit view chosen in `/unites` (`recipe` 0: the list comes back) |
 | `workflow_list_recipes`, `workflow_search_recipes` | any | Recipe list (home "all my recipes" button), how to search; `workflow_add_another` is handled but never sent |
 | `cancel_processing` | any | Retired (2026-10-28): answered as a stale button (`button-expired`, keyboard removed) |
 

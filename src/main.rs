@@ -190,6 +190,11 @@ async fn main() -> Result<()> {
     if numbered > 0 {
         info!(recipes = numbered, "Numbered duplicate recipe names");
     }
+    // Units saved before they were normalized ("G", "litres", "cl"): written like new ones
+    let normalized = db::normalize_saved_units(&pool).await?;
+    if normalized > 0 {
+        info!(ingredients = normalized, "Normalized saved units");
+    }
 
     // Wrap pool in Arc for sharing across async tasks
     let shared_pool = Arc::new(pool);

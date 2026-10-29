@@ -416,25 +416,39 @@ pub fn format_recipe_date(
     }
 }
 
-/// The recipe card (HTML): bold name, creation date and the saved ingredients.
+/// The recipe card (HTML): bold name, creation date and the saved ingredients with their
+/// measures in the user's unit view, then "⚖️ Vue …, valeurs arrondies" when the view converted
+/// one (UX plan U8).
 pub fn render_recipe_card(
     recipe_name: &str,
     created_at: chrono::DateTime<chrono::Utc>,
     ingredients: &[crate::db::Ingredient],
+    view: crate::unit_view::UnitView,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Html {
-    Html::text("📖 ")
+    let (list, converted) =
+        format_database_ingredients_list(ingredients, view, language_code, localization);
+    let mut card = Html::text("📖 ")
         + Html::bold(recipe_name)
         + Html::text(&format!(
             "\n\n📅 {}\n\n",
             format_recipe_date(created_at, language_code, false, localization)
         ))
-        + Html::text(&format_database_ingredients_list(
-            ingredients,
-            language_code,
-            localization,
-        ))
+        + Html::text(&list);
+    let footer = match view {
+        crate::unit_view::UnitView::Recipe => None,
+        crate::unit_view::UnitView::Weight => Some("unit-view-footer-weight"),
+        crate::unit_view::UnitView::French => Some("unit-view-footer-french"),
+        crate::unit_view::UnitView::Us => Some("unit-view-footer-us"),
+    };
+    if let Some(footer) = footer.filter(|_| converted) {
+        card += Html::text(&format!(
+            "\n\n{}",
+            t_lang(localization, footer, language_code)
+        ));
+    }
+    card
 }
 
 /// The recipe card shown again after its ingredients were edited (HTML): bold name and the
@@ -455,31 +469,41 @@ pub fn render_recipe_summary(
         ))
 }
 
-/// Format a list of database ingredients for display
+/// The saved ingredients of a card, one "• 180 g farine" line each, measures in `view`; and
+/// whether the view converted one.
 pub fn format_database_ingredients_list(
     ingredients: &[crate::db::Ingredient],
+    view: crate::unit_view::UnitView,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
-) -> String {
+) -> (String, bool) {
     if ingredients.is_empty() {
-        return t_lang(localization, "no-ingredients-found", language_code);
-    }
-
-    let mut result = String::new();
-    for ingredient in ingredients {
-        let quantity_text = ingredient
-            .quantity
-            .map_or(String::new(), |q| format!("{} ", q));
-        let unit_text = ingredient.unit.as_deref().unwrap_or("");
-        let unit_space = if unit_text.is_empty() { "" } else { " " };
-        let line = format!(
-            "• {}{}{}{}\n",
-            quantity_text, unit_text, unit_space, ingredient.name
+        return (
+            t_lang(localization, "no-ingredients-found", language_code),
+            false,
         );
-        result.push_str(&line);
     }
-
-    fit_lines(result.trim_end(), MAX_LIST_CHARS)
+    let french = crate::localization::detect_language(localization, language_code) == "fr";
+    let mut converted = false;
+    let lines: Vec<String> = ingredients
+        .iter()
+        .map(|ingredient| {
+            let measure = crate::unit_view::show_measure(
+                ingredient.quantity,
+                ingredient.unit.as_deref(),
+                &ingredient.name,
+                view,
+                french,
+            );
+            converted |= measure.converted;
+            if measure.text.is_empty() {
+                format!("• {}", ingredient.name)
+            } else {
+                format!("• {} {}", measure.text, ingredient.name)
+            }
+        })
+        .collect();
+    (fit_lines(&lines.join("\n"), MAX_LIST_CHARS), converted)
 }
 
 #[cfg(test)]
@@ -591,15 +615,38 @@ mod tests {
         let card = render_recipe_card(
             "Tarte <b>",
             created_at,
-            &[ingredient],
+            std::slice::from_ref(&ingredient),
+            crate::unit_view::UnitView::French,
             Some("fr"),
             &localization,
         );
         assert_eq!(
             card.as_str(),
-            "📖 <b>Tarte &lt;b&gt;</b>\n\n📅 27 octobre 2026 à 17:30\n\n• 2 dl lait &lt;entier&gt; &amp; sucre"
+            "📖 <b>Tarte &lt;b&gt;</b>\n\n📅 27 octobre 2026 à 17:30\n\n• 20 cl lait &lt;entier&gt; &amp; sucre\n\n⚖️ Vue unités françaises (g, cl), valeurs arrondies"
         );
-        let empty = render_recipe_card("Vide", created_at, &[], Some("en"), &localization);
+        let as_saved = render_recipe_card(
+            "Tarte",
+            created_at,
+            &[ingredient],
+            crate::unit_view::UnitView::Recipe,
+            Some("fr"),
+            &localization,
+        );
+        assert!(
+            as_saved
+                .as_str()
+                .ends_with("• 200 ml lait &lt;entier&gt; &amp; sucre"),
+            "a unit saved as dl reads as ml, no footer: {}",
+            as_saved.as_str()
+        );
+        let empty = render_recipe_card(
+            "Vide",
+            created_at,
+            &[],
+            crate::unit_view::UnitView::French,
+            Some("en"),
+            &localization,
+        );
         assert!(
             empty.as_str().ends_with("No Ingredients Detected"),
             "{}",

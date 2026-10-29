@@ -153,6 +153,16 @@ pub async fn callback_handler_with_cache(
                         &dialogue,
                     )
                     .await?;
+                } else if crate::bot::unit_choice::is_choice(data) {
+                    crate::bot::unit_choice::handle_choice(
+                        &bot,
+                        msg,
+                        data,
+                        &pool,
+                        q.from.language_code.as_deref(),
+                        &localization,
+                    )
+                    .await?;
                 } else if data.starts_with("page:") {
                     workflow_callbacks::handle_recipes_pagination(
                         &bot,

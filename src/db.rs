@@ -317,6 +317,80 @@ pub async fn number_duplicate_recipe_names(pool: &PgPool) -> Result<u64> {
     Ok(renamed)
 }
 
+/// How the recipe cards of `telegram_id` show measures; the default (French units) for a user
+/// who never chose, or not saved yet.
+pub async fn unit_view(pool: &PgPool, telegram_id: i64) -> Result<crate::unit_view::UnitView> {
+    let saved: Option<String> =
+        sqlx::query_scalar("SELECT unit_view FROM users WHERE telegram_id = $1")
+            .bind(telegram_id)
+            .fetch_optional(pool)
+            .await
+            .context("Failed to read the unit view")?;
+    Ok(saved
+        .as_deref()
+        .and_then(crate::unit_view::UnitView::parse)
+        .unwrap_or_default())
+}
+
+/// Saves the unit view `telegram_id` chose, creating the user when needed.
+pub async fn set_unit_view(
+    pool: &PgPool,
+    telegram_id: i64,
+    language_code: Option<&str>,
+    view: crate::unit_view::UnitView,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO users (telegram_id, language_code, unit_view) VALUES ($1, $2, $3) \
+         ON CONFLICT (telegram_id) DO UPDATE SET unit_view = EXCLUDED.unit_view, \
+         updated_at = CURRENT_TIMESTAMP",
+    )
+    .bind(telegram_id)
+    .bind(language_code.unwrap_or("en"))
+    .bind(view.as_str())
+    .execute(pool)
+    .await
+    .context("Failed to save the unit view")?;
+    Ok(())
+}
+
+/// Rewrites the units saved before they were normalized (UX plan U8.3) the way photos and typed
+/// lines are normalized now (`units::normalize_measurement`): "G", "gram", "gr" → g, "litres"
+/// → l, cl and dl → ml with the quantity converted, spoons in words → tbsp and tsp, count units
+/// lowercased ("PINCÉES" → "pincées"). Runs at startup; does nothing once every unit is
+/// normalized. Returns the number of ingredients changed.
+pub async fn normalize_saved_units(pool: &PgPool) -> Result<u64> {
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to start normalizing saved units")?;
+    let saved: Vec<(i64, Option<f64>, String)> = sqlx::query_as(
+        "SELECT id, quantity::float8, unit FROM ingredients WHERE unit IS NOT NULL ORDER BY id",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .context("Failed to read the saved units")?;
+
+    let mut changed = 0;
+    for (id, quantity, unit) in saved {
+        let normalized = crate::units::normalize_measurement(quantity, Some(&unit));
+        if normalized.unit.as_deref() == Some(unit.as_str()) && normalized.quantity == quantity {
+            continue;
+        }
+        sqlx::query("UPDATE ingredients SET quantity = $1, unit = $2 WHERE id = $3")
+            .bind(normalized.quantity)
+            .bind(normalized.unit.as_deref())
+            .bind(id)
+            .execute(&mut *tx)
+            .await
+            .with_context(|| format!("Failed to normalize the unit of the ingredient {id}"))?;
+        changed += 1;
+    }
+    tx.commit()
+        .await
+        .context("Failed to commit the normalized units")?;
+    Ok(changed)
+}
+
 /// Renames a recipe of `telegram_id` to `wanted`, or to "wanted (n)" when another of the
 /// user's recipes has that name. Returns the stored name, `None` when the recipe is not the
 /// user's.
@@ -1213,6 +1287,7 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
             ("language_code", "character varying"),
             ("created_at", "timestamp with time zone"),
             ("updated_at", "timestamp with time zone"),
+            ("unit_view", "text"),
         ],
     )
     .await?;
@@ -1449,6 +1524,20 @@ pub async fn chat_message_kind(
         .context("Failed to look up a chat message")
 }
 
+/// The recipe of the newest message of `chat` recorded as `kind` (the active card's recipe).
+pub async fn latest_recipe_message(pool: &PgPool, chat_id: i64, kind: &str) -> Result<Option<i64>> {
+    let recipe: Option<Option<i64>> = sqlx::query_scalar(
+        "SELECT recipe_id FROM chat_messages WHERE chat_id = $1 AND kind = $2 \
+         ORDER BY message_id DESC LIMIT 1",
+    )
+    .bind(chat_id)
+    .bind(kind)
+    .fetch_optional(pool)
+    .await
+    .context("Failed to look up a chat message")?;
+    Ok(recipe.flatten())
+}
+
 /// Whether a message of `chat` is recorded.
 pub async fn is_chat_message_recorded(
     pool: &PgPool,
@@ -1616,6 +1705,19 @@ pub mod migrations {
                 down: Some(
                     r#"
                     SELECT 1;
+                "#,
+                ),
+            },
+            Migration {
+                version: 5,
+                name: "users_unit_view",
+                // How the user's recipe cards show measures (UX plan U8): `unit_view::UnitView`
+                up: r#"
+                    ALTER TABLE users ADD COLUMN IF NOT EXISTS unit_view TEXT NOT NULL DEFAULT 'french';
+                "#,
+                down: Some(
+                    r#"
+                    ALTER TABLE users DROP COLUMN IF EXISTS unit_view;
                 "#,
                 ),
             },

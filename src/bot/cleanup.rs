@@ -178,6 +178,17 @@ pub async fn list_became_card(bot: &Bot, chat: ChatId, id: MessageId, recipe_id:
     delete_or_strip(bot, chat, messages).await;
 }
 
+/// The recipe of the card at the bottom with its buttons, if any.
+pub async fn active_card_recipe(chat: ChatId) -> Option<i64> {
+    let pool = pool()?;
+    crate::db::latest_recipe_message(pool, chat.0, ACTIVE_CARD)
+        .await
+        .unwrap_or_else(|e| {
+            debug!(error = %e, "Could not read the active card");
+            None
+        })
+}
+
 /// Remembers the card just sent at the bottom with its buttons.
 pub async fn record_active_card(chat: ChatId, id: MessageId, recipe_id: i64) {
     record_card_as(chat, id, recipe_id, ACTIVE_CARD).await;

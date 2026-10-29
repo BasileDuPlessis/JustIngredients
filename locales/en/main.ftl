@@ -31,6 +31,7 @@ help-final = Need help? Just send me an image! 😊
 # Commands (Telegram menu, welcome and help messages)
 command-list = My recipes
 command-search = Search your recipes
+command-units = How units are shown
 command-help = Help and tips
 command-cancel = Cancel the current action
 unknown-command = I don't know this command. Here are the ones I know:
@@ -231,3 +232,15 @@ ingredient-menu-delete = 🗑️ Delete
 ingredient-menu-back = ⬅️ Back
 edit-quantity-instruction = Type the new quantity (or - if there is none):
 edit-name-instruction = Type the new name of the ingredient:
+
+# Unit views (UX plan U8)
+unit-view-title = ⚖️ How units are shown
+unit-view-explain = Recipes do not change: only how cards show them follows this choice.
+unit-view-recipe = As in the recipe
+unit-view-weight = All in weight (g)
+unit-view-french = French units (g, cl)
+unit-view-us = US units (cups, oz)
+unit-view-chosen = ⚖️ Units: { $view }
+unit-view-footer-weight = ⚖️ Weight view (g), rounded values
+unit-view-footer-french = ⚖️ French units view (g, cl), rounded values
+unit-view-footer-us = ⚖️ US units view, rounded values

@@ -30,6 +30,7 @@ help-final = Besoin d'aide ? Envoyez-moi simplement une image ! 😊
 # Commandes (menu Telegram, messages d'accueil et d'aide)
 command-list = Mes recettes
 command-search = Chercher une recette
+command-units = Affichage des unités
 command-help = Aide et conseils
 command-cancel = Annuler l'action en cours
 unknown-command = Je ne connais pas cette commande. Voici celles que je connais :
@@ -231,3 +232,15 @@ edit-name-instruction = Tapez le nouveau nom de l'ingrédient :
 # Messages de légende photo
 caption-used = 📝 Utilisation de la légende de la photo comme nom de recette : "{$caption}"
 caption-invalid = La légende de la photo était invalide, utilisation du nom par défaut : "{$default_name}"
+
+# Unit views (UX plan U8)
+unit-view-title = ⚖️ Affichage des unités
+unit-view-explain = Les recettes ne changent pas : seul l'affichage des fiches suit ce choix.
+unit-view-recipe = Comme dans la recette
+unit-view-weight = Tout en poids (g)
+unit-view-french = Unités françaises (g, cl)
+unit-view-us = Unités américaines (cups, oz)
+unit-view-chosen = ⚖️ Unités : { $view }
+unit-view-footer-weight = ⚖️ Vue poids (g), valeurs arrondies
+unit-view-footer-french = ⚖️ Vue unités françaises (g, cl), valeurs arrondies
+unit-view-footer-us = ⚖️ Vue unités américaines, valeurs arrondies

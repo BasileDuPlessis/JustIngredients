@@ -10,7 +10,7 @@ The database design provides persistent storage for user data, recipes, and extr
 ## Requirements
 
 ### Functional Requirements
-- **User Management**: Store users with the Telegram language code seen at creation (replies use the language of each message, not this column)
+- **User Management**: Store users with the Telegram language code seen at creation (replies use the language of each message, not this column) and their unit view (`unit_view`, UX plan U8)
 - **Recipe Storage**: Persist recipes with the extracted text (the Gemini transcription of the ingredient section; recipes saved before Phase 5 may hold OCR text) and an optional name
 - **Ingredient Storage**: Structured storage of parsed ingredients linked to recipes
 - **Search**: `searchable_recipes` reads a user's named recipes with their ingredient names; `crate::search` matches the words
@@ -85,6 +85,11 @@ pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> R
 pub async fn update_recipe_name(pool: &PgPool, telegram_id: i64, recipe_id: i64, recipe_name: &str) -> Result<bool>
 pub async fn read_recipe_with_name(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Option<Recipe>>
 
+// Unit views and units (UX plan U8)
+pub async fn unit_view(pool: &PgPool, telegram_id: i64) -> Result<UnitView> // French units when never chosen
+pub async fn set_unit_view(pool: &PgPool, telegram_id: i64, language_code: Option<&str>, view: UnitView) -> Result<()> // creates the user when needed
+pub async fn normalize_saved_units(pool: &PgPool) -> Result<u64> // startup pass: units saved before normalization rewritten with units::normalize_measurement
+
 // Recipe search & listing
 pub async fn searchable_recipes(pool: &PgPool, telegram_id: i64) -> Result<Vec<SearchableRecipe>> // named recipes with their ingredient names, newest first (search)
 pub async fn get_user_recipes_newest_first(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<RecipeSummary>, i64)> // named recipes, newest first, total (recipe list, home message)
@@ -155,7 +160,7 @@ pub async fn get_current_version(pool: &PgPool) -> Result<i32>
 pub async fn rollback_to_version(pool: &PgPool, target_version: i32) -> Result<()>
 ```
 
-Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There are four: version 1 `create_initial_tables`, version 2 `recipes_owner_index_and_ingredient_cascade` (owner index on `recipes`, `ON DELETE CASCADE` on `ingredients.recipe_id`), version 3 `chat_messages` (see below) and version 4 `number_duplicate_recipe_names` (a placeholder since RU6: the numbering runs at every startup in `number_duplicate_recipe_names()`, after the schema validation, with the rule of new names — the oldest of a user's same-name recipes keeps the name, the others take the first free "(n)" — and does nothing once names are unique); each has a down script. Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch.
+Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There are five: version 1 `create_initial_tables`, version 2 `recipes_owner_index_and_ingredient_cascade` (owner index on `recipes`, `ON DELETE CASCADE` on `ingredients.recipe_id`), version 3 `chat_messages` (see below) and version 4 `number_duplicate_recipe_names` (a placeholder since RU6: the numbering runs at every startup in `number_duplicate_recipe_names()`, after the schema validation, with the rule of new names — the oldest of a user's same-name recipes keeps the name, the others take the first free "(n)" — and does nothing once names are unique) and version 5 `users_unit_view` (`users.unit_view TEXT NOT NULL DEFAULT 'french'`); each has a down script. After the duplicate numbering, `normalize_saved_units()` rewrites the units saved before normalization ("G", "litres", "cl" → g, l, ml with the quantity converted…), and does nothing once every unit is normalized. Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch.
 
 ### Constraints
 - **Data Types**: Appropriate PostgreSQL types for performance
@@ -179,7 +184,8 @@ CREATE TABLE users (
     telegram_id BIGINT UNIQUE NOT NULL,
     language_code VARCHAR(10) DEFAULT 'en',
     created_at TIMESTAMPTZ DEFAULT NOW(),
-    updated_at TIMESTAMPTZ DEFAULT NOW()
+    updated_at TIMESTAMPTZ DEFAULT NOW(),
+    unit_view TEXT NOT NULL DEFAULT 'french' -- recipe, weight, french or us (migration 5)
 );
 ```
 

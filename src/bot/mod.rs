@@ -24,6 +24,7 @@ pub mod message_handler;
 pub mod recipe_list;
 pub mod ui_builder;
 pub mod ui_components;
+pub mod unit_choice;
 
 // Common context structures for handler functions
 use crate::localization::LocalizationManager;

@@ -86,11 +86,18 @@ pub async fn answer_at_bottom(
     if in_action {
         return;
     }
+    keep_at_bottom(bot, chat_id, answer).await;
+    add_list_button(bot, chat_id, answer, localization, language_code).await;
+}
+
+/// An answer sent with its own buttons (the unit chooser, which ends with the list button):
+/// like [`answer_at_bottom`] outside an action, it replaces whatever had buttons at the bottom
+/// and goes when the next action ends.
+pub async fn keep_at_bottom(bot: &Bot, chat_id: ChatId, answer: teloxide::types::MessageId) {
     cleanup::untrack(chat_id, answer).await;
     cleanup::delete_action_messages(bot, chat_id).await;
     cleanup::track(chat_id, answer).await;
     cleanup::delete_lists(bot, chat_id).await;
-    add_list_button(bot, chat_id, answer, localization, language_code).await;
 }
 
 async fn add_list_button(

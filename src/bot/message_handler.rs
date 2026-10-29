@@ -393,6 +393,10 @@ async fn handle_command(
         Some(Command::Search(words)) => {
             handle_search_command(bot, msg, &pool, &words, localization, language_code).await
         }
+        Some(Command::Units) => {
+            super::unit_choice::show_chooser(bot, &pool, msg.chat.id, language_code, localization)
+                .await
+        }
         // The running action, if any, was ended by the caller: the list comes back
         Some(Command::Cancel) => {
             crate::bot::home::send_home(bot, &pool, msg.chat.id, localization, language_code).await;
