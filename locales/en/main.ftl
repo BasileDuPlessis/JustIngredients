@@ -30,6 +30,7 @@ help-final = Need help? Just send me an image! 😊
 
 # Commands (Telegram menu, welcome and help messages)
 command-list = My recipes
+command-search = Search your recipes
 command-help = Help and tips
 command-cancel = Cancel the current action
 unknown-command = I don't know this command. Here are the ones I know:
@@ -155,6 +156,9 @@ search-one-result = 🔍 1 recipe for “{$query}”
 search-results = 🔍 {$count} recipes for “{$query}”
 search-more-results = The first {$shown} are shown: refine your search.
 list-search-hint = 🔍 Type a word to search your recipes.
+search-failed = 🔍 The search did not work. Try again in a moment.
+free-text-tip = 📸 To add a recipe, send a photo of its ingredient list.
+    🔍 To search your recipes, type a word or two.
 recipes-list-button = 📚 Recipe list
 recipe-details-coming-soon = Recipe details coming soon!
 

@@ -333,8 +333,28 @@ async fn handle_text_message(
             }
         }
 
-        // Free text outside an action is a search in the user's recipes (U4.2); the typed text
-        // goes with the previous answers
+        // A pasted recipe is no search: it stays in the history, under a reminder that recipes
+        // come from photos
+        if !crate::search::is_query(text) {
+            let tip = cleanup::send_transient(
+                bot,
+                msg.chat.id,
+                t_lang(localization, "free-text-tip", language_code),
+            )
+            .await?;
+            super::home::answer_at_bottom(
+                bot,
+                msg.chat.id,
+                tip.id,
+                false,
+                localization,
+                language_code,
+            )
+            .await;
+            return Ok(());
+        }
+        // Other free text outside an action is a search in the user's recipes (U4.2); the typed
+        // text goes with the previous answers
         cleanup::track(msg.chat.id, msg.id).await;
         crate::bot::recipe_list::show_search_results(
             bot,

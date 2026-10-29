@@ -16,14 +16,30 @@ pub struct SearchableRecipe {
     pub ingredients: Vec<String>,
 }
 
-/// Words that say nothing about a recipe ("tarte aux pommes" is found by "tarte pommes").
-const SMALL_WORDS: [&str; 21] = [
+/// Words that say nothing about a recipe ("tarte aux pommes" is found by "tarte pommes",
+/// "recette de crêpes" by "crêpes"). Not "the": "thé" folds to it.
+const SMALL_WORDS: [&str; 24] = [
     "a", "au", "aux", "d", "de", "des", "du", "en", "et", "l", "la", "le", "les", "un", "une",
-    "avec", "of", "the", "and", "with", "an",
+    "avec", "of", "and", "with", "an", "recette", "recettes", "recipe", "recipes",
 ];
 
-/// Lowercase, without accents, ligatures spelled out ("crème brûlée" → "creme brulee",
-/// "œuf" → "oeuf"), anything else than letters and digits turned into spaces.
+/// Query words at least this long also find longer words they start ("chocol" finds
+/// "chocolat"); shorter ones must be whole words ("poire" does not find "poireau").
+const PREFIX_MIN_CHARS: usize = 6;
+
+/// Longest typed text taken as a search: a longer one, or several lines, is rather a recipe
+/// pasted or typed out, which the bot only reads from a photo.
+pub const MAX_QUERY_CHARS: usize = 80;
+
+/// Whether a text typed outside an action is a search.
+pub fn is_query(text: &str) -> bool {
+    let text = text.trim();
+    !text.contains('\n') && text.chars().count() <= MAX_QUERY_CHARS
+}
+
+/// Lowercase, without accents (also when stored as separate combining marks), ligatures spelled
+/// out ("crème brûlée" → "creme brulee", "œuf" → "oeuf"), anything else than letters and
+/// digits turned into spaces.
 pub fn fold(text: &str) -> String {
     let mut folded = String::with_capacity(text.len());
     for c in text.chars().flat_map(char::to_lowercase) {
@@ -38,6 +54,8 @@ pub fn fold(text: &str) -> String {
             'ÿ' => folded.push('y'),
             'œ' => folded.push_str("oe"),
             'æ' => folded.push_str("ae"),
+            // Combining accents of decomposed text ("e" + U+0300): dropped
+            '\u{0300}'..='\u{036F}' => {}
             c if c.is_alphanumeric() => folded.push(c),
             _ => folded.push(' '),
         }
@@ -45,25 +63,53 @@ pub fn fold(text: &str) -> String {
     folded
 }
 
-/// The words of a query worth looking for, folded, plurals reduced ("pommes" → "pomme",
-/// "choux" → "chou").
+/// A folded word without its plural ending, applied to the query and to the recipes alike:
+/// "pommes" → "pomme", "choux" → "chou", "gateaux" → "gateau", "tomatoes" → "tomato",
+/// "cherries" → "cherry". Short words stay as they are ("riz", "noix" → "noi" on both sides).
+fn singular(word: &str) -> String {
+    if word.chars().count() <= 3 {
+        return word.to_string();
+    }
+    if let Some(stem) = word.strip_suffix("ies") {
+        return format!("{stem}y");
+    }
+    if let Some(stem) = word.strip_suffix("oes") {
+        return format!("{stem}o");
+    }
+    if word.ends_with("ss") {
+        return word.to_string();
+    }
+    word.strip_suffix('s')
+        .or_else(|| word.strip_suffix('x'))
+        .unwrap_or(word)
+        .to_string()
+}
+
+/// The words of a text, folded and singular.
+fn words_of(text: &str) -> Vec<String> {
+    fold(text).split_whitespace().map(singular).collect()
+}
+
+/// The words of a query worth looking for: folded, singular, without small words and single
+/// letters.
 pub fn query_words(query: &str) -> Vec<String> {
     fold(query)
         .split_whitespace()
-        .filter(|word| !SMALL_WORDS.contains(word))
-        .map(|word| {
-            let singular = word
-                .strip_suffix('s')
-                .or_else(|| word.strip_suffix('x'))
-                .filter(|stem| stem.chars().count() >= 3);
-            singular.unwrap_or(word).to_string()
-        })
+        .filter(|word| !SMALL_WORDS.contains(word) && word.chars().count() > 1)
+        .map(singular)
         .collect()
 }
 
-/// The recipes that contain every word of `query` in their name or an ingredient, best first:
-/// a word in the name counts more than in an ingredient, then the newest first. No word (an
-/// empty query, or only small words) finds nothing.
+fn word_matches(query_word: &str, text_words: &[String]) -> bool {
+    text_words.iter().any(|word| {
+        word == query_word
+            || (query_word.chars().count() >= PREFIX_MIN_CHARS && word.starts_with(query_word))
+    })
+}
+
+/// The recipes that contain every word of `query` in their name or an ingredient, as whole
+/// words, best first: a word in the name counts more than in an ingredient, then the newest
+/// first. No word (an empty query, only small words) finds nothing.
 pub fn search<'a>(recipes: &'a [SearchableRecipe], query: &str) -> Vec<&'a SearchableRecipe> {
     let words = query_words(query);
     if words.is_empty() {
@@ -72,16 +118,17 @@ pub fn search<'a>(recipes: &'a [SearchableRecipe], query: &str) -> Vec<&'a Searc
     let mut found: Vec<(u32, &SearchableRecipe)> = recipes
         .iter()
         .filter_map(|recipe| {
-            let name = fold(&recipe.name);
-            let ingredients: Vec<String> = recipe.ingredients.iter().map(|i| fold(i)).collect();
+            let name = words_of(&recipe.name);
+            let ingredients: Vec<String> = recipe
+                .ingredients
+                .iter()
+                .flat_map(|ingredient| words_of(ingredient))
+                .collect();
             let mut score = 0;
             for word in &words {
-                if name.contains(word.as_str()) {
+                if word_matches(word, &name) {
                     score += 3;
-                } else if ingredients
-                    .iter()
-                    .any(|ingredient| ingredient.contains(word.as_str()))
-                {
+                } else if word_matches(word, &ingredients) {
                     score += 1;
                 } else {
                     return None;
@@ -147,6 +194,76 @@ mod tests {
         assert!(search(&recipes, "tarte chocolat").is_empty());
         assert!(search(&recipes, "de la").is_empty(), "only small words");
         assert!(search(&recipes, "  ").is_empty());
+    }
+
+    #[test]
+    fn whole_words_only_no_false_friends() {
+        let recipes = [
+            recipe(1, "Bœuf bourguignon", 1, &["bœuf", "vin rouge"]),
+            recipe(2, "Omelette", 2, &["œufs", "sel"]),
+            recipe(3, "Poêlée", 3, &["poireaux", "poivre", "poivron"]),
+            recipe(4, "Velouté de petits pois", 4, &["pois", "eau"]),
+            recipe(5, "Gâteau au chocolat noir", 5, &["chocolat noir", "noix"]),
+            recipe(6, "Thé glacé", 6, &["thé", "citron"]),
+            recipe(7, "Tomato soup", 7, &["tomatoes", "cherries"]),
+            recipe(
+                8,
+                "Pain maison",
+                8,
+                &["fraises", "crème fraîche", "vanille", "volaille"],
+            ),
+            recipe(9, "Salade", 9, &["maïs", "fromage frais", "anis", "ail"]),
+        ];
+        assert_eq!(ids(search(&recipes, "œufs")), vec![2], "not boeuf");
+        assert_eq!(
+            ids(search(&recipes, "poires")),
+            Vec::<i64>::new(),
+            "not poireaux"
+        );
+        assert_eq!(ids(search(&recipes, "pois")), vec![4], "not poivre");
+        assert_eq!(ids(search(&recipes, "noix")), vec![5]);
+        assert_eq!(ids(search(&recipes, "eau")), vec![4], "not gâteau");
+        assert_eq!(
+            ids(search(&recipes, "frais")),
+            vec![9],
+            "not fraises, fraîche"
+        );
+        assert_eq!(ids(search(&recipes, "maïs")), vec![9], "not maison");
+        assert_eq!(ids(search(&recipes, "anis")), vec![9], "not vanille");
+        assert_eq!(ids(search(&recipes, "ail")), vec![9], "not volaille");
+        assert_eq!(ids(search(&recipes, "fraises")), vec![8]);
+        assert_eq!(ids(search(&recipes, "thé")), vec![6]);
+        assert_eq!(ids(search(&recipes, "gateaux")), vec![5]);
+        assert_eq!(ids(search(&recipes, "tomato")), vec![7]);
+        assert_eq!(ids(search(&recipes, "cherry")), vec![7]);
+        assert_eq!(
+            ids(search(&recipes, "chocol")),
+            vec![5],
+            "a long start of a word"
+        );
+        assert_eq!(ids(search(&recipes, "recette de thé")), vec![6]);
+        assert!(
+            search(&recipes, "e").is_empty(),
+            "single letters say nothing"
+        );
+        assert_eq!(ids(search(&recipes, "Cre\u{0300}me")), vec![8]);
+        assert_eq!(
+            fold("Cre\u{0300}me"),
+            "creme",
+            "decomposed accents fold too"
+        );
+    }
+
+    #[test]
+    fn a_pasted_recipe_is_not_a_query() {
+        assert!(is_query("tarte aux pommes"));
+        assert!(is_query("  farine \n"), "a trailing new line is trimmed");
+        assert!(!is_query("200 g farine\n3 œufs"));
+        assert!(!is_query(&"farine ".repeat(20)));
+        assert!(
+            is_query(&"é".repeat(MAX_QUERY_CHARS)),
+            "characters, not bytes"
+        );
     }
 
     #[test]

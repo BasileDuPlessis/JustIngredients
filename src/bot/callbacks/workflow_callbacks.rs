@@ -216,9 +216,12 @@ pub async fn handle_workflow_button(
                 q.from.language_code.as_deref(),
             );
 
-            // The 🔍 of older home messages: how to search, at the bottom
+            // The 🔍 of older home messages: that message goes, how to search comes at the
+            // bottom, under the action's message when one is running
             if let Some(message) = &q.message {
                 let chat_id = message.chat().id;
+                crate::bot::cleanup::remove_legacy_message(bot, chat_id, message.id()).await;
+                let in_action = dialogue.get().await?.is_some_and(|state| state.is_action());
                 let sent = bot
                     .send_message(
                         chat_id,
@@ -234,7 +237,7 @@ pub async fn handle_workflow_button(
                     bot,
                     chat_id,
                     sent.id,
-                    false,
+                    in_action,
                     localization,
                     q.from.language_code.as_deref(),
                 )

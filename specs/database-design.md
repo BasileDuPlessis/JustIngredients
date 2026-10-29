@@ -1,7 +1,7 @@
 # Database Design Feature Specification
 
 ## Overview
-The database design provides persistent storage for user data, recipes, and extracted ingredients. It uses PostgreSQL; a full-text column and index exist on recipe content, but the bot does not search yet (see [Full-Text Search](#full-text-search-implementation)). The schema is **recipe-centric**: users own recipes, and recipes contain ingredients. There is no intermediate OCR entry table.
+The database design provides persistent storage for user data, recipes, and extracted ingredients. It uses PostgreSQL; recipes are searched in Rust over their names and ingredient names (see [Search](#search)); an older full-text column and index on recipe content remain unread. The schema is **recipe-centric**: users own recipes, and recipes contain ingredients. There is no intermediate OCR entry table.
 
 > Verified against `src/db.rs` at `ec2e7d3` (2026-10-27). Planned changes (one list entry per
 > recipe, one owner identity, French-aware search) are in [UX Improvements](tasks/ux-improvements.md)
@@ -13,7 +13,7 @@ The database design provides persistent storage for user data, recipes, and extr
 - **User Management**: Store users with the Telegram language code seen at creation (replies use the language of each message, not this column)
 - **Recipe Storage**: Persist recipes with the extracted text (the Gemini transcription of the ingredient section; recipes saved before Phase 5 may hold OCR text) and an optional name
 - **Ingredient Storage**: Structured storage of parsed ingredients linked to recipes
-- **Full-Text Search**: `search_recipes` searches recipe content (not names) with the English configuration; no handler calls it
+- **Search**: `searchable_recipes` reads a user's named recipes with their ingredient names; `crate::search` matches the words
 - **Recipe Organization**: List, paginate, and query recipes per user
 - **Ownership**: Every recipe and ingredient query takes the owner's Telegram id and filters on it (ingredients through their recipe), so a user can never read or change another user's data
 - **Data Integrity**: Maintain referential integrity
@@ -86,7 +86,7 @@ pub async fn update_recipe_name(pool: &PgPool, telegram_id: i64, recipe_id: i64,
 pub async fn read_recipe_with_name(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Option<Recipe>>
 
 // Recipe search & listing
-pub async fn search_recipes(pool: &PgPool, telegram_id: i64, query: &str) -> Result<Vec<Recipe>> // not called by the bot
+pub async fn searchable_recipes(pool: &PgPool, telegram_id: i64) -> Result<Vec<SearchableRecipe>> // named recipes with their ingredient names, newest first (search)
 pub async fn get_user_recipes_newest_first(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<RecipeSummary>, i64)> // named recipes, newest first, total (recipe list, home message)
 pub async fn has_duplicate_recipes(pool: &PgPool, telegram_id: i64, recipe_name: &str) -> Result<bool> // not called by the bot
 
@@ -244,7 +244,8 @@ CREATE TABLE schema_migrations (
 
 The bot's search (UX plan U4) reads the user's named recipes with their ingredient names in one
 query (`searchable_recipes()`: `array_agg` over a left join, newest first) and matches the words in
-Rust (`crate::search`: case, French accents and ligatures, plurals and small words ignored). A user
+Rust (`crate::search`: whole words, case, French accents and ligatures, plurals and small words
+ignored). A user
 has at most a few hundred recipes, so no Postgres extension (`unaccent` needs rights the app user
 may not have) and no index are needed. The former English full-text query `search_recipes` was
 removed; its generated column and GIN index below are no longer read.
@@ -258,11 +259,6 @@ CREATE INDEX recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
 
 ### Queries
 ```sql
--- search_recipes (user-scoped, unused by the bot)
-SELECT id, telegram_id, content, recipe_name, created_at FROM recipes
-WHERE telegram_id = $1 AND content_tsv @@ plainto_tsquery('english', $2)
-ORDER BY created_at DESC;
-
 -- get_user_recipes_newest_first: recipe list and home message
 SELECT id, recipe_name, created_at FROM recipes
 WHERE telegram_id = $1 AND recipe_name IS NOT NULL

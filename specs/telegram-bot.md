@@ -44,7 +44,7 @@ src/bot/
 ├── message_handler.rs      # MessageServices, routing of messages by type and dialogue state
 ├── cleanup.rs              # Messages of an action, deleted when it ends
 ├── commands.rs             # Command parsing, Telegram command menu
-├── command_handlers.rs     # Welcome, help, recipe list, search placeholder, unsupported messages
+├── command_handlers.rs     # Welcome, help, recipe list, search command, unsupported messages
 ├── media_handlers.rs       # Photo and image document messages
 ├── image_processing.rs     # Download, extraction call, review message, error keys
 ├── dialogue_manager.rs     # Text input of each dialogue state, save to database
@@ -75,9 +75,9 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 | `/start` | Welcome message at the bottom (it replaces the list or the active card) with "📚 Liste des recettes"; it goes at the next action's end. |
 | `/aide`, `/help` | Help message at the bottom with "📚 Liste des recettes" (`home::answer_at_bottom`); it goes at the next action's end. |
 | `/annuler`, `/cancel` | Ends the running action (like any command) and moves the recipe list down. |
-| `/cherche <mots>`, `/search` | Searches the user's recipes (`recipe_list::show_search_results`, `crate::search`): names and ingredient names, ignoring case, accents, plurals and small words; every word must be found; names rank above ingredients, then the newest. The results replace the bottom message: a bold title with the count, up to 8 recipe buttons (`recipe_instance:<id>`, list labels), "precisez" beyond 8, then 📚 `show_list`; recorded as a list. Without words: `search-prompt` with the list button. |
+| `/cherche <mots>`, `/search` | Searches the user's recipes (`recipe_list::show_search_results`, `crate::search`): names and ingredient names as whole words (a query word of 6 letters or more also finds the words it starts), ignoring case, accents, plurals and small words (also "recette"); every word must be found; names rank above ingredients, then the newest. The results replace the bottom message: a bold title with the count, up to 8 recipe buttons (`recipe_instance:<id>`, list labels), "precisez" beyond 8, then 📚 `show_list`; recorded as a list. Nothing found: the `home-send-photo` tip under the title. Database error: `search-failed` at the bottom with the list button. Without words: `search-prompt` with the list button. |
 | Unknown `/command` | `unknown-command` and the menu commands at the bottom with the list button, transient. |
-| Other text, no dialogue | A search, like `/cherche <text>` (U4.2); the typed text goes with the previous answers. |
+| Other text, no dialogue | A search, like `/cherche <text>` (U4.2); the typed text goes with the previous answers. Several lines or more than 80 characters (`search::is_query`) are a pasted recipe, not a search: the text stays and `free-text-tip` (photos add recipes, a word or two searches) comes at the bottom with the list button. |
 | Other text in a dialogue | Handled by the current state (see [Dialogue States](#dialogue-states)). |
 | Photo | Largest size, caption used as recipe name candidate. Handled whatever the state: a successful extraction replaces the current dialogue with a new review. |
 | Document | Only `image/*` MIME types, caption ignored; otherwise `error-unsupported-format` or `error-no-mime-type`. |
@@ -86,9 +86,8 @@ Built once in `main.rs` and cloned per message (all fields reference-counted):
 Commands are read by `commands::parse_command`: case-insensitive, an `@botname` suffix is
 ignored, words after the command are kept for search and ignored otherwise. At startup the bot
 sets the Telegram command menu (`setMyCommands`) in the background, a failure is only logged:
-`/liste`, `/annuler` and `/aide` for French users, `/list`, `/cancel` and `/help` for everyone
-else. `/cherche` joins
-the menu with search (UX Task U4.2). The welcome and help messages list the same commands, in
+`/liste`, `/cherche`, `/annuler` and `/aide` for French users, `/list`, `/search`, `/cancel` and
+`/help` for everyone else. The welcome and help messages list the same commands, in
 the user's language.
 
 ## Photo Flow
@@ -163,8 +162,9 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
   cancelled creation leaves nothing behind (photo, list and prompts deleted), dialogue ended,
   recipe list sent again. The same for a cancel at the name prompt.
 - Older messages may still carry the post-save buttons that the home message replaced:
-  📚 `workflow_list_recipes` (recipe list) and 🔍 `workflow_search_recipes` (answers
-  `workflow-search-coming-soon`); both are still handled.
+  📚 `workflow_list_recipes` (recipe list) and 🔍 `workflow_search_recipes` (the pressed message
+  goes, `search-prompt` at the bottom, under the action's message when one runs); both are still
+  handled.
 
 Typed text in `ReviewIngredients`: a confirm word ("confirm", "ok", "yes", "save", "valider",
 "valide", "confirmer", "oui", "enregistrer") does exactly what ✅ does (quantity guard, then save
@@ -294,7 +294,7 @@ loses its keyboard and is not passed to the state handler.
 | `confirm_delete_recipe:`, `cancel_delete_recipe:` | any | Delete confirmation |
 | `back_to_recipes` | any | Delete the current message |
 | `page:<n>` | any | Recipe list page |
-| `workflow_list_recipes`, `workflow_search_recipes` | any | Recipe list (home "all my recipes" button), search placeholder; `workflow_add_another` is handled but never sent |
+| `workflow_list_recipes`, `workflow_search_recipes` | any | Recipe list (home "all my recipes" button), how to search; `workflow_add_another` is handled but never sent |
 | `cancel_processing` | any | Retired (2026-10-28): answered as a stale button (`button-expired`, keyboard removed) |
 
 `noop` (the line shown at the top of an ingredient menu) is inert on purpose: the query is

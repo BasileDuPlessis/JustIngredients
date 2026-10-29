@@ -114,14 +114,21 @@ pub fn render_list_header(
             language_code,
         ),
     };
+    let mut lines = format!(
+        "\n{count}\n{}",
+        t_lang(localization, "home-send-photo", language_code)
+    );
+    // Nothing to search before the first recipe
+    if total > 0 {
+        lines += &format!(
+            "\n{}",
+            t_lang(localization, "list-search-hint", language_code)
+        );
+    }
     Html::bold(&format!(
         "📚 {}",
         t_lang(localization, "your-recipes", language_code)
-    )) + Html::text(&format!(
-        "\n{count}\n{}\n{}",
-        t_lang(localization, "home-send-photo", language_code),
-        t_lang(localization, "list-search-hint", language_code)
-    ))
+    )) + Html::text(&lines)
 }
 
 /// Sends page `page` of the user's recipes without notification and returns the new message,
@@ -211,6 +218,13 @@ pub fn render_search_results(
         ),
     };
     let mut text = Html::bold(&title);
+    if found.is_empty() {
+        // Typed text that finds nothing may be a recipe to add
+        text += Html::text(&format!(
+            "\n{}",
+            t_lang(localization, "home-send-photo", language_code)
+        ));
+    }
     if found.len() > MAX_SEARCH_RESULTS {
         text += Html::text(&format!(
             "\n{}",
@@ -261,7 +275,28 @@ pub async fn show_search_results(
     localization: &Arc<LocalizationManager>,
 ) -> Result<()> {
     // Private chats only: the chat id is the user's id, the recipes' owner
-    let recipes = crate::db::searchable_recipes(pool, chat_id.0).await?;
+    let recipes = match crate::db::searchable_recipes(pool, chat_id.0).await {
+        Ok(recipes) => recipes,
+        Err(e) => {
+            tracing::warn!(error = %e, "Failed to read the recipes to search");
+            let sent = super::cleanup::send_transient(
+                bot,
+                chat_id,
+                t_lang(localization, "search-failed", language_code),
+            )
+            .await?;
+            super::home::answer_at_bottom(
+                bot,
+                chat_id,
+                sent.id,
+                false,
+                localization,
+                language_code,
+            )
+            .await;
+            return Ok(());
+        }
+    };
     let found = crate::search::search(&recipes, query);
     let (text, keyboard) = render_search_results(query, &found, language_code, localization);
     super::cleanup::delete_action_messages(bot, chat_id).await;
@@ -351,8 +386,10 @@ mod tests {
             header.as_str()
         );
         assert!(header.as_str().contains("📸"), "{}", header.as_str());
+        assert!(header.as_str().contains("🔍"), "{}", header.as_str());
         let empty = render_list_header(0, Some("en"), &localization);
         assert!(!empty.as_str().contains('0'), "{}", empty.as_str());
+        assert!(!empty.as_str().contains("🔍"), "nothing to search yet");
     }
 
     fn found(id: i64, name: &str) -> crate::search::SearchableRecipe {
@@ -369,8 +406,8 @@ mod tests {
         let localization = manager();
         let (text, keyboard) = render_search_results("farine", &[], Some("fr"), &localization);
         assert!(
-            text.as_str().contains("Aucune recette"),
-            "{}",
+            text.as_str().contains("Aucune recette") && text.as_str().contains("📸"),
+            "nothing found: how to add a recipe instead; {}",
             text.as_str()
         );
         assert_eq!(keyboard.inline_keyboard.len(), 1, "only the list button");

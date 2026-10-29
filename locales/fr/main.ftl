@@ -29,6 +29,7 @@ help-final = Besoin d'aide ? Envoyez-moi simplement une image ! 😊
 
 # Commandes (menu Telegram, messages d'accueil et d'aide)
 command-list = Mes recettes
+command-search = Chercher une recette
 command-help = Aide et conseils
 command-cancel = Annuler l'action en cours
 unknown-command = Je ne connais pas cette commande. Voici celles que je connais :
@@ -150,6 +151,9 @@ search-one-result = 🔍 1 recette pour « {$query} »
 search-results = 🔍 {$count} recettes pour « {$query} »
 search-more-results = Les {$shown} premières sont affichées : précisez votre recherche.
 list-search-hint = 🔍 Tapez un mot pour chercher une recette.
+search-failed = 🔍 La recherche n'a pas abouti. Réessayez dans un instant.
+free-text-tip = 📸 Pour ajouter une recette, envoyez une photo de sa liste d'ingrédients.
+    🔍 Pour chercher une recette, tapez un ou deux mots.
 recipes-list-button = 📚 Liste des recettes
 recipe-details-coming-soon = Détails de la recette bientôt disponibles !
 

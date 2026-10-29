@@ -72,17 +72,17 @@ pub fn route_text(text: &str, in_action: bool) -> TextRoute {
 }
 
 /// Commands of the menu for a supported language: command name and description key.
-///
-/// `/cherche` joins the menu once search works (UX plan, Task U4.2).
 fn menu_entries(language: &str) -> &'static [(&'static str, &'static str)] {
     match language {
         "fr" => &[
             ("liste", "command-list"),
+            ("cherche", "command-search"),
             ("annuler", "command-cancel"),
             ("aide", "command-help"),
         ],
         _ => &[
             ("list", "command-list"),
+            ("search", "command-search"),
             ("cancel", "command-cancel"),
             ("help", "command-help"),
         ],
@@ -241,7 +241,10 @@ mod tests {
     fn command_lines_use_the_user_language() {
         let localization = create_localization_manager().expect("localization");
         let fr = command_lines(&localization, Some("fr-FR"));
-        assert!(fr.contains("/liste - ") && fr.contains("/aide - "), "{fr}");
+        assert!(
+            fr.contains("/liste - ") && fr.contains("/cherche - ") && fr.contains("/aide - "),
+            "{fr}"
+        );
         let en = command_lines(&localization, Some("de"));
         assert!(en.contains("/list - ") && en.contains("/help - "), "{en}");
     }
