@@ -1,62 +1,147 @@
-# Conversion des mesures : proposition (à valider)
+# Affichage des unités : proposition (à valider)
 
-Version du 2026-10-29, après la v26. Demande de l'utilisateur : « proposer de mettre toutes les
-mesures en unités françaises : g / cl / l… » et « proposer un outil de conversion des volumes en
-poids (ex. 1 cup butter ⇒ … g de beurre), avec la densité des principaux ingrédients (farine,
-beurre, lait, sucre…) en constantes ». Rien n'est codé : ce document décrit ce que je propose,
-avec des wireframes, et finit par les questions à trancher.
+Version 2 du 2026-10-29. Demandes de l'utilisateur :
+- version 1 : « proposer de mettre toutes les mesures en unités françaises : g / cl / l… » et
+  « un outil de conversion des volumes en poids (ex. 1 cup butter ⇒ … g de beurre), avec la
+  densité des principaux ingrédients en constantes » ;
+- version 2 : « dans le menu, une commande pour changer la vue des unités : tout en poids (g),
+  pratique avec une balance ; tout en unités françaises, cl pour les volumes et g pour les
+  poids ; tout en unités anglaises (choisis les défauts) ».
 
-## Ce qui existe aujourd'hui
+Rien n'est codé : ce document décrit ce que je propose, avec des wireframes, et finit par les
+questions à trancher.
 
-- Les unités sont **stockées sous une forme canonique** (`src/units.rs`) : `g`, `kg`, `mg`,
-  `ml`, `l`, `cup`, `tbsp`, `tsp`, `lb`, `oz`, `pint`, `quart`, `gallon`, plus des unités de
-  comptage gardées telles quelles (« gousses », « pincée »). Les cl et dl sont déjà convertis
-  en ml à l'entrée (« 20 cl » est stocké 200 ml).
-- Elles sont **affichées telles quelles**, aussi aux utilisateurs français : la fiche montre
-  « 2 tbsp huile », « 1 cup farine », « 200 ml lait ».
-- Aucune conversion entre unités n'existe (c'était hors périmètre de la standardisation des
-  unités).
+## Le principe
 
-## La proposition en deux parties
+**Une vue, pas une conversion enregistrée.** Chaque utilisateur choisit comment les mesures lui
+sont affichées ; ses recettes ne changent jamais en base. Changer de vue est sans risque et
+réversible à tout moment.
 
-### A. Afficher les unités en français (sans toucher aux données)
+Quatre vues :
 
-Pour un utilisateur français, l'affichage traduit les unités canoniques : `tbsp` → « c. à s. »,
-`tsp` → « c. à c. », `cup` → « tasse », `lb` → « livre », `oz` → « once ». Les volumes en ml
-s'affichent en cl à partir de 10 cl (« 200 ml » → « 20 cl », « 15 ml » reste « 15 ml »), et en l
-à partir d'1 l. Rien ne change en base ni pour les utilisateurs anglais. C'est petit, sans
-risque, et utile même sans conversion.
-
-```
-Avant                          Après (utilisateur français)
-• 2 tbsp huile d'olive         • 2 c. à s. huile d'olive
-• 1 cup farine                 • 1 tasse farine
-• 200 ml lait                  • 20 cl lait
-```
-
-### B. Convertir une recette en g / cl / l
-
-Un bouton **« ⚖️ g / cl »** propose de convertir les mesures américaines d'une recette :
-
-| Mesure | Devient | Comment |
+| Vue | Pour qui | En bref |
 |---|---|---|
-| lb, oz | g | facteur fixe (1 lb = 453,6 g, 1 oz = 28,35 g) |
-| cup, pint, quart, gallon d'un **liquide** (lait, eau, crème, huile, vin, bouillon, jus…) | cl, ou l à partir d'1 l | volume (1 cup US = 23,7 cl) |
-| cup, pint… d'un **solide connu** (farine, sucre, beurre…) | g | volume × densité du tableau ci-dessous |
-| cup d'un solide **inconnu** (« noix de pécan entières ») | inchangé | signalé « pas de conversion » |
-| c. à s., c. à c. | inchangé | les recettes françaises les gardent pour les petites quantités |
-| g, kg, ml, l, unités de comptage, sans quantité | inchangé | |
+| **Comme dans la recette** (par défaut) | tout le monde | les mesures telles que lues ou tapées ; seuls les noms d'unités sont traduits (« tbsp » → « c. à s. » pour un utilisateur français) |
+| **Tout en poids (g)** | cuisiner avec une balance | tout ce qui peut se peser en grammes, liquides compris |
+| **Unités françaises (g, cl)** | recettes américaines lues en France | les poids en g, les liquides en cl / l, les cuillères gardées |
+| **Unités américaines (cups, oz)** | recettes françaises lues à l'anglaise | cups, tbsp, tsp, oz, lb, en fractions (½, ¾) |
 
-Arrondis, pour des valeurs « de cuisine » : au gramme sous 20 g, aux 5 g au-dessus (227 g →
-225 g) ; au demi-cl sous 10 cl, au cl au-dessus (236,6 ml → 24 cl) ; au dixième de litre à
-partir d'1 l (3,785 l → 3,8 l).
+Elle s'applique aux **fiches recettes** (consultation, c'est là qu'on cuisine). La relecture
+d'une photo et la modification des ingrédients montrent toujours les valeurs enregistrées : ce
+qu'on corrige est ce qui est enregistré. Le nom des ingrédients n'est jamais traduit.
 
-#### Densités (constantes, grammes par tasse US)
+Quand une fiche est convertie, une ligne en bas le dit : « ⚖️ Vue poids (g), valeurs arrondies ».
+Une mesure impossible à convertir (densité inconnue, « 1 tasse de noix de pécan entières » en
+vue poids) reste dans son unité d'origine.
+
+## La commande
+
+`/unites` (français) et `/units` (anglais), dans le menu Telegram avec `/liste`, `/cherche`,
+`/annuler`, `/aide`. Le choix est enregistré pour l'utilisateur (une colonne `unit_view` dans
+`users`, migration 5).
+
+### 1. Je tape /unites (ou je le choisis dans le menu)
+
+Comme `/aide` : la réponse prend la place du message du bas.
+
+```
+┌──────────────────────────────────────────┐
+│ ⚖️ Affichage des unités                  │ ▼ bas du fil
+│ Les recettes ne changent pas : seul      │
+│ l'affichage des fiches suit ce choix.    │
+│ [ ✓ Comme dans la recette ]              │
+│ [ Tout en poids (g) ]                    │
+│ [ Unités françaises (g, cl) ]            │
+│ [ Unités américaines (cups, oz) ]        │
+│ [ 📚 Liste des recettes ]                │
+└──────────────────────────────────────────┘
+```
+
+### 2. Je choisis « Tout en poids (g) »
+
+Le message devient une ligne d'historique. Si une fiche était en bas avant `/unites`, elle
+revient en bas, dans la nouvelle vue, avec ses boutons ; sinon la liste revient.
+
+```
+┌──────────────────────────────────────────┐
+│ ⚖️ Unités : tout en poids (g)            │   historique
+├──────────────────────────────────────────┤
+│ 📖 Pancakes                              │ ▼ bas du fil
+│ 📅 29 oct. 2026                          │
+│ • 180 g farine                           │
+│ • 305 g lait                             │
+│ • 40 g beurre                            │
+│ • 13 g sucre                             │
+│ • 8 g levure chimique                    │
+│ • ½ c. à c. sel                          │
+│ • 1 œuf                                  │
+│ ⚖️ Vue poids (g), valeurs arrondies      │
+│ [ ✏️ Renommer ]  [ 📝 Modifier ]          │
+│ [ 🗑️ Supprimer ]                          │
+│ [ 📚 Liste des recettes ]                │
+└──────────────────────────────────────────┘
+```
+
+## Une recette dans les quatre vues
+
+Une recette américaine enregistrée en tasses :
+
+```
+Comme dans la recette    Tout en poids (g)     Unités françaises     Unités américaines
+• 1,5 tasse farine       • 180 g farine        • 180 g farine        • 1 ½ cups farine
+• 1,25 tasse lait        • 305 g lait          • 30 cl lait          • 1 ¼ cups lait
+• 3 c. à s. beurre       • 40 g beurre         • 3 c. à s. beurre    • 3 tbsp beurre
+• 1 c. à s. sucre        • 13 g sucre          • 1 c. à s. sucre     • 1 tbsp sucre
+• 2 c. à c. levure       • 8 g levure          • 2 c. à c. levure    • 2 tsp levure
+• 0,5 c. à c. sel        • ½ c. à c. sel       • ½ c. à c. sel       • ½ tsp sel
+• 1 œuf                  • 1 œuf               • 1 œuf               • 1 œuf
+```
+
+Une recette française enregistrée en grammes et en ml :
+
+```
+Comme dans la recette    Tout en poids (g)     Unités françaises     Unités américaines
+• 250 g farine           • 250 g farine        • 250 g farine        • 2 cups farine
+• 50 cl lait             • 515 g lait          • 50 cl lait          • 2 cups lait
+• 50 g sucre             • 50 g sucre          • 50 g sucre          • ¼ cup sucre
+• 30 g beurre            • 30 g beurre         • 30 g beurre         • 2 tbsp beurre
+• 3 œufs                 • 3 œufs              • 3 œufs              • 3 œufs
+• 1 pincée sel           • 1 pincée sel        • 1 pincée sel        • 1 pincée sel
+```
+
+## Les défauts de chaque vue
+
+| Mesure enregistrée | Tout en poids (g) | Unités françaises (g, cl) | Unités américaines (cups, oz) |
+|---|---|---|---|
+| g, kg, mg | g (1 200 g, pas de kg : c'est ce que montre la balance) | g, kg à partir d'1 kg | solide du tableau (farine, sucre…) en cups dès ¼ cup, sinon tbsp / tsp ; le reste en oz sous 1 lb, lb au-delà |
+| lb, oz | g | g | inchangé |
+| ml, l (liquide) | g par densité (eau, lait ≈ 1) | cl, l à partir d'1 l | cups (¼ cup et plus), sinon tbsp / tsp |
+| cup, pint, quart (liquide) | g par densité | cl, l à partir d'1 l | inchangé |
+| cup (solide du tableau) | g par densité | g par densité | inchangé |
+| cup (solide inconnu) | inchangé | inchangé | inchangé |
+| c. à s., c. à c. | g par densité, sauf sous 5 g (une balance de cuisine n'est pas précise en dessous) | inchangé | tbsp, tsp |
+| unités de comptage (pincée, gousses), sans unité (2 œufs), sans quantité (sel) | inchangé | inchangé | inchangé |
+
+Arrondis « de cuisine » :
+- grammes : au gramme sous 20 g, aux 5 g au-dessus (227 g → 225 g) ;
+- cl : au demi-cl sous 10 cl, au cl au-dessus (23,7 cl → 24 cl) ; l au dixième (1,25 l → 1,3 l) ;
+- cups au quart ou au tiers le plus proche (2,08 → 2 cups), tbsp au demi, tsp au quart ;
+  oz au demi, lb au quart.
+
+Nombres : virgule décimale dans les vues françaises (« 1,5 tasse »), fractions dans la vue
+américaine (« 1 ½ cups »). Une tasse US vaut 23,66 cl, une c. à s. 1,5 cl, une c. à c. 0,5 cl.
+
+« Anglaises » s'entend ici au sens américain : les recettes en anglais lues par le bot viennent
+surtout de sites américains, et les recettes britanniques actuelles sont déjà en g et ml.
+
+## Densités (constantes)
 
 Valeurs courantes des tableaux de pâtisserie (King Arthur Baking), à ajuster si tu as tes
 propres repères. Le nom est reconnu en français et en anglais, sans accents ni pluriels (comme la
 recherche) ; l'entrée la plus précise gagne (« sucre glace » avant « sucre », « beurre de
 cacahuète » avant « beurre »).
+
+**Solides** (1 tasse US =) :
 
 | Ingrédient (fr / en) | 1 tasse = |
 |---|---|
@@ -81,115 +166,59 @@ cacahuète » avant « beurre »).
 | noix de coco râpée / shredded coconut | 85 g |
 | fromage râpé / shredded cheese | 115 g |
 
-Liquides (convertis en volume, sans densité) : lait, eau, crème, huile, vin, bouillon, jus,
-lait de coco, café, thé, rhum, vinaigre, sauce soja / milk, water, cream, oil, wine, broth,
-stock, juice, coconut milk, coffee, tea, rum, vinegar, soy sauce.
+**Petites quantités** (1 c. à c. =) : sel 6 g, levure chimique / baking powder 4 g,
+bicarbonate / baking soda 5 g, levure boulangère sèche / dry yeast 3 g, cannelle et épices
+moulues / cinnamon, ground spices 2,5 g, extrait de vanille / vanilla extract 4 g.
 
-#### Où est le bouton
-
-Selon le modèle du fil (U6) : la conversion est une action, avec un aperçu en bas, un seul
-« ❌ Annuler », et une ligne de résumé dans l'historique une fois enregistrée. Le bouton
-n'apparaît que si la recette a quelque chose à convertir.
-
-## Wireframes
-
-Légende comme pour U6 : `[ … ]` est un bouton, `▼ bas du fil` marque le dernier message.
-
-### 1. La fiche d'une recette américaine
-
-```
-┌──────────────────────────────────────────┐
-│ 📖 Chocolate chip cookies                │ ▼ bas du fil
-│ 📅 29 oct. 2026                          │
-│ • 2.25 tasse farine                      │
-│ • 1 tasse beurre                         │
-│ • 0.75 tasse sucre                       │
-│ • 2 œufs                                 │
-│ • 1 c. à c. sel                          │
-│ • 1 tasse noix de pécan entières         │
-│ [ ✏️ Renommer ]  [ 📝 Modifier ]          │
-│ [ ⚖️ g / cl ]   [ 🗑️ Supprimer ]          │
-│ [ 📚 Liste des recettes ]                │
-└──────────────────────────────────────────┘
-```
-
-### 2. Je touche « ⚖️ g / cl » : l'aperçu remplace la fiche en bas
-
-La fiche passe dans l'historique (sans boutons), l'aperçu est l'action en cours.
-
-```
-┌──────────────────────────────────────────┐
-│ ⚖️ Chocolate chip cookies en g / cl      │ ▼ bas du fil
-│ • 2.25 tasse farine → 270 g              │
-│ • 1 tasse beurre → 225 g                 │
-│ • 0.75 tasse sucre → 150 g               │
-│ • 1 tasse noix de pécan entières :       │
-│   pas de conversion (densité inconnue)   │
-│ Les autres lignes ne changent pas.       │
-│ Valeurs arrondies.                       │
-│ [ ✅ Enregistrer ]                       │
-│ [ ❌ Annuler ]                           │
-└──────────────────────────────────────────┘
-```
-
-« ❌ Annuler » : l'aperçu disparaît, la fiche redevient le message du bas avec ses boutons.
-
-### 3. J'enregistre
-
-Comme après une modification (A et C du modèle U6) : la ligne de résumé reste, les fiches de la
-recette dans l'historique sont mises à jour, la liste revient en bas.
-
-```
-┌──────────────────────────────────────────┐
-│ 📖 Chocolate chip cookies                │   historique (fiche mise à jour)
-│ • 270 g farine                           │
-│ • 225 g beurre  …                        │
-├──────────────────────────────────────────┤
-│ ⚖️ « Chocolate chip cookies » convertie  │
-├──────────────────────────────────────────┤
-│ 📚 Vos recettes …                        │ ▼ bas du fil
-└──────────────────────────────────────────┘
-```
-
-### 4. Pendant la relecture d'une photo
-
-Une recette lue sur un site américain arrive en tasses : la relecture propose aussi
-« ⚖️ g / cl ». Rien n'est encore enregistré, donc pas d'aperçu : la liste de relecture est
-convertie sur place, on peut encore tout corriger, puis « ✅ Valider » comme d'habitude.
-
-```
-┌──────────────────────────────────────────┐
-│ 📝 Vérifiez les ingrédients              │ ▼ bas du fil
-│ [ 2.25 tasse → farine ]                  │
-│ [ 1 tasse → beurre ]                     │
-│ [ ➕ Ajouter ]  [ ⚖️ g / cl ]             │
-│ [ ✅ Valider ]                           │
-│ [ ❌ Annuler ]                           │
-└──────────────────────────────────────────┘
-```
+**Liquides** (1 l =) : eau / water 1 000 g, lait / milk 1 030 g, crème / cream 1 000 g,
+huile / oil 920 g, vin / wine 990 g, bouillon / broth, stock 1 000 g, jus / juice 1 040 g,
+lait de coco / coconut milk 1 000 g, café, thé / coffee, tea 1 000 g, vinaigre / vinegar
+1 010 g, sauce soja / soy sauce 1 200 g, rhum / rum 940 g.
 
 ## Plus tard, pas dans cette phase
 
-- Un réglage « toujours convertir les photos en g / cl ».
-- Convertir les cuillères en grammes pour les solides (« 2 c. à s. de beurre » → 30 g).
+- Un bouton ⚖️ sur la fiche pour passer d'une vue à l'autre sans le menu.
+- Convertir les œufs en grammes (1 œuf ≈ 50 g) dans la vue poids.
 - Les températures (°F → °C) : elles sont dans les instructions, que le bot ne lit pas.
 
-## Pour calibrer
+## Ce que contient la production (2026-10-29)
 
-Si tu veux savoir quelles unités tes recettes utilisent vraiment, cette requête sur la base de
-production (lecture seule) les compte :
+Requête lancée par l'utilisateur : `SELECT unit, count(*) FROM ingredients GROUP BY unit`. Sur
+194 lignes :
 
-```sql
-SELECT unit, count(*) FROM ingredients GROUP BY unit ORDER BY count(*) DESC;
-```
+| Unités | Lignes |
+|---|---|
+| g (101), G (5), gram (5), gr (3), kg (1) | 115 |
+| sans unité (œufs, sel…) | 32 |
+| cl (8), litre (4), dl (3), ml (3), l (1), litres (1) | 20 |
+| tbsp (6), tsp (3), cuillère(s) à café (2), cuillères à soupe (1) | 12 |
+| cup | 3 |
+| zeste(s) (4), pincée / PINCÉES (3), gousse (2), brins (1), SACHET (1) | 11 |
+
+Conclusions :
+- les recettes sont déjà surtout en unités françaises : « Comme dans la recette » reste le bon
+  défaut, et la vue la plus utile sera « Tout en poids (g) » (20 lignes en volume, 12 en
+  cuillères) ;
+- 26 lignes datent d'avant la normalisation des unités (G, gram, gr, litre, litres, dl, cl,
+  cuillères en toutes lettres, majuscules). La conversion les lit dans tous les cas, mais la vue
+  « comme dans la recette » afficherait « 5 G ». Proposé : **une remise en ordre unique** des
+  unités enregistrées avec `units::normalize_measurement` (le code déjà utilisé pour les photos
+  et les lignes tapées), en passe au démarrage comme la numérotation des doublons : G, gram, gr
+  → g ; litre(s) → l ; cl, dl → ml avec la quantité convertie (8 cl → 80 ml, toujours affichés
+  en cl à un utilisateur français) ; cuillères → tbsp / tsp ; PINCÉES, SACHET en minuscules.
+  C'est la tâche 5 de [measurement-standardization-tasks.md](measurement-standardization-tasks.md).
 
 ## Questions
 
-1. **A** (unités affichées en français, ml en cl) : oui ?
-2. **B** : conversion **enregistrée** dans la recette, après un aperçu avec ✅ / ❌ (je le
-   recommande : c'est simple, et la recette reste cohérente partout, y compris dans la
-   recherche) ? Ou seulement un **affichage** converti, la recette gardant ses tasses ?
-3. Le bouton sur la **fiche** et dans la **relecture** d'une photo, ou seulement sur la fiche ?
-4. Les **cuillères** restent des cuillères (recommandé), ou faut-il aussi les convertir en g
-   pour les solides ?
-5. Le **tableau des densités** te convient-il (ingrédients et valeurs) ?
+1. Les **quatre vues** et leurs noms te vont ? Par défaut **« Comme dans la recette »** pour
+   tout le monde (je le recommande), ou « Unités françaises » d'office pour les utilisateurs
+   français ?
+2. Les **défauts** du tableau te vont ? En particulier : la vue poids garde les cuillères sous
+   5 g ; la vue française garde les cuillères ; la vue américaine met en cups les solides du
+   tableau (farine, sucre…) et le reste en oz / lb.
+3. La vue s'applique aux **fiches** ; la relecture et la modification montrent les valeurs
+   enregistrées. D'accord ?
+4. Après un choix dans `/unites`, la **fiche** qu'on regardait revient dans la nouvelle vue (ou
+   la liste s'il n'y en avait pas). D'accord ?
+5. Le **tableau des densités** te convient ?
+6. La **remise en ordre** des 26 unités enregistrées avant la normalisation : d'accord ?
