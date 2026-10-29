@@ -113,6 +113,7 @@ edit-invalid-format = Format d'ingrédient invalide. Veuillez entrer quelque cho
 edit-try-again = Veuillez réessayer avec un format d'ingrédient valide.
 edit-too-long = Le texte d'ingrédient est trop long (maximum 200 caractères). Veuillez entrer une description plus courte.
 edit-no-ingredient-name = Veuillez spécifier un nom d'ingrédient (par ex. "2 tasses de farine" et non pas seulement "2 tasses").
+edit-one-line = Une ligne à la fois : tapez un seul ingrédient.
 edit-ingredient-name-too-long = Le nom d'ingrédient est trop long (maximum 100 caractères). Veuillez utiliser un nom plus court.
 edit-invalid-quantity = Quantité invalide. Veuillez utiliser un nombre positif (par ex. "2,5 tasses de farine").
 edit-invalid-quantity-answer = Quantité non reconnue. Tapez un nombre, avec ou sans unité (par ex. 250, 250 g, 1/2), ou - s'il n'y en a pas.

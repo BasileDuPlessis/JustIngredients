@@ -188,8 +188,7 @@ const SCALED_ALIASES: &[(&[&str], CanonicalUnit, f64)] = &[
 ];
 
 /// Units that count things ("2 gousses d'ail", "1 pincée de sel"): no canonical spelling, they
-/// are kept as typed. In a typed line they are a unit only before "de", "d'" or "of", so
-/// "1 bouquet garni" stays a name.
+/// are kept as typed.
 const COUNT_UNITS: &[&str] = &[
     "tasse",
     "tasses",
@@ -207,20 +206,36 @@ const COUNT_UNITS: &[&str] = &[
     "paquets",
     "boîte",
     "boîtes",
+    "conserve",
+    "conserves",
+    "pot",
+    "pots",
+    "bouteille",
+    "bouteilles",
     "tranche",
     "tranches",
     "morceau",
     "morceaux",
+    "pièce",
+    "pièces",
     "gousse",
     "gousses",
     "brin",
     "brins",
+    "botte",
+    "bottes",
+    "bâton",
+    "bâtons",
     "feuille",
     "feuilles",
-    "bouquet",
-    "bouquets",
+    "goutte",
+    "gouttes",
     "zeste",
     "zestes",
+    "bouquet",
+    "bouquets",
+    "filet",
+    "filets",
     "slice",
     "slices",
     "can",
@@ -231,6 +246,7 @@ const COUNT_UNITS: &[&str] = &[
     "sticks",
     "packet",
     "packets",
+    "pkg",
     "bag",
     "bags",
     "dash",
@@ -249,7 +265,17 @@ const COUNT_UNITS: &[&str] = &[
     "cloves",
     "sprig",
     "sprigs",
+    "sheet",
+    "sheets",
+    "portion",
+    "portions",
+    "serving",
+    "servings",
 ];
+
+/// Count units that also start dish names ("1 bouquet garni", "1 filet mignon"): a unit only
+/// before "de", "d'" or "of".
+const NEEDS_ARTICLE: &[&str] = &["bouquet", "bouquets", "filet", "filets"];
 
 /// Most words in a unit spelling ("cuillères à soupe", "c. à c.").
 const MAX_UNIT_WORDS: usize = 3;
@@ -259,8 +285,8 @@ const MAX_UNIT_WORDS: usize = 3;
 pub struct LeadingUnit {
     /// How many words the unit spans.
     pub words: usize,
-    /// A unit of [`COUNT_UNITS`], which needs "de", "d'" or "of" after it.
-    pub counts: bool,
+    /// A unit of [`NEEDS_ARTICLE`]: only a unit before "de", "d'" or "of".
+    pub needs_article: bool,
 }
 
 fn is_measure(spelling: &str) -> bool {
@@ -287,17 +313,11 @@ pub fn leading_unit(words: &[&str]) -> Option<LeadingUnit> {
         .rev()
         .find_map(|count| {
             let spelling = words[..count].join(" ");
-            if is_measure(&spelling) {
-                Some(LeadingUnit {
-                    words: count,
-                    counts: false,
-                })
-            } else {
-                is_count_unit(&spelling).then_some(LeadingUnit {
-                    words: count,
-                    counts: true,
-                })
-            }
+            let key = match_key(&spelling);
+            (is_measure(&spelling) || is_count_unit(&spelling)).then(|| LeadingUnit {
+                words: count,
+                needs_article: NEEDS_ARTICLE.iter().any(|unit| match_key(unit) == key),
+            })
         })
 }
 
@@ -401,6 +421,7 @@ mod tests {
             ("GR", "g"),
             ("g.", "g"),
             ("grammes", "g"),
+            ("KILOGRAMME", "kg"),
             (" Kg ", "kg"),
             ("lbs", "lb"),
             ("Tablespoons", "tbsp"),
@@ -515,18 +536,20 @@ mod tests {
         let measure = |words| {
             Some(LeadingUnit {
                 words,
-                counts: false,
+                needs_article: false,
             })
         };
         assert_eq!(unit("c. à soupe d'huile"), measure(3));
         assert_eq!(unit("cuillères à café de sel"), measure(3));
         assert_eq!(unit("g farine"), measure(1));
         assert_eq!(unit("cl de crème"), measure(1), "converted units too");
+        assert_eq!(unit("gousses d'ail"), measure(1), "count units too");
+        assert_eq!(unit("can tomatoes"), measure(1));
         assert_eq!(
-            unit("gousses d'ail"),
+            unit("bouquet garni"),
             Some(LeadingUnit {
                 words: 1,
-                counts: true
+                needs_article: true
             })
         );
         assert_eq!(unit("oeufs"), None);

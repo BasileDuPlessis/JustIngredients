@@ -1,5 +1,10 @@
 # Measurement Unit Standardization Tasks
 
+> 2026-10-29: `config/measurement_units.json` and `tests/text_processing_tests.rs`, named in the
+> tasks below, were removed with the OCR code (IMP-048). The spellings live in `src/units.rs`
+> (with count units such as "gousses"), its unit tests and `validation.rs` (typed lines) replace
+> them.
+
 ## Goal
 Standardize unit variants so inputs like `g`, `gr`, and `GR` are stored and processed as one canonical unit.
 
@@ -59,7 +64,10 @@ Standardize unit variants so inputs like `g`, `gr`, and `GR` are stored and proc
   3. Run: `cargo test text_processing_tests -- --nocapture`
 
 ## Task 3: Normalize Units Before Persistence (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29): photos through `extraction::mapping`, typed lines through
+  `validation::parse_ingredient_from_text` and quantity answers through
+  `validation::parse_quantity_with_unit` all call `normalize_measurement`. Units saved before
+  stay as they are until edited (Task 5).
 - Description:
   - Ensure canonical units are used in DB write paths (new recipe save and ingredient editing callbacks).
   - Confirm same normalization applies to both automated OCR flow and manual edits.
@@ -69,7 +77,8 @@ Standardize unit variants so inputs like `g`, `gr`, and `GR` are stored and proc
   3. Run: `cargo test integration_tests -- --nocapture`
 
 ## Task 4: Add Regression and Edge-Case Tests (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29): `units.rs` tests (spellings including `KILOGRAMME`, no spelling for two
+  units, unknown units kept, count units) and the typed-line tables of `validation.rs`.
 - Description:
   - Add tests for alias collisions, punctuation, and case-insensitivity.
   - Add tests for unknown units to validate chosen fallback policy.

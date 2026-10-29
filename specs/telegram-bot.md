@@ -134,15 +134,20 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
 - `qty_<i>`, `name_<i>`, `edit_<i>`: the message becomes a focused prompt with only a Cancel
   button (`cancel_ingredient_editing`); state `EditingIngredient` with `field` `Quantity`, `Name`
   or `Line` (`ingredient_editing::apply_edit`). A quantity answer is a number in range or `-`
-  for none (`parse_quantity_answer`), optionally followed by a known unit that then replaces the
-  unit, in its canonical spelling ("250 g", "250g", "250 grammes" → g); anything else gets
+  for none (`parse_quantity_answer`, "½" accepted), optionally followed by a unit that then
+  replaces the unit, stored like a typed line's (`parse_quantity_with_unit`: "250 g", "250g",
+  "250 grammes" → g, "20 cl" → 200 ml, "2 gousses"); anything else gets
   `edit-invalid-quantity-answer`. It clears the ⚠️ flag; a name answer replaces only the name
-  (1–100 characters); a line answer is parsed by `validation::parse_ingredient_from_text` and is
-  no longer flagged: a quantity first ("2", "2,5", "1/2", "1 1/2", "½") or last after the name
-  ("Farine : 200 g"), then maybe a unit of `units.rs` (canonical spelling, cl/dl converted to ml,
-  count units like "gousses" or "pincée" only before "de"/"d'"/"of"), "de"/"d'"/"of" dropped
-  after a unit, a list bullet ignored. Refused with the reason: no name after a quantity, a name
-  over 100 characters, a quantity of 0, negative or over 10,000, a line over 200 characters. A cancel word (see below) or the button restore the review.
+  (1–100 characters); a line answer is parsed by `validation::parse_ingredient_from_text`: a
+  list bullet or number ignored ("- 2 œufs", "1) 2 œufs"), a quantity first ("2", "2,5", "1/2",
+  "1 1/2", "1-1/2", "½") or last after the name ("Farine : 200 g"; "Farine type 00" stays a
+  name), then maybe a unit of `units.rs` (canonical spelling, cl/dl converted to ml, count units
+  like "gousses" or "pincée"; "bouquet" and "filet" only before "de"/"d'"/"of", so "1 bouquet
+  garni" stays a name), "de"/"d'"/"of" dropped after a unit. The line is no longer flagged,
+  except a range ("2-3", "2 à 3", "2 ou 3"): its lower bound, flagged ⚠️ like the extraction
+  does. Refused with the reason: several lines (`edit-one-line`), no name after a quantity, a
+  name over 100 characters, a quantity of 0, negative, over 10,000 or unreadable ("1/0"), a line
+  over 200 characters. A cancel word (see below) or the button restore the review.
 - `add_ingredient`: the same focused prompt (`add-ingredient-prompt`), state `EditingIngredient`
   with `editing_index` = the list's length; the parsed line becomes the last ingredient
   (`ingredient_editing::put_ingredient`).

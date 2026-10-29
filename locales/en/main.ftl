@@ -120,6 +120,7 @@ edit-invalid-format = Invalid ingredient format. Please enter something like "2 
 edit-try-again = Please try again with a valid ingredient format.
 edit-too-long = Ingredient text is too long (maximum 200 characters). Please enter a shorter description.
 edit-no-ingredient-name = Please specify an ingredient name (e.g., "2 cups flour" not just "2 cups").
+edit-one-line = One line at a time: type a single ingredient.
 edit-ingredient-name-too-long = Ingredient name is too long (maximum 100 characters). Please use a shorter name.
 edit-invalid-quantity = Invalid quantity. Please use a positive number (e.g., "2.5 cups flour").
 edit-invalid-quantity-answer = Quantity not recognised. Type a number, with or without a unit (e.g. 250, 250 g, 1/2), or - if there is none.

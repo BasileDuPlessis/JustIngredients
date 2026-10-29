@@ -39,7 +39,7 @@ mod tests {
         // Record a telegram message
         observability::record_telegram_message("text");
 
-        // Record OCR metrics
+        // Record extraction metrics
         observability::record_llm_request(
             "gemini-test",
             "success",
@@ -90,14 +90,9 @@ mod tests {
         observability::record_telegram_message("text");
         observability::record_telegram_message("photo");
 
-        // Test OCR metrics
+        // Test extraction metrics
         observability::record_llm_request("gemini-test", "success", Duration::from_millis(500), 0);
-        observability::record_llm_request(
-            "gemini-test",
-            if false { "success" } else { "timeout" },
-            Duration::from_secs(2),
-            0,
-        );
+        observability::record_llm_request("gemini-test", "timeout", Duration::from_secs(2), 0);
         observability::record_llm_request("gemini-test", "success", Duration::from_millis(300), 0);
 
         // Test database metrics

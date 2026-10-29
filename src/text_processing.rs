@@ -5,11 +5,11 @@
 /// An ingredient line: quantity, unit and name.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub struct MeasurementMatch {
-    /// The extracted quantity (e.g., "2", "1/2", "500")
+    /// The quantity as shown (e.g., "2", "1/2", "500"); empty for none
     pub quantity: String,
-    /// The measurement unit (e.g., "cups", "g", "tablespoons")
+    /// The unit, canonical when known (e.g., "g", "cup", "tbsp", "gousses")
     pub measurement: Option<String>,
-    /// The extracted ingredient name (e.g., "flour", "de tomates", "all-purpose flour")
+    /// The ingredient name (e.g., "farine", "huile d'olive", "all-purpose flour")
     pub ingredient_name: String,
     /// The line number where the measurement was found
     pub line_number: usize,

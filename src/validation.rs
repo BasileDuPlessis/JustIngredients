@@ -5,7 +5,7 @@
 //!
 //! - Recipe names
 //! - Ingredient input
-//! - Measurement matches
+//! - Typed ingredient lines
 //! - Quantity ranges
 //! - Basic input constraints
 
@@ -14,11 +14,18 @@ use crate::text_processing::MeasurementMatch;
 use lazy_static::lazy_static;
 use regex::Regex;
 
+/// A quantity: "1 1/2", "1/2", "2,5", "250". ASCII digits only: "２" is no quantity.
+const QUANTITY: &str = r"[0-9]+ [0-9]+/[0-9]+|[0-9]+/[0-9]+|[0-9]+(?:[.,][0-9]+)?";
+
 lazy_static! {
-    /// A quantity starting a typed line: "1 1/2", "1/2", "2,5", "250" (also before a unit
-    /// without a space: "250g").
-    static ref LEADING_QUANTITY: Regex = Regex::new(r"^(\d+ \d+/\d+|\d+/\d+|\d+(?:[.,]\d+)?)")
-        .expect("Invalid quantity regex pattern");
+    /// A quantity starting a typed line, also before a unit without a space ("250g").
+    static ref LEADING_QUANTITY: Regex =
+        Regex::new(&format!("^(?:{QUANTITY})")).expect("Invalid quantity regex pattern");
+    /// A range starting a typed line: "2-3", "100 – 150", "2 à 3", "2 ou 3", "2 to 3".
+    static ref LEADING_RANGE: Regex = Regex::new(&format!(
+        "^({QUANTITY})(?: ?[-–—] ?| (?:à|ou|to|or) )({QUANTITY})"
+    ))
+    .expect("Invalid range regex pattern");
 }
 
 /// Longest ingredient name accepted, in characters: typed lines and name edits.
@@ -154,7 +161,7 @@ const NO_QUANTITY_ANSWERS: [&str; 6] = ["-", "none", "no", "aucune", "aucun", "s
 /// `aucune`, …), `Some(quantity)` for a number in (0, [`MAX_QUANTITY`]] formatted like the
 /// database column, `None` for anything else.
 pub fn parse_quantity_answer(input: &str) -> Option<String> {
-    let answer = input.trim().to_lowercase();
+    let answer = spell_out_fractions(input.trim()).to_lowercase();
     if NO_QUANTITY_ANSWERS.contains(&answer.as_str()) {
         return Some(String::new());
     }
@@ -212,35 +219,48 @@ fn parse_simple_quantity(quantity: &str) -> Option<f64> {
 /// Reads an ingredient line typed by the user (an added ingredient, a whole-line edit):
 /// "250 g de farine", "1 ½ cup sugar", "2 gousses d'ail", "Farine : 200 g", "sel".
 ///
-/// - a quantity first ("2", "2,5", "1/2", "1 1/2", "½"), or last after the name;
+/// - a list bullet or number first is ignored ("- 2 œufs", "1) 2 œufs");
+/// - a quantity first ("2", "2,5", "1/2", "1 1/2", "1-1/2", "½"), or last after the name; a
+///   range ("2-3", "2 à 3") keeps its lower bound and is flagged ⚠️, like the extraction does;
 /// - then maybe a unit: the canonical ones and their spellings ([`crate::units`]), `cl` and
-///   `dl` converted to ml, count units ("gousses", "pincée") only before "de"/"d'"/"of";
+///   `dl` converted to ml, count units ("gousses", "pincée"; "bouquet" and "filet" only before
+///   "de"/"d'"/"of", so "1 bouquet garni" stays a name);
 /// - "de", "d'" or "of" after a unit is dropped from the name;
 /// - units are stored like the extraction stores them ("cups" → "cup", "20 cl" → 200 ml).
 ///
 /// Errors carry the locale key: `edit-empty`, `edit-too-long` (over 200 characters),
-/// `edit-no-ingredient-name` (a quantity without a name), `edit-ingredient-name-too-long`
-/// (over [`MAX_INGREDIENT_NAME_CHARS`]) and `edit-invalid-quantity` (zero, negative or over
-/// [`MAX_QUANTITY`]).
+/// `edit-one-line` (several lines), `edit-no-ingredient-name` (a quantity without a name),
+/// `edit-ingredient-name-too-long` (over [`MAX_INGREDIENT_NAME_CHARS`]) and
+/// `edit-invalid-quantity` (zero, negative, over [`MAX_QUANTITY`] or unreadable: "1/0").
 pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, AppError> {
     let trimmed = input.trim();
     validate_basic_input(trimmed)?;
-    let line = without_bullet(&spell_out_fractions(trimmed));
-    if line.starts_with(['-', '−'])
-        && line[1..]
-            .trim_start()
-            .starts_with(|c: char| c.is_ascii_digit())
+    // A pasted list would become one name: one ingredient per message
+    if trimmed.contains('\n') {
+        return Err(AppError::Validation("edit-one-line".to_string()));
+    }
+    let line = spell_out_fractions(trimmed);
+    let line = without_bullet(&line);
+    let invalid_quantity = || AppError::Validation("edit-invalid-quantity".to_string());
+    if line
+        .strip_prefix(['-', '−'])
+        .is_some_and(|rest| rest.trim_start().starts_with(|c: char| c.is_ascii_digit()))
     {
-        return Err(AppError::Validation("edit-invalid-quantity".to_string()));
+        return Err(invalid_quantity());
     }
 
-    let (quantity, unit, name) = match split_leading_quantity(&line) {
-        Some((quantity, rest)) => {
-            let (unit, name) = split_leading_unit(rest);
-            (quantity, unit, name)
+    let (quantity, range, unit, name) = match split_leading_quantity(line) {
+        Some(leading) => {
+            let (unit, name) = split_leading_unit(leading.rest);
+            (leading.quantity, leading.range, unit, name)
         }
-        None => split_trailing_quantity(&line).unwrap_or((String::new(), None, line.clone())),
+        None => split_trailing_quantity(line)
+            .unwrap_or_else(|| (String::new(), false, None, line.to_string())),
     };
+    // "1/0": a quantity that cannot be read is refused, not stored as none
+    if !quantity.is_empty() && parse_quantity(&quantity).is_none() {
+        return Err(invalid_quantity());
+    }
     let (quantity, unit) = normalize_typed_measurement(quantity, unit);
 
     if name.is_empty() {
@@ -258,13 +278,14 @@ pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, AppEr
         line_number: 0,
         start_pos: 0,
         end_pos: trimmed.len(),
-        requires_quantity_confirmation: false,
+        // A range keeps its lower bound, to check, like the extraction does
+        requires_quantity_confirmation: range,
     };
     validate_quantity_range(&ingredient)?;
     Ok(ingredient)
 }
 
-/// "1½ cup" → "1 1/2 cup", inner spaces collapsed.
+/// "1½ cup" → "1 1/2 cup", "1⁄2" → "1/2", inner spaces collapsed.
 fn spell_out_fractions(text: &str) -> String {
     let mut spelled = String::with_capacity(text.len());
     for c in text.chars() {
@@ -277,30 +298,72 @@ fn spell_out_fractions(text: &str) -> String {
                 spelled.push_str(fraction);
                 spelled.push(' ');
             }
+            // Fraction slash
+            None if c == '⁄' => spelled.push('/'),
             None => spelled.push(c),
         }
     }
     spelled.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// "- 2 œufs" → "2 œufs": a list bullet before the line goes.
-fn without_bullet(line: &str) -> String {
+/// "- 2 œufs", "•200 g farine", "1) 2 œufs" → the line without its list bullet or number. A
+/// hyphen or minus sign is a bullet only before a space ("-2 g" is a negative quantity).
+fn without_bullet(line: &str) -> &str {
+    if let Some(rest) = line.strip_prefix(['–', '—', '•', '·', '▪', '*']) {
+        return rest.trim_start();
+    }
     match line.split_once(' ') {
-        Some((bullet, rest)) if ["-", "–", "•", "*", "·"].contains(&bullet) => {
-            rest.to_string()
+        Some(("-" | "−", rest)) => rest,
+        Some((number, rest))
+            if number.len() > 1
+                && number.ends_with(['.', ')'])
+                && number[..number.len() - 1]
+                    .bytes()
+                    .all(|b| b.is_ascii_digit()) =>
+        {
+            rest
         }
-        _ => line.to_string(),
+        _ => line,
     }
 }
 
-/// "250 g farine" → ("250", "g farine"), "2,5 kg" → ("2.5", "kg"); `None` without a number
-/// first.
-fn split_leading_quantity(line: &str) -> Option<(String, &str)> {
+/// The quantity a typed line starts with.
+struct LeadingQuantity<'a> {
+    /// As typed, with a dot for a decimal comma; the lower bound of a range.
+    quantity: String,
+    /// "2-3", "2 à 3": a range.
+    range: bool,
+    /// What follows the quantity.
+    rest: &'a str,
+}
+
+/// "250 g farine" → "250" and "g farine", "2,5 kg" → "2.5", "2 à 3 tomates" → "2" (a range);
+/// `None` without a number first.
+fn split_leading_quantity(line: &str) -> Option<LeadingQuantity<'_>> {
+    if let Some(found) = LEADING_RANGE.captures(line) {
+        let (whole, low, high) = (found.get(0)?, found.get(1)?, found.get(2)?);
+        let rest = line[whole.end()..].trim_start();
+        // "1-1/2 cups": the American way to write 1 1/2, not a range
+        let mixed_number = line[low.end()..high.start()].trim() == "-"
+            && low.as_str().bytes().all(|b| b.is_ascii_digit())
+            && !high.as_str().contains(' ')
+            && parse_quantity(high.as_str()).is_some_and(|fraction| fraction < 1.0);
+        return Some(LeadingQuantity {
+            quantity: if mixed_number {
+                format!("{} {}", low.as_str(), high.as_str())
+            } else {
+                low.as_str().replace(',', ".")
+            },
+            range: !mixed_number,
+            rest,
+        });
+    }
     let found = LEADING_QUANTITY.find(line)?;
-    Some((
-        found.as_str().replace(',', "."),
-        line[found.end()..].trim_start(),
-    ))
+    Some(LeadingQuantity {
+        quantity: found.as_str().replace(',', "."),
+        range: false,
+        rest: line[found.end()..].trim_start(),
+    })
 }
 
 /// "de farine" → "farine": the article after a unit; `None` without one.
@@ -312,14 +375,15 @@ fn without_article(name: &str) -> Option<&str> {
     })
 }
 
-/// "g de farine" → (Some("g"), "farine"); "oeufs" → (None, "oeufs").
+/// "g de farine" → (Some("g"), "farine"); "oeufs" → (None, "oeufs"); "bouquet garni" →
+/// (None, "bouquet garni").
 fn split_leading_unit(rest: &str) -> (Option<String>, String) {
     let words: Vec<&str> = rest.split(' ').filter(|word| !word.is_empty()).collect();
     if let Some(unit) = crate::units::leading_unit(&words) {
         let after = words[unit.words..].join(" ");
         match without_article(&after) {
             Some(name) => return (Some(words[..unit.words].join(" ")), name.to_string()),
-            None if !unit.counts => return (Some(words[..unit.words].join(" ")), after),
+            None if !unit.needs_article => return (Some(words[..unit.words].join(" ")), after),
             None => {}
         }
     }
@@ -327,19 +391,23 @@ fn split_leading_unit(rest: &str) -> (Option<String>, String) {
 }
 
 /// "Farine : 200 g" → ("200", Some("g"), "Farine"): a quantity, maybe with a unit, ending the
-/// line after a name. "Épices 4 saisons" has none ("saisons" is no unit).
-fn split_trailing_quantity(line: &str) -> Option<(String, Option<String>, String)> {
+/// line after a name. "Épices 4 saisons" ("saisons" is no unit) and "Farine type 00" (no
+/// quantity of 0) are names.
+fn split_trailing_quantity(line: &str) -> Option<(String, bool, Option<String>, String)> {
     let words: Vec<&str> = line.split(' ').collect();
     (1..words.len()).find_map(|start| {
         let tail = words[start..].join(" ");
-        let (quantity, unit) = split_leading_quantity(&tail)?;
-        if !unit.is_empty() && !crate::units::is_unit(unit) {
+        let trailing = split_leading_quantity(&tail)?;
+        if !trailing.rest.is_empty() && !crate::units::is_unit(trailing.rest) {
             return None;
         }
-        let unit = (!unit.is_empty()).then(|| unit.to_string());
+        if !parse_quantity(&trailing.quantity).is_some_and(|q| q > 0.0 && q <= MAX_QUANTITY) {
+            return None;
+        }
+        let unit = (!trailing.rest.is_empty()).then(|| trailing.rest.to_string());
         let name = words[..start].join(" ");
         let name = name.trim_end_matches([':', ',', ' ']);
-        (!name.is_empty()).then(|| (quantity, unit, name.to_string()))
+        (!name.is_empty()).then(|| (trailing.quantity, trailing.range, unit, name.to_string()))
     })
 }
 
@@ -358,6 +426,21 @@ fn normalize_typed_measurement(quantity: String, unit: Option<String>) -> (Strin
         _ => quantity,
     };
     (quantity, normalized.unit)
+}
+
+/// A quantity answer with its unit ("250 g", "20 cl", "2 gousses", "½ cup"): the quantity
+/// formatted like the database column and the unit stored like a typed line's; `None` for
+/// anything else (no unit, an unknown one, a range, out of range).
+pub fn parse_quantity_with_unit(input: &str) -> Option<(String, String)> {
+    let line = spell_out_fractions(input.trim());
+    let leading = split_leading_quantity(&line)?;
+    if leading.range || !crate::units::is_unit(leading.rest) {
+        return None;
+    }
+    let (quantity, unit) =
+        normalize_typed_measurement(leading.quantity, Some(leading.rest.to_string()));
+    let quantity = parse_quantity_answer(&quantity).filter(|quantity| !quantity.is_empty())?;
+    Some((quantity, unit?))
 }
 
 #[cfg(test)]
@@ -590,7 +673,7 @@ mod tests {
         ("1 verre de lait", "1", Some("verre"), "lait"),
         ("2 slices of bread", "2", Some("slices"), "bread"),
         ("1 bouquet garni", "1", None, "bouquet garni"),
-        ("2 cloves garlic", "2", None, "cloves garlic"),
+        ("2 cloves garlic", "2", Some("cloves"), "garlic"),
         ("Farine 200 g", "200", Some("g"), "Farine"),
         ("farine : 200 g", "200", Some("g"), "farine"),
         ("Farine T55 500 g", "500", Some("g"), "Farine T55"),
@@ -603,7 +686,41 @@ mod tests {
         ("Oeufs 3", "3", None, "Oeufs"),
         ("Épices 4 saisons", "", None, "Épices 4 saisons"),
         ("- 2 œufs", "2", None, "œufs"),
+        ("− 2 œufs", "2", None, "œufs"),
         ("• 200 g farine", "200", Some("g"), "farine"),
+        ("•200 g farine", "200", Some("g"), "farine"),
+        ("— 2 œufs", "2", None, "œufs"),
+        ("1) 2 œufs", "2", None, "œufs"),
+        ("1. 200 g farine", "200", Some("g"), "farine"),
+        ("1⁄2 citron", "1/2", None, "citron"),
+        ("1-1/2 cups flour", "1 1/2", Some("cup"), "flour"),
+        ("1 can tomatoes", "1", Some("can"), "tomatoes"),
+        ("2 gousses ail", "2", Some("gousses"), "ail"),
+        ("1 pincée sel", "1", Some("pincée"), "sel"),
+        ("1 pkg cream cheese", "1", Some("pkg"), "cream cheese"),
+        ("1 bâton de cannelle", "1", Some("bâton"), "cannelle"),
+        ("2 filets de saumon", "2", Some("filets"), "saumon"),
+        ("1 filet mignon", "1", None, "filet mignon"),
+        ("Farine 00", "", None, "Farine 00"),
+        ("farine type 00", "", None, "farine type 00"),
+        ("Fromage blanc 0", "", None, "Fromage blanc 0"),
+        ("500 g farine 00", "500", Some("g"), "farine 00"),
+        ("Sel : 1 pincée", "1", Some("pincée"), "Sel"),
+        ("２ œufs", "", None, "２ œufs"),
+    ];
+
+    /// (typed range, lower bound, unit, name): flagged ⚠️ to check.
+    const TYPED_RANGES: &[(&str, &str, Option<&str>, &str)] = &[
+        ("2-3 gousses d'ail", "2", Some("gousses"), "ail"),
+        ("2 à 3 tomates", "2", None, "tomates"),
+        ("2 à 3 c. à soupe de sucre", "2", Some("tbsp"), "sucre"),
+        ("100 à 150 g de farine", "100", Some("g"), "farine"),
+        ("100-150 g de sucre", "100", Some("g"), "sucre"),
+        ("100 – 150 g de sucre", "100", Some("g"), "sucre"),
+        ("2 ou 3 oeufs", "2", None, "oeufs"),
+        ("2 to 3 cups flour", "2", Some("cup"), "flour"),
+        ("1,5-2 kg pommes", "1.5", Some("kg"), "pommes"),
+        ("Farine : 100-150 g", "100", Some("g"), "Farine"),
     ];
 
     #[test]
@@ -622,6 +739,20 @@ mod tests {
             );
             assert!(!parsed.requires_quantity_confirmation, "{line:?}");
         }
+        for (line, quantity, unit, name) in TYPED_RANGES {
+            let parsed = parse_ingredient_from_text(line)
+                .unwrap_or_else(|e| panic!("{line:?} was refused: {e:?}"));
+            assert_eq!(
+                (
+                    parsed.quantity.as_str(),
+                    parsed.measurement.as_deref(),
+                    parsed.ingredient_name.as_str()
+                ),
+                (*quantity, *unit, *name),
+                "{line:?}"
+            );
+            assert!(parsed.requires_quantity_confirmation, "{line:?} is a range");
+        }
     }
 
     #[test]
@@ -638,6 +769,19 @@ mod tests {
         assert_eq!(refused("2 cups"), "edit-no-ingredient-name");
         assert_eq!(refused("-2 g sucre"), "edit-invalid-quantity");
         assert_eq!(refused("-1 cups flour"), "edit-invalid-quantity");
+        for line in ["−2 g sucre", "- −2 g sucre", "−", "−sel", "• −"] {
+            // U+2212 is 3 bytes: no slicing inside it
+            let _ = parse_ingredient_from_text(line);
+        }
+        assert_eq!(refused("−2 g sucre"), "edit-invalid-quantity");
+        assert_eq!(refused("1/0 oignon"), "edit-invalid-quantity");
+        assert_eq!(refused("1 2/0 oignon"), "edit-invalid-quantity");
+        assert_eq!(
+            refused("0-2 g sel"),
+            "edit-invalid-quantity",
+            "lower bound 0"
+        );
+        assert_eq!(refused("2 œufs\n100 g sucre"), "edit-one-line");
         assert_eq!(refused("0 g sucre"), "edit-invalid-quantity");
         assert_eq!(refused("20000 g sucre"), "edit-invalid-quantity");
         assert_eq!(

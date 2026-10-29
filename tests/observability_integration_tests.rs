@@ -198,7 +198,7 @@ mod tests {
         observability::record_telegram_message("photo");
         sleep(Duration::from_millis(10)).await;
 
-        // OCR processing
+        // Photo reading
         let span = observability::telegram_span("photo_processing", None);
         let _enter = span.enter();
 
@@ -224,7 +224,7 @@ mod tests {
     async fn test_observability_error_scenarios() {
         // Test observability behavior during error conditions
 
-        // Simulate OCR failures
+        // Simulate extraction failures
         for i in 0..10 {
             let success = i < 7; // 70% success rate
             observability::record_llm_request(

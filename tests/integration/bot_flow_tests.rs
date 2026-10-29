@@ -7,7 +7,8 @@ use just_ingredients::validation::parse_ingredient_from_text;
 use just_ingredients::MeasurementMatch;
 
 /// The ingredients of a recipe text: its lines read like typed lines, keeping those with a
-/// quantity (titles and headings are skipped), as a photo would give them.
+/// quantity (titles and headings are skipped). Photos go through `extraction::mapping`; these
+/// tests only need ingredient lines.
 fn ingredient_lines(text: &str) -> Vec<MeasurementMatch> {
     text.lines()
         .filter_map(|line| parse_ingredient_from_text(line).ok())
@@ -175,7 +176,7 @@ fn test_photo_caption_workflow_integration() {
     2 cups chocolate chips
     "#;
 
-    // Step 2: Extract measurements (simulating OCR processing)
+    // Step 2: Read the ingredient lines
     let ingredients = ingredient_lines(recipe_text);
 
     assert!(!ingredients.is_empty());
@@ -287,7 +288,7 @@ fn test_caption_fallback_scenarios() {
 /// Test photo caption with measurement extraction integration
 #[test]
 fn test_caption_with_measurement_extraction() {
-    // Test the complete flow: caption + OCR text + measurement extraction
+    // Test the complete flow: caption + recipe text + ingredient lines
 
     let test_cases = vec![
         (
@@ -332,7 +333,7 @@ fn test_caption_with_measurement_extraction() {
         let ingredients = ingredient_lines(recipe_text);
         assert!(
             !ingredients.is_empty(),
-            "Should find ingredients in OCR text"
+            "Should find ingredients in the recipe text"
         );
 
         // Process caption
@@ -970,7 +971,7 @@ fn test_message_editing_edge_cases() {
         language_code: Some("en".to_string()),
         message_id: Some(1001),
         original_message_id: None, // No original message ID
-        extracted_text: "Test OCR text".to_string(),
+        extracted_text: "Test recipe text".to_string(),
         field: Default::default(),
         recipe_name_from_caption: None,
     };
@@ -1039,7 +1040,7 @@ fn test_message_editing_edge_cases() {
         language_code: Some("en".to_string()),
         message_id: Some(3001),          // New editing message
         original_message_id: Some(3000), // Preserved from review state
-        extracted_text: "Test OCR text".to_string(),
+        extracted_text: "Test recipe text".to_string(),
         field: Default::default(),
         recipe_name_from_caption: None,
     };
