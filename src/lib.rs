@@ -6,6 +6,7 @@
 pub mod bot;
 pub mod cache;
 pub mod config;
+pub mod conversion;
 pub mod db;
 pub mod db_connection;
 pub mod deduplication;
@@ -21,6 +22,7 @@ pub mod search;
 pub mod secret;
 pub mod telegram_connection;
 pub mod text_processing;
+pub mod unit_view;
 pub mod units;
 pub mod validation;
 

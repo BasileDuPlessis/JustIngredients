@@ -19,7 +19,7 @@ Version 3 du 2026-10-29, validée par l'utilisateur (décisions ci-dessous) : c'
 4. Après un choix dans `/unites`, la fiche qu'on regardait revient dans la nouvelle vue (ou la
    liste).
 5. La table des densités couvre les ingrédients les plus courants (recherche du 2026-10-29,
-   124 entrées).
+   125 entrées).
 6. Les unités enregistrées avant la normalisation sont remises en ordre une fois.
 
 ## Le principe
@@ -95,17 +95,17 @@ revient en bas, dans la nouvelle vue, avec ses boutons ; sinon la liste revient.
 
 ## Une recette dans les quatre vues
 
-Une recette américaine enregistrée en tasses :
+Une recette américaine enregistrée en tasses (le résultat exact du code, testé) :
 
 ```
-Comme dans la recette    Tout en poids (g)     Unités françaises     Unités américaines
-• 1,5 tasse farine       • 180 g farine        • 180 g farine        • 1 ½ cups farine
-• 1,25 tasse lait        • 305 g lait          • 30 cl lait          • 1 ¼ cups lait
-• 3 c. à s. beurre       • 43 g beurre         • 3 c. à s. beurre    • 3 tbsp beurre
-• 1 c. à s. sucre        • 13 g sucre          • 1 c. à s. sucre     • 1 tbsp sucre
-• 2 c. à c. levure       • 8 g levure          • 2 c. à c. levure    • 2 tsp levure
-• 0,5 c. à c. sel        • 3 g sel             • ½ c. à c. sel       • ½ tsp sel
-• 1 œuf                  • 1 œuf               • 1 œuf               • 1 œuf
+Comme dans la recette       Tout en poids (g)        Unités françaises          Unités américaines
+• 1 ½ tasse farine          • 180 g farine           • 180 g farine             • 1 ½ cups farine
+• 1 ¼ tasse lait            • 305 g lait             • 30 cl lait               • 1 ¼ cups lait
+• 3 c. à s. beurre          • 43 g beurre            • 3 c. à s. beurre         • 3 tbsp beurre
+• 1 c. à s. sucre           • 13 g sucre             • 1 c. à s. sucre          • 1 tbsp sucre
+• 2 c. à c. levure chimique • 8 g levure chimique    • 2 c. à c. levure chimique • 2 tsp levure chimique
+• ½ c. à c. sel             • 3 g sel                • ½ c. à c. sel            • ½ tsp sel
+• 1 œuf                     • 1 œuf                  • 1 œuf                    • 1 œuf
 ```
 
 Une recette française enregistrée en grammes et en ml :
@@ -113,12 +113,16 @@ Une recette française enregistrée en grammes et en ml :
 ```
 Comme dans la recette    Tout en poids (g)     Unités françaises     Unités américaines
 • 250 g farine           • 250 g farine        • 250 g farine        • 2 cups farine
-• 50 cl lait             • 515 g lait          • 50 cl lait          • 2 cups lait
+• 500 ml lait            • 515 g lait          • 50 cl lait          • 2 cups lait
 • 50 g sucre             • 50 g sucre          • 50 g sucre          • ¼ cup sucre
 • 30 g beurre            • 30 g beurre         • 30 g beurre         • 2 tbsp beurre
 • 3 œufs                 • 3 œufs              • 3 œufs              • 3 œufs
 • 1 pincée sel           • 1 pincée sel        • 1 pincée sel        • 1 pincée sel
 ```
+
+Les cuillères, tasses et mesures américaines s'écrivent en fractions (« ½ c. à c. », « 1 ½ cups »),
+les unités métriques avec une virgule (« 1,5 kg »). « Levure » seule n'est pas convertie : chimique
+ou boulangère, la densité n'est pas la même.
 
 ## Les défauts de chaque vue
 
@@ -139,8 +143,8 @@ Arrondis « de cuisine » :
 - cups au quart ou au tiers le plus proche (2,08 → 2 cups), tbsp au demi, tsp au quart ;
   oz au demi, lb au quart.
 
-Nombres : virgule décimale dans les vues françaises (« 1,5 tasse »), fractions dans la vue
-américaine (« 1 ½ cups »). Les valeurs des unités et des ingrédients sont dans la table de
+Nombres : fractions pour les cuillères, les tasses et les mesures américaines (« ½ c. à c. »,
+« 1 ½ cups »), virgule décimale pour les unités métriques en français (« 1,5 kg »). Les valeurs des unités et des ingrédients sont dans la table de
 conversion ci-dessous.
 
 « Anglaises » s'entend ici au sens américain : les recettes en anglais lues par le bot viennent
@@ -210,7 +214,7 @@ courants des recettes françaises et des recettes américaines en tasses.
 | sucre glace | powdered sugar, icing sugar, confectioners sugar | solide | 478 | 113 g | 7,2 g | 2,4 g |
 | cassonade, sucre roux, vergeoise, sucre de canne | brown sugar, cane sugar | solide | 900 | 213 g | 14 g | 4,5 g |
 | miel | honey | solide | 1 420 | 336 g | 21 g | 7,1 g |
-| sirop d'érable | maple syrup | liquide | 1 319 | 312 g | 20 g | 6,6 g |
+| sirop d'érable, sirop de maïs | maple syrup, corn syrup | liquide | 1 319 | 312 g | 20 g | 6,6 g |
 | sirop d'agave | agave syrup | liquide | 1 420 | 336 g | 21 g | 7,1 g |
 | mélasse | molasses | liquide | 1 437 | 340 g | 22 g | 7,2 g |
 | confiture | jam, preserves | solide | 1 437 | 340 g | 22 g | 7,2 g |
@@ -252,7 +256,7 @@ courants des recettes françaises et des recettes américaines en tasses.
 | extrait de vanille | vanilla extract | liquide | 947 | 224 g | 14 g | 4,7 g |
 | **Sauces et condiments** | | | | | | |
 | concentré de tomate | tomato paste | solide | 1 107 | 262 g | 17 g | 5,5 g |
-| coulis de tomate, purée de tomate, passata | tomato puree, passata, tomato sauce | solide | 1 057 | 250 g | 16 g | 5,3 g |
+| coulis de tomate, purée de tomate, sauce tomate, passata | tomato puree, passata, tomato sauce | solide | 1 057 | 250 g | 16 g | 5,3 g |
 | moutarde | mustard | solide | 1 057 | 250 g | 16 g | 5,3 g |
 | mayonnaise | mayonnaise | solide | 940 | 222 g | 14 g | 4,7 g |
 | ketchup | ketchup | solide | 1 150 | 272 g | 17 g | 5,8 g |
@@ -273,7 +277,7 @@ courants des recettes françaises et des recettes américaines en tasses.
 | pistaches | pistachios | solide | 507 | 120 g | 7,6 g | 2,5 g |
 | pignons de pin | pine nuts | solide | 600 | 142 g | 9 g | 3 g |
 | cacahuètes | peanuts | solide | 600 | 142 g | 9 g | 3 g |
-| noix de coco râpée | shredded coconut, desiccated coconut | solide | 359 | 85 g | 5,4 g | 1,8 g |
+| noix de coco râpée, noix de coco, coco râpée | shredded coconut, desiccated coconut | solide | 359 | 85 g | 5,4 g | 1,8 g |
 | raisins secs | raisins | solide | 630 | 149 g | 9,4 g | 3,1 g |
 | abricots secs | dried apricots | solide | 541 | 128 g | 8,1 g | 2,7 g |
 | dattes | dates | solide | 630 | 149 g | 9,4 g | 3,1 g |
@@ -289,9 +293,9 @@ courants des recettes françaises et des recettes américaines en tasses.
 | gros sel, sel de mer | coarse salt, kosher salt, sea salt | solide | 1 082 | 256 g | 16 g | 5,4 g |
 | levure chimique | baking powder | solide | 812 | 192 g | 12 g | 4,1 g |
 | bicarbonate, bicarbonate de soude | baking soda | solide | 1 217 | 288 g | 18 g | 6,1 g |
-| levure boulangère, levure sèche | yeast, dry yeast, instant yeast | solide | 609 | 144 g | 9,1 g | 3 g |
+| levure boulangère, levure de boulanger, levure sèche | yeast, dry yeast, instant yeast | solide | 609 | 144 g | 9,1 g | 3 g |
 | cannelle | cinnamon | solide | 527 | 125 g | 7,9 g | 2,6 g |
-| épices, cumin, curry, paprika, muscade, gingembre moulu, poivre | spices, cumin, curry, paprika, nutmeg, ground ginger, pepper | solide | 467 | 110 g | 7 g | 2,3 g |
+| épices, cumin, curry, paprika, muscade, noix de muscade, gingembre moulu, poivre, ail en poudre, oignon en poudre | spices, cumin, curry, paprika, nutmeg, ground ginger, pepper, garlic powder, onion powder | solide | 467 | 110 g | 7 g | 2,3 g |
 | herbes séchées, thym, origan, herbes de provence | dried herbs, thyme, oregano | solide | 203 | 48 g | 3 g | 1 g |
 | **Céréales et légumineuses** | | | | | | |
 | riz | rice | solide | 837 | 198 g | 13 g | 4,2 g |
@@ -322,6 +326,7 @@ courants des recettes françaises et des recettes américaines en tasses.
 | olives | olives | solide | 600 | 142 g | 9 g | 3 g |
 | herbes fraîches, persil, ciboulette, basilic, coriandre | fresh herbs, parsley, chives, basil, cilantro | solide | 178 | 42 g | 2,7 g | 0,9 g |
 | pommes | apples | solide | 478 | 113 g | 7,2 g | 2,4 g |
+| pommes de terre | potatoes | solide | 634 | 150 g | 9,5 g | 3,2 g |
 | banane écrasée, banane | banana, mashed banana | solide | 959 | 227 g | 14 g | 4,8 g |
 | compote | applesauce | solide | 1 078 | 255 g | 16 g | 5,4 g |
 | purée de potiron, potiron | pumpkin puree, pumpkin | solide | 1 036 | 245 g | 16 g | 5,2 g |

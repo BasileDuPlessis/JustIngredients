@@ -433,9 +433,10 @@ weight (g), French units (g, cl; the default) or US units (cups, oz). Stored rec
 change, except the one-off cleanup of units saved before normalization.
 
 ### Task U8.1: Conversion table (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29): `src/conversion.rs`, rows generated from the design's table; a test
+  checks that every name of the table finds its own ingredient.
 - Description: `src/conversion.rs` with the two constant tables of the design (units in g or
-  ml; 124 ingredient densities in g/l with French and English names, liquid or solid) and the
+  ml; 125 ingredient densities in g/l with French and English names, liquid or solid) and the
   name lookup (folded whole words like the search, most specific name first, ties by the first
   word in French and the last in English).
 - How to validate: unit tests: a cup of flour is 120 g, a tablespoon of butter 14 g; "lait de
@@ -443,7 +444,8 @@ change, except the one-off cleanup of units saved before normalization.
   nothing.
 
 ### Task U8.2: The four views (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29): `src/unit_view.rs` (`show_measure`); the design's two recipes are its
+  tests, in the four views.
 - Description: a pure function giving the quantity and unit to show for a saved ingredient in a
   view and language: conversions of the design's defaults table, kitchen rounding, French unit
   labels and decimal comma, US fractions.
