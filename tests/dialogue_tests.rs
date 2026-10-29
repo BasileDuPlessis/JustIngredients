@@ -198,7 +198,11 @@ fn test_ingredient_edit_validation() {
     assert!(result.is_ok());
     let ingredient = result.unwrap();
     assert_eq!(ingredient.quantity, "2");
-    assert_eq!(ingredient.measurement, Some("cups".to_string()));
+    assert_eq!(
+        ingredient.measurement,
+        Some("cup".to_string()),
+        "stored like the extraction stores it"
+    );
     assert_eq!(ingredient.ingredient_name, "flour");
 
     // Test quantity-only ingredient
@@ -223,13 +227,10 @@ fn test_ingredient_edit_validation() {
     assert!(parse_ingredient_from_text("2 cups").is_err()); // No ingredient name
     assert!(parse_ingredient_from_text("0 cups flour").is_err()); // Zero quantity
     assert!(parse_ingredient_from_text("-1 cups flour").is_err()); // Negative quantity
-                                                                   // Test long ingredient name (should be truncated by post-processing)
-    let result = parse_ingredient_from_text("2 cups very_long_ingredient_name_that_exceeds_the_one_hundred_character_limit_and_should_be_rejected_by_the_validation");
-    assert!(result.is_ok());
-    let ingredient = result.unwrap();
-    assert_eq!(ingredient.quantity, "2");
-    assert_eq!(ingredient.measurement, Some("cups".to_string()));
-    assert_eq!(ingredient.ingredient_name.len(), 100); // Should be truncated to max length
+    assert!(
+        parse_ingredient_from_text("2 cups very_long_ingredient_name_that_exceeds_the_one_hundred_character_limit_and_should_be_rejected_by_the_validation").is_err(),
+        "a name over 100 characters is refused, not cut"
+    );
 }
 
 /// Test ingredient review command parsing

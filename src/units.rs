@@ -187,6 +187,120 @@ const SCALED_ALIASES: &[(&[&str], CanonicalUnit, f64)] = &[
     ),
 ];
 
+/// Units that count things ("2 gousses d'ail", "1 pincée de sel"): no canonical spelling, they
+/// are kept as typed. In a typed line they are a unit only before "de", "d'" or "of", so
+/// "1 bouquet garni" stays a name.
+const COUNT_UNITS: &[&str] = &[
+    "tasse",
+    "tasses",
+    "verre",
+    "verres",
+    "cuillère",
+    "cuillères",
+    "pincée",
+    "pincées",
+    "poignée",
+    "poignées",
+    "sachet",
+    "sachets",
+    "paquet",
+    "paquets",
+    "boîte",
+    "boîtes",
+    "tranche",
+    "tranches",
+    "morceau",
+    "morceaux",
+    "gousse",
+    "gousses",
+    "brin",
+    "brins",
+    "feuille",
+    "feuilles",
+    "bouquet",
+    "bouquets",
+    "zeste",
+    "zestes",
+    "slice",
+    "slices",
+    "can",
+    "cans",
+    "bottle",
+    "bottles",
+    "stick",
+    "sticks",
+    "packet",
+    "packets",
+    "bag",
+    "bags",
+    "dash",
+    "dashes",
+    "pinch",
+    "pinches",
+    "drop",
+    "drops",
+    "cube",
+    "cubes",
+    "piece",
+    "pieces",
+    "handful",
+    "handfuls",
+    "clove",
+    "cloves",
+    "sprig",
+    "sprigs",
+];
+
+/// Most words in a unit spelling ("cuillères à soupe", "c. à c.").
+const MAX_UNIT_WORDS: usize = 3;
+
+/// A unit read at the start of typed words.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct LeadingUnit {
+    /// How many words the unit spans.
+    pub words: usize,
+    /// A unit of [`COUNT_UNITS`], which needs "de", "d'" or "of" after it.
+    pub counts: bool,
+}
+
+fn is_measure(spelling: &str) -> bool {
+    let key = match_key(spelling);
+    canonicalize_unit(spelling).is_some()
+        || SCALED_ALIASES
+            .iter()
+            .any(|(aliases, _, _)| aliases.iter().any(|alias| match_key(alias) == key))
+}
+
+fn is_count_unit(spelling: &str) -> bool {
+    let key = match_key(spelling);
+    COUNT_UNITS.iter().any(|unit| match_key(unit) == key)
+}
+
+/// Whether a spelling is a unit: canonical, converted (`cl`, `dl`) or counting (`gousses`).
+pub fn is_unit(spelling: &str) -> bool {
+    is_measure(spelling) || is_count_unit(spelling)
+}
+
+/// The unit that `words` start with, the longest spelling first ("c. à soupe" before "c").
+pub fn leading_unit(words: &[&str]) -> Option<LeadingUnit> {
+    (1..=MAX_UNIT_WORDS.min(words.len()))
+        .rev()
+        .find_map(|count| {
+            let spelling = words[..count].join(" ");
+            if is_measure(&spelling) {
+                Some(LeadingUnit {
+                    words: count,
+                    counts: false,
+                })
+            } else {
+                is_count_unit(&spelling).then_some(LeadingUnit {
+                    words: count,
+                    counts: true,
+                })
+            }
+        })
+}
+
 /// A quantity and unit after normalization.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NormalizedMeasurement {
@@ -392,6 +506,38 @@ mod tests {
                     unit: None
                 }
             );
+        }
+    }
+
+    #[test]
+    fn typed_words_start_with_the_longest_unit() {
+        let unit = |line: &str| leading_unit(&line.split(' ').collect::<Vec<_>>());
+        let measure = |words| {
+            Some(LeadingUnit {
+                words,
+                counts: false,
+            })
+        };
+        assert_eq!(unit("c. à soupe d'huile"), measure(3));
+        assert_eq!(unit("cuillères à café de sel"), measure(3));
+        assert_eq!(unit("g farine"), measure(1));
+        assert_eq!(unit("cl de crème"), measure(1), "converted units too");
+        assert_eq!(
+            unit("gousses d'ail"),
+            Some(LeadingUnit {
+                words: 1,
+                counts: true
+            })
+        );
+        assert_eq!(unit("oeufs"), None);
+        assert_eq!(unit("grosses carottes"), None);
+        assert!(is_unit("Pincées") && is_unit("dl") && is_unit("kg") && !is_unit("farine"));
+    }
+
+    #[test]
+    fn count_units_are_not_measures() {
+        for unit in COUNT_UNITS {
+            assert!(!is_measure(unit), "{unit} is also a measure");
         }
     }
 

@@ -6,7 +6,8 @@ use crate::extraction::{ExtractedIngredient, Extraction};
 use crate::text_processing::MeasurementMatch;
 use crate::units::normalize_measurement;
 
-/// Longest ingredient name accepted by validation (`validation::validate_measurement_match`).
+/// Longest ingredient name kept from the extraction, in bytes: never over the limit of a typed
+/// name (`validation::MAX_INGREDIENT_NAME_CHARS`).
 pub const MAX_NAME_BYTES: usize = 100;
 
 /// Largest quantity accepted by validation (`validation::validate_quantity_range`).
@@ -242,8 +243,10 @@ mod tests {
             ingredient("sel", None, None),
         ]));
         for measurement in matches.iter().filter(|m| !m.requires_quantity_confirmation) {
+            let name = measurement.ingredient_name.trim();
             assert!(
-                crate::validation::validate_measurement_match(measurement, "").is_ok(),
+                !name.is_empty()
+                    && name.chars().count() <= crate::validation::MAX_INGREDIENT_NAME_CHARS,
                 "{measurement:?}"
             );
             assert!(

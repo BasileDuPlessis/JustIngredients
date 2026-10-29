@@ -4,10 +4,9 @@ use crate::db::Ingredient;
 use crate::dialogue::IngredientField;
 use crate::errors::AppError;
 use crate::text_processing::MeasurementMatch;
-use crate::validation::{parse_ingredient_from_text, parse_quantity_answer};
-
-/// Longest ingredient name accepted, in characters (same limit as a typed line).
-const MAX_INGREDIENT_NAME_CHARS: usize = 100;
+use crate::validation::{
+    parse_ingredient_from_text, parse_quantity_answer, MAX_INGREDIENT_NAME_CHARS,
+};
 
 /// The values to store for an ingredient: quantities are parsed like typed ones ("1/2",
 /// "1 1/2"), and an empty quantity is stored as none.
@@ -75,12 +74,12 @@ pub fn with_quantity(
 }
 
 /// "250 g" → ("250", "g"): the number before the first letter, when what follows is a known
-/// unit (cleaned, as typed).
+/// unit (canonical spelling, like a typed line: "250 grammes" → "g").
 fn split_known_unit(input: &str) -> Option<(&str, String)> {
     let start = input.find(char::is_alphabetic)?;
     let (number, unit) = input.split_at(start);
-    crate::units::canonicalize_unit(unit.trim())?;
-    Some((number.trim(), crate::units::clean_unit(unit)))
+    let unit = crate::units::canonicalize_unit(unit.trim())?;
+    Some((number.trim(), unit.as_str().to_string()))
 }
 
 /// Replaces the name only.
@@ -242,7 +241,7 @@ mod tests {
     #[test]
     fn a_quantity_typed_with_its_unit_replaces_both() {
         let flour = line("0", Some("g"), "farine", true);
-        for answer in ["250 g", "250g", " 250 G "] {
+        for answer in ["250 g", "250g", " 250 G ", "250 grammes"] {
             let edited = with_quantity(&flour, answer).expect(answer);
             assert_eq!(edited.quantity, "250", "{answer}");
             assert_eq!(edited.measurement.as_deref(), Some("g"), "{answer}");

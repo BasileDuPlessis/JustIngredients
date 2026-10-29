@@ -15,9 +15,27 @@ use lazy_static::lazy_static;
 use regex::Regex;
 
 lazy_static! {
-    static ref QUANTITY_PATTERN: Regex =
-        Regex::new(r"^(-?\d+(?:\.\d+)?(?:\s*\d+/\d+)?)").expect("Invalid quantity regex pattern");
+    /// A quantity starting a typed line: "1 1/2", "1/2", "2,5", "250" (also before a unit
+    /// without a space: "250g").
+    static ref LEADING_QUANTITY: Regex = Regex::new(r"^(\d+ \d+/\d+|\d+/\d+|\d+(?:[.,]\d+)?)")
+        .expect("Invalid quantity regex pattern");
 }
+
+/// Longest ingredient name accepted, in characters: typed lines and name edits.
+pub const MAX_INGREDIENT_NAME_CHARS: usize = 100;
+
+/// Fraction characters, typed or pasted ("½ citron", "1½ cup").
+const FRACTION_CHARACTERS: [(char, &str); 9] = [
+    ('½', "1/2"),
+    ('¼', "1/4"),
+    ('¾', "3/4"),
+    ('⅓', "1/3"),
+    ('⅔', "2/3"),
+    ('⅛', "1/8"),
+    ('⅜', "3/8"),
+    ('⅝', "5/8"),
+    ('⅞', "7/8"),
+];
 
 /// Validates a recipe name input
 ///
@@ -72,103 +90,11 @@ pub fn validate_basic_input(input: &str) -> Result<(), AppError> {
         return Err(AppError::Validation("edit-empty".to_string()));
     }
 
-    if input.len() > 200 {
+    if input.chars().count() > 200 {
         return Err(AppError::Validation("edit-too-long".to_string()));
     }
 
     Ok(())
-}
-
-/// Validate a measurement match and its ingredient name
-///
-/// # Arguments
-/// * `measurement_match` - The measurement match to validate
-/// * `temp_text` - The temporary text used for extraction
-///
-/// # Returns
-/// * `Ok(())` - Measurement match is valid
-/// * `Err(AppError::Validation)` - Error message
-///
-/// # Examples
-/// ```
-/// use just_ingredients::validation::validate_measurement_match;
-/// use just_ingredients::text_processing::MeasurementMatch;
-///
-/// let valid_match = MeasurementMatch {
-///     quantity: "2".to_string(),
-///     measurement: Some("cups".to_string()),
-///     ingredient_name: "flour".to_string(),
-///     line_number: 0,
-///     start_pos: 0,
-///     end_pos: 10,
-///     requires_quantity_confirmation: false,
-/// };
-///
-/// assert!(validate_measurement_match(&valid_match, "temp: 2 cups flour").is_ok());
-/// ```
-pub fn validate_measurement_match(
-    measurement_match: &MeasurementMatch,
-    _temp_text: &str,
-) -> Result<(), AppError> {
-    let ingredient_name = measurement_match.ingredient_name.trim();
-
-    // With the unified regex pattern, ingredient is always captured by the regex
-    // No need to extract from text after measurement
-    if ingredient_name.is_empty() {
-        return Err(AppError::Validation("edit-no-ingredient-name".to_string()));
-    }
-
-    if ingredient_name.len() > 100 {
-        return Err(AppError::Validation(
-            "edit-ingredient-name-too-long".to_string(),
-        ));
-    }
-
-    Ok(())
-}
-
-/// Adjust quantity for negative values if detected in the text
-///
-/// # Arguments
-/// * `measurement_match` - The measurement match to adjust (mutable)
-/// * `temp_text` - The temporary text used for extraction
-///
-/// # Examples
-/// ```
-/// use just_ingredients::validation::adjust_quantity_for_negative;
-/// use just_ingredients::text_processing::MeasurementMatch;
-///
-/// let mut match_with_negative = MeasurementMatch {
-///     quantity: "2".to_string(),
-///     measurement: Some("cups".to_string()),
-///     ingredient_name: "flour".to_string(),
-///     line_number: 0,
-///     start_pos: 7, // Position of "2" in "-2 "
-///     end_pos: 10,
-///     requires_quantity_confirmation: false,
-/// };
-///
-/// adjust_quantity_for_negative(&mut match_with_negative, "temp: -2 cups flour");
-/// assert_eq!(match_with_negative.quantity, "-2");
-/// ```
-pub fn adjust_quantity_for_negative(measurement_match: &mut MeasurementMatch, temp_text: &str) {
-    let quantity_start = measurement_match.start_pos;
-    let mut actual_quantity = measurement_match.quantity.clone();
-
-    // Check if there's a minus sign before the quantity
-    if quantity_start > 0 && temp_text.as_bytes()[quantity_start - 1] == b'-' {
-        // Check if the minus sign is not part of another word (should be preceded by space or at start)
-        let before_minus = if quantity_start > 1 {
-            temp_text.as_bytes()[quantity_start - 2]
-        } else {
-            b' '
-        };
-        if before_minus == b' ' || quantity_start == 1 {
-            actual_quantity = format!("-{}", actual_quantity);
-        }
-    }
-
-    measurement_match.quantity = actual_quantity;
 }
 
 /// Validate that quantity is within reasonable range
@@ -283,163 +209,155 @@ fn parse_simple_quantity(quantity: &str) -> Option<f64> {
     }
 }
 
-/// Parse ingredient text input and create a MeasurementMatch
+/// Reads an ingredient line typed by the user (an added ingredient, a whole-line edit):
+/// "250 g de farine", "1 ½ cup sugar", "2 gousses d'ail", "Farine : 200 g", "sel".
 ///
-/// This function implements a multi-stage parsing algorithm for ingredient editing:
+/// - a quantity first ("2", "2,5", "1/2", "1 1/2", "½"), or last after the name;
+/// - then maybe a unit: the canonical ones and their spellings ([`crate::units`]), `cl` and
+///   `dl` converted to ml, count units ("gousses", "pincée") only before "de"/"d'"/"of";
+/// - "de", "d'" or "of" after a unit is dropped from the name;
+/// - units are stored like the extraction stores them ("cups" → "cup", "20 cl" → 200 ml).
 ///
-/// ## Parsing Algorithm
-///
-/// 1. **Basic Validation**: Check input length and emptiness constraints
-/// 2. **Measurement Detection**: Attempt to extract measurements using the standard detector
-/// 3. **Fallback Parsing**: If no measurements found, use alternative parsing strategies
-/// 4. **Validation & Normalization**: Apply comprehensive validation and normalization
-///
-/// ## Processing Stages
-///
-/// ### Stage 1: Basic Input Validation
-/// ```text
-/// - Empty input → Error: "edit-empty"
-/// - Input > 200 chars → Error: "edit-too-long"
-/// - Otherwise → Proceed to measurement detection
-/// ```
-///
-/// ### Stage 2: Standard Measurement Detection
-/// - Uses `MeasurementDetector` to find standard measurement patterns
-/// - Handles traditional measurements: "2 cups flour", "500g butter"
-/// - Handles quantity-only ingredients: "6 eggs", "4 apples"
-/// - Supports fractions and Unicode characters
-///
-/// ### Stage 3: Fallback Parsing (when no measurements detected)
-/// - **Quantity Pattern Matching**: Look for simple numeric patterns (`-?\d+(?:\.\d+)?(?:\s*\d+/\d+)?`)
-/// - **Quantity-Only Parsing**: Extract quantity and treat remainder as ingredient name
-/// - **Default Quantity**: If no quantity found, default to "1"
-///
-/// ### Stage 4: Validation & Normalization
-/// - **Measurement Validation**: Verify measurement match integrity
-/// - **Quantity Range Check**: Ensure quantity is between 0 and 10,000
-/// - **Negative Quantity Handling**: Detect and handle negative quantities (e.g., "-2 cups")
-/// - **Ingredient Name Validation**: Check length and content constraints
-///
-/// ## Error Conditions
-///
-/// - `AppError::Validation("edit-empty")`: Input is empty or whitespace-only
-/// - `AppError::Validation("edit-too-long")`: Input exceeds 200 characters
-/// - `AppError::Validation("edit-no-ingredient-name")`: No ingredient name found after quantity
-/// - `AppError::Validation("edit-ingredient-name-too-long")`: Ingredient name exceeds 100 characters
-/// - `AppError::Validation("edit-invalid-quantity")`: Quantity is ≤ 0 or > 10,000
-/// - `AppError::Parser`: Measurement detector initialization failed
-///
-/// ## Thread Safety
-///
-/// This function is thread-safe as it creates new instances of `MeasurementDetector`
-/// and doesn't rely on shared mutable state.
-///
-/// ## Performance
-///
-/// - **Fast Path**: Standard measurement detection (most common case)
-/// - **Fallback Path**: Regex-based quantity extraction (slower but robust)
-/// - **Memory**: Minimal allocations, reuses detector instances
-///
-/// # Arguments
-///
-/// * `input` - The raw ingredient text input from user (e.g., "2 cups flour", "3 eggs")
-///
-/// # Returns
-///
-/// Returns a `MeasurementMatch` containing parsed quantity, measurement, and ingredient name,
-/// or an `AppError` for localization
-///
-/// # Examples
-///
-/// Note: This function is used internally by the dialogue system.
-/// For usage examples, see the dialogue handling functions in the bot module.
+/// Errors carry the locale key: `edit-empty`, `edit-too-long` (over 200 characters),
+/// `edit-no-ingredient-name` (a quantity without a name), `edit-ingredient-name-too-long`
+/// (over [`MAX_INGREDIENT_NAME_CHARS`]) and `edit-invalid-quantity` (zero, negative or over
+/// [`MAX_QUANTITY`]).
 pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, AppError> {
-    use crate::text_processing::MeasurementDetector;
-
     let trimmed = input.trim();
-
-    // Basic validation
     validate_basic_input(trimmed)?;
-
-    // Try to extract measurement using the detector
-    let detector = MeasurementDetector::new()
-        .map_err(|e| AppError::Parser(format!("Failed to create measurement detector: {}", e)))?;
-    let temp_text = format!("temp: {}", trimmed);
-    let matches = detector.extract_ingredient_measurements(&temp_text);
-
-    if let Some(mut measurement_match) = matches.into_iter().next() {
-        validate_measurement_match(&measurement_match, &temp_text)?;
-        adjust_quantity_for_negative(&mut measurement_match, &temp_text);
-        validate_quantity_range(&measurement_match)?;
-        Ok(measurement_match)
-    } else {
-        // No measurement found, try alternative parsing strategies
-        parse_without_measurement_detector(trimmed)
+    let line = without_bullet(&spell_out_fractions(trimmed));
+    if line.starts_with(['-', '−'])
+        && line[1..]
+            .trim_start()
+            .starts_with(|c: char| c.is_ascii_digit())
+    {
+        return Err(AppError::Validation("edit-invalid-quantity".to_string()));
     }
-}
 
-/// Parse ingredient when no measurement detector match is found
-fn parse_without_measurement_detector(trimmed: &str) -> Result<MeasurementMatch, AppError> {
-    // Try to extract a simple quantity pattern
-    if let Some(captures) = QUANTITY_PATTERN.captures(trimmed) {
-        if let Some(quantity_match) = captures.get(1) {
-            return parse_with_quantity(trimmed, quantity_match);
+    let (quantity, unit, name) = match split_leading_quantity(&line) {
+        Some((quantity, rest)) => {
+            let (unit, name) = split_leading_unit(rest);
+            (quantity, unit, name)
         }
-    }
-
-    // No quantity found, treat the whole input as ingredient name
-    if trimmed.len() > 100 {
-        return Err(AppError::Validation(
-            "edit-ingredient-name-too-long".to_string(),
-        ));
-    }
-
-    Ok(MeasurementMatch {
-        // No number typed ("sel"): no quantity, stored as NULL, like extraction results
-        quantity: String::new(),
-        measurement: None,
-        ingredient_name: trimmed.to_string(),
-        line_number: 0,
-        start_pos: 0,
-        end_pos: trimmed.len(),
-        requires_quantity_confirmation: false,
-    })
-}
-
-/// Parse ingredient when a quantity pattern is found
-fn parse_with_quantity(
-    trimmed: &str,
-    quantity_match: regex::Match,
-) -> Result<MeasurementMatch, AppError> {
-    let quantity = quantity_match.as_str().trim().to_string();
-    let remaining = trimmed[quantity_match.end()..].trim().to_string();
-
-    // Validate quantity
-    if let Some(qty) = parse_quantity(&quantity) {
-        if qty <= 0.0 || qty > 10000.0 {
-            return Err(AppError::Validation("edit-invalid-quantity".to_string()));
-        }
-    }
-
-    let ingredient_name = if remaining.is_empty() {
-        return Err(AppError::Validation("edit-no-ingredient-name".to_string()));
-    } else if remaining.len() > 100 {
-        return Err(AppError::Validation(
-            "edit-ingredient-name-too-long".to_string(),
-        ));
-    } else {
-        remaining
+        None => split_trailing_quantity(&line).unwrap_or((String::new(), None, line.clone())),
     };
+    let (quantity, unit) = normalize_typed_measurement(quantity, unit);
 
-    Ok(MeasurementMatch {
+    if name.is_empty() {
+        return Err(AppError::Validation("edit-no-ingredient-name".to_string()));
+    }
+    if name.chars().count() > MAX_INGREDIENT_NAME_CHARS {
+        return Err(AppError::Validation(
+            "edit-ingredient-name-too-long".to_string(),
+        ));
+    }
+    let ingredient = MeasurementMatch {
         quantity,
-        measurement: None,
-        ingredient_name,
+        measurement: unit,
+        ingredient_name: name,
         line_number: 0,
         start_pos: 0,
         end_pos: trimmed.len(),
         requires_quantity_confirmation: false,
+    };
+    validate_quantity_range(&ingredient)?;
+    Ok(ingredient)
+}
+
+/// "1½ cup" → "1 1/2 cup", inner spaces collapsed.
+fn spell_out_fractions(text: &str) -> String {
+    let mut spelled = String::with_capacity(text.len());
+    for c in text.chars() {
+        match FRACTION_CHARACTERS
+            .iter()
+            .find(|(fraction, _)| *fraction == c)
+        {
+            Some((_, fraction)) => {
+                spelled.push(' ');
+                spelled.push_str(fraction);
+                spelled.push(' ');
+            }
+            None => spelled.push(c),
+        }
+    }
+    spelled.split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+/// "- 2 œufs" → "2 œufs": a list bullet before the line goes.
+fn without_bullet(line: &str) -> String {
+    match line.split_once(' ') {
+        Some((bullet, rest)) if ["-", "–", "•", "*", "·"].contains(&bullet) => {
+            rest.to_string()
+        }
+        _ => line.to_string(),
+    }
+}
+
+/// "250 g farine" → ("250", "g farine"), "2,5 kg" → ("2.5", "kg"); `None` without a number
+/// first.
+fn split_leading_quantity(line: &str) -> Option<(String, &str)> {
+    let found = LEADING_QUANTITY.find(line)?;
+    Some((
+        found.as_str().replace(',', "."),
+        line[found.end()..].trim_start(),
+    ))
+}
+
+/// "de farine" → "farine": the article after a unit; `None` without one.
+fn without_article(name: &str) -> Option<&str> {
+    ["de ", "d'", "d’", "of "].iter().find_map(|article| {
+        name.get(..article.len())
+            .filter(|start| start.eq_ignore_ascii_case(article))
+            .map(|_| name[article.len()..].trim_start())
     })
+}
+
+/// "g de farine" → (Some("g"), "farine"); "oeufs" → (None, "oeufs").
+fn split_leading_unit(rest: &str) -> (Option<String>, String) {
+    let words: Vec<&str> = rest.split(' ').filter(|word| !word.is_empty()).collect();
+    if let Some(unit) = crate::units::leading_unit(&words) {
+        let after = words[unit.words..].join(" ");
+        match without_article(&after) {
+            Some(name) => return (Some(words[..unit.words].join(" ")), name.to_string()),
+            None if !unit.counts => return (Some(words[..unit.words].join(" ")), after),
+            None => {}
+        }
+    }
+    (None, rest.to_string())
+}
+
+/// "Farine : 200 g" → ("200", Some("g"), "Farine"): a quantity, maybe with a unit, ending the
+/// line after a name. "Épices 4 saisons" has none ("saisons" is no unit).
+fn split_trailing_quantity(line: &str) -> Option<(String, Option<String>, String)> {
+    let words: Vec<&str> = line.split(' ').collect();
+    (1..words.len()).find_map(|start| {
+        let tail = words[start..].join(" ");
+        let (quantity, unit) = split_leading_quantity(&tail)?;
+        if !unit.is_empty() && !crate::units::is_unit(unit) {
+            return None;
+        }
+        let unit = (!unit.is_empty()).then(|| unit.to_string());
+        let name = words[..start].join(" ");
+        let name = name.trim_end_matches([':', ',', ' ']);
+        (!name.is_empty()).then(|| (quantity, unit, name.to_string()))
+    })
+}
+
+/// The unit as the extraction stores it ("cups" → "cup", "gousses" kept); `cl` and `dl` become
+/// ml with the quantity converted. Other typed quantities keep their form ("1/2").
+fn normalize_typed_measurement(quantity: String, unit: Option<String>) -> (String, Option<String>) {
+    let Some(unit) = unit else {
+        return (quantity, None);
+    };
+    let typed = parse_quantity(&quantity);
+    let normalized = crate::units::normalize_measurement(typed, Some(&unit));
+    let quantity = match normalized.quantity {
+        Some(converted) if normalized.quantity != typed => {
+            crate::extraction::mapping::format_quantity(converted)
+        }
+        _ => quantity,
+    };
+    (quantity, normalized.unit)
 }
 
 #[cfg(test)]
@@ -604,68 +522,137 @@ mod tests {
         );
     }
 
+    /// (typed line, quantity, unit, name)
+    const TYPED_LINES: &[(&str, &str, Option<&str>, &str)] = &[
+        ("2 œufs", "2", None, "œufs"),
+        ("12 oeufs", "12", None, "oeufs"),
+        ("3 lait", "3", None, "lait"),
+        ("2 grosses carottes", "2", None, "grosses carottes"),
+        ("2 pommes de terre", "2", None, "pommes de terre"),
+        ("sel", "", None, "sel"),
+        ("sel et poivre", "", None, "sel et poivre"),
+        ("un œuf", "", None, "un œuf"),
+        ("1/2 oignon", "1/2", None, "oignon"),
+        ("½ citron", "1/2", None, "citron"),
+        ("250g farine", "250", Some("g"), "farine"),
+        ("  2 g  sel  ", "2", Some("g"), "sel"),
+        ("100g de beurre doux", "100", Some("g"), "beurre doux"),
+        ("500 grammes de farine", "500", Some("g"), "farine"),
+        ("150 gr de sucre", "150", Some("g"), "sucre"),
+        ("1 kilo de farine", "1", Some("kg"), "farine"),
+        (
+            "1 kg de pommes de terre",
+            "1",
+            Some("kg"),
+            "pommes de terre",
+        ),
+        ("2,5 kg pommes", "2.5", Some("kg"), "pommes"),
+        ("2.5 kg pommes", "2.5", Some("kg"), "pommes"),
+        ("2 lbs beef", "2", Some("lb"), "beef"),
+        ("8 oz cheese", "8", Some("oz"), "cheese"),
+        ("2 cups flour", "2", Some("cup"), "flour"),
+        ("1 1/2 cups flour", "1 1/2", Some("cup"), "flour"),
+        ("1 ½ cup sugar", "1 1/2", Some("cup"), "sugar"),
+        ("1½ cup sugar", "1 1/2", Some("cup"), "sugar"),
+        ("¼ cup sugar", "1/4", Some("cup"), "sugar"),
+        ("2 tbsp butter", "2", Some("tbsp"), "butter"),
+        ("1 T sugar", "1", Some("tbsp"), "sugar"),
+        ("1 t salt", "1", Some("tsp"), "salt"),
+        ("3 c. à soupe d'huile", "3", Some("tbsp"), "huile"),
+        (
+            "3 cuillères à soupe d'huile d'olive",
+            "3",
+            Some("tbsp"),
+            "huile d'olive",
+        ),
+        ("1 cuillère à café de sel", "1", Some("tsp"), "sel"),
+        ("2 c. à c. de sel", "2", Some("tsp"), "sel"),
+        ("2 cs huile", "2", Some("tbsp"), "huile"),
+        ("1 cc sel", "1", Some("tsp"), "sel"),
+        ("200 ml de lait", "200", Some("ml"), "lait"),
+        ("1 l d'eau", "1", Some("l"), "eau"),
+        ("1 litre de lait", "1", Some("l"), "lait"),
+        ("2 l. lait", "2", Some("l"), "lait"),
+        ("1,5 l eau", "1.5", Some("l"), "eau"),
+        ("3/4 l lait", "3/4", Some("l"), "lait"),
+        ("20 cl de crème", "200", Some("ml"), "crème"),
+        ("3 dl eau", "300", Some("ml"), "eau"),
+        ("1/2 tasse de lait", "1/2", Some("tasse"), "lait"),
+        ("1 pincée de sel", "1", Some("pincée"), "sel"),
+        ("2 gousses d'ail", "2", Some("gousses"), "ail"),
+        ("4 Tranches de jambon", "4", Some("tranches"), "jambon"),
+        (
+            "2 sachets de sucre vanillé",
+            "2",
+            Some("sachets"),
+            "sucre vanillé",
+        ),
+        ("1 verre de lait", "1", Some("verre"), "lait"),
+        ("2 slices of bread", "2", Some("slices"), "bread"),
+        ("1 bouquet garni", "1", None, "bouquet garni"),
+        ("2 cloves garlic", "2", None, "cloves garlic"),
+        ("Farine 200 g", "200", Some("g"), "Farine"),
+        ("farine : 200 g", "200", Some("g"), "farine"),
+        ("Farine T55 500 g", "500", Some("g"), "Farine T55"),
+        (
+            "Sucre vanillé 2 sachets",
+            "2",
+            Some("sachets"),
+            "Sucre vanillé",
+        ),
+        ("Oeufs 3", "3", None, "Oeufs"),
+        ("Épices 4 saisons", "", None, "Épices 4 saisons"),
+        ("- 2 œufs", "2", None, "œufs"),
+        ("• 200 g farine", "200", Some("g"), "farine"),
+    ];
+
     #[test]
-    fn test_adjust_quantity_for_negative() {
-        let create_match = |quantity: &str, start_pos: usize| MeasurementMatch {
-            quantity: quantity.to_string(),
-            measurement: Some("cups".to_string()),
-            ingredient_name: "flour".to_string(),
-            line_number: 0,
-            start_pos,
-            end_pos: 10,
-            requires_quantity_confirmation: false,
-        };
-
-        // Should add negative sign
-        let mut match1 = create_match("2", 7); // Position of "2" in "-2 "
-        adjust_quantity_for_negative(&mut match1, "temp: -2 cups flour");
-        assert_eq!(match1.quantity, "-2");
-
-        // Should not add negative sign (minus not at valid position)
-        let mut match2 = create_match("2", 8); // Position after "some -2 "
-        adjust_quantity_for_negative(&mut match2, "temp: some -2 cups flour");
-        assert_eq!(match2.quantity, "2");
-
-        // Should not add negative sign (no minus)
-        let mut match3 = create_match("2", 6);
-        adjust_quantity_for_negative(&mut match3, "temp: 2 cups flour");
-        assert_eq!(match3.quantity, "2");
+    fn typed_lines_give_quantity_unit_and_name() {
+        for (line, quantity, unit, name) in TYPED_LINES {
+            let parsed = parse_ingredient_from_text(line)
+                .unwrap_or_else(|e| panic!("{line:?} was refused: {e:?}"));
+            assert_eq!(
+                (
+                    parsed.quantity.as_str(),
+                    parsed.measurement.as_deref(),
+                    parsed.ingredient_name.as_str()
+                ),
+                (*quantity, *unit, *name),
+                "{line:?}"
+            );
+            assert!(!parsed.requires_quantity_confirmation, "{line:?}");
+        }
     }
 
     #[test]
-    fn debug_parse_ingredient() {
-        use crate::text_processing::MeasurementDetector;
-
-        println!("Testing parse_ingredient_from_text with '2 cups flour'");
-
-        match parse_ingredient_from_text("2 cups flour") {
-            Ok(result) => {
-                println!(
-                    "Success: quantity='{}', measurement={:?}, ingredient='{}'",
-                    result.quantity, result.measurement, result.ingredient_name
-                );
-            }
-            Err(e) => {
-                println!("Error: {}", e);
-            }
-        }
-
-        println!("\nTesting MeasurementDetector directly");
-        let detector = match MeasurementDetector::new() {
-            Ok(d) => d,
-            Err(_) => unreachable!("Failed to create MeasurementDetector"),
+    fn typed_lines_refused_with_the_reason() {
+        let refused = |line: &str| match parse_ingredient_from_text(line) {
+            Err(AppError::Validation(key)) => key,
+            other => panic!("{line:?} gave {other:?}"),
         };
-        let temp_text = format!("temp: {}", "2 cups flour");
-        println!("Input text: '{}'", temp_text);
-
-        let matches = detector.extract_ingredient_measurements(&temp_text);
-        println!("Found {} matches", matches.len());
-
-        for (i, m) in matches.iter().enumerate() {
-            println!(
-                "Match {}: quantity='{}', measurement={:?}, ingredient='{}'",
-                i, m.quantity, m.measurement, m.ingredient_name
-            );
-        }
+        assert_eq!(refused(""), "edit-empty");
+        assert_eq!(refused("   "), "edit-empty");
+        assert_eq!(refused(&"a".repeat(201)), "edit-too-long");
+        assert_eq!(refused("2"), "edit-no-ingredient-name");
+        assert_eq!(refused("200 g"), "edit-no-ingredient-name");
+        assert_eq!(refused("2 cups"), "edit-no-ingredient-name");
+        assert_eq!(refused("-2 g sucre"), "edit-invalid-quantity");
+        assert_eq!(refused("-1 cups flour"), "edit-invalid-quantity");
+        assert_eq!(refused("0 g sucre"), "edit-invalid-quantity");
+        assert_eq!(refused("20000 g sucre"), "edit-invalid-quantity");
+        assert_eq!(
+            refused("2000 cl lait"),
+            "edit-invalid-quantity",
+            "20 l once in ml"
+        );
+        assert_eq!(
+            refused(&format!("2 g {}", "a".repeat(101))),
+            "edit-ingredient-name-too-long"
+        );
+        assert_eq!(
+            refused(&"é".repeat(MAX_INGREDIENT_NAME_CHARS + 1)),
+            "edit-ingredient-name-too-long"
+        );
+        assert!(parse_ingredient_from_text(&"é".repeat(MAX_INGREDIENT_NAME_CHARS)).is_ok());
     }
 }
