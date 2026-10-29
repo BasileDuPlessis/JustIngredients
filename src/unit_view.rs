@@ -58,15 +58,17 @@ const SMALLEST_WEIGHED_GRAMS: f64 = 1.0;
 const SMALLEST_TEASPOONS: f64 = 0.0625;
 
 /// The measure of a saved ingredient in `view`, for a French-speaking user or not (unit names
-/// and decimal comma). Units saved before normalization ("G", "cl", "cuillères à soupe") are
-/// read like normalized ones. Saved metric values convert exactly (500 ml → 50 cl); only what a
-/// density or a US unit gives is rounded.
+/// and decimal comma). "As in the recipe" names units in the recipe's language
+/// (`english_recipe`: "2 tbsp", not "2 c. à s."). Units saved before normalization ("G", "cl",
+/// "cuillères à soupe") are read like normalized ones. Saved metric values convert exactly
+/// (500 ml → 50 cl); only what a density or a US unit gives is rounded.
 pub fn show_measure(
     quantity: Option<f64>,
     unit: Option<&str>,
     name: &str,
     view: UnitView,
     french: bool,
+    english_recipe: bool,
 ) -> ShownMeasure {
     let normalized = normalize_measurement(quantity, unit);
     let canonical = normalized.unit.as_deref().and_then(canonicalize_unit);
@@ -83,7 +85,8 @@ pub fn show_measure(
             unit.map(crate::units::clean_unit).unwrap_or_default(),
         ]);
     };
-    let labels = if view == UnitView::Us || !french {
+    let labels = if view == UnitView::Us || !french || (view == UnitView::Recipe && english_recipe)
+    {
         Labels::English
     } else {
         Labels::French
@@ -406,6 +409,124 @@ fn fraction(value: f64) -> Option<String> {
     })
 }
 
+/// Words that tell an English recipe from a French one (folded, as `search::fold` writes them).
+const ENGLISH_WORDS: &[&str] = &[
+    "cup",
+    "cups",
+    "tablespoon",
+    "tablespoons",
+    "teaspoon",
+    "teaspoons",
+    "tbsp",
+    "tsp",
+    "ounce",
+    "ounces",
+    "oz",
+    "pound",
+    "pounds",
+    "lb",
+    "lbs",
+    "and",
+    "of",
+    "the",
+    "or",
+    "flour",
+    "sugar",
+    "butter",
+    "salt",
+    "egg",
+    "eggs",
+    "milk",
+    "water",
+    "chopped",
+    "large",
+    "small",
+    "cream",
+    "baking",
+    "powder",
+    "soda",
+    "vanilla",
+    "extract",
+    "fresh",
+    "ground",
+    "pepper",
+    "oil",
+    "cheese",
+    "melted",
+    "softened",
+    "unsalted",
+    "brown",
+    "white",
+    "to",
+    "taste",
+    "for",
+    "with",
+];
+const FRENCH_WORDS: &[&str] = &[
+    "de",
+    "d",
+    "du",
+    "des",
+    "et",
+    "ou",
+    "la",
+    "le",
+    "les",
+    "l",
+    "cuillere",
+    "cuilleres",
+    "tasse",
+    "tasses",
+    "farine",
+    "sucre",
+    "beurre",
+    "sel",
+    "oeuf",
+    "oeufs",
+    "lait",
+    "eau",
+    "creme",
+    "levure",
+    "huile",
+    "poivre",
+    "fromage",
+    "gousse",
+    "gousses",
+    "pincee",
+    "sachet",
+    "fondu",
+    "moulu",
+    "frais",
+    "fraiche",
+    "hache",
+    "gros",
+    "petit",
+    "petite",
+    "au",
+    "aux",
+    "pour",
+    "avec",
+];
+
+/// Whether a recipe is written in English, from the text read off its photo and its ingredient
+/// names: more English words than French ones. Its units can be told apart only this way
+/// ("2 tbsp" and "2 c. à s." are both saved as `tbsp`).
+pub fn recipe_is_english<'a>(text: &str, names: impl IntoIterator<Item = &'a str>) -> bool {
+    let mut english = 0;
+    let mut french = 0;
+    let mut count = |text: &str| {
+        for word in crate::search::fold(text).split_whitespace() {
+            english += usize::from(ENGLISH_WORDS.contains(&word));
+            french += usize::from(FRENCH_WORDS.contains(&word));
+        }
+    };
+    count(text);
+    for name in names {
+        count(name);
+    }
+    english > french
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -417,7 +538,7 @@ mod tests {
         lines
             .iter()
             .map(|(quantity, unit, name)| {
-                let measure = show_measure(*quantity, *unit, name, view, french);
+                let measure = show_measure(*quantity, *unit, name, view, french, false);
                 format!("{} {name}", measure.text).trim().to_string()
             })
             .collect()
@@ -545,7 +666,7 @@ mod tests {
     #[test]
     fn converted_says_whether_the_view_changed_the_measure() {
         let converted = |quantity, unit, name, view| {
-            show_measure(Some(quantity), Some(unit), name, view, true).converted
+            show_measure(Some(quantity), Some(unit), name, view, true, false).converted
         };
         assert!(!converted(250.0, "g", "farine", UnitView::French));
         assert!(converted(500.0, "ml", "lait", UnitView::French), "50 cl");
@@ -558,7 +679,7 @@ mod tests {
     #[test]
     fn units_saved_before_normalization_are_read() {
         let text = |quantity, unit: &'static str, view| {
-            show_measure(Some(quantity), Some(unit), "lait", view, true).text
+            show_measure(Some(quantity), Some(unit), "lait", view, true, false).text
         };
         assert_eq!(text(8.0, "cl", UnitView::French), "8 cl");
         assert_eq!(text(5.0, "G", UnitView::Recipe), "5 g");
@@ -573,7 +694,7 @@ mod tests {
     #[test]
     fn kitchen_rounding_and_number_formats() {
         let text = |quantity, unit: &'static str, name, view, french| {
-            show_measure(Some(quantity), Some(unit), name, view, french).text
+            show_measure(Some(quantity), Some(unit), name, view, french, false).text
         };
         assert_eq!(text(1.0, "cup", "beurre", UnitView::Weight, true), "225 g");
         assert_eq!(text(1.2, "kg", "farine", UnitView::French, true), "1,2 kg");
@@ -644,7 +765,7 @@ mod tests {
     #[test]
     fn saved_metric_values_are_never_rounded() {
         let shown = |quantity, unit: &'static str, name, view| {
-            show_measure(Some(quantity), Some(unit), name, view, true)
+            show_measure(Some(quantity), Some(unit), name, view, true, false)
         };
         for view in UnitView::ALL {
             let shown = shown(113.0, "g", "beurre", view);
@@ -670,11 +791,63 @@ mod tests {
     #[test]
     fn the_us_view_keeps_ounces_and_pounds() {
         let text = |quantity, unit: &'static str, name| {
-            show_measure(Some(quantity), Some(unit), name, UnitView::Us, false).text
+            show_measure(Some(quantity), Some(unit), name, UnitView::Us, false, false).text
         };
         assert_eq!(text(8.0, "oz", "cream cheese"), "8 oz");
         assert_eq!(text(1.0, "lb", "flour"), "1 lb");
         assert_eq!(text(16.0, "oz", "chocolate"), "16 oz");
+    }
+
+    #[test]
+    fn as_in_the_recipe_follows_the_recipe_language() {
+        let text = |quantity, unit: &'static str, english_recipe| {
+            show_measure(
+                Some(quantity),
+                Some(unit),
+                "flour",
+                UnitView::Recipe,
+                true,
+                english_recipe,
+            )
+            .text
+        };
+        assert_eq!(text(1.5, "cup", true), "1 ½ cups");
+        assert_eq!(text(2.0, "tbsp", true), "2 tbsp");
+        assert_eq!(text(2.0, "tbsp", false), "2 c. à s.");
+        assert_eq!(text(1.5, "cup", false), "1 ½ tasse");
+        let french_view = show_measure(
+            Some(2.0),
+            Some("tbsp"),
+            "flour",
+            UnitView::French,
+            true,
+            true,
+        );
+        assert_eq!(
+            french_view.text, "2 c. à s.",
+            "the French view stays French"
+        );
+    }
+
+    #[test]
+    fn recipes_tell_their_language() {
+        assert!(recipe_is_english(
+            "1 1/2 cups all-purpose flour\n3 tablespoons unsalted butter, melted\n1 egg",
+            ["all-purpose flour", "unsalted butter", "egg"]
+        ));
+        assert!(!recipe_is_english(
+            "250 g de farine\n3 œufs\n50 cl de lait\n2 c. à s. de sucre",
+            ["farine", "œufs", "lait", "sucre"]
+        ));
+        assert!(
+            recipe_is_english("", ["flour", "sugar", "butter"]),
+            "names only"
+        );
+        assert!(!recipe_is_english("", ["farine"]));
+        assert!(
+            !recipe_is_english("", std::iter::empty()),
+            "French by default"
+        );
     }
 
     #[test]

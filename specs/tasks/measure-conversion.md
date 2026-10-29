@@ -32,7 +32,7 @@ Quatre vues :
 
 | Vue | Pour qui | En bref |
 |---|---|---|
-| **Comme dans la recette** | tout le monde | les mesures telles que lues ou tapées ; seuls les noms d'unités sont traduits (« tbsp » → « c. à s. » pour un utilisateur français) |
+| **Comme dans la recette** | tout le monde | les mesures telles que lues ou tapées, les unités dans la langue de la recette : « 1 ½ cups », « 2 tbsp » pour une recette anglaise, « 2 c. à s. », « 1 tasse » pour une recette française (test de l'utilisateur du 2026-10-29 : traduire les unités d'une recette américaine la faisait paraître convertie). La langue se lit dans le texte de la photo et les noms des ingrédients (`unit_view::recipe_is_english`), car « 2 tbsp » et « 2 c. à s. » sont enregistrés pareil (`tbsp`). |
 | **Tout en poids (g)** | cuisiner avec une balance | tout ce qui peut se peser en grammes, liquides compris |
 | **Unités françaises (g, cl)** (par défaut) | recettes américaines lues en France | les poids en g, les liquides en cl / l, les cuillères gardées |
 | **Unités américaines (cups, oz)** | recettes françaises lues à l'anglaise | cups, tbsp, tsp, oz, lb, en fractions (½, ¾) |

@@ -169,6 +169,15 @@ pub async fn is_list(chat: ChatId, id: MessageId) -> bool {
     )
 }
 
+/// Whether `id` is a recorded recipe card (in the history or at the bottom).
+pub async fn is_card(chat: ChatId, id: MessageId) -> bool {
+    let Some(pool) = pool() else { return false };
+    matches!(
+        crate::db::chat_message_kind(pool, chat.0, id.0).await,
+        Ok(Some(kind)) if kind == CARD || kind == ACTIVE_CARD
+    )
+}
+
 /// The list `id` was just edited into the card of `recipe_id`: recorded as the active card
 /// (keeping its send time), and anything else with buttons at the bottom goes as with
 /// [`delete_lists`].

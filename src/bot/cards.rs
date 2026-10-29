@@ -38,6 +38,13 @@ async fn render(
             debug!(error = %e, "Could not read the unit view");
             crate::unit_view::UnitView::default()
         });
+    // "As in the recipe" names units in the recipe's language
+    let english_recipe = crate::unit_view::recipe_is_english(
+        &recipe.content,
+        ingredients
+            .iter()
+            .map(|ingredient| ingredient.name.as_str()),
+    );
     Ok(Some(render_recipe_card(
         recipe
             .recipe_name
@@ -47,6 +54,7 @@ async fn render(
         recipe.created_at,
         &ingredients,
         view,
+        english_recipe,
         language_code,
         localization,
     )))
@@ -78,6 +86,12 @@ pub async fn show_card(
         return Ok(());
     };
     let rendered = started.elapsed();
+    // A second tap on the list's button reaches the card it became: nothing more to show
+    if let Some(pressed) = pressed {
+        if cleanup::is_card(chat_id, pressed).await {
+            return Ok(());
+        }
+    }
     let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
 
     // The list pressed becomes the card

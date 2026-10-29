@@ -424,11 +424,17 @@ pub fn render_recipe_card(
     created_at: chrono::DateTime<chrono::Utc>,
     ingredients: &[crate::db::Ingredient],
     view: crate::unit_view::UnitView,
+    english_recipe: bool,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Html {
-    let (list, converted) =
-        format_database_ingredients_list(ingredients, view, language_code, localization);
+    let (list, converted) = format_database_ingredients_list(
+        ingredients,
+        view,
+        english_recipe,
+        language_code,
+        localization,
+    );
     let mut card = Html::text("📖 ")
         + Html::bold(recipe_name)
         + Html::text(&format!(
@@ -469,11 +475,13 @@ pub fn render_recipe_summary(
         ))
 }
 
-/// The saved ingredients of a card, one "• 180 g farine" line each, measures in `view`; and
-/// whether the view converted one.
+/// The saved ingredients of a card, one "• 180 g farine" line each, measures in `view` (unit
+/// names of an English recipe in English in the "as in the recipe" view); and whether the view
+/// converted one.
 pub fn format_database_ingredients_list(
     ingredients: &[crate::db::Ingredient],
     view: crate::unit_view::UnitView,
+    english_recipe: bool,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> (String, bool) {
@@ -494,6 +502,7 @@ pub fn format_database_ingredients_list(
                 &ingredient.name,
                 view,
                 french,
+                english_recipe,
             );
             converted |= measure.converted;
             if measure.text.is_empty() {
@@ -617,6 +626,7 @@ mod tests {
             created_at,
             std::slice::from_ref(&ingredient),
             crate::unit_view::UnitView::French,
+            false,
             Some("fr"),
             &localization,
         );
@@ -629,6 +639,7 @@ mod tests {
             created_at,
             &[ingredient],
             crate::unit_view::UnitView::Recipe,
+            false,
             Some("fr"),
             &localization,
         );
@@ -644,6 +655,7 @@ mod tests {
             created_at,
             &[],
             crate::unit_view::UnitView::French,
+            false,
             Some("en"),
             &localization,
         );

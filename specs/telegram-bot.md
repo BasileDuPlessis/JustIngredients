@@ -250,7 +250,8 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   (a home message or list of an older version, or the edit fails) the list goes and the card is
   sent at the bottom. Either way it is recorded as the active card (`chat_messages` kind
   `active_card`, at most one per chat; U6.1), and `Recipe card shown` is logged with the read
-  and display times.
+  and display times. A second tap on the list's button reaches the card it became and does
+  nothing (`cleanup::is_card`).
   Earlier cards of the recipe stay in the history: every consultation is kept. A recipe that is
   gone or another user's answers `recipe-not-found` until the next action.
 - **Recipe card**: name, creation date (user's language, Paris time: `format_recipe_date`), ingredients with their
