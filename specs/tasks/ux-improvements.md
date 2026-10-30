@@ -487,6 +487,8 @@ change, except the one-off cleanup of units saved before normalization.
 - Language preference (`/langue`) instead of the Telegram app language (finding 12).
 - Export/share a recipe as text (finding 13); several photos at once.
 - Adding several ingredients at once by pasting several lines (refused today: `edit-one-line`).
+- Ingredient sections (user request of 2026-10-30: "pour le gâteau", "pour la sauce" in one
+  recipe). Proposal with wireframes, to validate: [ingredient-sections.md](ingredient-sections.md).
 
 ---
 
