@@ -51,7 +51,6 @@ async fn render(
             .as_ref()
             .map(|name| name.as_str())
             .unwrap_or("Unnamed Recipe"),
-        recipe.created_at,
         &ingredients,
         view,
         english_recipe,

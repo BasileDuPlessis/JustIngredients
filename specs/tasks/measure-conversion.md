@@ -78,7 +78,6 @@ revient en bas, dans la nouvelle vue, avec ses boutons ; sinon la liste revient.
 │ ⚖️ Unités : tout en poids (g)            │   historique
 ├──────────────────────────────────────────┤
 │ 📖 Pancakes                              │ ▼ bas du fil
-│ 📅 29 oct. 2026                          │
 │ • 180 g farine                           │
 │ • 305 g lait                             │
 │ • 43 g beurre                            │

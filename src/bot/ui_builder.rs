@@ -421,7 +421,6 @@ pub fn format_recipe_date(
 /// one (UX plan U8).
 pub fn render_recipe_card(
     recipe_name: &str,
-    created_at: chrono::DateTime<chrono::Utc>,
     ingredients: &[crate::db::Ingredient],
     view: crate::unit_view::UnitView,
     english_recipe: bool,
@@ -435,13 +434,9 @@ pub fn render_recipe_card(
         language_code,
         localization,
     );
-    let mut card = Html::text("📖 ")
-        + Html::bold(recipe_name)
-        + Html::text(&format!(
-            "\n\n📅 {}\n\n",
-            format_recipe_date(created_at, language_code, false, localization)
-        ))
-        + Html::text(&list);
+    // No creation date: the user asked for the card to show the recipe only (2026-10-30)
+    let mut card =
+        Html::text("📖 ") + Html::bold(recipe_name) + Html::text("\n\n") + Html::text(&list);
     let footer = match view {
         crate::unit_view::UnitView::Recipe => None,
         crate::unit_view::UnitView::Weight => Some("unit-view-footer-weight"),
@@ -623,7 +618,6 @@ mod tests {
         };
         let card = render_recipe_card(
             "Tarte <b>",
-            created_at,
             std::slice::from_ref(&ingredient),
             crate::unit_view::UnitView::French,
             false,
@@ -632,11 +626,10 @@ mod tests {
         );
         assert_eq!(
             card.as_str(),
-            "📖 <b>Tarte &lt;b&gt;</b>\n\n📅 27 octobre 2026 à 17:30\n\n• 20 cl lait &lt;entier&gt; &amp; sucre\n\n⚖️ Vue unités françaises (g, cl), valeurs arrondies"
+            "📖 <b>Tarte &lt;b&gt;</b>\n\n• 20 cl lait &lt;entier&gt; &amp; sucre\n\n⚖️ Vue unités françaises (g, cl), valeurs arrondies"
         );
         let as_saved = render_recipe_card(
             "Tarte",
-            created_at,
             &[ingredient],
             crate::unit_view::UnitView::Recipe,
             false,
@@ -652,7 +645,6 @@ mod tests {
         );
         let empty = render_recipe_card(
             "Vide",
-            created_at,
             &[],
             crate::unit_view::UnitView::French,
             false,

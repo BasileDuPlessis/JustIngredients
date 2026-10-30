@@ -254,7 +254,7 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   nothing (`cleanup::is_card`).
   Earlier cards of the recipe stay in the history: every consultation is kept. A recipe that is
   gone or another user's answers `recipe-not-found` until the next action.
-- **Recipe card**: name, creation date (user's language, Paris time: `format_recipe_date`), ingredients with their
+- **Recipe card**: name (no creation date since 2026-10-30, at the user's request), ingredients with their
   measures in the user's unit view (`unit_view::show_measure`, see
   [the design](tasks/measure-conversion.md)), then "⚖️ Vue …, valeurs arrondies" when the view
   converted one; the review and the editing lists show the saved values. Buttons:
