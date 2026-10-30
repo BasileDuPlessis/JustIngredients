@@ -207,7 +207,7 @@ async fn test_save_recipe_is_all_or_nothing(pool: PgPool) -> Result<()> {
             .await
             .is_err()
     );
-    let (recipes, total) = get_user_recipes_newest_first(&pool, 12345, 10, 0).await?;
+    let (recipes, total) = get_user_recipes_alphabetical(&pool, 12345, 10, 0).await?;
     assert_eq!(total, 2, "the failed save added no recipe: {recipes:?}");
     assert!(recipes.iter().all(|r| r.name != "Ratée"));
     Ok(())
@@ -334,10 +334,11 @@ async fn test_delete_recipe_removes_its_ingredients(pool: PgPool) -> Result<()> 
 
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
-async fn test_get_user_recipes_newest_first(pool: PgPool) -> Result<()> {
+async fn test_get_user_recipes_alphabetical(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
 
-    // Two recipes with the same name stay two entries; the unnamed one is left out
+    // Two recipes with the same name stay two entries (older versions did not number them);
+    // the unnamed one is left out
     let mut ids = Vec::new();
     for name in ["Tarte", "Crêpes", "Tarte"] {
         let id = create_recipe(&pool, 12345, "content").await?;
@@ -348,20 +349,24 @@ async fn test_get_user_recipes_newest_first(pool: PgPool) -> Result<()> {
     let other = create_recipe(&pool, 67890, "content").await?;
     update_recipe_name(&pool, 67890, other, "Pancakes").await?;
 
-    let (recipes, total) = get_user_recipes_newest_first(&pool, 12345, 2, 0).await?;
+    let (recipes, total) = get_user_recipes_alphabetical(&pool, 12345, 2, 0).await?;
     assert_eq!(total, 3);
     let page: Vec<(i64, &str)> = recipes.iter().map(|r| (r.id, r.name.as_str())).collect();
-    assert_eq!(page, vec![(ids[2], "Tarte"), (ids[1], "Crêpes")]);
+    assert_eq!(
+        page,
+        vec![(ids[1], "Crêpes"), (ids[0], "Tarte")],
+        "alphabetical, then the oldest of same names"
+    );
 
-    let (recipes, total) = get_user_recipes_newest_first(&pool, 12345, 2, 2).await?;
+    let (recipes, total) = get_user_recipes_alphabetical(&pool, 12345, 2, 2).await?;
     assert_eq!(total, 3);
     assert_eq!(recipes.len(), 1);
-    assert_eq!(recipes[0].id, ids[0]);
+    assert_eq!(recipes[0].id, ids[2]);
 
-    let (recipes, total) = get_user_recipes_newest_first(&pool, 99999, 3, 0).await?;
+    let (recipes, total) = get_user_recipes_alphabetical(&pool, 99999, 3, 0).await?;
     assert_eq!((recipes.len(), total), (0, 0));
 
-    assert!(get_user_recipes_newest_first(&pool, 12345, 0, 0)
+    assert!(get_user_recipes_alphabetical(&pool, 12345, 0, 0)
         .await
         .is_err());
     Ok(())
@@ -1255,7 +1260,7 @@ async fn the_unit_view_is_saved_per_user_french_by_default(pool: PgPool) -> Resu
     set_unit_view(&pool, 32, Some("en"), UnitView::Recipe).await?;
     assert_eq!(unit_view(&pool, 32).await?, UnitView::Recipe);
     assert_eq!(unit_view(&pool, 31).await?, UnitView::Weight, "per user");
-    assert_eq!(get_user_recipes_newest_first(&pool, 32, 10, 0).await?.1, 1);
+    assert_eq!(get_user_recipes_alphabetical(&pool, 32, 10, 0).await?.1, 1);
     Ok(())
 }
 

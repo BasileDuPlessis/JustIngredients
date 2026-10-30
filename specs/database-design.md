@@ -61,7 +61,7 @@ Note: `recipes.telegram_id` holds the Telegram user id by value (no foreign key 
 2. **Recipe Creation**: `create_recipe()` stores the extracted text under `telegram_id`
 3. **Ingredient Storage**: a new recipe is saved by `save_recipe()` in one transaction (user upsert with `ON CONFLICT (telegram_id)`, recipe with its name, one insert per ingredient; nothing is written if one fails). The edit of a saved recipe is applied by `apply_ingredient_changes()` in one transaction (updates write the exact values, so a quantity or unit can be cleared; additions; deletions).
 4. **Recipe Naming**: a user's recipe names are unique: `save_recipe()` and `rename_recipe()` store "Tarte (2)", "Tarte (3)"… when the name is taken (`unique_recipe_name`, first free number from 2, within 255 bytes) and return the stored name; `update_recipe_name()` writes a name as it is (tests)
-5. **Lookups**: the recipe list and the home message read the user's named recipes newest first with their total (`get_user_recipes_newest_first`, `ORDER BY created_at DESC, id DESC`, served by `recipes_telegram_id_created_at_idx`, returns `RecipeSummary { id, name, created_at }`); a recipe is opened by id (`read_recipe_with_name`); no full-text query is used
+5. **Lookups**: the recipe list and the home message read the user's named recipes in alphabetical order with their total (`get_user_recipes_alphabetical`: all the user's named recipes are read with `recipes_telegram_id_created_at_idx` and sorted in Rust by `search::compare_names`, case and accents ignored, numbers by value, then oldest first; returns one page of `RecipeSummary { id, name, created_at }`; since 2026-10-30, newest first before); a recipe is opened by id (`read_recipe_with_name`); no full-text query is used
 
 ## API Design
 
@@ -92,7 +92,7 @@ pub async fn normalize_saved_units(pool: &PgPool) -> Result<u64> // startup pass
 
 // Recipe search & listing
 pub async fn searchable_recipes(pool: &PgPool, telegram_id: i64) -> Result<Vec<SearchableRecipe>> // named recipes with their ingredient names, newest first (search)
-pub async fn get_user_recipes_newest_first(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<RecipeSummary>, i64)> // named recipes, newest first, total (recipe list, home message)
+pub async fn get_user_recipes_alphabetical(pool: &PgPool, telegram_id: i64, limit: i64, offset: i64) -> Result<(Vec<RecipeSummary>, i64)> // named recipes, alphabetical (sorted in Rust), one page, total (recipe list, home message)
 pub async fn has_duplicate_recipes(pool: &PgPool, telegram_id: i64, recipe_name: &str) -> Result<bool> // not called by the bot
 
 // Transactional writes of the bot
@@ -265,10 +265,9 @@ CREATE INDEX recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
 
 ### Queries
 ```sql
--- get_user_recipes_newest_first: recipe list and home message
+-- get_user_recipes_alphabetical: recipe list and home message (sorted and paged in Rust)
 SELECT id, recipe_name, created_at FROM recipes
-WHERE telegram_id = $1 AND recipe_name IS NOT NULL
-ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3;
+WHERE telegram_id = $1 AND recipe_name IS NOT NULL;
 ```
 
 ## Testing Strategy

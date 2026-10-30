@@ -1197,10 +1197,12 @@ pub async fn searchable_recipes(
         .collect())
 }
 
-/// Recipes of a user, newest first, and the user's total number of recipes.
+/// Recipes of a user in alphabetical order (`search::compare_names`: case and accents ignored,
+/// numbers by value), one page of them, and the user's total number of recipes. A user has at
+/// most a few hundred recipes: the names are sorted here, without a Postgres collation.
 ///
 /// Recipes without a name are left out, as in the recipe list.
-pub async fn get_user_recipes_newest_first(
+pub async fn get_user_recipes_alphabetical(
     pool: &PgPool,
     telegram_id: i64,
     limit: i64,
@@ -1219,28 +1221,16 @@ pub async fn get_user_recipes_newest_first(
         ));
     }
 
-    let total: i64 = sqlx::query(
-        "SELECT COUNT(*) FROM recipes WHERE telegram_id = $1 AND recipe_name IS NOT NULL",
-    )
-    .bind(telegram_id)
-    .fetch_one(pool)
-    .await
-    .context("Failed to count recipes")?
-    .get(0);
-
     let rows = sqlx::query(
         "SELECT id, recipe_name, created_at FROM recipes \
-         WHERE telegram_id = $1 AND recipe_name IS NOT NULL \
-         ORDER BY created_at DESC, id DESC LIMIT $2 OFFSET $3",
+         WHERE telegram_id = $1 AND recipe_name IS NOT NULL",
     )
     .bind(telegram_id)
-    .bind(limit)
-    .bind(offset)
     .fetch_all(pool)
     .await
-    .context("Failed to get the latest recipes")?;
+    .context("Failed to get the recipes")?;
 
-    let recipes = rows
+    let mut recipes: Vec<RecipeSummary> = rows
         .into_iter()
         .map(|row| RecipeSummary {
             id: row.get(0),
@@ -1248,7 +1238,18 @@ pub async fn get_user_recipes_newest_first(
             created_at: row.get(2),
         })
         .collect();
-    Ok((recipes, total))
+    recipes.sort_by(|a, b| {
+        crate::search::compare_names(&a.name, &b.name)
+            .then(a.created_at.cmp(&b.created_at))
+            .then(a.id.cmp(&b.id))
+    });
+    let total = i64::try_from(recipes.len()).unwrap_or(i64::MAX);
+    let page = recipes
+        .into_iter()
+        .skip(usize::try_from(offset).unwrap_or(0))
+        .take(usize::try_from(limit).unwrap_or(0))
+        .collect();
+    Ok((page, total))
 }
 
 /// Validate that the database schema matches what the application expects

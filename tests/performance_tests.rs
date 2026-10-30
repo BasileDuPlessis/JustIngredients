@@ -562,7 +562,7 @@ mod tests {
 
         // Benchmark recipe lookup
         let start = Instant::now();
-        let _recipes = db::get_user_recipes_newest_first(&db_pool, test_user_id, 1, 10)
+        let _recipes = db::get_user_recipes_alphabetical(&db_pool, test_user_id, 1, 10)
             .await
             .expect("Failed to get recipes");
         let lookup_duration = start.elapsed();
@@ -671,7 +671,7 @@ mod tests {
                     .ok();
 
                     // Simulate some read operations
-                    let _recipes = db::get_user_recipes_newest_first(&pool, user_id, 1, 5)
+                    let _recipes = db::get_user_recipes_alphabetical(&pool, user_id, 1, 5)
                         .await
                         .ok();
                 }

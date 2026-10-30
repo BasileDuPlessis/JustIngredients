@@ -52,7 +52,7 @@ src/bot/
 ├── html.rs                 # Html type (escaped text, <b>, <pre>), send_html / edit_html
 ├── ui_builder.rs           # Review list and keyboards, recipe list and card keyboards
 ├── ui_components.rs        # Buttons, pagination row, focused edit keyboard
-├── recipe_list.rs          # Recipe list: one button per recipe, newest first, 8 per page
+├── recipe_list.rs          # Recipe list: one button per recipe, alphabetical, 8 per page
 └── callbacks/
     ├── callback_handler.rs    # Dispatch by dialogue state, then by data prefix
     ├── review_callbacks.rs    # ReviewIngredients buttons (edit, delete, confirm, cancel)
@@ -239,7 +239,7 @@ without deleting (Telegram refuses them). A database error only leaves the messa
 
 ## My Recipes
 - **List** (`/liste`, 📚 button, `recipe_list::show_recipe_list`): one button per named recipe
-  of the user, newest first, 8 per page, labelled with the name (cut at 30 characters); a name
+  of the user, alphabetical (accents and case ignored, "Tarte (2)" before "Tarte (10)"), 8 per page, labelled with the name (cut at 30 characters); a name
   that appears more than once on the page adds the day ("Tarte · 27 oct. 2026"), and the time
   when they were saved the same day (Paris). Two recipes with the same name are two entries. Callback data `recipe_instance:<id>`. Pagination row: ⬅️ `page:<n>`, "Page x of y"
   (`noop`, ignored), ➡️ `page:<n>`; it edits the list message, and a page past the end (recipes

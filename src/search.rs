@@ -146,6 +146,47 @@ pub fn search<'a>(recipes: &'a [SearchableRecipe], query: &str) -> Vec<&'a Searc
     found.into_iter().map(|(_, recipe)| recipe).collect()
 }
 
+/// The alphabetical order of recipe names, as a reader expects it: case and accents ignored
+/// ("Éclair" between "Crumble" and "Flan"), numbers by value ("Tarte (2)" before "Tarte (10)"),
+/// then the exact spelling.
+pub fn compare_names(a: &str, b: &str) -> std::cmp::Ordering {
+    let key = |name: &str| fold(name).split_whitespace().collect::<Vec<_>>().join(" ");
+    natural_order(&key(a), &key(b)).then_with(|| a.cmp(b))
+}
+
+/// Compares two texts with their runs of digits by value.
+fn natural_order(a: &str, b: &str) -> std::cmp::Ordering {
+    let (mut a, mut b) = (a.chars().peekable(), b.chars().peekable());
+    loop {
+        match (a.peek().copied(), b.peek().copied()) {
+            (None, None) => return std::cmp::Ordering::Equal,
+            (None, Some(_)) => return std::cmp::Ordering::Less,
+            (Some(_), None) => return std::cmp::Ordering::Greater,
+            (Some(x), Some(y)) if x.is_ascii_digit() && y.is_ascii_digit() => {
+                let number = |chars: &mut std::iter::Peekable<std::str::Chars<'_>>| {
+                    let mut digits = String::new();
+                    while let Some(digit) = chars.next_if(char::is_ascii_digit) {
+                        digits.push(digit);
+                    }
+                    digits.trim_start_matches('0').to_string()
+                };
+                let (x, y) = (number(&mut a), number(&mut b));
+                let order = x.len().cmp(&y.len()).then_with(|| x.cmp(&y));
+                if order != std::cmp::Ordering::Equal {
+                    return order;
+                }
+            }
+            (Some(x), Some(y)) => {
+                if x != y {
+                    return x.cmp(&y);
+                }
+                a.next();
+                b.next();
+            }
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -263,6 +304,41 @@ mod tests {
         assert!(
             is_query(&"é".repeat(MAX_QUERY_CHARS)),
             "characters, not bytes"
+        );
+    }
+
+    #[test]
+    fn names_sort_like_a_reader_expects() {
+        let mut names = vec![
+            "Zébu",
+            "tarte (10)",
+            "Tarte (2)",
+            "Tarte",
+            "Éclair",
+            "crêpes",
+            "Crumble",
+            "abricots",
+            "Flan",
+        ];
+        names.sort_by(|a, b| compare_names(a, b));
+        assert_eq!(
+            names,
+            [
+                "abricots",
+                "crêpes",
+                "Crumble",
+                "Éclair",
+                "Flan",
+                "Tarte",
+                "Tarte (2)",
+                "tarte (10)",
+                "Zébu"
+            ]
+        );
+        assert_eq!(
+            compare_names("tarte", "Tarte"),
+            "tarte".cmp("Tarte"),
+            "then the spelling"
         );
     }
 

@@ -1,5 +1,5 @@
 //! The recipe list (`/liste`, the home message's "all my recipes", page buttons): one button per
-//! recipe, newest first, [`RECIPES_PER_PAGE`] per page, labelled with the recipe name (and its
+//! recipe, in alphabetical order, [`RECIPES_PER_PAGE`] per page, labelled with the recipe name (and its
 //! date only when the name appears twice on the page). A button carries the recipe id
 //! (`recipe_instance:<id>`).
 
@@ -10,7 +10,7 @@ use sqlx::postgres::PgPool;
 use teloxide::prelude::*;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, MessageId};
 
-use crate::db::{get_user_recipes_newest_first, RecipeSummary};
+use crate::db::{get_user_recipes_alphabetical, RecipeSummary};
 use crate::localization::{t_args_lang, t_lang, LocalizationManager};
 
 use super::html::{edit_html, send_html, Html};
@@ -148,13 +148,13 @@ pub async fn show_recipe_list(
     let page = page.min(usize::try_from(10_000 / RECIPES_PER_PAGE).unwrap_or(0));
     let offset = |page: usize| i64::try_from(page).unwrap_or(0) * RECIPES_PER_PAGE;
     let (mut recipes, total) =
-        get_user_recipes_newest_first(pool, telegram_id, RECIPES_PER_PAGE, offset(page)).await?;
+        get_user_recipes_alphabetical(pool, telegram_id, RECIPES_PER_PAGE, offset(page)).await?;
     let mut page = page;
     if recipes.is_empty() && total > 0 {
         // Recipes were deleted since the page buttons were made
         page = usize::try_from((total - 1) / RECIPES_PER_PAGE).unwrap_or(0);
         (recipes, _) =
-            get_user_recipes_newest_first(pool, telegram_id, RECIPES_PER_PAGE, offset(page))
+            get_user_recipes_alphabetical(pool, telegram_id, RECIPES_PER_PAGE, offset(page))
                 .await?;
     }
 
