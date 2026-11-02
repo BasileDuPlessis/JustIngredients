@@ -8,6 +8,15 @@ updates:
     groups:
       cargo-minor-and-patch:
         update-types: [minor, patch]
+      # opentelemetry, opentelemetry_sdk and opentelemetry-otlp only compile at the same version:
+      # one pull request for the three (2026-11-02, #8 and #9 failed alone)
+      opentelemetry:
+        patterns: ["opentelemetry*"]
+    ignore:
+      # The bot gives teloxide its own reqwest client: reqwest moves when teloxide does
+      # (teloxide 0.17 needs reqwest 0.12; #7 failed with 0.13)
+      - dependency-name: reqwest
+        versions: [">= 0.13"]
 
   - package-ecosystem: github-actions
     directory: /
@@ -16,3 +25,7 @@ updates:
     groups:
       github-actions:
         patterns: ["*"]
+    ignore:
+      # Its "version" is the Rust release, kept with rust-toolchain.toml and the Dockerfile;
+      # Dependabot read @1.99 as a version and proposed a Rust 1.120 that does not exist (#11)
+      - dependency-name: dtolnay/rust-toolchain

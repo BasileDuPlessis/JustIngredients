@@ -48,7 +48,7 @@ jobs:
       FLY_DB_TOKEN: ${{ secrets.FLY_STAGING_DB_TOKEN }}
     steps:
     - name: Checkout tested commit
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         ref: ${{ env.DEPLOY_SHA }}
 
@@ -95,12 +95,12 @@ jobs:
     environment: staging
     steps:
     - name: Checkout tested commit
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
       with:
         ref: ${{ env.DEPLOY_SHA }}
 
     - name: Setup Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@v7
       with:
         node-version: '22'
 
