@@ -71,6 +71,23 @@ jobs:
         flyctl deploy --ha=false --config deploy/fly-staging.toml --app "$STAGING_APP" \
           --image "$IMAGE:sha-$DEPLOY_SHA"
 
+    # A stopped machine keeps its new image but stays stopped after a deploy, and staging does
+    # not start on a request (auto_start_machines = false): start it and wait for it to answer
+    - name: Start the staging bot
+      run: |
+        for id in $(flyctl machine list --app "$STAGING_APP" --quiet); do
+          flyctl machine start "$id" --app "$STAGING_APP" || true
+        done
+        for attempt in $(seq 1 12); do
+          if curl -fsS -m 5 -o /dev/null https://just-ingredients-staging.fly.dev/health/live; then
+            echo "Staging answers"
+            exit 0
+          fi
+          sleep 5
+        done
+        echo "::error::Staging does not answer after its start"
+        exit 1
+
   smoke-tests:
     needs: deploy-staging
     runs-on: ubuntu-26.04
