@@ -557,6 +557,9 @@ async fn dispatch_message(
     extractor: SharedExtractor,
 ) -> Result<()> {
     let start_time = std::time::Instant::now();
+    if let Some(user) = &msg.from {
+        crate::observability::usage::seen(&pool, user.id.0 as i64, user.language_code.as_deref());
+    }
     let result = if msg.text().is_some() {
         handle_text_message(&bot, &msg, dialogue, pool, &localization).await
     } else if msg.photo().is_some() {

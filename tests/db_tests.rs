@@ -662,12 +662,18 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
 
     // Check that migrations table was created and version is updated
     let version = migrations::get_current_version(pool).await?;
-    assert_eq!(version, 6);
+    assert_eq!(version, 7);
 
     // Verify that tables were created
     validate_database_schema(pool).await?;
 
     // Roll back with the down scripts, one version at a time, then all tables
+    migrations::rollback_to_version(pool, 6).await?;
+    assert_eq!(migrations::get_current_version(pool).await?, 6);
+    assert!(
+        validate_database_schema(pool).await.is_err(),
+        "usage_days is required"
+    );
     migrations::rollback_to_version(pool, 5).await?;
     assert_eq!(migrations::get_current_version(pool).await?, 5);
     assert!(
@@ -1559,5 +1565,65 @@ async fn search_finds_names_and_ingredients_of_the_user_only(pool: PgPool) -> Re
         names("anglaise").is_empty(),
         "another user's recipe never appears"
     );
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn visits_and_daily_usage_are_recorded(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let today = just_ingredients::observability::usage::today();
+    let active_today = |pool: PgPool| async move {
+        sqlx::query_scalar::<_, i64>("SELECT active_users FROM usage_days WHERE day = $1")
+            .bind(today)
+            .fetch_optional(&pool)
+            .await
+    };
+
+    // A first visit creates the user and counts them once for the day
+    record_user_seen(&pool, 1, Some("fr")).await?;
+    record_user_seen(&pool, 1, Some("fr")).await?;
+    record_user_seen(&pool, 2, None).await?;
+    assert_eq!(active_today(pool.clone()).await?, Some(2));
+    // Back after a day away: counted again today
+    sqlx::query("UPDATE users SET last_seen_at = now() - interval '2 days' WHERE telegram_id = 1")
+        .execute(&pool)
+        .await?;
+    record_user_seen(&pool, 1, Some("fr")).await?;
+    assert_eq!(active_today(pool.clone()).await?, Some(3));
+
+    let counts = UsageCounts {
+        photos_read: 2,
+        photos_failed: 1,
+        recipes_created: 3,
+        gemini_calls: 3,
+        gemini_failures: 1,
+        gemini_cost_micro_usd: 1500,
+    };
+    add_usage(&pool, today, &counts).await?;
+    add_usage(&pool, today, &counts).await?;
+
+    let totals = usage_totals(&pool).await?;
+    assert_eq!(
+        totals,
+        UsageTotals {
+            users_last_day: 2,
+            users_last_week: 2,
+            users: 2,
+            recipes: 0
+        }
+    );
+
+    let mut twice = counts;
+    twice += counts;
+    let all = usage_summary(&pool, None, today).await?;
+    assert_eq!(all.counts, twice);
+    assert_eq!((all.active_users, all.new_users, all.users), (2, 2, 2));
+    let week = usage_summary(&pool, today.checked_sub_days(chrono::Days::new(6)), today).await?;
+    assert_eq!(week.counts, twice);
+    let tomorrow = today.succ_opt().unwrap_or(today);
+    let later = usage_summary(&pool, Some(tomorrow), tomorrow).await?;
+    assert_eq!(later.counts, UsageCounts::default());
+    assert_eq!((later.active_users, later.new_users, later.users), (0, 0, 2));
     Ok(())
 }

@@ -212,6 +212,8 @@ async fn main() -> Result<()> {
         &app_config,
     )
     .await?;
+    // The usage history: visits and daily totals, the user and recipe gauges
+    tokio::spawn(observability::usage::run(Arc::clone(&shared_pool)));
 
     // Initialize localization manager
     let localization_manager = localization::create_localization_manager()?;
@@ -359,13 +361,16 @@ async fn main() -> Result<()> {
         }));
 
     let listener = teloxide::update_listeners::polling_default(bot.clone()).await;
-    Dispatcher::builder(bot, handler)
+    let dispatched = Dispatcher::builder(bot, handler)
         .enable_ctrlc_handler()
         .build()
         .try_dispatch_with_listener(
             listener,
             LoggingErrorHandler::with_custom_text("An error from the update listener"),
         )
-        .await
+        .await;
+    // The last minute of usage counts, before exiting
+    observability::usage::flush(&shared_pool).await;
+    dispatched
         .map_err(|e| anyhow::anyhow!("Telegram API unreachable when the dispatcher started: {e}"))
 }

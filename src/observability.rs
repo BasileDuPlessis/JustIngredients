@@ -7,6 +7,7 @@
 pub mod health_checks;
 pub mod metrics;
 pub mod server;
+pub mod usage;
 
 pub use health_checks::*;
 pub use metrics::*;

@@ -47,6 +47,11 @@ pub async fn callback_handler_with_cache(
     // Instrumented, not entered: an entered span would tag other tasks across .await
     async {
         let start_time = std::time::Instant::now();
+        crate::observability::usage::seen(
+            &pool,
+            q.from.id.0 as i64,
+            q.from.language_code.as_deref(),
+        );
 
         // Check dialogue state
         let dialogue_state = dialogue.get().await?;

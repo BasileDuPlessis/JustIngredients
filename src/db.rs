@@ -348,6 +348,171 @@ pub async fn set_unit_view(
     Ok(())
 }
 
+// --- Usage history (plan O3, `specs/tasks/observability.md`) ---
+
+/// Records a visit of `telegram_id` now: `users.last_seen_at` (the user is created when needed),
+/// and one more active user for the day, Paris time, at the user's first visit of the day.
+pub async fn record_user_seen(
+    pool: &PgPool,
+    telegram_id: i64,
+    language_code: Option<&str>,
+) -> Result<()> {
+    // One statement: `previous` sees the row as it was before `seen` updates it
+    sqlx::query(
+        "WITH previous AS (SELECT last_seen_at FROM users WHERE telegram_id = $1), \
+         seen AS ( \
+             INSERT INTO users (telegram_id, language_code, last_seen_at) VALUES ($1, $2, now()) \
+             ON CONFLICT (telegram_id) DO UPDATE SET last_seen_at = now() \
+             RETURNING 1 \
+         ) \
+         INSERT INTO usage_days (day, active_users) \
+         SELECT (now() AT TIME ZONE 'Europe/Paris')::date, 1 FROM seen LEFT JOIN previous ON true \
+         WHERE previous.last_seen_at IS NULL \
+            OR (previous.last_seen_at AT TIME ZONE 'Europe/Paris')::date \
+               < (now() AT TIME ZONE 'Europe/Paris')::date \
+         ON CONFLICT (day) DO UPDATE SET active_users = usage_days.active_users + 1",
+    )
+    .bind(telegram_id)
+    .bind(language_code.unwrap_or("en"))
+    .execute(pool)
+    .await
+    .context("Failed to record the user's visit")?;
+    Ok(())
+}
+
+/// What happened during part of a day, added to its line of `usage_days`.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct UsageCounts {
+    pub photos_read: i64,
+    pub photos_failed: i64,
+    pub recipes_created: i64,
+    pub gemini_calls: i64,
+    pub gemini_failures: i64,
+    pub gemini_cost_micro_usd: i64,
+}
+
+impl std::ops::AddAssign for UsageCounts {
+    fn add_assign(&mut self, other: Self) {
+        self.photos_read += other.photos_read;
+        self.photos_failed += other.photos_failed;
+        self.recipes_created += other.recipes_created;
+        self.gemini_calls += other.gemini_calls;
+        self.gemini_failures += other.gemini_failures;
+        self.gemini_cost_micro_usd += other.gemini_cost_micro_usd;
+    }
+}
+
+/// Adds `counts` to the line of `day` (Paris time), created when needed.
+pub async fn add_usage(pool: &PgPool, day: chrono::NaiveDate, counts: &UsageCounts) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO usage_days (day, photos_read, photos_failed, recipes_created, gemini_calls, \
+         gemini_failures, gemini_cost_micro_usd) VALUES ($1, $2, $3, $4, $5, $6, $7) \
+         ON CONFLICT (day) DO UPDATE SET \
+         photos_read = usage_days.photos_read + EXCLUDED.photos_read, \
+         photos_failed = usage_days.photos_failed + EXCLUDED.photos_failed, \
+         recipes_created = usage_days.recipes_created + EXCLUDED.recipes_created, \
+         gemini_calls = usage_days.gemini_calls + EXCLUDED.gemini_calls, \
+         gemini_failures = usage_days.gemini_failures + EXCLUDED.gemini_failures, \
+         gemini_cost_micro_usd = usage_days.gemini_cost_micro_usd + EXCLUDED.gemini_cost_micro_usd",
+    )
+    .bind(day)
+    .bind(counts.photos_read)
+    .bind(counts.photos_failed)
+    .bind(counts.recipes_created)
+    .bind(counts.gemini_calls)
+    .bind(counts.gemini_failures)
+    .bind(counts.gemini_cost_micro_usd)
+    .execute(pool)
+    .await
+    .context("Failed to save the day's usage")?;
+    Ok(())
+}
+
+/// Users seen in the last 24 hours and 7 days, all users, and all recipes: the `ji_users` and
+/// `ji_recipes` gauges.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct UsageTotals {
+    pub users_last_day: i64,
+    pub users_last_week: i64,
+    pub users: i64,
+    pub recipes: i64,
+}
+
+pub async fn usage_totals(pool: &PgPool) -> Result<UsageTotals> {
+    let row = sqlx::query(
+        "SELECT count(*) FILTER (WHERE last_seen_at > now() - interval '1 day') AS last_day, \
+         count(*) FILTER (WHERE last_seen_at > now() - interval '7 days') AS last_week, \
+         count(*) AS users, (SELECT count(*) FROM recipes) AS recipes FROM users",
+    )
+    .fetch_one(pool)
+    .await
+    .context("Failed to count users and recipes")?;
+    Ok(UsageTotals {
+        users_last_day: row.try_get("last_day")?,
+        users_last_week: row.try_get("last_week")?,
+        users: row.try_get("users")?,
+        recipes: row.try_get("recipes")?,
+    })
+}
+
+/// The usage of the days `from..=to` (Paris time; from the first day without `from`), for the
+/// weekly report and `/stats` (plan O5).
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct UsageSummary {
+    /// Users seen since `from` (since `from`'s midnight, so also after `to`: a user keeps only
+    /// the last visit); every user seen once without `from`.
+    pub active_users: i64,
+    /// Users who first came during the period.
+    pub new_users: i64,
+    /// All users today.
+    pub users: i64,
+    pub counts: UsageCounts,
+}
+
+pub async fn usage_summary(
+    pool: &PgPool,
+    from: Option<chrono::NaiveDate>,
+    to: chrono::NaiveDate,
+) -> Result<UsageSummary> {
+    let row = sqlx::query(
+        "WITH bounds AS ( \
+             SELECT $1::date::timestamp AT TIME ZONE 'Europe/Paris' AS since, \
+                    ($2::date + 1)::timestamp AT TIME ZONE 'Europe/Paris' AS until \
+         ) \
+         SELECT \
+           (SELECT count(*) FROM users, bounds WHERE last_seen_at >= coalesce(bounds.since, '-infinity')) \
+             AS active_users, \
+           (SELECT count(*) FROM users, bounds WHERE created_at >= coalesce(bounds.since, '-infinity') \
+             AND created_at < bounds.until) AS new_users, \
+           (SELECT count(*) FROM users) AS users, \
+           coalesce(sum(photos_read), 0)::bigint AS photos_read, \
+           coalesce(sum(photos_failed), 0)::bigint AS photos_failed, \
+           coalesce(sum(recipes_created), 0)::bigint AS recipes_created, \
+           coalesce(sum(gemini_calls), 0)::bigint AS gemini_calls, \
+           coalesce(sum(gemini_failures), 0)::bigint AS gemini_failures, \
+           coalesce(sum(gemini_cost_micro_usd), 0)::bigint AS gemini_cost_micro_usd \
+         FROM usage_days WHERE ($1::date IS NULL OR day >= $1) AND day <= $2",
+    )
+    .bind(from)
+    .bind(to)
+    .fetch_one(pool)
+    .await
+    .context("Failed to read the usage history")?;
+    Ok(UsageSummary {
+        active_users: row.try_get("active_users")?,
+        new_users: row.try_get("new_users")?,
+        users: row.try_get("users")?,
+        counts: UsageCounts {
+            photos_read: row.try_get("photos_read")?,
+            photos_failed: row.try_get("photos_failed")?,
+            recipes_created: row.try_get("recipes_created")?,
+            gemini_calls: row.try_get("gemini_calls")?,
+            gemini_failures: row.try_get("gemini_failures")?,
+            gemini_cost_micro_usd: row.try_get("gemini_cost_micro_usd")?,
+        },
+    })
+}
+
 /// Rewrites the units saved before they were normalized (UX plan U8.3) the way photos and typed
 /// lines are normalized now (`units::normalize_measurement`): "G", "gram", "gr" → g, "litres"
 /// → l, cl and dl → ml with the quantity converted, spoons in words → tbsp and tsp, count units
@@ -1375,6 +1540,7 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
         "ingredients",
         "chat_messages",
         "recipe_links",
+        "usage_days",
     ];
     for table_name in required_tables {
         let exists: bool = sqlx::query_scalar(
@@ -1405,6 +1571,7 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
             ("created_at", "timestamp with time zone"),
             ("updated_at", "timestamp with time zone"),
             ("unit_view", "text"),
+            ("last_seen_at", "timestamp with time zone"),
         ],
     )
     .await?;
@@ -1857,6 +2024,33 @@ pub mod migrations {
                 down: Some(
                     r#"
                     DROP TABLE IF EXISTS recipe_links;
+                "#,
+                ),
+            },
+            Migration {
+                version: 7,
+                name: "usage_history",
+                // Plan O3: each user's last visit (active users), and one line of totals per
+                // day, Paris time, kept beyond the 15 days of Fly's metrics
+                up: r#"
+                    ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
+                    CREATE INDEX IF NOT EXISTS users_last_seen_at_idx ON users (last_seen_at);
+                    CREATE TABLE IF NOT EXISTS usage_days (
+                        day DATE PRIMARY KEY,
+                        active_users BIGINT NOT NULL DEFAULT 0,
+                        photos_read BIGINT NOT NULL DEFAULT 0,
+                        photos_failed BIGINT NOT NULL DEFAULT 0,
+                        recipes_created BIGINT NOT NULL DEFAULT 0,
+                        gemini_calls BIGINT NOT NULL DEFAULT 0,
+                        gemini_failures BIGINT NOT NULL DEFAULT 0,
+                        gemini_cost_micro_usd BIGINT NOT NULL DEFAULT 0
+                    );
+                "#,
+                down: Some(
+                    r#"
+                    DROP TABLE IF EXISTS usage_days;
+                    DROP INDEX IF EXISTS users_last_seen_at_idx;
+                    ALTER TABLE users DROP COLUMN IF EXISTS last_seen_at;
                 "#,
                 ),
             },

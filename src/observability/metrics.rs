@@ -46,6 +46,10 @@ impl PhotoResult {
 /// A photo handled: `ji_photos_total{result}`.
 pub fn photo(result: PhotoResult) {
     metrics::counter!("ji_photos_total", "result" => result.as_str()).increment(1);
+    super::usage::add(|day| match result {
+        PhotoResult::Read => day.photos_read += 1,
+        _ => day.photos_failed += 1,
+    });
 }
 
 /// Recipes saved from one photo: `ji_recipes_created_total{kind}`, `photo` for the recipe and
@@ -54,6 +58,7 @@ pub fn recipes_created(parts: usize) {
     if parts == 0 {
         return;
     }
+    super::usage::add(|day| day.recipes_created += i64::try_from(parts).unwrap_or(0));
     metrics::counter!("ji_recipes_created_total", "kind" => "photo").increment(1);
     let linked = u64::try_from(parts - 1).unwrap_or(0);
     if linked > 0 {
@@ -120,8 +125,17 @@ pub fn set_recipes(total: u64) {
 // --- Gemini and its cost ---
 
 /// One photo sent to Gemini: `ji_gemini_requests_total{model, result}` (`success` or an
-/// `ExtractionError::kind`), its duration with retries, and the retries.
+/// `ExtractionError::kind`; `circuit_open` when the breaker refused it without a call), its
+/// duration with retries, and the retries.
 pub fn gemini_request(model: &str, result: &'static str, duration: Duration, retries: u32) {
+    if result != "circuit_open" {
+        super::usage::add(|day| {
+            day.gemini_calls += 1;
+            if result != "success" {
+                day.gemini_failures += 1;
+            }
+        });
+    }
     metrics::counter!("ji_gemini_requests_total", "model" => model.to_string(), "result" => result)
         .increment(1);
     metrics::histogram!("ji_gemini_duration_seconds", "model" => model.to_string())
@@ -142,6 +156,7 @@ pub fn gemini_usage(model: &str, input_tokens: u64, output_tokens: u64, cost: Op
     if let Some(cost) = cost {
         metrics::counter!("ji_gemini_cost_micro_usd_total", "model" => model.to_string())
             .increment(cost);
+        super::usage::add(|day| day.gemini_cost_micro_usd += i64::try_from(cost).unwrap_or(0));
     }
 }
 
