@@ -60,45 +60,6 @@ pub async fn check_bot_token_health(token: &str) -> Result<()> {
     Ok(())
 }
 
-/// Start a background task to periodically record health check metrics
-pub async fn start_health_metrics_recorder(
-    db_pool: Option<std::sync::Arc<PgPool>>,
-    bot_token: Option<String>,
-) -> tokio::task::JoinHandle<()> {
-    tokio::spawn(async move {
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60)); // Every minute
-
-        loop {
-            interval.tick().await;
-
-            // Perform database health check
-            if let Some(pool) = &db_pool {
-                let check_start = std::time::Instant::now();
-                let db_healthy = check_database_health(pool.as_ref()).await.is_ok();
-                let check_duration = check_start.elapsed();
-                crate::observability::metrics::record_health_check_metrics(
-                    "database",
-                    db_healthy,
-                    check_duration,
-                );
-            }
-
-            // Perform bot token health check
-            if let Some(token) = &bot_token {
-                let check_start = std::time::Instant::now();
-                let bot_healthy =
-                    check_bot_token_health(token).await.is_ok() && check_telegram_health().is_ok();
-                let check_duration = check_start.elapsed();
-                crate::observability::metrics::record_health_check_metrics(
-                    "telegram_bot",
-                    bot_healthy,
-                    check_duration,
-                );
-            }
-        }
-    })
-}
-
 /// Telegram is considered unreachable when no API call succeeded for this long.
 pub const TELEGRAM_STALE_AFTER: std::time::Duration = std::time::Duration::from_secs(5 * 60);
 

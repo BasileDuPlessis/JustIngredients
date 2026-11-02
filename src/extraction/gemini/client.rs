@@ -20,7 +20,7 @@ use crate::extraction::{
     Extraction, ExtractionError, ExtractionFuture, GeminiConfig, ImageInput, IngredientExtractor,
     ThinkingLevel,
 };
-use crate::observability::{record_llm_request, record_llm_usage};
+use crate::observability::{gemini_request, gemini_usage};
 use crate::retry::{retry_with_backoff, Backoff, RetryDecision};
 
 /// Production endpoint of the Gemini API.
@@ -184,7 +184,7 @@ impl GeminiExtractor {
         let permit = match self.breaker.try_acquire() {
             Ok(permit) => permit,
             Err(error) => {
-                record_llm_request(&self.model, error.kind(), started.elapsed(), 0);
+                gemini_request(&self.model, error.kind(), started.elapsed(), 0);
                 warn!(model = %self.model, "Gemini circuit open: image rejected without calling the API");
                 return Err(error);
             }
@@ -243,7 +243,7 @@ impl GeminiExtractor {
         let retries = attempts.saturating_sub(1);
         match result {
             Ok(output) => {
-                record_llm_request(&self.model, "success", elapsed, retries);
+                gemini_request(&self.model, "success", elapsed, retries);
                 info!(
                     model = %self.model,
                     model_version = output.model_version.as_deref().unwrap_or("unknown"),
@@ -258,7 +258,7 @@ impl GeminiExtractor {
                 Ok(output.extraction)
             }
             Err(error) => {
-                record_llm_request(&self.model, error.kind(), elapsed, retries);
+                gemini_request(&self.model, error.kind(), elapsed, retries);
                 warn!(
                     model = %self.model,
                     attempts,
@@ -310,7 +310,7 @@ impl GeminiExtractor {
         })?;
         // Billed even when the answer is then rejected (truncated, blocked, invalid).
         let usage = parsed.usage_metadata.unwrap_or_default();
-        record_llm_usage(
+        gemini_usage(
             &self.model,
             usage.prompt_token_count,
             usage.output_tokens(),
@@ -657,14 +657,14 @@ mod tests {
             .into_vec()
             .into_iter()
             .any(|(key, _, _, value)| {
-                key.key().name() == "llm_requests_total"
+                key.key().name() == "ji_gemini_requests_total"
                     && key
                         .key()
                         .labels()
-                        .any(|l| l.key() == "outcome" && l.value() == "circuit_open")
+                        .any(|l| l.key() == "result" && l.value() == "circuit_open")
                     && value == DebugValue::Counter(1)
             });
-        assert!(recorded, "rejection recorded with outcome circuit_open");
+        assert!(recorded, "rejection recorded with result circuit_open");
         Ok(())
     }
 

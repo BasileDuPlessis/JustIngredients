@@ -88,15 +88,7 @@ pub async fn handle_start_command(
     localization: &Arc<crate::localization::LocalizationManager>,
     language_code: Option<&str>,
 ) -> Result<()> {
-    // Record user engagement metric for start command
-    if let Some(user) = msg.from.as_ref() {
-        crate::observability::record_user_engagement_metrics(
-            user.id.0 as i64,
-            crate::observability::UserAction::StartCommand,
-            None, // No session duration for individual actions
-            language_code,
-        );
-    }
+    crate::observability::action(crate::observability::Action::Start);
 
     // Shown until the next action ends, above the recipe list
     let welcome_message = render_welcome(localization, language_code);
@@ -121,15 +113,7 @@ pub async fn handle_help_command(
     localization: &Arc<crate::localization::LocalizationManager>,
     language_code: Option<&str>,
 ) -> Result<()> {
-    // Record user engagement metric for help command
-    if let Some(user) = msg.from.as_ref() {
-        crate::observability::record_user_engagement_metrics(
-            user.id.0 as i64,
-            crate::observability::UserAction::HelpCommand,
-            None, // No session duration for individual actions
-            language_code,
-        );
-    }
+    crate::observability::action(crate::observability::Action::Help);
 
     let help_message = render_help(localization, language_code);
     // Shown until the next action ends, above the recipe list
@@ -156,14 +140,7 @@ pub async fn handle_search_command(
     localization: &Arc<crate::localization::LocalizationManager>,
     language_code: Option<&str>,
 ) -> Result<()> {
-    if let Some(user) = msg.from.as_ref() {
-        crate::observability::record_user_engagement_metrics(
-            user.id.0 as i64,
-            crate::observability::UserAction::RecipeSearch,
-            None, // No session duration for individual actions
-            language_code,
-        );
-    }
+    crate::observability::action(crate::observability::Action::Search);
     if words.trim().is_empty() {
         let sent = bot
             .send_message(

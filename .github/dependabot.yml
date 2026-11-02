@@ -8,10 +8,6 @@ updates:
     groups:
       cargo-minor-and-patch:
         update-types: [minor, patch]
-      # opentelemetry, opentelemetry_sdk and opentelemetry-otlp only compile at the same version:
-      # one pull request for the three (2026-11-02, #8 and #9 failed alone)
-      opentelemetry:
-        patterns: ["opentelemetry*"]
     ignore:
       # The bot gives teloxide its own reqwest client: reqwest moves when teloxide does
       # (teloxide 0.17 needs reqwest 0.12; #7 failed with 0.13)

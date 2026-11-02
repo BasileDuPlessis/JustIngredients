@@ -75,12 +75,7 @@ pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Re
     .context("Failed to insert new recipe");
 
     let duration = start_time.elapsed();
-    observability::record_db_performance_metrics(
-        "create_recipe",
-        duration,
-        1,
-        crate::observability::QueryComplexity::Simple,
-    );
+    crate::observability::db_query("create_recipe", duration);
 
     match result {
         Ok(row) => {
@@ -479,7 +474,6 @@ pub async fn save_recipe_parts(
     // One name per recipe of the user: a second "Tarte" is stored as "Tarte (2)"
     let mut taken = recipe_names_of(&mut tx, telegram_id, None).await?;
     let mut saved = Vec::with_capacity(parts.len());
-    let mut statements = 1;
     for part in parts {
         let name = unique_recipe_name(&part.name, &taken);
         let recipe_id: i64 = sqlx::query_scalar(
@@ -507,7 +501,6 @@ pub async fn save_recipe_parts(
             // The position, not the name: errors are logged and must not carry recipe content
             .with_context(|| format!("Failed to insert ingredient {}", position + 1))?;
         }
-        statements += 1 + part.ingredients.len() as u64;
         taken.push(name.clone());
         saved.push(SavedRecipe {
             recipe_id,
@@ -520,17 +513,11 @@ pub async fn save_recipe_parts(
     for (index, first) in saved.iter().enumerate() {
         for second in &saved[index + 1..] {
             link_in(&mut tx, first.recipe_id, second.recipe_id).await?;
-            statements += 1;
         }
     }
 
     tx.commit().await.context("Failed to commit the recipe")?;
-    observability::record_db_performance_metrics(
-        "save_recipe",
-        start_time.elapsed(),
-        statements,
-        crate::observability::QueryComplexity::Medium,
-    );
+    crate::observability::db_query("save_recipe", start_time.elapsed());
     Ok(saved)
 }
 
@@ -672,12 +659,7 @@ pub async fn apply_ingredient_changes(
     tx.commit()
         .await
         .context("Failed to commit the ingredient changes")?;
-    observability::record_db_performance_metrics(
-        "apply_ingredient_changes",
-        start_time.elapsed(),
-        (updates.len() + additions.len() + deletions.len()) as u64,
-        crate::observability::QueryComplexity::Medium,
-    );
+    crate::observability::db_query("apply_ingredient_changes", start_time.elapsed());
     Ok(())
 }
 
@@ -826,7 +808,7 @@ pub async fn get_or_create_user_cached(
         let cache_manager = match cache.lock() {
             Ok(manager) => manager,
             Err(poisoned) => {
-                crate::observability::record_mutex_poisoning("cache_manager", "user_lookup");
+                crate::observability::error("internal", "mutex_poisoned");
                 // For poisoned mutex, we can still access the data but log the incident
                 poisoned.into_inner()
             }
@@ -946,12 +928,7 @@ pub async fn create_ingredient(
     .context("Failed to insert new ingredient");
 
     let duration = start_time.elapsed();
-    observability::record_db_performance_metrics(
-        "create_ingredient",
-        duration,
-        1,
-        crate::observability::QueryComplexity::Simple,
-    );
+    crate::observability::db_query("create_ingredient", duration);
 
     match result {
         Ok(row) => {

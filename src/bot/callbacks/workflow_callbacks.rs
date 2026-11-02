@@ -171,14 +171,6 @@ pub async fn handle_workflow_button(
 ) -> Result<()> {
     match data {
         "workflow_add_another" => {
-            // Record user engagement metric for workflow continuation
-            crate::observability::record_user_engagement_metrics(
-                q.from.id.0 as i64,
-                crate::observability::UserAction::WorkflowContinue,
-                None, // No session duration for individual actions
-                q.from.language_code.as_deref(),
-            );
-
             bot.send_message(
                 q.message
                     .as_ref()
@@ -197,13 +189,7 @@ pub async fn handle_workflow_button(
                 .await?;
         }
         "workflow_list_recipes" => {
-            // Record user engagement metric for recipe listing
-            crate::observability::record_user_engagement_metrics(
-                q.from.id.0 as i64,
-                crate::observability::UserAction::RecipesCommand,
-                None, // No session duration for individual actions
-                q.from.language_code.as_deref(),
-            );
+            crate::observability::action(crate::observability::Action::List);
 
             handle_list_recipes(
                 bot,
@@ -218,13 +204,7 @@ pub async fn handle_workflow_button(
             .await?;
         }
         "workflow_search_recipes" => {
-            // Record user engagement metric for recipe search
-            crate::observability::record_user_engagement_metrics(
-                q.from.id.0 as i64,
-                crate::observability::UserAction::RecipeSearch,
-                None, // No session duration for individual actions
-                q.from.language_code.as_deref(),
-            );
+            crate::observability::action(crate::observability::Action::Search);
 
             // The 🔍 of older home messages: that message goes, how to search comes at the
             // bottom, under the action's message when one is running

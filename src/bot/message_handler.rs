@@ -40,7 +40,6 @@ use super::dialogue_manager::{
 use super::HandlerContext;
 
 // Import observability
-use crate::observability;
 
 async fn handle_text_message(
     bot: &Bot,
@@ -419,15 +418,14 @@ async fn handle_command(
 ///
 /// ```text
 /// 1. Extract message metadata (type, language, user info)
-/// 2. Record telemetry metrics for monitoring
-/// 3. Route by message type:
+/// 2. Route by message type:
 ///    ├── Text → handle_text_message()
 ///    ├── Photo → handle_photo_message()
 ///    ├── Document → handle_document_message()
 ///    └── Other → handle_unsupported_message()
-/// 4. Handle dialogue state transitions
-/// 5. Record performance metrics
-/// 6. Return result with error handling
+/// 3. Handle dialogue state transitions
+/// 4. Measure the handling time (`ji_update_duration_seconds`)
+/// 5. Return result with error handling
 /// ```
 ///
 /// ## Dialogue State Machine
@@ -476,15 +474,6 @@ async fn handle_command(
 /// - **User-Friendly Messages**: Localized error responses
 /// - **State Preservation**: Dialogue state maintained across errors
 /// - **Logging**: Comprehensive error logging for debugging
-///
-/// ## Performance Monitoring
-///
-/// Tracks multiple metrics:
-/// - Message type distribution
-/// - Processing duration
-/// - User language preferences
-/// - Media attachment statistics
-/// - Error rates by message type
 ///
 /// ## Thread Safety
 ///
@@ -553,7 +542,6 @@ fn is_duplicate_message(
             "Ignoring duplicate request: chat_id={}, message_id={}",
             chat_id, message_id
         );
-        observability::record_telegram_duplicate_message();
         return Ok(true);
     }
     Ok(false)
@@ -569,18 +557,6 @@ async fn dispatch_message(
     extractor: SharedExtractor,
 ) -> Result<()> {
     let start_time = std::time::Instant::now();
-    let message_type = if msg.text().is_some() {
-        "text"
-    } else if msg.photo().is_some() {
-        "photo"
-    } else if msg.document().is_some() {
-        "document"
-    } else {
-        "unsupported"
-    };
-
-    observability::record_telegram_message(message_type);
-
     let result = if msg.text().is_some() {
         handle_text_message(&bot, &msg, dialogue, pool, &localization).await
     } else if msg.photo().is_some() {
@@ -593,19 +569,7 @@ async fn dispatch_message(
     };
 
     let duration = start_time.elapsed();
-    observability::record_request_metrics("telegram_message", 200, duration);
-
-    // Record enhanced Telegram performance metrics
-    let message_size =
-        msg.text().map(|t| t.len()).unwrap_or(0) + msg.caption().map(|c| c.len()).unwrap_or(0);
-    let has_media = msg.photo().is_some() || msg.document().is_some();
-    observability::record_telegram_performance_metrics(
-        message_type,
-        duration,
-        msg.from.as_ref().map(|u| u.id.0 as i64),
-        message_size,
-        has_media,
-    );
+    crate::observability::update_handled("message", duration);
 
     result
 }
@@ -648,16 +612,9 @@ pub async fn message_handler_with_cache(
             return Ok(());
         }
 
-        let start_time = std::time::Instant::now();
-
-        // The regular dispatcher records its own message metrics. The duplicate check above
-        // already ran and must not run again.
-        dispatch_message(bot, msg, pool, dialogue, localization, extractor).await?;
-
-        let duration = start_time.elapsed();
-        observability::record_request_metrics("telegram_message_cached", 200, duration);
-
-        Ok(())
+        // The duplicate check above already ran and must not run again; the dispatcher
+        // measures the message.
+        dispatch_message(bot, msg, pool, dialogue, localization, extractor).await
     }
     .instrument(span)
     .await

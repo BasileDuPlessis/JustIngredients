@@ -163,13 +163,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
         return Ok(());
     };
     if index < current_matches.len() {
-        // Record user engagement metric for ingredient editing
-        crate::observability::record_user_engagement_metrics(
-            q.from.id.0 as i64,
-            crate::observability::UserAction::IngredientEdit,
-            None,
-            language_code.as_deref(),
-        );
+        crate::observability::action(crate::observability::Action::IngredientEdited);
 
         let ingredient = &current_matches[index];
         let edit_prompt = format!(
@@ -288,13 +282,7 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
         .unwrap_or(0);
 
     if index < current_matches.len() {
-        // Record user engagement metric for ingredient deletion
-        crate::observability::record_user_engagement_metrics(
-            q.from.id.0 as i64,
-            crate::observability::UserAction::IngredientDelete,
-            None,
-            language_code.as_deref(),
-        );
+        crate::observability::action(crate::observability::Action::IngredientDeleted);
 
         current_matches.remove(index);
 
@@ -471,13 +459,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
     // The recipe owner is the sender of the callback query, never a value from callback data
     let telegram_id = q.from.id.0 as i64;
 
-    // Record user engagement metric for recipe confirmation
-    crate::observability::record_user_engagement_metrics(
-        q.from.id.0 as i64,
-        crate::observability::UserAction::RecipeConfirm,
-        None,
-        language_code.as_deref(),
-    );
+    crate::observability::action(crate::observability::Action::Edit);
 
     // Check ownership before any write: a recipe owned by another user is handled
     // exactly like a missing one

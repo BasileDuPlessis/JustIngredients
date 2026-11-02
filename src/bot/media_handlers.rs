@@ -40,16 +40,6 @@ pub async fn handle_photo_message(
 
     debug!(user_id = %msg.chat.id, "Received photo message from user");
 
-    // Record user engagement metric for photo upload
-    if let Some(user) = msg.from.as_ref() {
-        crate::observability::record_user_engagement_metrics(
-            user.id.0 as i64,
-            crate::observability::UserAction::PhotoUpload,
-            None, // No session duration for individual actions
-            language_code,
-        );
-    }
-
     if let Some(photos) = msg.photo() {
         if let Some(largest_photo) = photos.last() {
             // Extract caption if present - this will be used as recipe name candidate
@@ -99,16 +89,6 @@ pub async fn handle_document_message(
         if let Some(mime_type) = &doc.mime_type {
             if mime_type.to_string().starts_with("image/") {
                 debug!(user_id = %msg.chat.id, mime_type = %mime_type, "Received image document from user");
-
-                // Record user engagement metric for document upload
-                if let Some(user) = msg.from.as_ref() {
-                    crate::observability::record_user_engagement_metrics(
-                        user.id.0 as i64,
-                        crate::observability::UserAction::DocumentUpload,
-                        None, // No session duration for individual actions
-                        language_code,
-                    );
-                }
 
                 let _temp_path = download_and_process_image(
                     bot,

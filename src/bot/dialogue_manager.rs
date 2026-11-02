@@ -472,6 +472,7 @@ pub async fn handle_recipe_rename_input(
             let mut keep = Vec::new();
             match rename_result {
                 Ok(Some(new_name)) => {
+                    crate::observability::action(crate::observability::Action::Rename);
                     // The cards already shown get the new name
                     if let Some(user) = msg.from.as_ref() {
                         super::cards::refresh_cards(
@@ -948,21 +949,7 @@ pub async fn save_ingredients_to_database(
 
     let processing_duration = start_time.elapsed();
 
-    // Record business metrics
-    let naming_method = if recipe_name == "Recipe" {
-        crate::observability::RecipeNamingMethod::Default
-    } else {
-        // For now, assume manual naming - could be enhanced to detect caption usage
-        crate::observability::RecipeNamingMethod::Manual
-    };
-
-    crate::observability::record_recipe_metrics(
-        recipe_name,
-        ingredients.len(),
-        naming_method,
-        processing_duration,
-        user_id,
-    );
+    crate::observability::recipes_created(saved.len());
 
     info!(
         telegram_id = %telegram_id,

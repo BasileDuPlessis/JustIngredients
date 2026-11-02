@@ -103,18 +103,6 @@ fn validate_http_client_config() -> Result<()> {
         ));
     }
 
-    // Validate metrics server configuration
-    let metrics_port = env::var("METRICS_PORT")
-        .unwrap_or_else(|_| "9090".to_string())
-        .parse::<u16>()
-        .map_err(|_| anyhow::anyhow!("METRICS_PORT must be a valid port number (1-65535)"))?;
-
-    if metrics_port < 1024
-        && env::var("ALLOW_PRIVILEGED_PORTS").unwrap_or_else(|_| "false".to_string()) != "true"
-    {
-        return Err(anyhow::anyhow!("METRICS_PORT {} is a privileged port (< 1024). Set ALLOW_PRIVILEGED_PORTS=true to allow or use a port >= 1024", metrics_port));
-    }
-
     // Validate database connection pool settings
     let max_connections = env::var("DATABASE_MAX_CONNECTIONS")
         .unwrap_or_else(|_| "10".to_string())
@@ -164,7 +152,7 @@ async fn main() -> Result<()> {
     // Load configuration and start logging before anything else, so that startup
     // messages (including database connection retries) are visible.
     let app_config = AppConfig::from_env()?;
-    observability::init_logging(&app_config)?;
+    observability::init_logging()?;
 
     // Get bot token from environment
     let bot_token = env::var("TELEGRAM_BOT_TOKEN")
@@ -214,23 +202,16 @@ async fn main() -> Result<()> {
     // Validate HTTP client configuration
     validate_http_client_config()?;
 
-    // Start metrics, OpenTelemetry and the health check server (logging is already running)
+    // The metrics, the public health server and the internal metrics one (logging already
+    // runs).
     // Readiness waits for a Telegram success from the start, not only once the heartbeat runs
     observability::health_checks::expect_telegram();
-    observability::start_observability_with_health_checks(
+    observability::start(
         Some(Arc::clone(&shared_pool)),
         Some(bot_token.clone()),
         &app_config,
     )
     .await?;
-
-    // Start background metrics recording tasks
-    let _system_metrics_handle = observability::start_system_metrics_recorder();
-    let _health_metrics_handle = observability::start_health_metrics_recorder(
-        Some(Arc::clone(&shared_pool)),
-        Some(bot_token.clone()),
-    )
-    .await;
 
     // Initialize localization manager
     let localization_manager = localization::create_localization_manager()?;

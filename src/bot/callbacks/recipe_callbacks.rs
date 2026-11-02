@@ -275,6 +275,7 @@ pub async fn handle_delete_recipe_confirmation(
 
             match result {
                 Ok(true) => {
+                    crate::observability::action(crate::observability::Action::Delete);
                     // Gone: the page of its neighbours
                     list_at = crate::bot::home::ListAt::Gone(name.clone().unwrap_or_default());
                     // The card becomes the history line "🗑️ « X » supprimée", without buttons

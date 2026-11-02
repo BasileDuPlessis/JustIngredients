@@ -25,7 +25,6 @@ use super::review_callbacks;
 use super::editing_callbacks;
 
 // Import observability
-use crate::observability;
 
 // Import localization
 use crate::localization::t_lang;
@@ -163,6 +162,9 @@ pub async fn callback_handler_with_cache(
                         (linked.parse::<i64>(), msg)
                     {
                         if crate::bot::cleanup::is_active_card(message.chat.id, message.id).await {
+                            crate::observability::action(
+                                crate::observability::Action::LinkedOpened,
+                            );
                             crate::bot::cards::show_card(
                                 &bot,
                                 &pool,
@@ -245,7 +247,7 @@ pub async fn callback_handler_with_cache(
         }
 
         let duration = start_time.elapsed();
-        observability::record_request_metrics("telegram_callback", 200, duration);
+        crate::observability::update_handled("callback", duration);
 
         result.and(prefix_result)
     }
@@ -355,14 +357,6 @@ async fn handle_editing_ingredient_callbacks(
     {
         if data == "cancel_ingredient_editing" {
             if let Some(msg) = &q.message {
-                // Record user engagement metric for ingredient editing cancellation
-                crate::observability::record_user_engagement_metrics(
-                    q.from.id.0 as i64,
-                    crate::observability::UserAction::IngredientEdit,
-                    None, // No session duration for individual actions
-                    language_code.as_deref(),
-                );
-
                 // Restore the original recipe display
                 let review_message = crate::bot::ui_builder::render_review(
                     &ingredients,
@@ -452,14 +446,6 @@ async fn handle_editing_saved_ingredient_callbacks(
     {
         if data == "cancel_ingredient_editing" {
             if let Some(msg) = &q.message {
-                // Record user engagement metric for ingredient editing cancellation
-                crate::observability::record_user_engagement_metrics(
-                    q.from.id.0 as i64,
-                    crate::observability::UserAction::IngredientEdit,
-                    None, // No session duration for individual actions
-                    language_code.as_deref(),
-                );
-
                 // Restore the editing list view
                 let edit_message = crate::bot::ui_builder::render_saved_editing(
                     None,

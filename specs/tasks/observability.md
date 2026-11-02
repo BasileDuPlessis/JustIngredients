@@ -1,9 +1,10 @@
-# Observabilité : étude (à valider)
+# Observabilité (validée)
 
 Version du 2026-11-02. Demande de l'utilisateur : « travailler l'observabilité de l'app », en
 partant de l'option B : le Prometheus et le Grafana gérés que Fly offre gratuitement, plutôt que
-l'installation `monitoring/` du dépôt. Rien n'est codé : ce document fait l'état des lieux,
-décrit ce que je propose, avec des maquettes, et finit par les questions à trancher.
+l'installation `monitoring/` du dépôt. Ce document fait l'état des lieux et décrit ce qui est
+retenu, avec des maquettes ; tout a été validé le 2026-11-02 (« ok tout me va »), voir
+[Décisions](#décisions-2026-11-02). C'est la phase O.
 
 ## Le but
 
@@ -208,14 +209,12 @@ par le bot, et les deux apps de monitoring supprimées ne coûtent plus leur dis
 | O7 | Logs JSON (IMP-051), OpenTelemetry retiré, le ménage (apps, dossier, secrets, docs) |
 | RO | Relecture indépendante, puis mise en production |
 
-## Questions
+## Décisions (2026-11-02)
 
-1. **Les alertes** du tableau (Gemini en panne, échecs fréquents, coût du jour, base, redémarrage)
-   te vont ? Quel **seuil de coût par jour** (1 $ proposé) ?
-2. Le **bilan hebdomadaire** le lundi à 9 h, et la commande **`/stats`** réservée à toi : oui ?
-3. Enregistrer la **dernière visite** de chaque utilisateur (`last_seen_at`, sans autre donnée)
-   pour compter les actifs : d'accord ?
-4. **Retirer OpenTelemetry** : d'accord ?
-5. **Supprimer les deux apps de monitoring** chez Fly et le dossier `monitoring/` : d'accord ?
-   (Tu lances toi-même les deux `fly apps destroy`.)
-6. Remplacer le `/metrics` public par le **port interne** (plus de jeton) : d'accord ?
+1. Les cinq alertes du tableau, avec un seuil de coût de **1 $ par jour**.
+2. Le bilan hebdomadaire le lundi à 9 h (Paris) et `/stats`, réservée au propriétaire.
+3. `users.last_seen_at` enregistré, sans autre donnée.
+4. OpenTelemetry retiré.
+5. Les deux apps de monitoring supprimées (les `fly apps destroy` lancés par l'utilisateur) et
+   l'ancien dossier `monitoring/` retiré du dépôt.
+6. Le port interne 9091 à la place du `/metrics` public ; `METRICS_AUTH_TOKEN` supprimé.

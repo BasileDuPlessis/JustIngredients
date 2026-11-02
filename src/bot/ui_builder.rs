@@ -12,9 +12,7 @@ use crate::text_processing::MeasurementMatch;
 
 // Import common UI components
 use super::html::Html;
-use super::ui_components::{
-    create_add_button, create_localized_button_with_emoji, truncate_text, with_ui_metrics_sync,
-};
+use super::ui_components::{create_add_button, create_localized_button_with_emoji, truncate_text};
 
 /// Quantity and unit as shown to the user ("150 g", "2", "pincée"), empty when the
 /// ingredient has neither (e.g. "sel").
@@ -51,28 +49,26 @@ pub fn format_ingredients_list(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> String {
-    with_ui_metrics_sync("format_ingredients_list", ingredients.len(), || {
-        let mut result = String::new();
+    let mut result = String::new();
 
-        for (i, ingredient) in ingredients.iter().enumerate() {
-            let ingredient_display = if ingredient.ingredient_name.is_empty() {
-                format!(
-                    "❓ {}",
-                    t_lang(localization, "unknown-ingredient", language_code)
-                )
-            } else {
-                ingredient.ingredient_name.clone()
-            };
+    for (i, ingredient) in ingredients.iter().enumerate() {
+        let ingredient_display = if ingredient.ingredient_name.is_empty() {
+            format!(
+                "❓ {}",
+                t_lang(localization, "unknown-ingredient", language_code)
+            )
+        } else {
+            ingredient.ingredient_name.clone()
+        };
 
-            result.push_str(&format!(
-                "{}. {}\n",
-                i + 1,
-                ingredient_line(ingredient, &ingredient_display)
-            ));
-        }
+        result.push_str(&format!(
+            "{}. {}\n",
+            i + 1,
+            ingredient_line(ingredient, &ingredient_display)
+        ));
+    }
 
-        fit_lines(&result, MAX_LIST_CHARS)
-    })
+    fit_lines(&result, MAX_LIST_CHARS)
 }
 
 /// Longest list or transcription in one message, in characters: Telegram refuses messages over
@@ -232,51 +228,45 @@ pub fn create_ingredient_review_keyboard(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
-    with_ui_metrics_sync(
-        "create_ingredient_review_keyboard",
-        ingredients.len(),
-        || {
-            // One button per ingredient: it opens the ingredient's menu; in the order of the
-            // photo's parts, like the list above
-            let parts = crate::recipe_parts::split_parts(ingredients);
-            let mut buttons: Vec<Vec<InlineKeyboardButton>> = parts
-                .iter()
-                .flat_map(|part| part.lines.iter())
-                .filter_map(|&i| ingredients.get(i).map(|ingredient| (i, ingredient)))
-                .map(|(i, ingredient)| {
-                    vec![InlineKeyboardButton::callback(
-                        ingredient_button_label(ingredient, language_code, localization),
-                        format!("item_{i}"),
-                    )]
-                })
-                .collect();
+    // One button per ingredient: it opens the ingredient's menu; in the order of the
+    // photo's parts, like the list above
+    let parts = crate::recipe_parts::split_parts(ingredients);
+    let mut buttons: Vec<Vec<InlineKeyboardButton>> = parts
+        .iter()
+        .flat_map(|part| part.lines.iter())
+        .filter_map(|&i| ingredients.get(i).map(|ingredient| (i, ingredient)))
+        .map(|(i, ingredient)| {
+            vec![InlineKeyboardButton::callback(
+                ingredient_button_label(ingredient, language_code, localization),
+                format!("item_{i}"),
+            )]
+        })
+        .collect();
 
-            // ➕, then ✅ Valider, then the single exit ❌ Annuler on the last row (U6.2); ➕ also
-            // on an empty list: it is the only way to fill it again
-            buttons.push(vec![create_add_button(
-                localization,
-                "add-ingredient",
-                "add_ingredient".to_string(),
-                language_code,
-            )]);
-            buttons.push(vec![create_localized_button_with_emoji(
-                localization,
-                "✅",
-                "review-confirm",
-                "confirm".to_string(),
-                language_code,
-            )]);
-            buttons.push(vec![create_localized_button_with_emoji(
-                localization,
-                "❌",
-                "cancel",
-                "cancel_review".to_string(),
-                language_code,
-            )]);
+    // ➕, then ✅ Valider, then the single exit ❌ Annuler on the last row (U6.2); ➕ also
+    // on an empty list: it is the only way to fill it again
+    buttons.push(vec![create_add_button(
+        localization,
+        "add-ingredient",
+        "add_ingredient".to_string(),
+        language_code,
+    )]);
+    buttons.push(vec![create_localized_button_with_emoji(
+        localization,
+        "✅",
+        "review-confirm",
+        "confirm".to_string(),
+        language_code,
+    )]);
+    buttons.push(vec![create_localized_button_with_emoji(
+        localization,
+        "❌",
+        "cancel",
+        "cancel_review".to_string(),
+        language_code,
+    )]);
 
-            InlineKeyboardMarkup::new(buttons)
-        },
-    )
+    InlineKeyboardMarkup::new(buttons)
 }
 
 /// Longest ingredient label on a button, in characters (Telegram shortens longer ones itself).
@@ -383,43 +373,41 @@ pub fn create_recipe_details_keyboard(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
-    with_ui_metrics_sync("create_recipe_details_keyboard", 0, || {
-        let mut buttons = vec![
-            vec![
-                create_localized_button_with_emoji(
-                    localization,
-                    "✏️",
-                    "edit-recipe-name",
-                    format!("recipe_action:rename:{}", recipe_id),
-                    language_code,
-                ),
-                create_localized_button_with_emoji(
-                    localization,
-                    "📝",
-                    "edit-ingredients",
-                    format!("recipe_action:edit_ingredients:{}", recipe_id),
-                    language_code,
-                ),
-            ],
-            vec![create_localized_button_with_emoji(
+    let mut buttons = vec![
+        vec![
+            create_localized_button_with_emoji(
                 localization,
-                "🗑️",
-                "delete-recipe",
-                format!("recipe_action:delete:{}", recipe_id),
+                "✏️",
+                "edit-recipe-name",
+                format!("recipe_action:rename:{}", recipe_id),
                 language_code,
-            )],
-        ];
-        buttons.extend(linked.iter().take(MAX_LINKED_SHOWN).map(|recipe| {
-            vec![InlineKeyboardButton::callback(
-                format!("🔗 {}", crate::recipe_parts::short_name(&recipe.name, 40)),
-                format!("{RECIPE_LINK_PREFIX}{}", recipe.id),
-            )]
-        }));
-        // The single exit of a card shown at the bottom (U6.1)
-        buttons.push(vec![recipes_list_button(language_code, localization)]);
+            ),
+            create_localized_button_with_emoji(
+                localization,
+                "📝",
+                "edit-ingredients",
+                format!("recipe_action:edit_ingredients:{}", recipe_id),
+                language_code,
+            ),
+        ],
+        vec![create_localized_button_with_emoji(
+            localization,
+            "🗑️",
+            "delete-recipe",
+            format!("recipe_action:delete:{}", recipe_id),
+            language_code,
+        )],
+    ];
+    buttons.extend(linked.iter().take(MAX_LINKED_SHOWN).map(|recipe| {
+        vec![InlineKeyboardButton::callback(
+            format!("🔗 {}", crate::recipe_parts::short_name(&recipe.name, 40)),
+            format!("{RECIPE_LINK_PREFIX}{}", recipe.id),
+        )]
+    }));
+    // The single exit of a card shown at the bottom (U6.1)
+    buttons.push(vec![recipes_list_button(language_code, localization)]);
 
-        InlineKeyboardMarkup::new(buttons)
-    })
+    InlineKeyboardMarkup::new(buttons)
 }
 
 /// Paris time of `at`: UTC+2 from the last Sunday of March to the last Sunday of October (both

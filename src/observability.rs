@@ -1,119 +1,95 @@
-//! Observability module for centralized metrics, tracing, and logging setup.
+//! Observability (plan O, `specs/tasks/observability.md`): logs, the metrics Fly collects from
+//! an internal port, the public health checks.
 //!
-//! This module provides:
-//! - Metrics collection and Prometheus export
-//! - Distributed tracing with OpenTelemetry
-//! - Structured logging with configurable levels
-//! - Health check endpoints for monitoring
-//! - Environment-specific configuration support
-
-use anyhow;
+//! Logs are JSON lines in production, readable text with `LOG_FORMAT=pretty` (local runs);
+//! `RUST_LOG` filters them (`info,sqlx=warn` on Fly).
 
 pub mod health_checks;
 pub mod metrics;
-pub mod system_monitoring;
-pub mod tracing_mod;
+pub mod server;
 
 pub use health_checks::*;
 pub use metrics::*;
-pub use system_monitoring::*;
-pub use tracing_mod::*;
 
-/// Initialize the complete observability stack
-pub async fn init_observability() -> anyhow::Result<()> {
-    let config = crate::observability_config::ObservabilityConfig::from_env();
-    init_observability_with_config(config).await
-}
+use tracing_subscriber::prelude::*;
 
-/// Initialize the complete observability stack with custom configuration
-pub async fn init_observability_with_config(
-    config: crate::observability_config::ObservabilityConfig,
-) -> anyhow::Result<()> {
-    // Validate configuration
-    config
-        .validate()
-        .map_err(|e| anyhow::anyhow!("Invalid observability configuration: {}", e))?;
-
-    // Initialize tracing first
-    init_tracing_with_config(&config)?;
-
-    // Initialize metrics
-    let metrics_handle = metrics::init_metrics_with_config(&config)?;
-
-    // Initialize OpenTelemetry tracing
-    init_opentelemetry_tracing_with_config(&config).await?;
-
-    // Start metrics server with basic health checks (no dependencies yet)
-    metrics::start_metrics_server_basic_with_config(metrics_handle, config.metrics_port).await?;
-
+/// Installs the log subscriber. Call it first at startup, so that everything logged afterwards
+/// (database connection retries included) is visible; only once per process.
+pub fn init_logging() -> anyhow::Result<()> {
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,sqlx=warn,teloxide=warn"));
+    let pretty = std::env::var("LOG_FORMAT").is_ok_and(|format| format == "pretty");
+    if pretty {
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(tracing_subscriber::fmt::layer().pretty().with_target(true))
+            .init();
+    } else {
+        tracing_subscriber::registry()
+            .with(filter)
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .json()
+                    .with_target(true)
+                    .with_current_span(false)
+                    .flatten_event(true),
+            )
+            .init();
+    }
     tracing::info!(
-        environment = %config.environment,
-        otlp_endpoint = ?config.otlp_endpoint,
-        metrics_port = %config.metrics_port,
-        "Observability stack initialized successfully"
+        format = if pretty { "pretty" } else { "json" },
+        "Logging started"
     );
     Ok(())
 }
 
-/// Initialize observability with health check dependencies
-pub async fn init_observability_with_health_checks(
-    db_pool: Option<std::sync::Arc<sqlx::PgPool>>,
-    bot_token: Option<String>,
-) -> anyhow::Result<()> {
-    let config = crate::config::AppConfig::from_env()?;
-    init_observability_with_health_checks_and_config(db_pool, bot_token, &config).await
-}
-
-/// Initialize observability with health check dependencies and custom configuration
-pub async fn init_observability_with_health_checks_and_config(
+/// Starts the metrics recorder and the two HTTP servers (public health checks, internal
+/// metrics), and records the time of this start.
+pub async fn start(
     db_pool: Option<std::sync::Arc<sqlx::PgPool>>,
     bot_token: Option<String>,
     config: &crate::config::AppConfig,
-) -> anyhow::Result<()> {
-    init_logging(config)?;
-    start_observability_with_health_checks(db_pool, bot_token, config).await
-}
-
-/// Validate the configuration and install the tracing subscriber.
-///
-/// Call this first at startup so that everything logged afterwards (including database
-/// connection retries) is visible. It must run only once per process.
-pub fn init_logging(config: &crate::config::AppConfig) -> anyhow::Result<()> {
-    config
-        .validate()
-        .map_err(|e| anyhow::anyhow!("Invalid observability configuration: {}", e))?;
-
-    init_tracing_with_config(&config.observability)
-}
-
-/// Start metrics, OpenTelemetry and the health check server.
-///
-/// Expects [`init_logging`] to have been called already.
-pub async fn start_observability_with_health_checks(
-    db_pool: Option<std::sync::Arc<sqlx::PgPool>>,
-    bot_token: Option<String>,
-    config: &crate::config::AppConfig,
-) -> anyhow::Result<()> {
-    // Initialize metrics
-    let metrics_handle = metrics::init_metrics_with_config(&config.observability)?;
-
-    // Initialize OpenTelemetry tracing
-    init_opentelemetry_tracing_with_config(&config.observability).await?;
-
-    // Start metrics server with health checks
-    metrics::start_metrics_server_with_health_checks(
-        metrics_handle,
+) -> anyhow::Result<server::Addresses> {
+    let handle = metrics::install_recorder()?;
+    // Without the exporter's own HTTP listener nothing drains the histograms between two reads:
+    // the upkeep bounds their memory
+    let upkeep = handle.clone();
+    tokio::spawn(async move {
+        let mut every = tokio::time::interval(std::time::Duration::from_secs(5));
+        loop {
+            every.tick().await;
+            upkeep.run_upkeep();
+        }
+    });
+    let addresses = server::start(
+        handle,
         config.server.health_port,
-        db_pool.clone(),
-        bot_token.clone(),
+        config.server.metrics_port,
+        config.server.bind_all_interfaces,
+        db_pool,
+        bot_token,
     )
     .await?;
+    metrics::started();
+    Ok(addresses)
+}
 
-    tracing::info!(
-        environment = %config.observability.environment,
-        has_db_pool = %db_pool.is_some(),
-        has_bot_token = %bot_token.is_some(),
-        "Observability stack with health checks initialized successfully"
-    );
-    Ok(())
+/// A span for database operations.
+pub fn db_span(operation: &str, table: &str) -> tracing::Span {
+    tracing::info_span!(
+        "db_operation",
+        operation = operation,
+        table = table,
+        component = "database"
+    )
+}
+
+/// A span for Telegram updates.
+pub fn telegram_span(operation: &str, user_id: Option<i64>) -> tracing::Span {
+    tracing::info_span!(
+        "telegram_operation",
+        operation = operation,
+        user_id = user_id,
+        component = "telegram"
+    )
 }

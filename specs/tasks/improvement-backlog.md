@@ -555,7 +555,9 @@ they can be pulled into 1-hour micro-tasks without another review.
   shows two concurrent handlers logging their own `user_id`.
 
 ### IMP-020: Misleading metrics and OpenTelemetry that exports nothing
-- [ ] Done
+- [x] Done (2026-11-02, plan O, [observability.md](observability.md)): the misleading and
+  placeholder metrics are deleted, memory, CPU and restarts come from Fly's machine metrics,
+  errors are counted in `ji_errors_total`, and the three OpenTelemetry crates are removed.
 - Priority: P2. Effort: M. Area: Observability.
 - Location: `src/observability/system_monitoring.rs:14-19` (first `statm` field is virtual size, not
   RSS), `src/observability/system_monitoring.rs:33` and `src/observability/system_monitoring.rs:42`

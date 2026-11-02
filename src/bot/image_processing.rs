@@ -23,7 +23,7 @@ use super::ui_builder::{create_ingredient_review_keyboard, render_review};
 use crate::extraction::image::MAX_IMAGE_BYTES;
 use crate::extraction::mapping::to_measurement_matches;
 use crate::extraction::{ExtractionError, ImageInput, SharedExtractor};
-use crate::observability;
+use crate::observability::{self, PhotoResult};
 
 // Import error logging utilities
 use crate::errors::error_logging;
@@ -148,9 +148,11 @@ pub async fn download_and_process_image(
             // Files over the limit are not a download failure: say why they are refused.
             let message_key = match e.downcast_ref::<ExtractionError>() {
                 Some(too_large @ ExtractionError::ImageTooLarge { .. }) => {
+                    observability::photo(PhotoResult::TooLarge);
                     extraction_error_key(too_large)
                 }
                 _ => {
+                    observability::error("telegram", "download_failed");
                     error_logging::log_network_error(&e, "download_image_file", None, None);
                     "error-download-failed"
                 }
@@ -176,7 +178,11 @@ pub async fn download_and_process_image(
     let extraction = match extraction {
         Ok(extraction) => extraction,
         Err(error) => {
-            observability::record_error_metrics(error.kind(), extractor.name());
+            let result = photo_result(&error);
+            observability::photo(result);
+            if result == PhotoResult::GeminiError {
+                observability::error("gemini", error.kind());
+            }
             if is_operator_error(&error) {
                 tracing::error!(user_id = %chat_id, backend = extractor.name(), error = %error, "Ingredient extraction misconfigured");
             } else {
@@ -195,6 +201,7 @@ pub async fn download_and_process_image(
     };
 
     if !extraction.is_recipe {
+        observability::photo(PhotoResult::NotRecipe);
         info!(user_id = %chat_id, backend = extractor.name(), "Image shows no ingredient list");
         bot.edit_message_text(
             chat_id,
@@ -212,6 +219,7 @@ pub async fn download_and_process_image(
     let title = extraction.title;
 
     if ingredients.is_empty() {
+        observability::photo(PhotoResult::NotRecipe);
         // The transcription is shown as a preformatted block
         let mut no_ingredients_msg = Html::text("📝 ")
             + Html::bold(&t_lang(localization, "no-ingredients-found", language_code))
@@ -235,6 +243,7 @@ pub async fn download_and_process_image(
     }
 
     // Ingredients found, go directly to review interface
+    observability::photo(PhotoResult::Read);
     info!(user_id = %chat_id, backend = extractor.name(), ingredients_count = ingredients.len(), "Sending ingredients review interface");
     let review_message = render_review(&ingredients, language_code, localization);
     let keyboard = create_ingredient_review_keyboard(&ingredients, language_code, localization);
@@ -306,6 +315,26 @@ pub fn recipe_name_from_caption(caption: &str) -> Option<String> {
     crate::validation::validate_recipe_name(cleaned)
         .ok()
         .map(str::to_string)
+}
+
+/// How a failed extraction counts in `ji_photos_total`: the photo's fault, the user's limit,
+/// or Gemini's.
+fn photo_result(error: &ExtractionError) -> PhotoResult {
+    match error {
+        ExtractionError::UnsupportedImage(_)
+        | ExtractionError::Blocked(_)
+        | ExtractionError::Recitation => PhotoResult::Unreadable,
+        ExtractionError::ImageTooLarge { .. } => PhotoResult::TooLarge,
+        ExtractionError::DailyLimitReached { .. } => PhotoResult::DailyLimit,
+        ExtractionError::Config(_)
+        | ExtractionError::RateLimited { .. }
+        | ExtractionError::Timeout
+        | ExtractionError::Network(_)
+        | ExtractionError::Api { .. }
+        | ExtractionError::Truncated
+        | ExtractionError::InvalidResponse(_)
+        | ExtractionError::CircuitOpen => PhotoResult::GeminiError,
+    }
 }
 
 /// Locale key of the message shown to the user for an extraction failure.

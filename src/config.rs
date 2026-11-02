@@ -7,7 +7,6 @@
 
 use crate::errors::{AppError, AppResult};
 use crate::extraction::ExtractionConfig;
-use crate::observability_config::ObservabilityConfig;
 use serde::{Deserialize, Serialize};
 use std::env;
 
@@ -190,18 +189,22 @@ impl DatabaseConfig {
 pub struct ServerConfig {
     /// Health check server port
     pub health_port: u16,
-    /// Metrics server port
+    /// Port of the internal metrics server, collected by Fly (`[metrics]` in `fly.toml`)
     pub metrics_port: u16,
     /// Whether to allow privileged ports (< 1024)
     pub allow_privileged_ports: bool,
+    /// Listen on all interfaces (on Fly) instead of localhost only
+    /// (`METRICS_BIND_ALL_INTERFACES`)
+    pub bind_all_interfaces: bool,
 }
 
 impl Default for ServerConfig {
     fn default() -> Self {
         Self {
             health_port: 8080,
-            metrics_port: 9090,
+            metrics_port: 9091,
             allow_privileged_ports: false,
+            bind_all_interfaces: false,
         }
     }
 }
@@ -243,8 +246,6 @@ pub struct AppConfig {
     pub database: DatabaseConfig,
     /// Server configuration
     pub server: ServerConfig,
-    /// Observability configuration
-    pub observability: ObservabilityConfig,
     /// Ingredient extraction (Gemini client) configuration
     pub extraction: ExtractionConfig,
 }
@@ -310,7 +311,7 @@ impl AppConfig {
             .parse()
             .map_err(|_| AppError::Config("HEALTH_PORT must be a valid port number".to_string()))?;
         config.server.metrics_port = env::var("METRICS_PORT")
-            .unwrap_or_else(|_| "9090".to_string())
+            .unwrap_or_else(|_| "9091".to_string())
             .parse()
             .map_err(|_| {
                 AppError::Config("METRICS_PORT must be a valid port number".to_string())
@@ -319,9 +320,8 @@ impl AppConfig {
             .unwrap_or_else(|_| "false".to_string())
             .to_lowercase()
             == "true";
-
-        // Load observability configuration (uses existing defaults and validation)
-        config.observability = ObservabilityConfig::default();
+        config.server.bind_all_interfaces = env::var("METRICS_BIND_ALL_INTERFACES")
+            .is_ok_and(|value| value.trim().eq_ignore_ascii_case("true"));
 
         // Load extraction configuration (Gemini client)
         config.extraction = ExtractionConfig::from_env()?;
@@ -334,7 +334,6 @@ impl AppConfig {
         self.bot.validate()?;
         self.database.validate()?;
         self.server.validate()?;
-        self.observability.validate()?;
         self.extraction.validate()?;
         Ok(())
     }
@@ -342,10 +341,9 @@ impl AppConfig {
     /// Get a summary of the current configuration for logging
     pub fn summary(&self) -> String {
         format!(
-            "Configuration: bot_token=[REDACTED], db_url=[REDACTED], health_port={}, metrics_port={}, observability_enabled={}, gemini_model={}",
+            "Configuration: bot_token=[REDACTED], db_url=[REDACTED], health_port={}, metrics_port={}, gemini_model={}",
             self.server.health_port,
             self.server.metrics_port,
-            self.observability.enable_metrics_export,
             self.extraction.gemini.model
         )
     }

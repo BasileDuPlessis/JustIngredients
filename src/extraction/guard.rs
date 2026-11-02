@@ -117,8 +117,7 @@ impl GuardedExtractor {
     async fn extract_guarded(&self, image: &ImageInput) -> Result<Extraction, ExtractionError> {
         let hash: ImageHash = Sha256::digest(image.bytes()).into();
         if let Some(cached) = self.cached(&hash) {
-            metrics::counter!("extraction_cache_hits_total", "backend" => self.inner.name())
-                .increment(1);
+            crate::observability::gemini_cache_hit();
             return Ok(cached);
         }
 
@@ -129,8 +128,7 @@ impl GuardedExtractor {
 
         // Another request for the same image may have finished while this one waited.
         if let Some(cached) = self.cached(&hash) {
-            metrics::counter!("extraction_cache_hits_total", "backend" => self.inner.name())
-                .increment(1);
+            crate::observability::gemini_cache_hit();
             return Ok(cached);
         }
 

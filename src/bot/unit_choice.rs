@@ -123,6 +123,7 @@ pub async fn handle_choice(
         return Ok(());
     }
     crate::db::set_unit_view(pool, chat_id.0, language_code, view).await?;
+    crate::observability::action(crate::observability::Action::UnitViewChosen);
     let line = t_args_lang(
         localization,
         "unit-view-chosen",

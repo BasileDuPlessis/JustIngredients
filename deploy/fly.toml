@@ -11,9 +11,16 @@ primary_region = 'cdg'
 
 [env]
   HEALTH_PORT = '8080'
-  LOG_FORMAT = 'pretty'
+  METRICS_PORT = '9091'
+  LOG_FORMAT = 'json'
   RUST_LOG = 'info,sqlx=warn'
   METRICS_BIND_ALL_INTERFACES = 'true'
+
+# Fly reads the bot's metrics on this port every 15 s, over its private network, and shows them
+# on fly-metrics.net (specs/tasks/observability.md). It is not a service: not public.
+[metrics]
+  port = 9091
+  path = '/metrics'
 
 # Restart the bot whenever it exits. With the default policy Fly gave up after a few
 # failed restarts during a Postgres restart (2026-10-16) and left the bot down for 10 days.

@@ -181,13 +181,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
     let Some(ingredient) = ingredients.get(index) else {
         return Ok(());
     };
-    // Record user engagement metric for ingredient editing
-    crate::observability::record_user_engagement_metrics(
-        params.q.from.id.0 as i64,
-        crate::observability::UserAction::IngredientEdit,
-        None, // No session duration for individual actions
-        params.dialogue_lang_code.as_deref(),
-    );
+    crate::observability::action(crate::observability::Action::IngredientEdited);
 
     let lang = params.dialogue_lang_code.as_deref();
     let prompt = format!(
@@ -318,13 +312,7 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
         .unwrap_or(0);
 
     if index < ingredients.len() {
-        // Record user engagement metric for ingredient deletion
-        crate::observability::record_user_engagement_metrics(
-            q.from.id.0 as i64,
-            crate::observability::UserAction::IngredientDelete,
-            None, // No session duration for individual actions
-            dialogue_lang_code.as_deref(),
-        );
+        crate::observability::action(crate::observability::Action::IngredientDeleted);
 
         ingredients.remove(index);
 
@@ -559,13 +547,7 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
         return Ok(());
     }
 
-    // Record user engagement metric for recipe confirmation
-    crate::observability::record_user_engagement_metrics(
-        c.owner_id,
-        crate::observability::UserAction::RecipeConfirm,
-        None, // No session duration for individual actions
-        c.language_code,
-    );
+    crate::observability::action(crate::observability::Action::ReviewConfirmed);
 
     // The review ends here: its list goes with the action's messages
     if let Some(id) = c.review_message_id {

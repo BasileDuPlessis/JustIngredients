@@ -29,13 +29,9 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] } # Tr
 
 # Observability dependencies
 metrics = "0.24" # Metrics collection
-metrics-exporter-prometheus = "0.18" # Prometheus metrics exporter
-opentelemetry = "0.31" # OpenTelemetry for distributed tracing
-opentelemetry_sdk = { version = "0.31", features = ["rt-tokio"] } # OpenTelemetry SDK for tracing
-opentelemetry-otlp = { version = "0.31", features = ["grpc-tonic"] } # OTLP exporter for traces
-hyper = "1.0" # HTTP implementation
+metrics-exporter-prometheus = { version = "0.18", default-features = false } # Renders /metrics (served by our own server)
+hyper = { version = "1.0", features = ["server", "http1"] } # Health and metrics servers
 hyper-util = { version = "0.1.17", features = ["tokio"] } # Hyper utilities
-tokio-util = { version = "0.7", features = ["io"] } # Tokio utilities
 
 # Training data generation dependencies
 # (Removed - training binaries deleted)

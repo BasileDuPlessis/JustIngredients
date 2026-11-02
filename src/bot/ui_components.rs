@@ -182,51 +182,13 @@ pub fn create_ingredient_editing_keyboard(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
-    with_ui_metrics_sync("create_ingredient_editing_keyboard", 0, || {
-        let buttons = vec![vec![create_cancel_button(
-            localization,
-            "cancel_ingredient_editing".to_string(),
-            language_code,
-        )]];
+    let buttons = vec![vec![create_cancel_button(
+        localization,
+        "cancel_ingredient_editing".to_string(),
+        language_code,
+    )]];
 
-        InlineKeyboardMarkup::new(buttons)
-    })
-}
-
-/// Wrapper function that records UI metrics around an operation
-pub async fn with_ui_metrics<F, Fut, T>(operation_name: &str, input_count: usize, operation: F) -> T
-where
-    F: FnOnce() -> Fut,
-    Fut: std::future::Future<Output = T>,
-{
-    let start_time = std::time::Instant::now();
-    let result = operation().await;
-    let duration = start_time.elapsed();
-
-    // For now, we'll assume the output count is 1 (the result)
-    // In the future, this could be made more sophisticated
-    let output_count = 1;
-
-    crate::observability::record_ui_metrics(operation_name, duration, input_count, output_count);
-
-    result
-}
-
-/// Synchronous version of with_ui_metrics for non-async operations
-pub fn with_ui_metrics_sync<F, T>(operation_name: &str, input_count: usize, operation: F) -> T
-where
-    F: FnOnce() -> T,
-{
-    let start_time = std::time::Instant::now();
-    let result = operation();
-    let duration = start_time.elapsed();
-
-    // For now, we'll assume the output count is 1 (the result)
-    let output_count = 1;
-
-    crate::observability::record_ui_metrics(operation_name, duration, input_count, output_count);
-
-    result
+    InlineKeyboardMarkup::new(buttons)
 }
 
 #[cfg(test)]

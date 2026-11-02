@@ -101,6 +101,7 @@ impl CircuitBreaker {
 
     fn on_success(&self) {
         *self.lock() = State::Closed { failures: 0 };
+        crate::observability::set_gemini_breaker_open(false);
     }
 
     fn on_failure(&self, trial: bool) {
@@ -116,6 +117,9 @@ impl CircuitBreaker {
             },
             other => other,
         };
+        if matches!(*state, State::Open { .. }) {
+            crate::observability::set_gemini_breaker_open(true);
+        }
     }
 
     fn on_abandoned(&self, trial: bool) {
