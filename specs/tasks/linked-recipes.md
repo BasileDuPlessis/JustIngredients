@@ -1,4 +1,4 @@
-# Recettes liées : étude (à valider)
+# Recettes liées : étude (validée, sauf la question 1)
 
 Version du 2026-11-02. Remplace la proposition des sections d'ingrédients
 ([ingredient-sections.md](ingredient-sections.md), abandonnée). Demande de l'utilisateur :
@@ -7,6 +7,17 @@ place un mécanisme de liens entre les recettes ; à la fin de la recette, une l
 liées (ex. malva pudding lié avec "sauce malva pudding") ; le titre de la recette liée est le
 titre défini par l'utilisateur concaténé avec le nom de la section ». Rien n'est codé : ce
 document décrit ce que je propose, avec des wireframes, et finit par les questions à trancher.
+
+## Décisions (2026-11-02)
+
+1. Découpage : en attente (A : découper d'office, « 🧩 Une seule recette » pour réunir ; B :
+   demander à chaque photo).
+2. Les noms : « Malva pudding (sauce) », la section entre parenthèses.
+3. Le nom de section nettoyé (« Pour la sauce : » → « sauce »).
+4. Les liens dans les deux sens.
+5. Supprimer une recette ne supprime qu'elle (le lien disparaît).
+6. Lier et délier à la main : plus tard.
+7. La langue de la recette donnée par Gemini est enregistrée.
 
 ## Pourquoi c'est une bonne approche
 
@@ -22,11 +33,12 @@ document décrit ce que je propose, avec des wireframes, et finit par les questi
    imprimé (aujourd'hui il a pour consigne de les ignorer). Sans titre, rien ne change.
 2. **Découpage** : une photo à plusieurs sections donne plusieurs recettes. La première partie
    (les ingrédients sans titre, ou la première section) prend le titre choisi par l'utilisateur ;
-   chaque autre section devient une recette liée nommée « Titre – Section » : « Malva pudding –
-   Sauce ». Le titre d'abord, pour que les recettes liées se suivent dans la liste alphabétique.
+   chaque autre section devient une recette liée nommée « Titre (section) » : « Malva pudding
+   (sauce) ». Le titre d'abord : les recettes liées se suivent dans la liste alphabétique.
 3. **Nom de section** : nettoyé de « Pour le / la / les / l' », « For the », des « : » ; première
-   lettre en majuscule (« Pour la sauce : » → « Sauce »). Un nom déjà pris est numéroté comme
-   aujourd'hui (« Malva pudding – Sauce (2) »).
+   lettre en minuscule, le reste tel qu'imprimé (« Pour la sauce : » → « sauce », « Pour la
+   crème Chantilly » → « crème Chantilly »). Un nom déjà pris est numéroté comme aujourd'hui
+   (« Malva pudding (sauce) (2) »).
 4. **Liens** : dans les deux sens. La fiche du malva pudding liste la sauce, la fiche de la sauce
    liste le malva pudding. Chaque recette reste indépendante : renommer, modifier, supprimer
    l'une ne touche pas l'autre (supprimer retire seulement le lien).
@@ -82,12 +94,12 @@ nomme la première partie. Il reste une ligne par recette créée.
 ┌──────────────────────────────────────────┐
 │ ✅ Recette « Malva pudding » créée       │   historique
 ├──────────────────────────────────────────┤
-│ ✅ Recette « Malva pudding – Sauce »     │
+│ ✅ Recette « Malva pudding (sauce) »     │
 │    créée, liée à « Malva pudding »       │
 ├──────────────────────────────────────────┤
 │ 📚 Vos recettes …                        │ ▼ bas du fil
 │ [ Malva pudding ]                        │
-│ [ Malva pudding – Sauce ]                │
+│ [ Malva pudding (sauce) ]                │
 └──────────────────────────────────────────┘
 ```
 
@@ -105,15 +117,15 @@ Les recettes liées sont listées à la fin de la fiche et ont chacune un bouton
 │ • 1 c. à s. confiture d'abricots         │
 │ • 150 g farine                           │
 │                                          │
-│ 🔗 Recettes liées : Malva pudding – Sauce│
+│ 🔗 Recettes liées : Malva pudding (sauce)│
 │ [ ✏️ Renommer ]  [ 📝 Modifier ]          │
 │ [ 🗑️ Supprimer ]                          │
-│ [ 🔗 Malva pudding – Sauce ]             │
+│ [ 🔗 Malva pudding (sauce) ]             │
 │ [ 📚 Liste des recettes ]                │
 └──────────────────────────────────────────┘
 ```
 
-Toucher « 🔗 Malva pudding – Sauce » ouvre la sauce à la place, en bas ; la fiche du malva
+Toucher « 🔗 Malva pudding (sauce) » ouvre la sauce à la place, en bas ; la fiche du malva
 pudding reste dans l'historique (comme toute consultation, règle B d'U6).
 
 ### 4. Lier ou délier à la main (si tu le veux maintenant)
@@ -135,16 +147,7 @@ brisée » commune à plusieurs tartes, ou pour lier deux recettes déjà enregi
 - Un nom de recette liée suit la limite des noms (255 caractères) : le titre et la section sont
   coupés si besoin.
 
-## Questions
+## Question restante
 
-1. **Découper automatiquement** une photo à plusieurs sections, avec « 🧩 Une seule recette »
-   pour annuler le découpage dans la relecture : d'accord ? (Ou demander à chaque fois.)
-2. **Les noms** : la première partie garde le titre (« Malva pudding »), les autres
-   « Titre – Section » (« Malva pudding – Sauce », qui se range à côté dans la liste) : d'accord ?
-   Ou « Section Titre » (« Sauce malva pudding », comme dans ton exemple) ?
-3. **Le nom de section nettoyé** (« Pour la sauce : » → « Sauce ») : d'accord ?
-4. **Les liens dans les deux sens** (la sauce montre aussi le malva pudding) : d'accord ?
-5. **Supprimer** une recette ne supprime que celle-là (le lien disparaît) : d'accord ? Ou
-   proposer aussi de supprimer ses recettes liées ?
-6. **Lier et délier à la main** (partie 4) : maintenant, ou plus tard ?
-7. Enregistrer la **langue** de la recette donnée par Gemini en même temps : d'accord ?
+1. **Découper** une photo à plusieurs sections : A, d'office, avec « 🧩 Une seule recette » dans
+   la relecture pour tout réunir ; ou B, en le demandant avant la relecture à chaque photo ?
