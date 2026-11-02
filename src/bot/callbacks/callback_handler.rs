@@ -153,6 +153,28 @@ pub async fn callback_handler_with_cache(
                         &dialogue,
                     )
                     .await?;
+                } else if let Some(linked) =
+                    data.strip_prefix(crate::bot::ui_builder::RECIPE_LINK_PREFIX)
+                {
+                    // A linked recipe opened from the card at the bottom: that card goes into
+                    // the history and the linked one takes its place (U9). A second tap reaches
+                    // a card already in the history: nothing more to do.
+                    if let (Ok(recipe_id), MaybeInaccessibleMessage::Regular(message)) =
+                        (linked.parse::<i64>(), msg)
+                    {
+                        if crate::bot::cleanup::is_active_card(message.chat.id, message.id).await {
+                            crate::bot::cards::show_card(
+                                &bot,
+                                &pool,
+                                message.chat.id,
+                                None,
+                                recipe_id,
+                                q.from.language_code.as_deref(),
+                                &localization,
+                            )
+                            .await?;
+                        }
+                    }
                 } else if crate::bot::unit_choice::is_choice(data) {
                     crate::bot::unit_choice::handle_choice(
                         &bot,

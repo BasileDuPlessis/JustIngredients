@@ -53,7 +53,9 @@ failure is logged as an error and the bot still starts (photos then fail with
 - Response fields: `is_recipe`, `title` (the recipe title as printed, or null: the prompt forbids
   inventing one), `language` (`fr`, `en`, `other`), `transcription` (ingredient
   section, one line per ingredient), `ingredients[]` with `name`, `quantity` (number or null),
-  `unit` (string or null), `needs_review`, `source_text`.
+  `unit` (string or null), `needs_review`, `source_text`, `section` (the heading the line is
+  printed under, or null; generic headings such as "Ingrédients" are not sections: UX plan U9,
+  a photo with several sections becomes several linked recipes).
 - `mapping::to_measurement_matches`: canonical units, names cut to 100 bytes (the validation limit), quantities
   outside (0, `MAX_QUANTITY`] or not storable in `DECIMAL(10,3)` and `needs_review` lines are
   flagged ⚠️ (`requires_quantity_confirmation`) for the review's quantity guard.

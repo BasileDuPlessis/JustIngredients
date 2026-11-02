@@ -16,9 +16,7 @@ use crate::localization::{t_args_lang, t_lang};
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import UI builder functions
-use crate::bot::ui_builder::{
-    create_ingredient_review_keyboard, create_recipe_details_keyboard, render_recipe_summary,
-};
+use crate::bot::ui_builder::{create_ingredient_review_keyboard, render_recipe_summary};
 
 // Import HandlerContext
 use crate::bot::callbacks::ingredient_menu::show_ingredient_keyboard;
@@ -639,8 +637,14 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             ctx.localization,
         );
 
-        let keyboard =
-            create_recipe_details_keyboard(recipe_id, language_code.as_deref(), ctx.localization);
+        let keyboard = crate::bot::cards::card_keyboard(
+            pool,
+            telegram_id,
+            recipe_id,
+            language_code.as_deref(),
+            ctx.localization,
+        )
+        .await;
 
         // The recorded cards of the recipe get the new ingredients and the editing view goes;
         // without one (older cards), the editing view becomes the card
@@ -757,8 +761,14 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             ctx.localization,
         );
 
-        let keyboard =
-            create_recipe_details_keyboard(recipe_id, language_code.as_deref(), ctx.localization);
+        let keyboard = crate::bot::cards::card_keyboard(
+            pool,
+            telegram_id,
+            recipe_id,
+            language_code.as_deref(),
+            ctx.localization,
+        )
+        .await;
 
         // Nothing changed: with a recorded card the editing view just goes
         let has_card = match &q.message {
@@ -904,7 +914,14 @@ pub async fn cancel_saved_editing(
                 language_code,
                 localization,
             );
-            let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
+            let keyboard = crate::bot::cards::card_keyboard(
+                pool,
+                telegram_id,
+                recipe_id,
+                language_code,
+                localization,
+            )
+            .await;
 
             // Edit the editing message back to the recipe details
             let message_id = teloxide::types::MessageId(message_id);

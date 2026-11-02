@@ -1,4 +1,4 @@
--- Schema created by the migrations of src/db.rs (version 5; 4 changes data only), dumped from a fresh database:
+-- Schema created by the migrations of src/db.rs (version 6; 4 changes data only), dumped from a fresh database:
 -- pg_dump --schema-only --no-owner --no-privileges. Regenerate it when a migration is added.
 
 --
@@ -71,6 +71,17 @@ CREATE SEQUENCE public.ingredients_id_seq
 --
 
 ALTER SEQUENCE public.ingredients_id_seq OWNED BY public.ingredients.id;
+
+
+--
+-- Name: recipe_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.recipe_links (
+    recipe_a bigint NOT NULL,
+    recipe_b bigint NOT NULL,
+    CONSTRAINT recipe_links_check CHECK ((recipe_a < recipe_b))
+);
 
 
 --
@@ -188,6 +199,14 @@ ALTER TABLE ONLY public.ingredients
 
 
 --
+-- Name: recipe_links recipe_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recipe_links
+    ADD CONSTRAINT recipe_links_pkey PRIMARY KEY (recipe_a, recipe_b);
+
+
+--
 -- Name: recipes recipes_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -241,6 +260,13 @@ CREATE INDEX ingredients_user_id_idx ON public.ingredients USING btree (user_id)
 
 
 --
+-- Name: recipe_links_recipe_b_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX recipe_links_recipe_b_idx ON public.recipe_links USING btree (recipe_b);
+
+
+--
 -- Name: recipes_content_tsv_idx; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -268,6 +294,22 @@ ALTER TABLE ONLY public.ingredients
 
 ALTER TABLE ONLY public.ingredients
     ADD CONSTRAINT ingredients_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.users(id);
+
+
+--
+-- Name: recipe_links recipe_links_recipe_a_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recipe_links
+    ADD CONSTRAINT recipe_links_recipe_a_fkey FOREIGN KEY (recipe_a) REFERENCES public.recipes(id) ON DELETE CASCADE;
+
+
+--
+-- Name: recipe_links recipe_links_recipe_b_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.recipe_links
+    ADD CONSTRAINT recipe_links_recipe_b_fkey FOREIGN KEY (recipe_b) REFERENCES public.recipes(id) ON DELETE CASCADE;
 
 
 --

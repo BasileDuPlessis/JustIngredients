@@ -1,4 +1,4 @@
-# Recettes liées : étude (validée, sauf la question 1)
+# Recettes liées (validé)
 
 Version du 2026-11-02. Remplace la proposition des sections d'ingrédients
 ([ingredient-sections.md](ingredient-sections.md), abandonnée). Demande de l'utilisateur :
@@ -10,14 +10,15 @@ document décrit ce que je propose, avec des wireframes, et finit par les questi
 
 ## Décisions (2026-11-02)
 
-1. Découpage : en attente (A : découper d'office, « 🧩 Une seule recette » pour réunir ; B :
-   demander à chaque photo).
+1. Découpage : d'office (choix A), « 🧩 Une seule recette » dans la relecture pour tout réunir.
 2. Les noms : « Malva pudding (sauce) », la section entre parenthèses.
 3. Le nom de section nettoyé (« Pour la sauce : » → « sauce »).
 4. Les liens dans les deux sens.
 5. Supprimer une recette ne supprime qu'elle (le lien disparaît).
 6. Lier et délier à la main : plus tard.
-7. La langue de la recette donnée par Gemini est enregistrée.
+7. La langue de la recette donnée par Gemini devait être enregistrée : écarté à la réalisation
+   (la faire suivre jusqu'à l'enregistrement touchait une soixantaine d'endroits du code de la
+   relecture) ; la vue « Comme dans la recette » garde sa détection par le texte de la photo.
 
 ## Pourquoi c'est une bonne approche
 
@@ -44,9 +45,7 @@ document décrit ce que je propose, avec des wireframes, et finit par les questi
    l'une ne touche pas l'autre (supprimer retire seulement le lien).
 
 En base : une table `recipe_links (recipe_a, recipe_b)`, une ligne par paire de recettes d'un
-même utilisateur, supprimée avec l'une des deux (migration 6). Profitant de la migration,
-`recipes.language` enregistre la langue que Gemini donne déjà (la vue « Comme dans la recette »
-s'en sert au lieu de deviner).
+même utilisateur, supprimée avec l'une des deux (migration 6). 
 
 ## Wireframes
 
@@ -147,7 +146,4 @@ brisée » commune à plusieurs tartes, ou pour lier deux recettes déjà enregi
 - Un nom de recette liée suit la limite des noms (255 caractères) : le titre et la section sont
   coupés si besoin.
 
-## Question restante
-
-1. **Découper** une photo à plusieurs sections : A, d'office, avec « 🧩 Une seule recette » dans
-   la relecture pour tout réunir ; ou B, en le demandant avant la relecture à chaque photo ?
+C'est la phase U9 du [plan UX](ux-improvements.md).

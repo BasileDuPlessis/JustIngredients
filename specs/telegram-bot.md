@@ -151,7 +151,14 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
   over 200 characters. A cancel word (see below) or the button restore the review.
 - `add_ingredient`: the same focused prompt (`add-ingredient-prompt`), state `EditingIngredient`
   with `editing_index` = the list's length; the parsed line becomes the last ingredient
-  (`ingredient_editing::put_ingredient`).
+  (`ingredient_editing::put_ingredient`), in the last part of a photo in parts (a retyped line
+  keeps its part).
+- **A photo in parts** (UX plan U9, [linked recipes](tasks/linked-recipes.md)): when Gemini
+  reads two to five section headings (`section` of each line), `recipe_parts::split_parts`
+  groups the lines (those under no heading first) and the review says so (`review-parts-intro`),
+  each part under its title (`review-part-main`, `review-part-linked`), the buttons in the same
+  order; `merge_parts` ("🧩 Une seule recette", `ui_builder::MERGE_PARTS`) clears the sections
+  and the review becomes a single recipe again. More than five headings: one recipe.
 - `delete_<i>`: removes the line. When none is left, the message offers ➕ (`add_ingredient`,
   same as above) and ❌ `cancel_review`; ➕ is on every review keyboard, also an empty one. Old messages may still send `add_more`, handled like
   `add_ingredient`.
@@ -162,9 +169,13 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
   recorded for cleanup as soon as it is sent (with the photo), so a command that ends the review
   deletes it too, and so does a cancel. Then:
   - name from the caption or the page title: saved at once; the review loses its buttons; the
-    line "✅ Recette « X » créée" follows (`home::send_created_line`, `recipe-created-line`, no
+    line "✅ Recette « X » créée" follows (`home::send_created_lines`, `recipe-created-line`, no
     card: the card shows when the recipe is opened), then the
-    [recipe list](#end-of-an-action-the-recipe-list-last);
+    [recipe list](#end-of-an-action-the-recipe-list-last). A photo in parts is saved as one
+    recipe per part in one transaction (`db::save_recipe_parts`): the first takes the name, the
+    others "Name (section)" (`recipe_parts::part_names`, the heading cleaned: "Pour la sauce :"
+    → "sauce"), all linked together, with one line each (`recipe-created-linked-line`: "créée,
+    liée à « X »");
   - otherwise: buttons removed, `recipe-name-prompt` sent, state
     `WaitingForRecipeNameAfterConfirm`. The typed name (a cancel word cancels; empty
     or over 255 bytes refused) is saved; the prompt is deleted with the review messages and the
@@ -257,9 +268,11 @@ without deleting (Telegram refuses them). A database error only leaves the messa
 - **Recipe card**: name (no creation date since 2026-10-30, at the user's request), ingredients with their
   measures in the user's unit view (`unit_view::show_measure`, see
   [the design](tasks/measure-conversion.md)), then "⚖️ Vue …, valeurs arrondies" when the view
-  converted one; the review and the editing lists show the saved values. Buttons:
+  converted one; the review and the editing lists show the saved values; then "🔗 Recettes
+  liées : …" (`card-linked-recipes`) when the recipe has linked recipes (U9). Buttons:
   ✏️ `recipe_action:rename:<id>`, 📝 `recipe_action:edit_ingredients:<id>`, then
-  🗑️ `recipe_action:delete:<id>`, then 📚 `show_list` ("Liste des recettes"): the card goes into
+  🗑️ `recipe_action:delete:<id>`, then 🔗 `recipe_link:<id>` per linked recipe (at most 10, in
+  alphabetical order; `cards::card_keyboard`), then 📚 `show_list` ("Liste des recettes"): the card goes into
   the history without buttons and the list comes back at the bottom (`handle_show_list`; the ⬅️
   `back_to_recipes` of older cards and the old home's 📚 do the same). History cards never have
   buttons; a rename or an edit updates every card of the recipe in place (`refresh_cards`). The 📊
@@ -307,6 +320,8 @@ loses its keyboard and is not passed to the state handler.
 | `item_<i>`, `back_review`, `qty_<i>`, `name_<i>`, `edit_<i>`, `delete_<i>`, `confirm`, `cancel_review` | `ReviewIngredients`, `EditingSavedIngredients` | Review or saved-recipe editing (above) |
 | `add_ingredient`, `add_more` (old messages) | `ReviewIngredients`, `EditingSavedIngredients` | Add a line (focused prompt in a review, `AddingIngredientToSavedRecipe` for a saved recipe) |
 | `cancel_ingredient_editing` | `EditingIngredient`, `EditingSavedIngredient` | Leave the focused edit prompt |
+| `recipe_link:<id>` | any | A linked recipe opened from the card at the bottom (`cleanup::is_active_card`): the card goes into the history, the linked one is shown at the bottom (U9); from a card already in the history, nothing |
+| `merge_parts` | `ReviewIngredients` | "🧩 Une seule recette": a photo's parts become one recipe again (U9) |
 | `recipe_instance:<id>` | any | Open a recipe by id (recipe list, home message of older versions) |
 | `select_recipe:`, `select_recipe_h:`, `recipe_action:statistics:` | any | Retired (2026-10-28): stale button |
 | `recipe_action:<action>:<id>` | any | `rename`, `edit_ingredients`, `delete` |

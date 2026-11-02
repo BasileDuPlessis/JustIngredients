@@ -169,6 +169,15 @@ pub async fn is_list(chat: ChatId, id: MessageId) -> bool {
     )
 }
 
+/// Whether `id` is the recipe card at the bottom, with its buttons.
+pub async fn is_active_card(chat: ChatId, id: MessageId) -> bool {
+    let Some(pool) = pool() else { return false };
+    matches!(
+        crate::db::chat_message_kind(pool, chat.0, id.0).await,
+        Ok(Some(kind)) if kind == ACTIVE_CARD
+    )
+}
+
 /// Whether `id` is a recorded recipe card (in the history or at the bottom).
 pub async fn is_card(chat: ChatId, id: MessageId) -> bool {
     let Some(pool) = pool() else { return false };

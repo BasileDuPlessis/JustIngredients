@@ -162,8 +162,9 @@ pub async fn back_to_card(
     language_code: Option<&str>,
 ) {
     cleanup::delete_action_messages(bot, chat_id).await;
+    // Private chats only: the chat id is the owner's id
     let keyboard =
-        super::ui_builder::create_recipe_details_keyboard(recipe_id, language_code, localization);
+        super::cards::card_keyboard(pool, chat_id.0, recipe_id, language_code, localization).await;
     if !cleanup::reactivate_card(bot, chat_id, recipe_id, card, keyboard).await {
         send_home(bot, pool, chat_id, localization, language_code).await;
     }

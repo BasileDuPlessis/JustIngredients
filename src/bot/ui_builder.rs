@@ -378,14 +378,22 @@ pub fn edit_instruction_key(field: IngredientField) -> &'static str {
     }
 }
 
-/// Create inline keyboard for recipe details actions
+/// Linked recipes shown on a card, at most (Telegram limits keyboards).
+pub const MAX_LINKED_SHOWN: usize = 10;
+
+/// Callback of a linked recipe's button on a card: `recipe_link:<id>` (UX plan U9).
+pub const RECIPE_LINK_PREFIX: &str = "recipe_link:";
+
+/// The card's keyboard: rename and edit, delete, one button per linked recipe (U9), then the
+/// list.
 pub fn create_recipe_details_keyboard(
     recipe_id: i64,
+    linked: &[crate::db::RecipeSummary],
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
     with_ui_metrics_sync("create_recipe_details_keyboard", 0, || {
-        let buttons = vec![
+        let mut buttons = vec![
             vec![
                 create_localized_button_with_emoji(
                     localization,
@@ -409,9 +417,15 @@ pub fn create_recipe_details_keyboard(
                 format!("recipe_action:delete:{}", recipe_id),
                 language_code,
             )],
-            // The single exit of a card shown at the bottom (U6.1)
-            vec![recipes_list_button(language_code, localization)],
         ];
+        buttons.extend(linked.iter().take(MAX_LINKED_SHOWN).map(|recipe| {
+            vec![InlineKeyboardButton::callback(
+                format!("🔗 {}", truncate_text(&recipe.name, 40)),
+                format!("{RECIPE_LINK_PREFIX}{}", recipe.id),
+            )]
+        }));
+        // The single exit of a card shown at the bottom (U6.1)
+        buttons.push(vec![recipes_list_button(language_code, localization)]);
 
         InlineKeyboardMarkup::new(buttons)
     })
@@ -488,6 +502,7 @@ pub fn format_recipe_date(
 pub fn render_recipe_card(
     recipe_name: &str,
     ingredients: &[crate::db::Ingredient],
+    linked: &[crate::db::RecipeSummary],
     view: crate::unit_view::UnitView,
     english_recipe: bool,
     language_code: Option<&str>,
@@ -513,6 +528,18 @@ pub fn render_recipe_card(
         card += Html::text(&format!(
             "\n\n{}",
             t_lang(localization, footer, language_code)
+        ));
+    }
+    if !linked.is_empty() {
+        let names: Vec<&str> = linked.iter().map(|recipe| recipe.name.as_str()).collect();
+        card += Html::text(&format!(
+            "\n\n{}",
+            t_args_lang(
+                localization,
+                "card-linked-recipes",
+                &[("names", &names.join(", "))],
+                language_code,
+            )
         ));
     }
     card
@@ -584,7 +611,7 @@ mod tests {
     fn the_recipe_card_offers_rename_edit_delete_and_the_list() {
         let localization =
             crate::localization::create_localization_manager().expect("localization");
-        let keyboard = create_recipe_details_keyboard(7, Some("fr"), &localization);
+        let keyboard = create_recipe_details_keyboard(7, &[], Some("fr"), &localization);
         let data: Vec<Vec<String>> = keyboard
             .inline_keyboard
             .iter()
@@ -667,6 +694,54 @@ mod tests {
     }
 
     #[test]
+    fn a_card_lists_its_linked_recipes_and_opens_them() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let created_at = chrono::Utc::now();
+        let sauce = crate::db::RecipeSummary {
+            id: 12,
+            name: "Malva pudding (sauce)".to_string(),
+            created_at,
+        };
+        let card = render_recipe_card(
+            "Malva pudding",
+            &[],
+            std::slice::from_ref(&sauce),
+            crate::unit_view::UnitView::French,
+            false,
+            Some("fr"),
+            &localization,
+        );
+        assert!(
+            card.as_str()
+                .ends_with("🔗 Recettes liées : Malva pudding (sauce)"),
+            "{}",
+            card.as_str()
+        );
+        let keyboard = create_recipe_details_keyboard(7, &[sauce], Some("fr"), &localization);
+        let rows: Vec<(String, String)> = keyboard
+            .inline_keyboard
+            .iter()
+            .map(|row| {
+                let data = match &row[0].kind {
+                    teloxide::types::InlineKeyboardButtonKind::CallbackData(data) => data.clone(),
+                    other => format!("{other:?}"),
+                };
+                (row[0].text.clone(), data)
+            })
+            .collect();
+        assert_eq!(
+            rows[2],
+            (
+                "🔗 Malva pudding (sauce)".to_string(),
+                "recipe_link:12".to_string()
+            ),
+            "after delete, before the list"
+        );
+        assert_eq!(rows[3].1, "show_list");
+    }
+
+    #[test]
     fn a_photo_in_two_parts_is_reviewed_part_by_part() {
         let localization =
             crate::localization::create_localization_manager().expect("localization");
@@ -735,6 +810,7 @@ mod tests {
         let card = render_recipe_card(
             "Tarte <b>",
             std::slice::from_ref(&ingredient),
+            &[],
             crate::unit_view::UnitView::French,
             false,
             Some("fr"),
@@ -747,6 +823,7 @@ mod tests {
         let as_saved = render_recipe_card(
             "Tarte",
             &[ingredient],
+            &[],
             crate::unit_view::UnitView::Recipe,
             false,
             Some("fr"),
@@ -761,6 +838,7 @@ mod tests {
         );
         let empty = render_recipe_card(
             "Vide",
+            &[],
             &[],
             crate::unit_view::UnitView::French,
             false,

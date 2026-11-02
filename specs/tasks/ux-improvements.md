@@ -479,6 +479,38 @@ change, except the one-off cleanup of units saved before normalization.
 ### Review gate RU8
 - [x] Done (2026-10-29), see the review log. Manual test of the four views on staging pending.
 
+## Phase U9: Linked Recipes (user request of 2026-11-02)
+
+Validated design and wireframes: [linked-recipes.md](linked-recipes.md) (it replaces the
+ingredient sections of 2026-10-30, [ingredient-sections.md](ingredient-sections.md)). A photo
+with several sections becomes several recipes, linked both ways and listed at the end of each
+card: "Malva pudding" and "Malva pudding (sauce)".
+
+### Task U9.1: Sections read from the photo (<= 1 hour)
+- [x] Done (2026-11-02): `section` in the prompt and the schema, `ExtractedIngredient.section`
+  and `MeasurementMatch.section` (review only), cut to 50 characters by the mapping.
+
+### Task U9.2: Parts and names (<= 1 hour)
+- [x] Done (2026-11-02): `src/recipe_parts.rs` (`split_parts`: two to five headings, lines under
+  no heading first; `section_title`: "Pour la sauce :" → "sauce"; `part_names`), unit tests.
+
+### Task U9.3: The review in parts (<= 1 hour)
+- [x] Done (2026-11-02): parts in the review text and buttons, "🧩 Une seule recette"
+  (`merge_parts`), retyped lines keep their part and added ones join the last.
+
+### Task U9.4: Saving linked recipes (<= 1 hour)
+- [x] Done (2026-11-02): migration 6 `recipe_links`, `db::save_recipe_parts` (one transaction,
+  unique names, every pair linked), one history line per recipe; DB test (names, both ways,
+  owner, delete).
+
+### Task U9.5: Linked recipes on the card (<= 1 hour)
+- [x] Done (2026-11-02): "🔗 Recettes liées : …" and a 🔗 button per linked recipe
+  (`recipe_link:<id>`, from the card at the bottom only), on every card keyboard
+  (`cards::card_keyboard`). Manual test on staging pending.
+
+### Review gate RU9
+- [ ] Done
+
 ## Later (not planned yet)
 - Ops: give `monitoring/prometheus.yml` the metrics token and set `METRICS_AUTH_TOKEN` on staging
   (finding 23). Finding 24 done: the unused `GOOGLE_AI_API_KEY` repository secret was deleted by
@@ -487,10 +519,8 @@ change, except the one-off cleanup of units saved before normalization.
 - Language preference (`/langue`) instead of the Telegram app language (finding 12).
 - Export/share a recipe as text (finding 13); several photos at once.
 - Adding several ingredients at once by pasting several lines (refused today: `edit-one-line`).
-- Linked recipes (user request of 2026-11-02, replacing the ingredient sections of 2026-10-30):
-  a photo with several sections becomes several recipes linked together ("Malva pudding" and
-  "Malva pudding – Sauce"), listed at the end of each card. Study with wireframes, to validate:
-  [linked-recipes.md](linked-recipes.md).
+- Linking and unlinking recipes by hand ("🔗 Lier" on a card), left for later in the linked
+  recipes design (2026-11-02).
 
 ---
 

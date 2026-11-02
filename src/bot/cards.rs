@@ -45,6 +45,7 @@ async fn render(
             .iter()
             .map(|ingredient| ingredient.name.as_str()),
     );
+    let linked = linked_recipes(pool, telegram_id, recipe_id).await;
     Ok(Some(render_recipe_card(
         recipe
             .recipe_name
@@ -52,11 +53,38 @@ async fn render(
             .map(|name| name.as_str())
             .unwrap_or("Unnamed Recipe"),
         &ingredients,
+        &linked,
         view,
         english_recipe,
         language_code,
         localization,
     )))
+}
+
+/// The recipes linked to a card's recipe (U9); none when they cannot be read.
+async fn linked_recipes(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+) -> Vec<crate::db::RecipeSummary> {
+    crate::db::linked_recipes(pool, telegram_id, recipe_id)
+        .await
+        .unwrap_or_else(|e| {
+            debug!(error = %e, "Could not read the linked recipes");
+            Vec::new()
+        })
+}
+
+/// The keyboard of a recipe's card, with a button per linked recipe.
+pub async fn card_keyboard(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+    language_code: Option<&str>,
+    localization: &Arc<LocalizationManager>,
+) -> teloxide::types::InlineKeyboardMarkup {
+    let linked = linked_recipes(pool, telegram_id, recipe_id).await;
+    create_recipe_details_keyboard(recipe_id, &linked, language_code, localization)
 }
 
 /// Opens a recipe from the button on `pressed`: the card replaces the list at the bottom, with
@@ -91,7 +119,7 @@ pub async fn show_card(
             return Ok(());
         }
     }
-    let keyboard = create_recipe_details_keyboard(recipe_id, language_code, localization);
+    let keyboard = card_keyboard(pool, telegram_id, recipe_id, language_code, localization).await;
 
     // The list pressed becomes the card
     let in_place = match pressed {
@@ -169,11 +197,9 @@ pub async fn refresh_cards(
         let request = edit_html(bot, chat_id, recorded.id, card.clone());
         let result = if recorded.active {
             request
-                .reply_markup(create_recipe_details_keyboard(
-                    recipe_id,
-                    language_code,
-                    localization,
-                ))
+                .reply_markup(
+                    card_keyboard(pool, telegram_id, recipe_id, language_code, localization).await,
+                )
                 .await
         } else {
             request.await
