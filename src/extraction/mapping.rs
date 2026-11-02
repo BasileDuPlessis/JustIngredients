@@ -67,7 +67,17 @@ fn to_measurement_match(ingredient: &ExtractedIngredient) -> Option<MeasurementM
             || out_of_range
             || unstorable
             || unit_truncated,
+        section: section_heading(ingredient.section.as_deref()),
     })
+}
+
+/// Longest section heading kept, in characters.
+pub const MAX_SECTION_CHARS: usize = 50;
+
+/// The heading an ingredient is printed under, trimmed and cut; `None` when blank.
+fn section_heading(section: Option<&str>) -> Option<String> {
+    let section = section?.split_whitespace().collect::<Vec<_>>().join(" ");
+    (!section.is_empty()).then(|| section.chars().take(MAX_SECTION_CHARS).collect())
 }
 
 fn round_to_stored_precision(quantity: f64) -> f64 {
@@ -109,6 +119,7 @@ mod tests {
             unit: unit.map(str::to_string),
             needs_review: false,
             source_text: String::new(),
+            section: None,
         }
     }
 

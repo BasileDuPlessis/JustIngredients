@@ -46,6 +46,12 @@
           },
           "source_text": {
             "type": "string"
+          },
+          "section": {
+            "type": [
+              "string",
+              "null"
+            ]
           }
         },
         "required": [
@@ -53,7 +59,8 @@
           "quantity",
           "unit",
           "needs_review",
-          "source_text"
+          "source_text",
+          "section"
         ]
       }
     }

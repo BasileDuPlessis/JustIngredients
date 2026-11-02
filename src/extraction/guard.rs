@@ -277,6 +277,7 @@ mod tests {
                             unit: None,
                             needs_review: false,
                             source_text: "sel".to_string(),
+                            section: None,
                         }],
                     })
                 }

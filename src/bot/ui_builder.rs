@@ -3,7 +3,7 @@
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup};
 
 // Import localization
-use crate::localization::t_lang;
+use crate::localization::{t_args_lang, t_lang};
 use std::sync::Arc;
 
 // Import text processing types
@@ -117,11 +117,68 @@ pub fn render_review(
         + Html::text("\n\n")
         + Html::text(&t_lang(localization, "review-description", language_code))
         + Html::text("\n\n")
-        + Html::text(&format_ingredients_list(
+        + Html::text(&format_review_list(
             ingredients,
             language_code,
             localization,
         ))
+}
+
+/// The callback of "🧩 Une seule recette": a photo's parts become one recipe again (U9).
+pub const MERGE_PARTS: &str = "merge_parts";
+
+/// The review list: numbered lines, grouped by part when the photo has several (UX plan U9),
+/// each part under its title and the whole under a line saying they become linked recipes.
+pub fn format_review_list(
+    ingredients: &[MeasurementMatch],
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> String {
+    let parts = crate::recipe_parts::split_parts(ingredients);
+    if parts.len() < 2 {
+        return format_ingredients_list(ingredients, language_code, localization);
+    }
+    let mut result = t_args_lang(
+        localization,
+        "review-parts-intro",
+        &[("count", &parts.len().to_string())],
+        language_code,
+    );
+    for (index, part) in parts.iter().enumerate() {
+        let title = match (index, part.heading.as_deref()) {
+            (0, None) => t_lang(localization, "review-part-main", language_code),
+            (0, Some(heading)) => t_args_lang(
+                localization,
+                "review-part-main-heading",
+                &[("heading", heading)],
+                language_code,
+            ),
+            (_, heading) => t_args_lang(
+                localization,
+                "review-part-linked",
+                &[("heading", heading.unwrap_or_default())],
+                language_code,
+            ),
+        };
+        result.push_str(&format!("\n\n{title}"));
+        for &line in &part.lines {
+            let ingredient = &ingredients[line];
+            let name = if ingredient.ingredient_name.is_empty() {
+                format!(
+                    "❓ {}",
+                    t_lang(localization, "unknown-ingredient", language_code)
+                )
+            } else {
+                ingredient.ingredient_name.clone()
+            };
+            result.push_str(&format!(
+                "\n{}. {}",
+                line + 1,
+                ingredient_line(ingredient, &name)
+            ));
+        }
+    }
+    fit_lines(&result, MAX_LIST_CHARS)
 }
 
 /// The editing view of a saved recipe (HTML): bold title (with the recipe name when given),
@@ -182,10 +239,13 @@ pub fn create_ingredient_review_keyboard(
         "create_ingredient_review_keyboard",
         ingredients.len(),
         || {
-            // One button per ingredient: it opens the ingredient's menu
-            let mut buttons: Vec<Vec<InlineKeyboardButton>> = ingredients
+            // One button per ingredient: it opens the ingredient's menu; in the order of the
+            // photo's parts, like the list above
+            let parts = crate::recipe_parts::split_parts(ingredients);
+            let mut buttons: Vec<Vec<InlineKeyboardButton>> = parts
                 .iter()
-                .enumerate()
+                .flat_map(|part| part.lines.iter())
+                .filter_map(|&i| ingredients.get(i).map(|ingredient| (i, ingredient)))
                 .map(|(i, ingredient)| {
                     vec![InlineKeyboardButton::callback(
                         ingredient_button_label(ingredient, language_code, localization),
@@ -202,6 +262,12 @@ pub fn create_ingredient_review_keyboard(
                 "add_ingredient".to_string(),
                 language_code,
             )]);
+            if parts.len() > 1 {
+                buttons.push(vec![InlineKeyboardButton::callback(
+                    t_lang(localization, "review-merge-parts", language_code),
+                    MERGE_PARTS,
+                )]);
+            }
             buttons.push(vec![create_localized_button_with_emoji(
                 localization,
                 "✅",
@@ -552,6 +618,7 @@ mod tests {
             start_pos: 0,
             end_pos: 0,
             requires_quantity_confirmation: flagged,
+            section: None,
         }
     }
 
@@ -597,6 +664,55 @@ mod tests {
         assert!(without_name
             .as_str()
             .starts_with("✏️ <b>Editing recipe</b>\n\n"));
+    }
+
+    #[test]
+    fn a_photo_in_two_parts_is_reviewed_part_by_part() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let in_part = |name: &str, section: Option<&str>| MeasurementMatch {
+            section: section.map(str::to_string),
+            ..named(name)
+        };
+        let ingredients = [
+            in_part("sucre", Some("Pour le gâteau")),
+            in_part("crème", Some("Pour la sauce")),
+            in_part("farine", Some("Pour le gâteau")),
+        ];
+        let list = format_review_list(&ingredients, Some("fr"), &localization);
+        assert!(
+            list.starts_with("🧩 Cette photo contient 2 parties"),
+            "{list}"
+        );
+        let gateau = list.find("🧩 La recette : gâteau").expect("first part");
+        let sauce = list.find("🧩 Recette liée : sauce").expect("second part");
+        assert!(gateau < list.find("3. ").expect("line 3") && list.find("3. ") < Some(sauce));
+        let keyboard = create_ingredient_review_keyboard(&ingredients, Some("fr"), &localization);
+        let data: Vec<String> = keyboard
+            .inline_keyboard
+            .iter()
+            .map(|row| match &row[0].kind {
+                teloxide::types::InlineKeyboardButtonKind::CallbackData(data) => data.clone(),
+                other => format!("{other:?}"),
+            })
+            .collect();
+        assert_eq!(
+            data,
+            [
+                "item_0",
+                "item_2",
+                "item_1",
+                "add_ingredient",
+                MERGE_PARTS,
+                "confirm",
+                "cancel_review"
+            ],
+            "buttons in the order of the parts, then 🧩 Une seule recette"
+        );
+        let one_part = [named("sucre"), named("crème")];
+        let keyboard = create_ingredient_review_keyboard(&one_part, Some("fr"), &localization);
+        assert_eq!(keyboard.inline_keyboard.len(), 5, "no 🧩 without parts");
+        assert!(!format_review_list(&one_part, Some("fr"), &localization).contains('🧩'));
     }
 
     #[test]

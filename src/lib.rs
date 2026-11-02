@@ -17,6 +17,7 @@ pub mod ingredient_editing;
 pub mod localization;
 pub mod observability;
 pub mod observability_config;
+pub mod recipe_parts;
 pub mod retry;
 pub mod search;
 pub mod secret;

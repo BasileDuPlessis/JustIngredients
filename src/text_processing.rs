@@ -19,4 +19,9 @@ pub struct MeasurementMatch {
     pub end_pos: usize,
     /// Whether this measurement requires user confirmation (e.g., missing or absurd quantity)
     pub requires_quantity_confirmation: bool,
+    /// The section of the photo the line is printed under ("Pour la sauce"), `None` without
+    /// one. Only during the review of a photo: a photo with several sections becomes several
+    /// linked recipes (UX plan U9); saved ingredients have none.
+    #[serde(default)]
+    pub section: Option<String>,
 }

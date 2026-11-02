@@ -244,3 +244,10 @@ unit-view-chosen = ⚖️ Unités : { $view }
 unit-view-footer-weight = ⚖️ Vue poids (g), valeurs arrondies
 unit-view-footer-french = ⚖️ Vue unités françaises (g, cl), valeurs arrondies
 unit-view-footer-us = ⚖️ Vue unités américaines, valeurs arrondies
+
+# Linked recipes (UX plan U9)
+review-parts-intro = 🧩 Cette photo contient { $count } parties : elles deviendront { $count } recettes liées. La première prend le nom de la recette, les autres « Nom (partie) ».
+review-part-main = 🧩 La recette
+review-part-main-heading = 🧩 La recette : { $heading }
+review-part-linked = 🧩 Recette liée : { $heading }
+review-merge-parts = 🧩 Une seule recette

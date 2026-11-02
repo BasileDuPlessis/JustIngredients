@@ -241,6 +241,7 @@ fn needs_editing_dialogue(data: &str) -> bool {
                 | "add_ingredient"
                 | "add_more"
                 | "cancel_ingredient_editing"
+                | crate::bot::ui_builder::MERGE_PARTS
         )
 }
 

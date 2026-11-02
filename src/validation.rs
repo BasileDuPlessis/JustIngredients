@@ -280,6 +280,7 @@ pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, AppEr
         end_pos: trimmed.len(),
         // A range keeps its lower bound, to check, like the extraction does
         requires_quantity_confirmation: range,
+        section: None,
     };
     validate_quantity_range(&ingredient)?;
     Ok(ingredient)
@@ -582,6 +583,7 @@ mod tests {
             start_pos: 0,
             end_pos: 10,
             requires_quantity_confirmation: false,
+            section: None,
         };
 
         // Valid ranges

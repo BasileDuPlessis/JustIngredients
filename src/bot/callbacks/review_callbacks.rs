@@ -150,6 +150,33 @@ pub async fn handle_review_ingredients_callbacks(
                     pool: None,
                 })
                 .await?;
+            } else if data == crate::bot::ui_builder::MERGE_PARTS {
+                // "🧩 Une seule recette": the photo's parts become one recipe again
+                for ingredient in &mut ingredients {
+                    ingredient.section = None;
+                }
+                let lang = dialogue_lang_code.as_deref();
+                if let Some(message) = &q.message {
+                    let review = render_review(&ingredients, lang, localization);
+                    let keyboard =
+                        create_ingredient_review_keyboard(&ingredients, lang, localization);
+                    if let Err(e) = edit_html(bot, message.chat().id, message.id(), review)
+                        .reply_markup(keyboard)
+                        .await
+                    {
+                        debug!(error = %e, "Could not show the merged review");
+                    }
+                }
+                dialogue
+                    .update(RecipeDialogueState::ReviewIngredients {
+                        recipe_name,
+                        ingredients,
+                        language_code: dialogue_lang_code,
+                        message_id,
+                        extracted_text,
+                        recipe_name_from_caption,
+                    })
+                    .await?;
             } else if data == "cancel_review" {
                 handle_cancel_review_button(
                     bot,
@@ -718,6 +745,7 @@ mod tests {
             start_pos: 0,
             end_pos: 0,
             requires_quantity_confirmation: flagged,
+            section: None,
         }
     }
 

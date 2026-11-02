@@ -47,7 +47,14 @@ mod tests {
         );
         assert_eq!(
             required(&schema["properties"]["ingredients"]["items"]),
-            vec!["name", "quantity", "unit", "needs_review", "source_text"]
+            vec![
+                "name",
+                "quantity",
+                "unit",
+                "needs_review",
+                "source_text",
+                "section"
+            ]
         );
         Ok(())
     }
@@ -80,6 +87,19 @@ mod tests {
         )?;
         assert_eq!(extraction.ingredients[0].name, "sel");
         assert_eq!(extraction.title.as_deref(), Some("Pâte brisée"));
+        assert_eq!(
+            extraction.ingredients[0].section, None,
+            "older answers have none"
+        );
+        let with_section: Extraction = serde_json::from_str(
+            r#"{"is_recipe": true, "title": null, "language": "fr", "transcription": "25 cl de crème",
+                "ingredients": [{"name": "crème", "quantity": 250, "unit": "ml", "needs_review": false,
+                                 "source_text": "25 cl de crème", "section": "Pour la sauce"}]}"#,
+        )?;
+        assert_eq!(
+            with_section.ingredients[0].section.as_deref(),
+            Some("Pour la sauce")
+        );
         Ok(())
     }
 
@@ -112,6 +132,8 @@ mod tests {
             "Convert cl and dl to ml",
             "needs_review",
             "is_recipe",
+            "Pour la sauce",
+            "Generic headings are not sections",
         ] {
             assert!(EXTRACTION_PROMPT.contains(rule), "missing rule: {rule}");
         }

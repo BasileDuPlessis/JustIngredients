@@ -140,6 +140,9 @@ pub struct ExtractedIngredient {
     pub needs_review: bool,
     /// The line exactly as printed.
     pub source_text: String,
+    /// The heading the line is printed under ("Pour la sauce"), `None` without one (UX plan U9).
+    #[serde(default)]
+    pub section: Option<String>,
 }
 
 /// Result of one extraction.

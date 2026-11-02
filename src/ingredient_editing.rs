@@ -24,8 +24,15 @@ pub fn to_new_ingredient(ingredient: &MeasurementMatch) -> crate::db::NewIngredi
 pub fn put_ingredient(
     ingredients: &mut Vec<MeasurementMatch>,
     index: usize,
-    ingredient: MeasurementMatch,
+    mut ingredient: MeasurementMatch,
 ) -> bool {
+    // A retyped line stays in its part of the photo, an added one joins the last part (U9)
+    if ingredient.section.is_none() {
+        ingredient.section = ingredients
+            .get(index)
+            .or_else(|| ingredients.last())
+            .and_then(|existing| existing.section.clone());
+    }
     match index.cmp(&ingredients.len()) {
         std::cmp::Ordering::Less => ingredients[index] = ingredient,
         std::cmp::Ordering::Equal => ingredients.push(ingredient),
@@ -108,6 +115,7 @@ pub fn ingredients_to_measurement_matches(ingredients: &[Ingredient]) -> Vec<Mea
             start_pos: 0,   // Not meaningful for database data
             end_pos: ing.name.len(),
             requires_quantity_confirmation: false, // Use name length as approximation
+            section: None,
         })
         .collect()
 }
@@ -209,6 +217,7 @@ mod tests {
             start_pos: 0,
             end_pos: 0,
             requires_quantity_confirmation: flagged,
+            section: None,
         }
     }
 
@@ -264,6 +273,31 @@ mod tests {
         let edited = with_quantity(&line("1", None, "lait", false), "1/2 cup").expect("valid");
         assert_eq!(edited.quantity, "0.5");
         assert_eq!(edited.measurement.as_deref(), Some("cup"));
+    }
+
+    #[test]
+    fn put_lines_stay_in_their_part_of_the_photo() {
+        let in_part = |name: &str, section: &str| MeasurementMatch {
+            section: Some(section.to_string()),
+            ..line("1", None, name, false)
+        };
+        let mut ingredients = vec![in_part("sucre", "Gâteau"), in_part("crème", "Sauce")];
+        // A retyped line keeps its part, an added one joins the last part
+        assert!(put_ingredient(
+            &mut ingredients,
+            0,
+            line("2", None, "sucre", false)
+        ));
+        assert!(put_ingredient(
+            &mut ingredients,
+            2,
+            line("1", None, "beurre", false)
+        ));
+        let sections: Vec<Option<&str>> = ingredients
+            .iter()
+            .map(|ingredient| ingredient.section.as_deref())
+            .collect();
+        assert_eq!(sections, [Some("Gâteau"), Some("Sauce"), Some("Sauce")]);
     }
 
     #[test]
@@ -382,6 +416,7 @@ mod tests {
                 start_pos: 0,
                 end_pos: 5,
                 requires_quantity_confirmation: false,
+                section: None,
             },
             MeasurementMatch {
                 quantity: "1".to_string(),
@@ -391,6 +426,7 @@ mod tests {
                 start_pos: 0,
                 end_pos: 6,
                 requires_quantity_confirmation: false,
+                section: None,
             },
         ];
 
