@@ -1088,3 +1088,32 @@ migration Phase 5. Ticked above: 004, 005, 006, 009, 012, 029, 030, 033, 039, 04
   never compiled), 016 (observability and HTTP settings ignored), 023 (a failed save loses the
   review), 025 (English, UTC dates on cards), 034, 042.
 - Still open as described: 017–022, 026–028, 031, 032, 035–038, 044, 047–050.
+
+## Triage of 2026-11-02
+Read-only check of the 17 open items against `main` at `2bd3e01` (after UX phases U5–U9 and plan
+O). Counts from `rg`, and from `cargo clippy --lib --bins` with the panic lints for IMP-018.
+- Looks done, to close after a handler check: 023 (✅ and a typed confirm word share
+  `confirm_review`, which keeps the caption; the `ref mut` copy of the state is gone).
+- Partly done since 2026-10-28:
+  - 016: OpenTelemetry settings are gone and the pool reads `max_connections` and the connect
+    timeout. Left: the second validation in `main.rs` (`validate_environment_variables`,
+    `validate_http_client_config`), the dedup TTL (300 s) and the bot HTTP timeout (30 s)
+    hard-coded, their variables never read.
+  - 018: 40 `expect` and 1 `unreachable!` outside tests (about 70 before): 22 in
+    `editing_callbacks.rs`, 9 in `review_callbacks.rs`, 5 in `db.rs`. CI still passes
+    `--allow clippy::expect_used`.
+  - 034: `tokio-util` removed, `thiserror` 2, toolchain and Docker images pinned. Left:
+    `lazy_static` (one use), `native-tls` still compiled through reqwest's default features, no
+    `rust-version`, 53 crates in two versions or more.
+  - 035: `OcrResultCache` removed. Left: `DbQueryCache` (`CacheManager.db_cache`) is never used
+    outside `cache.rs`; the untracked `editing_callbacks.rs.bak` is the user's.
+  - 042: actions on current versions, Node 22 for the smoke tests. Left: the smoke tests check
+    health only (no `getMe`, no extraction).
+  - 049: 28 of 190 keys are named nowhere in `src/` or `tests/`, 13 more only in tests.
+- Unchanged: 017 (23 `AppError::Validation("…")`, the "message is not modified" text match), 022
+  (`InMemStorage`: a review in progress, a paid Gemini read, is lost at each deploy), 024 (the
+  `owner_id` newtype only, no leak), 026 (the FK from `recipes.telegram_id` to `users` only; the
+  search part was done by U4.1), 027 (64 `row.get`, no `query_as!`), 028 (the splitter, no
+  `sqlx::migrate!`), 031 (no test goes through a handler), 036 (`db.rs` 2,330 lines,
+  `dialogue_manager.rs` 1,278), 038 (49 `.0 as i64`), 050 (staging deploys the tag; production
+  records the digest only for its rollback).
