@@ -1,4 +1,4 @@
-# Fil de discussion : modèle et wireframes (à valider)
+# Fil de discussion : modèle et wireframes (validé)
 
 Version du 2026-10-29, après le test de la v25 sur staging. Ce document remplace la règle
 « la liste toujours en dernier » de la phase U5. Validé par l'utilisateur le 2026-10-29

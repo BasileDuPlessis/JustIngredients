@@ -516,17 +516,17 @@ card: "Malva pudding" and "Malva pudding (sauce)".
   "nickel ça marche".
 
 ## Later (not planned yet)
-- Ops: give `monitoring/prometheus.yml` the metrics token and set `METRICS_AUTH_TOKEN` on staging
-  (finding 23). Finding 24 done: the unused `GOOGLE_AI_API_KEY` repository secret was deleted by
-  the user on 2026-10-27, with the repository-level `FLY_API_TOKEN` (replaced by one deploy token
-  per environment).
+- Ops, finding 23 dropped: plan O removed `monitoring/prometheus.yml`, and Fly reads the metrics
+  on an internal port without a token. Finding 24 done: the unused `GOOGLE_AI_API_KEY` repository
+  secret was deleted by the user on 2026-10-27, with the repository-level `FLY_API_TOKEN`
+  (replaced by one deploy token per environment).
 - Language preference (`/langue`) instead of the Telegram app language (finding 12).
 - Export/share a recipe as text (finding 13); several photos at once.
 - Adding several ingredients at once by pasting several lines (refused today: `edit-one-line`).
 - Linking and unlinking recipes by hand ("🔗 Lier" on a card), left for later in the linked
   recipes design (2026-11-02).
-- Observability on Fly's free managed metrics (user request of 2026-11-02): study to validate,
-  [observability.md](observability.md).
+- Observability on Fly's free managed metrics (user request of 2026-11-02): done as plan O,
+  [observability.md](observability.md), in production with v29.
 
 ---
 

@@ -209,10 +209,16 @@ par le bot, et les deux apps de monitoring supprimées ne coûtent plus leur dis
 | O7 | Logs JSON (IMP-051), OpenTelemetry retiré, le ménage (apps, dossier, secrets, docs) |
 | RO | Relecture indépendante, puis mise en production |
 
-Avancement (2026-11-02) : O1 à O6 réalisés, sur staging. Les tableaux de bord ont été vérifiés
-sur un Grafana local avec 14 jours de données synthétiques (requêtes et rendu), pas encore
-importés dans fly-metrics.net. Restent pour O7 les gestes de l'utilisateur (supprimer les deux
-apps, retirer `METRICS_AUTH_TOKEN`, poser `OWNER_CHAT_ID`), puis RO.
+Avancement (2026-11-02, soir) : O1 à O6 et la relecture RO (corrections `2f80430`) sont en
+production depuis la v29, avec la migration 7. Le `/metrics` public répond 404 ; Fly lit les
+métriques sur le port interne 9091. La partie code d'O7 est faite : logs JSON, OpenTelemetry
+retiré, ancien dossier `monitoring/` supprimé (il ne reste que `monitoring/fly-grafana/`).
+L'utilisateur a posé `OWNER_CHAT_ID` (v30). Restent ses gestes, un à la fois :
+1. `fly secrets unset METRICS_AUTH_TOKEN --stage -a just-ingredients` ;
+2. `fly apps destroy just-ingredients-monitoring` et `fly apps destroy just-ingredients-grafana`
+   (suspendues, leur disque est encore facturé) ;
+3. importer les trois tableaux de bord (`monitoring/fly-grafana/*.json`) dans fly-metrics.net.
+   Ils ont été vérifiés sur un Grafana local avec 14 jours de données synthétiques.
 
 ## Décisions (2026-11-02)
 

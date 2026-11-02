@@ -88,7 +88,9 @@ Standardize unit variants so inputs like `g`, `gr`, and `GR` are stored and proc
   3. Run: `cargo test --test text_processing_tests -- --nocapture`
 
 ## Task 5: Optional Existing Data Backfill (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-29) by UX Task U8.3 ([ux-improvements.md](ux-improvements.md)): a startup pass
+  (`db::normalize_saved_units`) instead of a SQL migration, idempotent, with a DB test on the
+  production spellings; it normalized 34 production ingredients with v27.
 - Description:
   - Add a one-off SQL migration or script to canonicalize existing `ingredients.unit` values.
   - Keep migration idempotent.
@@ -98,7 +100,7 @@ Standardize unit variants so inputs like `g`, `gr`, and `GR` are stored and proc
   3. Re-run backfill safely with no further changes.
 
 ## Task 6: Full Quality Gate (<= 1 hour)
-- [ ] Done
+- [x] Done: "Build and Test" runs these checks on every push (green for `2f80430`).
 - Description:
   - Run full repository quality checks after implementation.
   - Fix lint/test/format issues introduced by the change.

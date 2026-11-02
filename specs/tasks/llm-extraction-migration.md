@@ -166,7 +166,8 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: unit test on the redaction helpers; startup logs on staging.
 
 ### Task 0.7: Dependency advisories (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-26, `447fd9d`: advisories fixed, `EmbarkStudios/cargo-deny-action@v2` with
+  `deny.toml` in "Build and Test", Dependabot in `.github/dependabot.yml`)
 - Description: `cargo audit` reports 17 advisories (rustls, rustls-webpki, aws-lc-sys, h2,
   webpki-roots, crossbeam-epoch). `cargo update`, then replace the from-source
   `cargo install cargo-audit && cargo outdated` step with `EmbarkStudios/cargo-deny-action@v2`
@@ -183,7 +184,10 @@ March 2026 image meanwhile (restarts reuse it).
 - How to validate: green run listing the integration test binaries.
 
 ### Task 0.9: Gate deployments (<= 1 hour)
-- [ ] Done
+- [x] Done (2026-10-26/27, `07437e6`, `0202839`): staging on `workflow_run` after a successful
+  "Build and Test" push run, production only with green CI and a green staging run for the
+  commit, `concurrency` groups. No required status checks on `main`: commits are pushed straight
+  to `main` and the production gate checks them itself.
 - Description: staging only after Build and Test succeeds (`workflow_run`), production only
   after staging; `concurrency` groups; required status checks on `main` (GitHub setting, user
   action).
@@ -394,13 +398,16 @@ March 2026 image meanwhile (restarts reuse it).
   links. Confirmed working by the user. Staging is still destroyed after each run (Task 5.4).
 
 ### Task 4.3: One week of observation
-- [ ] Done
+- [x] Superseded (2026-11-02): Tesseract was removed before the week ended (Task 5.1, at the
+  user's request). Cost, errors and latency are now watched all the time by plan O
+  ([observability.md](observability.md)): the Gemini and health dashboards, the 1 $ per day cost
+  alert and the weekly report. The `needs_review` rate has no metric.
 - Description: watch cost per day, error rate, `needs_review` rate, latency; extend the
   benchmark with real images.
 - How to validate: go/no-go recorded in review gate R4.
 
 ### Review gate R4 (go/no-go for Tesseract removal)
-- [ ] Done
+- [x] Moot: the user chose the removal on 2026-10-27 without waiting for Task 4.3.
 
 ## Phase 5: Remove Tesseract
 
