@@ -266,6 +266,9 @@ async fn main() -> Result<()> {
     observability::health_checks::record_telegram_success();
 
     // Alerts and the weekly report to the owner, with OWNER_CHAT_ID (plan O4, O5)
+    tokio::spawn(observability::alerts::watch_database(Arc::clone(
+        &shared_pool,
+    )));
     if let Some(owner) = observability::alerts::start(bot.clone(), Arc::clone(&shared_pool)).await {
         tokio::spawn(observability::report::run(
             bot.clone(),

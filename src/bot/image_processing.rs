@@ -152,6 +152,7 @@ pub async fn download_and_process_image(
                     extraction_error_key(too_large)
                 }
                 _ => {
+                    observability::photo(PhotoResult::DownloadFailed);
                     observability::error("telegram", "download_failed");
                     error_logging::log_network_error(&e, "download_image_file", None, None);
                     "error-download-failed"

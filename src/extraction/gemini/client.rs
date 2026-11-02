@@ -184,7 +184,7 @@ impl GeminiExtractor {
         let permit = match self.breaker.try_acquire() {
             Ok(permit) => permit,
             Err(error) => {
-                gemini_request(&self.model, error.kind(), started.elapsed(), 0);
+                gemini_request(&self.model, error.kind(), false, started.elapsed(), 0);
                 warn!(model = %self.model, "Gemini circuit open: image rejected without calling the API");
                 return Err(error);
             }
@@ -243,7 +243,7 @@ impl GeminiExtractor {
         let retries = attempts.saturating_sub(1);
         match result {
             Ok(output) => {
-                gemini_request(&self.model, "success", elapsed, retries);
+                gemini_request(&self.model, "success", false, elapsed, retries);
                 info!(
                     model = %self.model,
                     model_version = output.model_version.as_deref().unwrap_or("unknown"),
@@ -258,7 +258,13 @@ impl GeminiExtractor {
                 Ok(output.extraction)
             }
             Err(error) => {
-                gemini_request(&self.model, error.kind(), elapsed, retries);
+                gemini_request(
+                    &self.model,
+                    error.kind(),
+                    error.is_transient(),
+                    elapsed,
+                    retries,
+                );
                 warn!(
                     model = %self.model,
                     attempts,

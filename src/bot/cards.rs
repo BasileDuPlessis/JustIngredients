@@ -186,7 +186,6 @@ pub async fn show_card(
             cleanup::record_active_card(chat_id, sent.id, recipe_id).await;
         }
     }
-    crate::observability::action(crate::observability::Action::CardOpened);
     crate::observability::card_shown(started.elapsed());
     info!(
         in_place = in_place.is_some(),

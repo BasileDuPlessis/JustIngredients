@@ -73,18 +73,20 @@ pub fn seen(pool: &Arc<PgPool>, telegram_id: i64, language_code: Option<&str>) {
         if let Err(error) =
             crate::db::record_user_seen(&pool, telegram_id, language_code.as_deref()).await
         {
+            // Not tried again at each update (a database down would get one write per
+            // update): the next one is due in an hour or the next day
             tracing::warn!(error = %error, "Could not record a visit");
-            // Tried again at the user's next update
-            VISITS
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .remove(&telegram_id);
         }
     });
 }
 
+/// Held while counts are written: a flush waits for the one running (the last one, before
+/// exiting, must not end while the minute's one still holds counts taken from `PENDING`).
+static FLUSHING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// Writes the counts added since the last write; those that fail are kept for the next one.
 pub async fn flush(pool: &PgPool) {
+    let _flushing = FLUSHING.lock().await;
     let pending = std::mem::take(&mut *PENDING.lock().unwrap_or_else(PoisonError::into_inner));
     for (day, counts) in pending {
         if let Err(error) = crate::db::add_usage(pool, day, &counts).await {

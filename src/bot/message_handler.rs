@@ -589,6 +589,9 @@ async fn dispatch_message(
 
     let duration = start_time.elapsed();
     crate::observability::update_handled("message", duration);
+    if result.is_err() {
+        crate::observability::error("handler", "message");
+    }
 
     result
 }

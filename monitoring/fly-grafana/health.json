@@ -81,8 +81,8 @@
     {
       "id": 1,
       "type": "stat",
-      "title": "Disjoncteur Gemini",
-      "description": "Ouvert après plusieurs échecs de suite : les photos sont refusées quelques minutes.",
+      "title": "Gemini",
+      "description": "En panne : le disjoncteur s'est ouvert après plusieurs échecs de suite, jusqu'au prochain appel réussi (les photos sont refusées une minute, puis un essai passe).",
       "datasource": {
         "type": "prometheus",
         "uid": "${datasource}"
@@ -114,12 +114,12 @@
               "type": "value",
               "options": {
                 "0": {
-                  "text": "✔ fermé",
+                  "text": "✔ répond",
                   "color": "#0ca30c",
                   "index": 0
                 },
                 "1": {
-                  "text": "✖ ouvert",
+                  "text": "✖ en panne",
                   "color": "#d03b3b",
                   "index": 1
                 }

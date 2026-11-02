@@ -31,6 +31,9 @@ const MAX_CALLS_KEPT: usize = 10_000;
 /// The database is down after this many failed checks in a row, one a minute.
 const DATABASE_DOWN_AFTER: u32 = 2;
 
+/// `app_state` key: when the last restart alert was sent, in seconds since 1970.
+const RESTART_TOLD: &str = "restart_alert";
+
 /// Something the owner is told.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Alert {
@@ -88,38 +91,50 @@ impl Alert {
     }
 }
 
-/// Which alerts are sent: each subject once an hour, a "back" only after its "down" was sent.
+/// Which alerts are sent: each subject once an hour; a "back" only after its "down" was sent,
+/// and a "down" after a "back" always, so that the owner's last message tells the current
+/// state.
 #[derive(Debug, Default)]
 struct Gate {
     last_sent: HashMap<&'static str, Instant>,
     down: HashSet<&'static str>,
+    back: HashSet<&'static str>,
 }
 
 impl Gate {
     fn admits(&mut self, alert: &Alert, now: Instant) -> bool {
         let subject = alert.subject();
         if matches!(alert, Alert::GeminiBack | Alert::DatabaseBack) {
-            return self.down.remove(subject);
+            let admitted = self.down.remove(subject);
+            if admitted {
+                self.back.insert(subject);
+            }
+            return admitted;
         }
-        if self
-            .last_sent
-            .get(subject)
-            .is_some_and(|at| now.duration_since(*at) < QUIET_FOR)
+        let is_down = matches!(alert, Alert::GeminiDown | Alert::DatabaseDown);
+        let after_back = is_down && self.back.remove(subject);
+        if !after_back
+            && self
+                .last_sent
+                .get(subject)
+                .is_some_and(|at| now.duration_since(*at) < QUIET_FOR)
         {
             return false;
         }
         self.last_sent.insert(subject, now);
-        if matches!(alert, Alert::GeminiDown | Alert::DatabaseDown) {
+        if is_down {
             self.down.insert(subject);
         }
         true
     }
 }
 
-/// What the alerts watch between two events: Gemini's last calls and today's cost.
+/// What the alerts watch between two events: Gemini's last calls (whether each failed because
+/// of Gemini), the breaker, and today's cost.
 #[derive(Debug)]
 struct Watch {
     calls: VecDeque<(Instant, bool)>,
+    breaker_open: bool,
     cost_day: Option<NaiveDate>,
     cost: u64,
     cost_told: bool,
@@ -129,17 +144,21 @@ impl Watch {
     const fn new() -> Self {
         Self {
             calls: VecDeque::new(),
+            breaker_open: false,
             cost_day: None,
             cost: 0,
             cost_told: false,
         }
     }
 
-    fn call(&mut self, success: bool, now: Instant) -> Option<Alert> {
+    /// A call ended; `outage` when it failed because of Gemini (timeout, quota, network, server
+    /// error), not because of the photo. Told while the breaker is closed only: open, "Gemini en
+    /// panne" says more.
+    fn call(&mut self, outage: bool, now: Instant) -> Option<Alert> {
         if self.calls.len() >= MAX_CALLS_KEPT {
             self.calls.pop_front();
         }
-        self.calls.push_back((now, success));
+        self.calls.push_back((now, outage));
         while self
             .calls
             .front()
@@ -147,11 +166,11 @@ impl Watch {
         {
             self.calls.pop_front();
         }
-        if success {
+        if !outage || self.breaker_open {
             return None;
         }
         let calls = self.calls.len();
-        let failures = self.calls.iter().filter(|(_, success)| !success).count();
+        let failures = self.calls.iter().filter(|(_, outage)| *outage).count();
         (calls >= FAILING_MIN_CALLS && failures * 100 > calls * FAILING_PERCENT)
             .then_some(Alert::GeminiFailing { failures, calls })
     }
@@ -196,12 +215,23 @@ pub fn raise(alert: Alert) {
     }
 }
 
-/// A Gemini call ended (not one the breaker refused).
-pub fn gemini_call(success: bool) {
-    let alert = watch().call(success, Instant::now());
+/// A Gemini call ended (not one the breaker refused); `outage` when it failed because of
+/// Gemini.
+pub fn gemini_call(outage: bool) {
+    let alert = watch().call(outage, Instant::now());
     if let Some(alert) = alert {
         raise(alert);
     }
+}
+
+/// The breaker opened, or a call succeeded again after it opened.
+pub fn breaker_changed(open: bool) {
+    watch().breaker_open = open;
+    raise(if open {
+        Alert::GeminiDown
+    } else {
+        Alert::GeminiBack
+    });
 }
 
 /// The estimated cost of a Gemini call.
@@ -255,14 +285,14 @@ pub async fn start(bot: Bot, pool: Arc<PgPool>) -> Option<ChatId> {
             }
         }
     });
-    tokio::spawn(watch_database(Arc::clone(&pool)));
     check_restart(&pool).await;
     tracing::info!("Alerts to the owner started");
     Some(owner)
 }
 
-/// Checks the database every minute; a "down" after two failed checks in a row.
-async fn watch_database(pool: Arc<PgPool>) {
+/// Checks the database every minute, alerts on or off: each failed check counts in
+/// `ji_errors_total{component="database"}`; a "down" after two in a row.
+pub async fn watch_database(pool: Arc<PgPool>) {
     let mut every_minute = tokio::time::interval(Duration::from_secs(60));
     let mut failed = 0u32;
     loop {
@@ -300,13 +330,32 @@ async fn check_restart(pool: &PgPool) {
     };
     let release = format!("{machine}:{version}");
     match crate::db::app_state(pool, "release").await {
-        Ok(Some(previous)) if previous == release => raise(Alert::Restarted),
+        Ok(Some(previous)) if previous == release => restarted(pool).await,
         Ok(_) => {
             if let Err(error) = crate::db::set_app_state(pool, "release", &release).await {
                 tracing::warn!(error = %error, "Could not record the release");
             }
         }
         Err(error) => tracing::warn!(error = %error, "Could not read the previous release"),
+    }
+}
+
+/// Tells the restart, at most once an hour across restarts: the gate starts empty with each
+/// process, and a bot crashing in a loop would otherwise send one each time.
+async fn restarted(pool: &PgPool) {
+    let now = chrono::Utc::now().timestamp();
+    let quiet = i64::try_from(QUIET_FOR.as_secs()).unwrap_or(i64::MAX);
+    let last = crate::db::app_state(pool, RESTART_TOLD)
+        .await
+        .ok()
+        .flatten()
+        .and_then(|at| at.parse::<i64>().ok());
+    if last.is_some_and(|at| now - at < quiet) {
+        return;
+    }
+    raise(Alert::Restarted);
+    if let Err(error) = crate::db::set_app_state(pool, RESTART_TOLD, &now.to_string()).await {
+        tracing::warn!(error = %error, "Could not record the restart alert");
     }
 }
 
@@ -324,12 +373,18 @@ mod tests {
         assert!(gate.admits(&Alert::GeminiBack, start));
         assert!(!gate.admits(&Alert::GeminiBack, start), "already told");
         let soon = start + Duration::from_secs(600);
-        assert!(!gate.admits(&Alert::GeminiDown, soon), "once an hour");
         assert!(
-            !gate.admits(&Alert::GeminiBack, soon),
-            "its down was not sent"
+            gate.admits(&Alert::GeminiDown, soon),
+            "down again after a back: the last message must not say it is back"
         );
-        assert!(gate.admits(&Alert::GeminiDown, start + QUIET_FOR));
+        assert!(
+            !gate.admits(&Alert::GeminiDown, soon),
+            "still down: once an hour"
+        );
+        assert!(gate.admits(&Alert::GeminiBack, soon));
+        assert!(gate.admits(&Alert::Restarted, start));
+        assert!(!gate.admits(&Alert::Restarted, soon), "once an hour");
+        assert!(gate.admits(&Alert::Restarted, start + QUIET_FOR));
     }
 
     #[test]
@@ -337,11 +392,11 @@ mod tests {
         let mut watch = Watch::new();
         let start = Instant::now();
         for _ in 0..3 {
-            assert_eq!(watch.call(true, start), None);
+            assert_eq!(watch.call(false, start), None);
         }
-        assert_eq!(watch.call(false, start), None, "4 calls only");
+        assert_eq!(watch.call(true, start), None, "4 calls only");
         assert_eq!(
-            watch.call(false, start),
+            watch.call(true, start),
             Some(Alert::GeminiFailing {
                 failures: 2,
                 calls: 5
@@ -349,11 +404,18 @@ mod tests {
             "40 %"
         );
         let later = start + FAILING_WINDOW + Duration::from_secs(1);
-        assert_eq!(
-            watch.call(false, later),
-            None,
-            "the old calls are forgotten"
-        );
+        assert_eq!(watch.call(true, later), None, "the old calls are forgotten");
+    }
+
+    #[test]
+    fn no_failing_alert_while_the_breaker_is_open() {
+        let mut watch = Watch::new();
+        let start = Instant::now();
+        for _ in 0..4 {
+            watch.call(true, start);
+        }
+        watch.breaker_open = true;
+        assert_eq!(watch.call(true, start), None, "Gemini down is sent instead");
     }
 
     #[test]

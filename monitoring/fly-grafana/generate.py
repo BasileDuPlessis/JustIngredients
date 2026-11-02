@@ -115,7 +115,8 @@ def per_value_p95(metric, label, values):
 # ---------- Usage ----------
 L=Layout()
 photos=per_value('ji_photos_total','result',[('read','lue'),('not_recipe','pas une recette'),('unreadable','illisible'),
-             ('too_large','trop grande'),('daily_limit','limite du jour'),('gemini_error','erreur Gemini')])
+             ('too_large','trop grande'),('daily_limit','limite du jour'),('gemini_error','erreur Gemini'),
+             ('download_failed','téléchargement échoué')])
 created=per_value('ji_recipes_created_total','kind',[('photo','photo'),('linked','recette liée')])
 action_names={'start':'/start','help':'aide','list':'liste','search':'recherche','card_opened':'fiche ouverte',
               'linked_opened':'recette liée ouverte','rename':'renommage','edit':'modification','delete':'suppression',
@@ -185,10 +186,11 @@ db_p95=per_value_p95('ji_db_duration_seconds','operation',[('save_recipe','enreg
                      ('create_recipe','création'),('create_ingredient','ingrédient')])
 health=dashboard('ji-health','JustIngredients · Santé',
   'Erreurs, disjoncteur de Gemini, redémarrages, rapidité, machines et base (plan O).',[
-  stat(L,'Disjoncteur Gemini',f'max(ji_gemini_breaker_open{{{A}}})',0,0,background=True,
-       mappings=[{'type':'value','options':{'0':{'text':'✔ fermé','color':GOOD,'index':0},
-                                            '1':{'text':'✖ ouvert','color':CRITICAL,'index':1}}}],
-       description='Ouvert après plusieurs échecs de suite : les photos sont refusées quelques minutes.'),
+  stat(L,'Gemini',f'max(ji_gemini_breaker_open{{{A}}})',0,0,background=True,
+       mappings=[{'type':'value','options':{'0':{'text':'✔ répond','color':GOOD,'index':0},
+                                            '1':{'text':'✖ en panne','color':CRITICAL,'index':1}}}],
+       description='En panne : le disjoncteur s\'est ouvert après plusieurs échecs de suite, jusqu\'au prochain appel réussi '
+                   '(les photos sont refusées une minute, puis un essai passe).'),
   stat(L,'Dernier démarrage',f'max(ji_started_at_seconds{{{A}}}) * 1000',6,0,unit='dateTimeFromNow'),
   stat(L,'Redémarrages sur la période',f'sum(changes(ji_started_at_seconds{{{A}}}[$__range]))',12,0,
        description='Mises en production comprises.'),

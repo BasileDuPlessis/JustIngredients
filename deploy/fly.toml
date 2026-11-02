@@ -6,6 +6,10 @@
 app = 'just-ingredients'
 primary_region = 'cdg'
 
+# A stop (deploy, restart) lets a photo being read by Gemini (40 s at most) finish and the
+# usage counts be written, instead of Fly's default 5 s
+kill_timeout = '45s'
+
 [build]
   dockerfile = 'Dockerfile'
 

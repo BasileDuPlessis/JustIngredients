@@ -419,6 +419,17 @@
           "legendFormat": "erreur Gemini",
           "range": true,
           "instant": false
+        },
+        {
+          "refId": "G",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_photos_total{app=\"$app\",result=\"download_failed\"}[1d]))",
+          "legendFormat": "téléchargement échoué",
+          "range": true,
+          "instant": false
         }
       ],
       "fieldConfig": {
@@ -559,6 +570,25 @@
                 "value": {
                   "mode": "fixed",
                   "fixedColor": "#008300"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "téléchargement échoué"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "téléchargement échoué"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#9085e9"
                 }
               }
             ]

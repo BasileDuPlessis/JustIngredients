@@ -253,8 +253,11 @@ pub async fn callback_handler_with_cache(
 
         let duration = start_time.elapsed();
         crate::observability::update_handled("callback", duration);
-
-        result.and(prefix_result)
+        let result = result.and(prefix_result);
+        if result.is_err() {
+            crate::observability::error("handler", "callback");
+        }
+        result
     }
     .instrument(span)
     .await
@@ -547,7 +550,9 @@ async fn handle_recipe_selection_by_id(
         }
     };
 
-    // One card per recipe, the list below it (U5.4)
+    // One card per recipe, the list below it (U5.4). Counted here: linked recipes and unit views
+    // show cards too, and count as their own action
+    crate::observability::action(crate::observability::Action::CardOpened);
     crate::bot::cards::show_card(
         bot,
         &pool,

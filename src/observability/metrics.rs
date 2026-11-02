@@ -38,6 +38,8 @@ pub enum PhotoResult {
     DailyLimit,
     /// Gemini failed (timeout, quota, outage, invalid answer).
     GeminiError,
+    /// Telegram did not give the file.
+    DownloadFailed,
 }
 
 impl PhotoResult {
@@ -49,6 +51,7 @@ impl PhotoResult {
             Self::TooLarge => "too_large",
             Self::DailyLimit => "daily_limit",
             Self::GeminiError => "gemini_error",
+            Self::DownloadFailed => "download_failed",
         }
     }
 }
@@ -136,19 +139,28 @@ pub fn set_recipes(total: u64) {
 
 /// One photo sent to Gemini: `ji_gemini_requests_total{model, result}` (`success` or an
 /// `ExtractionError::kind`; `circuit_open` when the breaker refused it without a call), its
-/// duration with retries, and the retries.
-pub fn gemini_request(model: &str, result: &'static str, duration: Duration, retries: u32) {
-    if result != "circuit_open" {
-        super::alerts::gemini_call(result == "success");
-        super::usage::add(|day| {
-            day.gemini_calls += 1;
-            if result != "success" {
-                day.gemini_failures += 1;
-            }
-        });
-    }
+/// duration with retries, and the retries. `outage`: it failed because of Gemini (a transient
+/// error), not because of the photo.
+pub fn gemini_request(
+    model: &str,
+    result: &'static str,
+    outage: bool,
+    duration: Duration,
+    retries: u32,
+) {
     metrics::counter!("ji_gemini_requests_total", "model" => model.to_string(), "result" => result)
         .increment(1);
+    // A refusal by the breaker is no call: no duration, nothing for the history
+    if result == "circuit_open" {
+        return;
+    }
+    super::alerts::gemini_call(outage);
+    super::usage::add(|day| {
+        day.gemini_calls += 1;
+        if result != "success" {
+            day.gemini_failures += 1;
+        }
+    });
     metrics::histogram!("ji_gemini_duration_seconds", "model" => model.to_string())
         .record(duration.as_secs_f64());
     if retries > 0 {
@@ -182,21 +194,18 @@ pub fn set_gemini_breaker_open(open: bool) {
     metrics::gauge!("ji_gemini_breaker_open").set(if open { 1.0 } else { 0.0 });
 }
 
-/// The breaker opened, or a call succeeded again after it opened: the gauge, and the owner is
-/// told (plan O4).
+/// The breaker opened, or a call succeeded again after it opened: the gauge, 1 from the opening
+/// until a call succeeds again (after the open period a trial call is let through, but Gemini
+/// counts as down until one succeeds), and the owner is told (plan O4).
 pub fn gemini_breaker_changed(open: bool) {
     set_gemini_breaker_open(open);
-    super::alerts::raise(if open {
-        super::alerts::Alert::GeminiDown
-    } else {
-        super::alerts::Alert::GeminiBack
-    });
+    super::alerts::breaker_changed(open);
 }
 
 // --- Health ---
 
-/// An error: `ji_errors_total{component, kind}` (`gemini`, `telegram`, `database`, `handler`,
-/// `internal`).
+/// An error: `ji_errors_total{component, kind}` (`gemini`, `telegram`, `database`, `handler`:
+/// a message or button whose handling failed, `internal`).
 pub fn error(component: &'static str, kind: &'static str) {
     metrics::counter!("ji_errors_total", "component" => component, "kind" => kind).increment(1);
 }
@@ -270,7 +279,13 @@ mod tests {
     #[test]
     fn gemini_calls_and_their_cost_are_counted() {
         let samples = record(|| {
-            gemini_request("gemini-test", "success", Duration::from_millis(1500), 2);
+            gemini_request(
+                "gemini-test",
+                "success",
+                false,
+                Duration::from_millis(1500),
+                2,
+            );
             gemini_usage("gemini-test", 1561, 492, Some(1698));
         });
         assert_eq!(
@@ -342,7 +357,7 @@ mod tests {
             action(Action::Search);
             set_users(1, 2, 3);
             set_recipes(4);
-            gemini_request("m", "timeout", Duration::from_secs(1), 1);
+            gemini_request("m", "timeout", true, Duration::from_secs(1), 1);
             gemini_usage("m", 1, 1, Some(1));
             gemini_cache_hit();
             set_gemini_breaker_open(true);

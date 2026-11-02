@@ -46,6 +46,9 @@ being tested), then to production when a deployment is started by hand and appro
   `http_service` check.
 - `[http_service]`: internal port 8080, HTTPS forced, `auto_stop_machines = false`,
   `min_machines_running = 1`.
+- `kill_timeout = '45s'`: a stop lets a photo being read (40 s Gemini budget) finish and the
+  last usage counts be written (Fly's default is 5 s; the stop signal is SIGINT, which ends the
+  dispatcher cleanly).
 - `[metrics]`: port 9091, path `/metrics`. Fly reads it every 15 s over its private network
   ([Monitoring](#monitoring)); it is not a service, so it is not reachable from the Internet.
 
@@ -121,9 +124,9 @@ the Prometheus and Grafana apps were removed in 2026-11 (they never collected an
 
 | Question | Metrics |
 |---|---|
-| Usage | `ji_photos_total{result}` (`read`, `not_recipe`, `unreadable`, `too_large`, `daily_limit`, `gemini_error`), `ji_recipes_created_total{kind}` (`photo`, `linked`), `ji_actions_total{action}` |
+| Usage | `ji_photos_total{result}` (`read`, `not_recipe`, `unreadable`, `too_large`, `daily_limit`, `gemini_error`, `download_failed`), `ji_recipes_created_total{kind}` (`photo`, `linked`), `ji_actions_total{action}` |
 | Gemini and its cost | `ji_gemini_requests_total{model,result}`, `ji_gemini_duration_seconds{model}`, `ji_gemini_retries_total{model}`, `ji_gemini_tokens_total{model,kind}`, `ji_gemini_cost_micro_usd_total{model}`, `ji_gemini_cache_hits_total` |
-| Health | `ji_errors_total{component,kind}`, `ji_gemini_breaker_open`, `ji_started_at_seconds` |
+| Health | `ji_errors_total{component,kind}` (`gemini`, `telegram`, `database`: a failed check of the minute's database watch, `handler`: a message or button whose handling failed, `internal`), `ji_gemini_breaker_open` (1 from the breaker opening until a call succeeds again), `ji_started_at_seconds` |
 | Speed | `ji_update_duration_seconds{kind}` (`message`, `callback`), `ji_card_shown_seconds`, `ji_db_duration_seconds{operation}` |
 
 - Gauges computed from the database every hour: `ji_users{period}` (`day`, `week`: users seen
@@ -134,11 +137,13 @@ the Prometheus and Grafana apps were removed in 2026-11 (they never collected an
   cost), counted in memory and written every minute (`src/observability/usage.rs`);
   `app_state`, the release running and the last weekly report.
 - Alerts the bot sends to `OWNER_CHAT_ID`, in French, each subject at most once an hour
-  (`src/observability/alerts.rs`): 🔴 Gemini down (the circuit breaker opened) then 🟢 back;
-  🟠 Gemini failing (over 30 % of at least 5 calls in the last hour); 💸 the day's estimated
-  Gemini cost over 1 $; 🟠 database unreachable (two checks a minute apart) then 🟢 back; 🔁 a
-  restart without a new release (same Fly machine and configuration version as at the previous
-  start). Without `OWNER_CHAT_ID` none is sent.
+  (`src/observability/alerts.rs`): 🔴 Gemini down (the circuit breaker opened) then 🟢 back
+  (a call succeeded); 🟠 Gemini failing (over 30 % of at least 5 calls in the last hour failed
+  because of Gemini: timeouts, quota, network, server errors; not while it is down); 💸 the day's
+  estimated Gemini cost over 1 $; 🟠 database unreachable (two failed checks a minute apart)
+  then 🟢 back; 🔁 a restart without a new release (same Fly machine and configuration version as
+  at the previous start; once an hour across restarts). A "down" after a "back" is always sent,
+  so the last message tells the current state. Without `OWNER_CHAT_ID` none is sent.
 - Weekly report to `OWNER_CHAT_ID` on Monday from 9:00, Paris time (or at the next start if the
   bot was down then), for the week before: active users (seen since that Monday: a user keeps
   only the last visit), new and all users, photos, recipes, Gemini's cost and failures
