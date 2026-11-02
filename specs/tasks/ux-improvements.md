@@ -525,6 +525,8 @@ card: "Malva pudding" and "Malva pudding (sauce)".
 - Adding several ingredients at once by pasting several lines (refused today: `edit-one-line`).
 - Linking and unlinking recipes by hand ("🔗 Lier" on a card), left for later in the linked
   recipes design (2026-11-02).
+- Observability on Fly's free managed metrics (user request of 2026-11-02): study to validate,
+  [observability.md](observability.md).
 
 ---
 
