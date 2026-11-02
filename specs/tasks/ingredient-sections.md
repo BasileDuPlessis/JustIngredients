@@ -1,4 +1,7 @@
-# Sections d'ingrédients : proposition (à valider)
+# Sections d'ingrédients : proposition (abandonnée)
+
+> Abandonnée le 2026-11-02 : l'utilisateur préfère une recette par section, liées entre elles.
+> Voir [linked-recipes.md](linked-recipes.md).
 
 Version du 2026-10-30. Demande de l'utilisateur : « pouvoir regrouper les ingrédients dans des
 sections (ex. pour le malva pudding, des ingrédients pour le gâteau et une autre section des
