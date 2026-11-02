@@ -207,7 +207,7 @@ pub async fn download_and_process_image(
         return Ok(String::new());
     }
 
-    let ingredients = to_measurement_matches(&extraction);
+    let ingredients = crate::recipe_parts::arrange(to_measurement_matches(&extraction));
     let extracted_text = extraction.transcription;
     let title = extraction.title;
 

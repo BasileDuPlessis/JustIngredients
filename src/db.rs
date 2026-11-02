@@ -560,7 +560,8 @@ pub async fn linked_recipes(
         "SELECT r.id, r.recipe_name, r.created_at FROM recipe_links l \
          JOIN recipes r ON r.id = CASE WHEN l.recipe_a = $2 THEN l.recipe_b ELSE l.recipe_a END \
          WHERE (l.recipe_a = $2 OR l.recipe_b = $2) \
-           AND r.telegram_id = $1 AND r.recipe_name IS NOT NULL",
+           AND r.telegram_id = $1 AND r.recipe_name IS NOT NULL \
+           AND EXISTS (SELECT 1 FROM recipes s WHERE s.id = $2 AND s.telegram_id = $1)",
     )
     .bind(telegram_id)
     .bind(recipe_id)

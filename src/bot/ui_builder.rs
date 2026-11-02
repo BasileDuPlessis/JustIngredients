@@ -124,9 +124,6 @@ pub fn render_review(
         ))
 }
 
-/// The callback of "🧩 Une seule recette": a photo's parts become one recipe again (U9).
-pub const MERGE_PARTS: &str = "merge_parts";
-
 /// The review list: numbered lines, grouped by part when the photo has several (UX plan U9),
 /// each part under its title and the whole under a line saying they become linked recipes.
 pub fn format_review_list(
@@ -262,12 +259,6 @@ pub fn create_ingredient_review_keyboard(
                 "add_ingredient".to_string(),
                 language_code,
             )]);
-            if parts.len() > 1 {
-                buttons.push(vec![InlineKeyboardButton::callback(
-                    t_lang(localization, "review-merge-parts", language_code),
-                    MERGE_PARTS,
-                )]);
-            }
             buttons.push(vec![create_localized_button_with_emoji(
                 localization,
                 "✅",
@@ -420,7 +411,7 @@ pub fn create_recipe_details_keyboard(
         ];
         buttons.extend(linked.iter().take(MAX_LINKED_SHOWN).map(|recipe| {
             vec![InlineKeyboardButton::callback(
-                format!("🔗 {}", truncate_text(&recipe.name, 40)),
+                format!("🔗 {}", crate::recipe_parts::short_name(&recipe.name, 40)),
                 format!("{RECIPE_LINK_PREFIX}{}", recipe.id),
             )]
         }));
@@ -531,13 +522,19 @@ pub fn render_recipe_card(
         ));
     }
     if !linked.is_empty() {
-        let names: Vec<&str> = linked.iter().map(|recipe| recipe.name.as_str()).collect();
+        let names: Vec<&str> = linked
+            .iter()
+            .take(MAX_LINKED_SHOWN)
+            .map(|recipe| recipe.name.as_str())
+            .collect();
+        // Within Telegram's 4096 characters, after a list of up to 3500
+        let names = truncate_text(&names.join(", "), 400);
         card += Html::text(&format!(
             "\n\n{}",
             t_args_lang(
                 localization,
                 "card-linked-recipes",
-                &[("names", &names.join(", "))],
+                &[("names", &names)],
                 language_code,
             )
         ));
@@ -778,15 +775,14 @@ mod tests {
                 "item_2",
                 "item_1",
                 "add_ingredient",
-                MERGE_PARTS,
                 "confirm",
                 "cancel_review"
             ],
-            "buttons in the order of the parts, then 🧩 Une seule recette"
+            "buttons in the order of the parts"
         );
         let one_part = [named("sucre"), named("crème")];
         let keyboard = create_ingredient_review_keyboard(&one_part, Some("fr"), &localization);
-        assert_eq!(keyboard.inline_keyboard.len(), 5, "no 🧩 without parts");
+        assert_eq!(keyboard.inline_keyboard.len(), 5);
         assert!(!format_review_list(&one_part, Some("fr"), &localization).contains('🧩'));
     }
 

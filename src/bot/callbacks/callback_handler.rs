@@ -263,13 +263,14 @@ fn needs_editing_dialogue(data: &str) -> bool {
                 | "add_ingredient"
                 | "add_more"
                 | "cancel_ingredient_editing"
-                | crate::bot::ui_builder::MERGE_PARTS
         )
 }
 
 /// Buttons older versions sent and nothing handles any more, e.g. the Cancel of a processing
 /// message left when the bot restarted during an extraction.
-const RETIRED_BUTTONS: [&str; 1] = ["cancel_processing"];
+/// "🧩 Une seule recette" (`merge_parts`) was removed on 2026-11-02, before its release: the user
+/// found it confusing.
+const RETIRED_BUTTONS: [&str; 2] = ["cancel_processing", "merge_parts"];
 /// Same, for data with a parameter: lists grouped by name (U3.1) and the card's statistics (U3.2).
 const RETIRED_PREFIXES: [&str; 3] = [
     "select_recipe:",

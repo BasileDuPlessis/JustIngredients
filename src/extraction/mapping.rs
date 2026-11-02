@@ -74,10 +74,13 @@ fn to_measurement_match(ingredient: &ExtractedIngredient) -> Option<MeasurementM
 /// Longest section heading kept, in characters.
 pub const MAX_SECTION_CHARS: usize = 50;
 
-/// The heading an ingredient is printed under, trimmed and cut; `None` when blank.
+/// The heading an ingredient is printed under, trimmed (also of a final ":") and cut; `None`
+/// when nothing is left.
 fn section_heading(section: Option<&str>) -> Option<String> {
     let section = section?.split_whitespace().collect::<Vec<_>>().join(" ");
-    (!section.is_empty()).then(|| section.chars().take(MAX_SECTION_CHARS).collect())
+    let section = section.trim_end_matches([':', ' ']);
+    (section.chars().any(char::is_alphanumeric))
+        .then(|| section.chars().take(MAX_SECTION_CHARS).collect())
 }
 
 fn round_to_stored_precision(quantity: f64) -> f64 {
@@ -266,6 +269,21 @@ mod tests {
             );
         }
         assert_eq!(matches.len(), 4);
+    }
+
+    #[test]
+    fn section_headings_are_trimmed_and_blank_ones_dropped() {
+        assert_eq!(
+            section_heading(Some("  Pour la   sauce : ")).as_deref(),
+            Some("Pour la sauce")
+        );
+        assert_eq!(section_heading(Some(":")), None);
+        assert_eq!(section_heading(Some("   ")), None);
+        assert_eq!(section_heading(None), None);
+        assert_eq!(
+            section_heading(Some(&"x".repeat(80))).map(|heading| heading.chars().count()),
+            Some(MAX_SECTION_CHARS)
+        );
     }
 
     #[test]

@@ -25,9 +25,7 @@ use crate::validation::{parse_ingredient_from_text, validate_recipe_name};
 use crate::db::Ingredient;
 
 // Import UI builder functions
-use super::ui_builder::{
-    create_ingredient_review_keyboard, format_ingredients_list, render_review, render_saved_editing,
-};
+use super::ui_builder::{create_ingredient_review_keyboard, render_review, render_saved_editing};
 
 // Import HandlerContext
 use super::cleanup::{self, send_transient};
@@ -481,6 +479,19 @@ pub async fn handle_recipe_rename_input(
                             handler_ctx.localization,
                         )
                         .await;
+                        // And the cards that name it among their linked recipes
+                        let linked =
+                            super::cards::linked_ids(pool, user.id.0 as i64, recipe_id).await;
+                        super::cards::refresh_linked_cards(
+                            bot,
+                            pool,
+                            msg.chat.id,
+                            user.id.0 as i64,
+                            &linked,
+                            handler_ctx.language_code,
+                            handler_ctx.localization,
+                        )
+                        .await;
                     }
                     // Renamed to its own name: nothing changed, no line
                     if new_name != current_name {
@@ -864,7 +875,7 @@ pub async fn handle_ingredient_review_input(
                     "review-help",
                     handler_ctx.language_code
                 ),
-                format_ingredients_list(
+                crate::bot::ui_builder::format_review_list(
                     &ingredients,
                     handler_ctx.language_code,
                     handler_ctx.localization

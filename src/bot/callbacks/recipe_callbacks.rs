@@ -255,6 +255,8 @@ pub async fn handle_delete_recipe_confirmation(
                 .ok()
                 .flatten()
                 .and_then(|recipe| recipe.recipe_name.map(|name| name.to_string()));
+            // Read before the links go with the recipe: their cards name it (U9)
+            let linked = crate::bot::cards::linked_ids(&pool, telegram_id, recipe_id).await;
             let result = crate::db::delete_recipe(&pool, telegram_id, recipe_id).await;
 
             // The confirmation goes in every case
@@ -294,6 +296,16 @@ pub async fn handle_delete_recipe_confirmation(
                     }
                     // The line is history, not a card; any other card of the recipe goes
                     crate::bot::cleanup::remove_recipe_cards(bot, chat_id, recipe_id, card).await;
+                    crate::bot::cards::refresh_linked_cards(
+                        bot,
+                        &pool,
+                        chat_id,
+                        telegram_id,
+                        &linked,
+                        language_code.as_deref(),
+                        localization,
+                    )
+                    .await;
                     if let Some(card) = card {
                         crate::bot::cleanup::untrack(chat_id, card).await;
                     }

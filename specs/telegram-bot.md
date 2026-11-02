@@ -153,12 +153,17 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
   with `editing_index` = the list's length; the parsed line becomes the last ingredient
   (`ingredient_editing::put_ingredient`), in the last part of a photo in parts (a retyped line
   keeps its part).
-- **A photo in parts** (UX plan U9, [linked recipes](tasks/linked-recipes.md)): when Gemini
-  reads two to five section headings (`section` of each line), `recipe_parts::split_parts`
-  groups the lines (those under no heading first) and the review says so (`review-parts-intro`),
-  each part under its title (`review-part-main`, `review-part-linked`), the buttons in the same
-  order; `merge_parts` ("🧩 Une seule recette", `ui_builder::MERGE_PARTS`) clears the sections
-  and the review becomes a single recipe again. More than five headings: one recipe.
+- **A photo in parts** (UX plan U9, [linked recipes](tasks/linked-recipes.md)): when the
+  headings Gemini reads (`section` of each line) make two to five parts, the review says so
+  (`review-parts-intro`) and shows each part under its title (`review-part-main`,
+  `review-part-linked`). `recipe_parts::arrange` puts the lines in part order as soon as the
+  photo is read, so the review numbers them in order and ➕ adds to the last part: headings are
+  grouped by their cleaned title ("Pour la sauce", "Pour la sauce :" and "POUR LA SAUCE" are one
+  part), lines under no heading before the first one are the dish itself, a line under no
+  heading after one joins the part above. One part or more than five: one recipe, no heading
+  kept. There is no way to merge the parts in the review ("🧩 Une seule recette" was removed
+  before its release, the user found it confusing; `merge_parts` is answered as a stale
+  button).
 - `delete_<i>`: removes the line. When none is left, the message offers ➕ (`add_ingredient`,
   same as above) and ❌ `cancel_review`; ➕ is on every review keyboard, also an empty one. Old messages may still send `add_more`, handled like
   `add_ingredient`.
@@ -321,7 +326,7 @@ loses its keyboard and is not passed to the state handler.
 | `add_ingredient`, `add_more` (old messages) | `ReviewIngredients`, `EditingSavedIngredients` | Add a line (focused prompt in a review, `AddingIngredientToSavedRecipe` for a saved recipe) |
 | `cancel_ingredient_editing` | `EditingIngredient`, `EditingSavedIngredient` | Leave the focused edit prompt |
 | `recipe_link:<id>` | any | A linked recipe opened from the card at the bottom (`cleanup::is_active_card`): the card goes into the history, the linked one is shown at the bottom (U9); from a card already in the history, nothing |
-| `merge_parts` | `ReviewIngredients` | "🧩 Une seule recette": a photo's parts become one recipe again (U9) |
+| `merge_parts` | any | Retired (2026-11-02) before its release: answered as a stale button |
 | `recipe_instance:<id>` | any | Open a recipe by id (recipe list, home message of older versions) |
 | `select_recipe:`, `select_recipe_h:`, `recipe_action:statistics:` | any | Retired (2026-10-28): stale button |
 | `recipe_action:<action>:<id>` | any | `rename`, `edit_ingredients`, `delete` |

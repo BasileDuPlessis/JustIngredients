@@ -250,6 +250,5 @@ review-parts-intro = 🧩 This photo has { $count } parts: they will become { $c
 review-part-main = 🧩 The recipe
 review-part-main-heading = 🧩 The recipe: { $heading }
 review-part-linked = 🧩 Linked recipe: { $heading }
-review-merge-parts = 🧩 One recipe only
 recipe-created-linked-line = ✅ Recipe “{ $name }” created, linked to “{ $main }”
 card-linked-recipes = 🔗 Linked recipes: { $names }

@@ -75,6 +75,40 @@ async fn linked_recipes(
         })
 }
 
+/// Updates the cards of the recipes linked to one that was renamed or deleted: their "🔗 Recettes
+/// liées" line names it (U9). `linked` is read before a delete.
+pub async fn refresh_linked_cards(
+    bot: &Bot,
+    pool: &PgPool,
+    chat_id: ChatId,
+    telegram_id: i64,
+    linked: &[i64],
+    language_code: Option<&str>,
+    localization: &Arc<LocalizationManager>,
+) {
+    for &recipe_id in linked {
+        refresh_cards(
+            bot,
+            pool,
+            chat_id,
+            telegram_id,
+            recipe_id,
+            language_code,
+            localization,
+        )
+        .await;
+    }
+}
+
+/// The ids of the recipes linked to `recipe_id`.
+pub async fn linked_ids(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Vec<i64> {
+    linked_recipes(pool, telegram_id, recipe_id)
+        .await
+        .iter()
+        .map(|recipe| recipe.id)
+        .collect()
+}
+
 /// The keyboard of a recipe's card, with a button per linked recipe.
 pub async fn card_keyboard(
     pool: &PgPool,

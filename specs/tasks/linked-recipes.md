@@ -5,12 +5,14 @@ Version du 2026-11-02. Remplace la proposition des sections d'ingrédients
 « quand la recette en photo contient plusieurs sections, créer plusieurs recettes et mettre en
 place un mécanisme de liens entre les recettes ; à la fin de la recette, une liste des recettes
 liées (ex. malva pudding lié avec "sauce malva pudding") ; le titre de la recette liée est le
-titre défini par l'utilisateur concaténé avec le nom de la section ». Rien n'est codé : ce
-document décrit ce que je propose, avec des wireframes, et finit par les questions à trancher.
+titre défini par l'utilisateur concaténé avec le nom de la section ». Réalisé le 2026-11-02
+(phase U9), puis ajusté après la relecture RU9 et le test de l'utilisateur.
 
 ## Décisions (2026-11-02)
 
-1. Découpage : d'office (choix A), « 🧩 Une seule recette » dans la relecture pour tout réunir.
+1. Découpage : d'office (choix A). Le bouton « 🧩 Une seule recette » prévu pour tout réunir a
+   été retiré après le test de l'utilisateur (« un peu troublant ») : on ne peut plus réunir
+   les parties dans la relecture.
 2. Les noms : « Malva pudding (sauce) », la section entre parenthèses.
 3. Le nom de section nettoyé (« Pour la sauce : » → « sauce »).
 4. Les liens dans les deux sens.
@@ -74,15 +76,16 @@ par ingrédient, dans le même ordre. On corrige tout au même endroit, comme au
 │ [ 2 → œufs ]  …                          │
 │ [ 25 cl → crème ]  …                     │
 │ [ ➕ Ajouter ]                           │
-│ [ 🧩 Une seule recette ]                 │
 │ [ ✅ Valider ]                           │
 │ [ ❌ Annuler ]                           │
 └──────────────────────────────────────────┘
 ```
 
-« 🧩 Une seule recette » réunit les parties (la relecture redevient celle d'aujourd'hui) ;
 « ➕ Ajouter » ajoute à la dernière partie. Une partie dont on a supprimé tous les ingrédients
-disparaît.
+disparaît. Les lignes sont dans l'ordre des parties dès la lecture de la photo ; les titres sont
+regroupés par leur nom nettoyé (« Pour la sauce », « Pour la sauce : », « POUR LA SAUCE » : une
+partie) ; une ligne sans titre avant le premier titre est le plat lui-même, après un titre elle
+rejoint la partie au-dessus.
 
 ### 2. J'enregistre
 
@@ -143,7 +146,11 @@ brisée » commune à plusieurs tartes, ou pour lier deux recettes déjà enregi
 
 - Au plus 5 parties par photo, et 10 recettes liées affichées par fiche (Telegram limite la
   taille des claviers).
-- Un nom de recette liée suit la limite des noms (255 caractères) : le titre et la section sont
-  coupés si besoin.
+- Un nom de section : 50 caractères au plus (au-delà, coupé à la lecture). Un nom de recette
+  liée suit la limite des noms (255 octets) : le titre est raccourci si besoin, la section
+  reste entière.
+- Sur les boutons de la liste (30 caractères) et les 🔗 de la fiche (40), un nom trop long est
+  raccourci au titre, « (section) » restant entier : les recettes liées gardent des boutons
+  différents.
 
 C'est la phase U9 du [plan UX](ux-improvements.md).

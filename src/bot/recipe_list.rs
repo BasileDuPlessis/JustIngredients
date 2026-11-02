@@ -34,7 +34,8 @@ pub fn recipe_button_labels(
     use chrono::Timelike;
     let names: Vec<String> = recipes
         .iter()
-        .map(|recipe| truncate_text(&recipe.name, NAME_MAX_CHARS))
+        // Linked recipes differ only at the end: their "(section)" is kept whole
+        .map(|recipe| crate::recipe_parts::short_name(&recipe.name, NAME_MAX_CHARS))
         .collect();
     let with_day: Vec<String> = recipes
         .iter()
