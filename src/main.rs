@@ -265,6 +265,15 @@ async fn main() -> Result<()> {
     // Ready at once, not only after the heartbeat's next call (up to a minute later)
     observability::health_checks::record_telegram_success();
 
+    // Alerts and the weekly report to the owner, with OWNER_CHAT_ID (plan O4, O5)
+    if let Some(owner) = observability::alerts::start(bot.clone(), Arc::clone(&shared_pool)).await {
+        tokio::spawn(observability::report::run(
+            bot.clone(),
+            Arc::clone(&shared_pool),
+            owner,
+        ));
+    }
+
     // The command menu only helps users find the commands: without it the bot still works
     tokio::spawn({
         let bot = bot.clone();

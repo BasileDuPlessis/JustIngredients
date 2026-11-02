@@ -1621,9 +1621,17 @@ async fn visits_and_daily_usage_are_recorded(pool: PgPool) -> Result<()> {
     assert_eq!((all.active_users, all.new_users, all.users), (2, 2, 2));
     let week = usage_summary(&pool, today.checked_sub_days(chrono::Days::new(6)), today).await?;
     assert_eq!(week.counts, twice);
+    assert_eq!(app_state(&pool, "release").await?, None);
+    set_app_state(&pool, "release", "a").await?;
+    set_app_state(&pool, "release", "b").await?;
+    assert_eq!(app_state(&pool, "release").await?.as_deref(), Some("b"));
+
     let tomorrow = today.succ_opt().unwrap_or(today);
     let later = usage_summary(&pool, Some(tomorrow), tomorrow).await?;
     assert_eq!(later.counts, UsageCounts::default());
-    assert_eq!((later.active_users, later.new_users, later.users), (0, 0, 2));
+    assert_eq!(
+        (later.active_users, later.new_users, later.users),
+        (0, 0, 2)
+    );
     Ok(())
 }

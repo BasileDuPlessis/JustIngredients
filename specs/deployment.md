@@ -73,7 +73,8 @@ service). Every other path answers 404.
 
 ## Secrets and Configuration
 - **Production** (Fly secrets, set by hand with `fly secrets set`, never by CI):
-  `DATABASE_URL` (Fly Postgres), `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`.
+  `DATABASE_URL` (Fly Postgres), `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`, `OWNER_CHAT_ID` (the
+  owner's Telegram id: [alerts and weekly report](#monitoring); optional).
   The bot refuses to start without a well-formed `TELEGRAM_BOT_TOKEN` and `DATABASE_URL`, or
   without `GEMINI_API_KEY`; it exits with `Telegram rejected TELEGRAM_BOT_TOKEN` when Telegram
   refuses the token (the restart policy then restarts it, and a deploy fails its health check).
@@ -90,7 +91,7 @@ service). Every other path answers 404.
 - Optional variables with defaults: `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECS`, `GEMINI_THINKING_LEVEL`,
   `GEMINI_MAX_CONCURRENCY`, `EXTRACTION_DAILY_LIMIT_PER_USER`, `HEALTH_PORT`, `METRICS_PORT`,
   `METRICS_BIND_ALL_INTERFACES`, `DATABASE_MAX_CONNECTIONS`, `DATABASE_MIN_CONNECTIONS`,
-  `DATABASE_CONNECT_TIMEOUT_SECS`, `LOG_FORMAT`, `RUST_LOG`; see `.env.example`.
+  `DATABASE_CONNECT_TIMEOUT_SECS`, `LOG_FORMAT`, `RUST_LOG`, `OWNER_CHAT_ID`; see `.env.example`.
 - Not applied although read: `HTTP_CLIENT_TIMEOUT_SECS` is fixed at 30 s in `main.rs`; `REQUEST_DEDUPLICATION_TTL_SECS` is
   parsed but the deduplicator keeps 300 s and 10,000 entries.
 
@@ -122,7 +123,26 @@ the Prometheus and Grafana apps were removed in 2026-11 (they never collected an
 | Health | `ji_errors_total{component,kind}`, `ji_gemini_breaker_open`, `ji_started_at_seconds` |
 | Speed | `ji_update_duration_seconds{kind}` (`message`, `callback`), `ji_card_shown_seconds`, `ji_db_duration_seconds{operation}` |
 
-- Alerting: the uptime workflow and the production deploy notification (Telegram).
+- Gauges computed from the database every hour: `ji_users{period}` (`day`, `week`: users seen
+  in the last 24 hours and 7 days; `total`), `ji_recipes`.
+- History beyond Fly's 15 days (migration 7): `users.last_seen_at`, written at most once an
+  hour per user and at the first update of a Paris day; `usage_days`, one line per Paris day
+  (active users, photos read and failed, recipes created, Gemini calls, failures and estimated
+  cost), counted in memory and written every minute (`src/observability/usage.rs`);
+  `app_state`, the release running and the last weekly report.
+- Alerts the bot sends to `OWNER_CHAT_ID`, in French, each subject at most once an hour
+  (`src/observability/alerts.rs`): 🔴 Gemini down (the circuit breaker opened) then 🟢 back;
+  🟠 Gemini failing (over 30 % of at least 5 calls in the last hour); 💸 the day's estimated
+  Gemini cost over 1 $; 🟠 database unreachable (two checks a minute apart) then 🟢 back; 🔁 a
+  restart without a new release (same Fly machine and configuration version as at the previous
+  start). Without `OWNER_CHAT_ID` none is sent.
+- Weekly report to `OWNER_CHAT_ID` on Monday from 9:00, Paris time (or at the next start if the
+  bot was down then), for the week before: active users (seen since that Monday: a user keeps
+  only the last visit), new and all users, photos, recipes, Gemini's cost and failures
+  (`src/observability/report.rs`). `/stats`, for the owner only and not in the menu, gives the
+  same for the last 7 and 30 days and since the history started.
+- The uptime workflow and the production deploy notification stay the alerts for a bot that does
+  not answer and for releases.
 - Logs: `fly logs` and the app's Monitoring page on fly.io (JSON lines).
 
 ## Operations

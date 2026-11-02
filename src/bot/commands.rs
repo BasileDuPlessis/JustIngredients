@@ -25,6 +25,8 @@ pub enum Command {
     Units,
     /// `/annuler`, `/cancel`: stop the running action and go back home.
     Cancel,
+    /// `/stats`: the usage report, for the owner only (`OWNER_CHAT_ID`); not in the menu.
+    Stats,
 }
 
 /// Reads a message text as a command, or returns `None` when it is not a known command.
@@ -47,6 +49,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "cherche" | "search" => Some(Command::Search(args.to_string())),
         "unites" | "unités" | "units" => Some(Command::Units),
         "annuler" | "cancel" => Some(Command::Cancel),
+        "stats" => Some(Command::Stats),
         _ => None,
     }
 }

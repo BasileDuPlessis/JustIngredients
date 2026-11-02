@@ -4,8 +4,10 @@
 //! Logs are JSON lines in production, readable text with `LOG_FORMAT=pretty` (local runs);
 //! `RUST_LOG` filters them (`info,sqlx=warn` on Fly).
 
+pub mod alerts;
 pub mod health_checks;
 pub mod metrics;
+pub mod report;
 pub mod server;
 pub mod usage;
 
@@ -72,6 +74,7 @@ pub async fn start(
     )
     .await?;
     metrics::started();
+    metrics::set_gemini_breaker_open(false);
     Ok(addresses)
 }
 

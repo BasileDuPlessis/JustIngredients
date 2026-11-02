@@ -129,6 +129,7 @@ pub fn set_recipes(total: u64) {
 /// duration with retries, and the retries.
 pub fn gemini_request(model: &str, result: &'static str, duration: Duration, retries: u32) {
     if result != "circuit_open" {
+        super::alerts::gemini_call(result == "success");
         super::usage::add(|day| {
             day.gemini_calls += 1;
             if result != "success" {
@@ -157,6 +158,7 @@ pub fn gemini_usage(model: &str, input_tokens: u64, output_tokens: u64, cost: Op
         metrics::counter!("ji_gemini_cost_micro_usd_total", "model" => model.to_string())
             .increment(cost);
         super::usage::add(|day| day.gemini_cost_micro_usd += i64::try_from(cost).unwrap_or(0));
+        super::alerts::gemini_cost(cost);
     }
 }
 
@@ -168,6 +170,17 @@ pub fn gemini_cache_hit() {
 /// Whether the circuit breaker in front of Gemini is open (too many failures in a row).
 pub fn set_gemini_breaker_open(open: bool) {
     metrics::gauge!("ji_gemini_breaker_open").set(if open { 1.0 } else { 0.0 });
+}
+
+/// The breaker opened, or a call succeeded again after it opened: the gauge, and the owner is
+/// told (plan O4).
+pub fn gemini_breaker_changed(open: bool) {
+    set_gemini_breaker_open(open);
+    super::alerts::raise(if open {
+        super::alerts::Alert::GeminiDown
+    } else {
+        super::alerts::Alert::GeminiBack
+    });
 }
 
 // --- Health ---

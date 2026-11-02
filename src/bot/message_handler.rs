@@ -401,7 +401,23 @@ async fn handle_command(
             crate::bot::home::send_home(bot, &pool, msg.chat.id, localization, language_code).await;
             Ok(())
         }
-        None => {
+        // The owner's usage report (plan O5); anyone else gets the unknown command answer
+        Some(Command::Stats) if crate::observability::alerts::owner_chat() == Some(msg.chat.id) => {
+            let report = crate::observability::report::stats(&pool).await?;
+            let sent = bot.send_message(msg.chat.id, report).await?;
+            cleanup::track(msg.chat.id, sent.id).await;
+            crate::bot::home::answer_at_bottom(
+                bot,
+                msg.chat.id,
+                sent.id,
+                false,
+                localization,
+                language_code,
+            )
+            .await;
+            Ok(())
+        }
+        Some(Command::Stats) | None => {
             handle_unknown_command(bot, msg, localization, language_code).await?;
             Ok(())
         }

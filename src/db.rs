@@ -513,6 +513,28 @@ pub async fn usage_summary(
     })
 }
 
+/// A value kept across restarts (`app_state`): the release running, the last weekly report.
+pub async fn app_state(pool: &PgPool, key: &str) -> Result<Option<String>> {
+    sqlx::query_scalar("SELECT value FROM app_state WHERE key = $1")
+        .bind(key)
+        .fetch_optional(pool)
+        .await
+        .context("Failed to read the app state")
+}
+
+pub async fn set_app_state(pool: &PgPool, key: &str, value: &str) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO app_state (key, value) VALUES ($1, $2) \
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
+    )
+    .bind(key)
+    .bind(value)
+    .execute(pool)
+    .await
+    .context("Failed to save the app state")?;
+    Ok(())
+}
+
 /// Rewrites the units saved before they were normalized (UX plan U8.3) the way photos and typed
 /// lines are normalized now (`units::normalize_measurement`): "G", "gram", "gr" → g, "litres"
 /// → l, cl and dl → ml with the quantity converted, spoons in words → tbsp and tsp, count units
@@ -1541,6 +1563,7 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
         "chat_messages",
         "recipe_links",
         "usage_days",
+        "app_state",
     ];
     for table_name in required_tables {
         let exists: bool = sqlx::query_scalar(
@@ -2031,7 +2054,8 @@ pub mod migrations {
                 version: 7,
                 name: "usage_history",
                 // Plan O3: each user's last visit (active users), and one line of totals per
-                // day, Paris time, kept beyond the 15 days of Fly's metrics
+                // day, Paris time, kept beyond the 15 days of Fly's metrics; plan O4 and O5: a
+                // few values kept across restarts (release running, last weekly report)
                 up: r#"
                     ALTER TABLE users ADD COLUMN IF NOT EXISTS last_seen_at TIMESTAMPTZ;
                     CREATE INDEX IF NOT EXISTS users_last_seen_at_idx ON users (last_seen_at);
@@ -2045,9 +2069,15 @@ pub mod migrations {
                         gemini_failures BIGINT NOT NULL DEFAULT 0,
                         gemini_cost_micro_usd BIGINT NOT NULL DEFAULT 0
                     );
+                    CREATE TABLE IF NOT EXISTS app_state (
+                        key TEXT PRIMARY KEY,
+                        value TEXT NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
                 "#,
                 down: Some(
                     r#"
+                    DROP TABLE IF EXISTS app_state;
                     DROP TABLE IF EXISTS usage_days;
                     DROP INDEX IF EXISTS users_last_seen_at_idx;
                     ALTER TABLE users DROP COLUMN IF EXISTS last_seen_at;

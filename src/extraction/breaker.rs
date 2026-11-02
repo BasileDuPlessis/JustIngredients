@@ -100,12 +100,17 @@ impl CircuitBreaker {
     }
 
     fn on_success(&self) {
-        *self.lock() = State::Closed { failures: 0 };
-        crate::observability::set_gemini_breaker_open(false);
+        let mut state = self.lock();
+        let was_closed = matches!(*state, State::Closed { .. });
+        *state = State::Closed { failures: 0 };
+        if !was_closed {
+            crate::observability::gemini_breaker_changed(false);
+        }
     }
 
     fn on_failure(&self, trial: bool) {
         let mut state = self.lock();
+        let was_closed = matches!(*state, State::Closed { .. });
         let open = State::Open {
             until: Instant::now() + self.open_duration,
         };
@@ -117,8 +122,9 @@ impl CircuitBreaker {
             },
             other => other,
         };
-        if matches!(*state, State::Open { .. }) {
-            crate::observability::set_gemini_breaker_open(true);
+        // A failed trial keeps it open: only the first opening is told
+        if was_closed && matches!(*state, State::Open { .. }) {
+            crate::observability::gemini_breaker_changed(true);
         }
     }
 
