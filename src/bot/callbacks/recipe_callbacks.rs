@@ -245,8 +245,9 @@ pub async fn handle_delete_recipe_confirmation(
         .and_then(|s| s.parse().ok())
         .filter(|&id| id != 0);
 
-    // Errors stay above the list until the next action
+    // Errors stay above the list until the next action; the list on the recipe's page
     let mut keep = Vec::new();
+    let mut list_at = crate::bot::home::ListAt::Recipe(recipe_id);
     match action {
         "confirm_delete_recipe" => {
             // The name, for the history line that replaces the card
@@ -274,6 +275,8 @@ pub async fn handle_delete_recipe_confirmation(
 
             match result {
                 Ok(true) => {
+                    // Gone: the page of its neighbours
+                    list_at = crate::bot::home::ListAt::Gone(name.clone().unwrap_or_default());
                     // The card becomes the history line "🗑️ « X » supprimée", without buttons
                     let line = t_args_lang(
                         localization,
@@ -378,11 +381,12 @@ pub async fn handle_delete_recipe_confirmation(
             crate::bot::cleanup::track(chat_id, *id).await;
         }
     } else {
-        crate::bot::home::send_home_keeping(
+        crate::bot::home::send_home_keeping_at(
             bot,
             &pool,
             chat_id,
             &keep,
+            list_at,
             localization,
             language_code.as_deref(),
         )

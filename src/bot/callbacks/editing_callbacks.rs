@@ -821,10 +821,11 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 .disable_notification(true)
                 .await?;
         }
-        send_home(
+        crate::bot::home::send_home_at(
             ctx.bot,
             pool,
             message.chat().id,
+            crate::bot::home::ListAt::Recipe(recipe_id),
             ctx.localization,
             language_code.as_deref(),
         )
@@ -872,12 +873,14 @@ pub async fn cancel_saved_editing(
     telegram_id: i64,
     language_code: Option<&str>,
 ) -> Result<()> {
+    let mut list_at = crate::bot::home::ListAt::Start;
     if let Some(RecipeDialogueState::EditingSavedIngredients {
         recipe_id,
         message_id: Some(message_id),
         ..
     }) = dialogue.get().await?
     {
+        list_at = crate::bot::home::ListAt::Recipe(recipe_id);
         // With a recorded card of the recipe (U5.4), the editing view just goes with the action;
         // otherwise it turns back into the card
         let has_card = !crate::bot::cleanup::recipe_cards(chat_id, recipe_id)
@@ -944,7 +947,7 @@ pub async fn cancel_saved_editing(
     }
 
     dialogue.exit().await?;
-    send_home(bot, pool, chat_id, localization, language_code).await;
+    crate::bot::home::send_home_at(bot, pool, chat_id, list_at, localization, language_code).await;
     Ok(())
 }
 

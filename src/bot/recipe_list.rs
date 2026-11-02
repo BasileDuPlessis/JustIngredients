@@ -20,6 +20,37 @@ use super::ui_components::{create_pagination_buttons, truncate_text};
 /// Recipes shown per page.
 pub const RECIPES_PER_PAGE: i64 = 8;
 
+/// Where the recipe list comes back after an action (2026-11-02, the user's choice A): on the
+/// page of the recipe acted on (where it is now, after a rename too), where a deleted one was,
+/// or on the first page.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ListAt {
+    Start,
+    Recipe(i64),
+    /// The name of a recipe just deleted: the page of its neighbours.
+    Gone(String),
+}
+
+/// The page to show for `at`; the first one when the database cannot tell.
+pub async fn page_for(pool: &PgPool, telegram_id: i64, at: &ListAt) -> usize {
+    let position = match at {
+        ListAt::Start => return 0,
+        ListAt::Recipe(recipe_id) => crate::db::recipe_list_position(pool, telegram_id, *recipe_id)
+            .await
+            .ok()
+            .flatten(),
+        ListAt::Gone(name) => crate::db::name_list_position(pool, telegram_id, name)
+            .await
+            .ok(),
+    };
+    position.map_or(0, page_of_position)
+}
+
+/// The page that shows the recipe at `position` in the list.
+pub fn page_of_position(position: usize) -> usize {
+    position / usize::try_from(RECIPES_PER_PAGE).unwrap_or(1).max(1)
+}
+
 /// Longest recipe name on a button, in characters, before the date.
 const NAME_MAX_CHARS: usize = 30;
 
@@ -427,6 +458,14 @@ mod tests {
             &last.kind,
             teloxide::types::InlineKeyboardButtonKind::CallbackData(data) if data == "show_list"
         ));
+    }
+
+    #[test]
+    fn a_position_shows_on_its_page() {
+        assert_eq!(page_of_position(0), 0);
+        assert_eq!(page_of_position(7), 0);
+        assert_eq!(page_of_position(8), 1);
+        assert_eq!(page_of_position(23), 2, "page 3 of the list");
     }
 
     #[test]

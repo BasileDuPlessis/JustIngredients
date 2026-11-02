@@ -7,6 +7,7 @@ use teloxide::prelude::*;
 use tracing::warn;
 
 use super::cleanup;
+pub use super::recipe_list::ListAt;
 use crate::localization::{t_args_lang, LocalizationManager};
 
 /// Sends the history line of a recipe that was just saved: "✅ Recette « X » créée", without
@@ -76,7 +77,27 @@ pub async fn send_home(
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
 ) {
-    send_home_keeping(bot, pool, chat_id, &[], localization, language_code).await;
+    send_home_at(
+        bot,
+        pool,
+        chat_id,
+        ListAt::Start,
+        localization,
+        language_code,
+    )
+    .await;
+}
+
+/// [`send_home`], the list on the page `at` asks for: the page of the recipe acted on.
+pub async fn send_home_at(
+    bot: &Bot,
+    pool: &sqlx::PgPool,
+    chat_id: ChatId,
+    at: ListAt,
+    localization: &Arc<LocalizationManager>,
+    language_code: Option<&str>,
+) {
+    send_home_keeping_at(bot, pool, chat_id, &[], at, localization, language_code).await;
 }
 
 /// Like [`send_home`], but the messages in `keep` (an error the user must read, the photo it is
@@ -90,13 +111,35 @@ pub async fn send_home_keeping(
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
 ) {
+    send_home_keeping_at(
+        bot,
+        pool,
+        chat_id,
+        keep,
+        ListAt::Start,
+        localization,
+        language_code,
+    )
+    .await;
+}
+
+/// [`send_home_keeping`], the list (without messages to keep) on the page `at` asks for.
+pub async fn send_home_keeping_at(
+    bot: &Bot,
+    pool: &sqlx::PgPool,
+    chat_id: ChatId,
+    keep: &[teloxide::types::MessageId],
+    at: ListAt,
+    localization: &Arc<LocalizationManager>,
+    language_code: Option<&str>,
+) {
     cleanup::delete_tracked(bot, chat_id).await;
     for id in keep {
         cleanup::track(chat_id, *id).await;
     }
     match keep.last() {
         Some(last) => add_list_button(bot, chat_id, *last, localization, language_code).await,
-        None => send_list(bot, pool, chat_id, localization, language_code).await,
+        None => send_list(bot, pool, chat_id, at, localization, language_code).await,
     }
 }
 
@@ -166,7 +209,15 @@ pub async fn back_to_card(
     let keyboard =
         super::cards::card_keyboard(pool, chat_id.0, recipe_id, language_code, localization).await;
     if !cleanup::reactivate_card(bot, chat_id, recipe_id, card, keyboard).await {
-        send_home(bot, pool, chat_id, localization, language_code).await;
+        send_home_at(
+            bot,
+            pool,
+            chat_id,
+            ListAt::Recipe(recipe_id),
+            localization,
+            language_code,
+        )
+        .await;
     }
 }
 
@@ -174,14 +225,17 @@ async fn send_list(
     bot: &Bot,
     pool: &sqlx::PgPool,
     chat_id: ChatId,
+    at: ListAt,
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
 ) {
+    // Private chats only: the chat id is the owner's id
+    let page = super::recipe_list::page_for(pool, chat_id.0, &at).await;
     match super::recipe_list::show_recipe_list(
         bot,
         pool,
         chat_id,
-        0,
+        page,
         None,
         language_code,
         localization,

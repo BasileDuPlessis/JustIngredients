@@ -89,10 +89,20 @@ pub async fn handle_show_list(
     if dialogue.get().await?.is_some_and(|state| state.is_action()) {
         dialogue.exit().await?;
     }
-    crate::bot::home::send_home(
+    // From a card: the list on that recipe's page
+    let list_at = crate::db::chat_message_recipe(&pool, msg.chat.id.0, msg.id.0)
+        .await
+        .ok()
+        .flatten()
+        .map_or(
+            crate::bot::home::ListAt::Start,
+            crate::bot::home::ListAt::Recipe,
+        );
+    crate::bot::home::send_home_at(
         bot,
         &pool,
         msg.chat.id,
+        list_at,
         localization,
         language_code.as_deref(),
     )

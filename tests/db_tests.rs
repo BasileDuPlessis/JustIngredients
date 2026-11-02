@@ -1248,6 +1248,48 @@ async fn a_second_recipe_with_the_same_name_is_numbered(pool: PgPool) -> Result<
 
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn list_positions_follow_the_alphabetical_order(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let mut ids = std::collections::HashMap::new();
+    for name in ["Crumble", "abricots", "Malva pudding", "Éclair", "Zébu"] {
+        let saved = save_recipe(&pool, 61, Some("fr"), "texte", name, &[]).await?;
+        ids.insert(name, saved.recipe_id);
+    }
+    let unnamed = create_recipe(&pool, 61, "texte").await?;
+    let other = save_recipe(&pool, 62, Some("fr"), "texte", "Abricots", &[]).await?;
+
+    let position = |name| ids[name];
+    assert_eq!(
+        recipe_list_position(&pool, 61, position("abricots")).await?,
+        Some(0)
+    );
+    assert_eq!(
+        recipe_list_position(&pool, 61, position("Éclair")).await?,
+        Some(2)
+    );
+    assert_eq!(
+        recipe_list_position(&pool, 61, position("Zébu")).await?,
+        Some(4)
+    );
+    assert_eq!(
+        recipe_list_position(&pool, 61, unnamed).await?,
+        None,
+        "unnamed: not listed"
+    );
+    assert_eq!(
+        recipe_list_position(&pool, 61, other.recipe_id).await?,
+        None,
+        "another user's"
+    );
+    // A deleted "Flan" would come after Éclair
+    assert_eq!(name_list_position(&pool, 61, "Flan").await?, 3);
+    assert_eq!(name_list_position(&pool, 61, "Aaa").await?, 0);
+    assert_eq!(name_list_position(&pool, 61, "Zz").await?, 5);
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn a_photo_in_parts_becomes_linked_recipes(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
     let ingredient = |name| NewIngredient {

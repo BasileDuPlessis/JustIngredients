@@ -215,7 +215,14 @@ typed paths; they are equal in private chats (IMP-024).
 - `/liste`, `/annuler` and the 📚 button of older messages (`workflow_list_recipes`).
 
 It deletes what the action left behind (below) and the previous recipe list, then sends the
-list again as the last message, without notification (`recipe_list::show_recipe_list`, page 1).
+list again as the last message, without notification (`recipe_list::show_recipe_list`), on the
+page of the recipe acted on (`home::send_home_at`, `recipe_list::ListAt`, user's choice of
+2026-11-02): after a rename, an edit, a ❌ back to the card or 📚 from a card, the page where
+the recipe is now (a rename may move it); after a delete, the page of its alphabetical
+neighbours (`db::name_list_position`); after a creation, the page of the new recipe (the first
+part of a photo in parts). Page 1 after a cancelled creation, `/annuler`, `/liste`, a unit
+choice without a card and 📚 under an answer or search results. The position comes from the
+alphabetical order (`db::recipe_list_position`): nothing is stored.
 Since U5.2 the list replaces the former home message: its header
 (`recipe_list::render_list_header`) is the bold 📚 title, the number of recipes ("Vous avez 12
 recettes.", "Vous n'avez pas encore de recette.") and the photo hint; no keyboard without

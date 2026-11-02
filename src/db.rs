@@ -1310,6 +1310,18 @@ pub async fn get_user_recipes_alphabetical(
         ));
     }
 
+    let recipes = alphabetical_recipes(pool, telegram_id).await?;
+    let total = i64::try_from(recipes.len()).unwrap_or(i64::MAX);
+    let page = recipes
+        .into_iter()
+        .skip(usize::try_from(offset).unwrap_or(0))
+        .take(usize::try_from(limit).unwrap_or(0))
+        .collect();
+    Ok((page, total))
+}
+
+/// Every named recipe of `telegram_id`, in the order of the recipe list.
+async fn alphabetical_recipes(pool: &PgPool, telegram_id: i64) -> Result<Vec<RecipeSummary>> {
     let rows = sqlx::query(
         "SELECT id, recipe_name, created_at FROM recipes \
          WHERE telegram_id = $1 AND recipe_name IS NOT NULL",
@@ -1332,13 +1344,47 @@ pub async fn get_user_recipes_alphabetical(
             .then(a.created_at.cmp(&b.created_at))
             .then(a.id.cmp(&b.id))
     });
-    let total = i64::try_from(recipes.len()).unwrap_or(i64::MAX);
-    let page = recipes
-        .into_iter()
-        .skip(usize::try_from(offset).unwrap_or(0))
-        .take(usize::try_from(limit).unwrap_or(0))
-        .collect();
-    Ok((page, total))
+    Ok(recipes)
+}
+
+/// Where a recipe of `telegram_id` comes in the recipe list, from 0; `None` when it is not
+/// listed (another user's, unnamed or gone).
+pub async fn recipe_list_position(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+) -> Result<Option<usize>> {
+    Ok(alphabetical_recipes(pool, telegram_id)
+        .await?
+        .iter()
+        .position(|recipe| recipe.id == recipe_id))
+}
+
+/// Where a recipe named `name` would come in the recipe list (a deleted one): the number of the
+/// user's recipes listed before it.
+pub async fn name_list_position(pool: &PgPool, telegram_id: i64, name: &str) -> Result<usize> {
+    Ok(alphabetical_recipes(pool, telegram_id)
+        .await?
+        .iter()
+        .filter(|recipe| crate::search::compare_names(&recipe.name, name).is_lt())
+        .count())
+}
+
+/// The recipe of a recorded chat message (a card), if any.
+pub async fn chat_message_recipe(
+    pool: &PgPool,
+    chat_id: i64,
+    message_id: i32,
+) -> Result<Option<i64>> {
+    let recipe: Option<Option<i64>> = sqlx::query_scalar(
+        "SELECT recipe_id FROM chat_messages WHERE chat_id = $1 AND message_id = $2",
+    )
+    .bind(chat_id)
+    .bind(i64::from(message_id))
+    .fetch_optional(pool)
+    .await
+    .context("Failed to look up a chat message")?;
+    Ok(recipe.flatten())
 }
 
 /// Validate that the database schema matches what the application expects

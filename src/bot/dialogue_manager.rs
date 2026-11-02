@@ -265,7 +265,8 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
         message_id,
     } = params;
 
-    // Recipe name is valid, save ingredients to database
+    // Recipe name is valid, save ingredients to database; the list then shows its page
+    let mut list_at = crate::bot::home::ListAt::Start;
     match save_ingredients_to_database(
         pool,
         msg.chat.id.0,
@@ -287,6 +288,9 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
             return Ok(());
         }
         Ok(saved) => {
+            if let Some(main) = saved.first() {
+                list_at = crate::bot::home::ListAt::Recipe(main.recipe_id);
+            }
             // One history line is the result; the name prompt goes with the review messages
             if let Some(prompt_msg_id) = message_id {
                 cleanup::track(msg.chat.id, teloxide::types::MessageId(prompt_msg_id)).await;
@@ -305,10 +309,11 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
 
     // End the dialogue
     dialogue.exit().await?;
-    send_home(
+    crate::bot::home::send_home_at(
         ctx.bot,
         pool,
         msg.chat.id,
+        list_at,
         ctx.localization,
         ctx.language_code,
     )
@@ -541,11 +546,13 @@ pub async fn handle_recipe_rename_input(
                 }
             }
             dialogue.exit().await?;
-            super::home::send_home_keeping(
+            // The list on the page of the recipe, where its new name puts it
+            super::home::send_home_keeping_at(
                 bot,
                 pool,
                 msg.chat.id,
                 &keep,
+                super::home::ListAt::Recipe(recipe_id),
                 handler_ctx.localization,
                 handler_ctx.language_code,
             )
