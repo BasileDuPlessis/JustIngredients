@@ -126,6 +126,7 @@ pub fn validate_basic_input(input: &str) -> Result<(), AppError> {
 ///     start_pos: 0,
 ///     end_pos: 10,
 ///     requires_quantity_confirmation: false,
+///     section: None,
 /// };
 ///
 /// assert!(validate_quantity_range(&valid_match).is_ok());
@@ -138,6 +139,7 @@ pub fn validate_basic_input(input: &str) -> Result<(), AppError> {
 ///     start_pos: 0,
 ///     end_pos: 10,
 ///     requires_quantity_confirmation: false,
+///     section: None,
 /// };
 ///
 /// assert_eq!(validate_quantity_range(&invalid_match).unwrap_err(), just_ingredients::errors::AppError::Validation("edit-invalid-quantity".to_string()));

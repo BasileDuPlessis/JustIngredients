@@ -18,6 +18,7 @@ fn test_dialogue_flow_integrity_with_multi_line_ingredients() {
             start_pos: 0,
             end_pos: 25,
             requires_quantity_confirmation: false,
+            section: None,
         },
         just_ingredients::MeasurementMatch {
             quantity: "1".to_string(),
@@ -27,6 +28,7 @@ fn test_dialogue_flow_integrity_with_multi_line_ingredients() {
             start_pos: 0,
             end_pos: 5,
             requires_quantity_confirmation: false,
+            section: None,
         },
     ];
 
@@ -89,6 +91,7 @@ fn test_multi_line_ingredients_ui_display_formatting() {
             start_pos: 0,
             end_pos: 20,
             requires_quantity_confirmation: false,
+            section: None,
         },
         just_ingredients::MeasurementMatch {
             quantity: "1".to_string(),
@@ -98,6 +101,7 @@ fn test_multi_line_ingredients_ui_display_formatting() {
             start_pos: 0,
             end_pos: 15,
             requires_quantity_confirmation: false,
+            section: None,
         },
         just_ingredients::MeasurementMatch {
             quantity: "3/4".to_string(),
@@ -107,6 +111,7 @@ fn test_multi_line_ingredients_ui_display_formatting() {
             start_pos: 0,
             end_pos: 28,
             requires_quantity_confirmation: false,
+            section: None,
         },
         just_ingredients::MeasurementMatch {
             quantity: "1".to_string(),
@@ -116,6 +121,7 @@ fn test_multi_line_ingredients_ui_display_formatting() {
             start_pos: 0,
             end_pos: 18,
             requires_quantity_confirmation: false,
+            section: None,
         },
     ];
 

@@ -34,6 +34,36 @@ pub async fn send_created_line(
     }
 }
 
+/// The history lines of the recipes a photo became: "✅ Recette « Malva pudding » créée", then
+/// "✅ Recette « Malva pudding (sauce) » créée, liée à « Malva pudding »" for each linked part.
+pub async fn send_created_lines(
+    bot: &Bot,
+    chat_id: ChatId,
+    saved: &[crate::db::SavedRecipe],
+    localization: &Arc<LocalizationManager>,
+    language_code: Option<&str>,
+) {
+    let Some((main, linked)) = saved.split_first() else {
+        return;
+    };
+    send_created_line(bot, chat_id, &main.name, localization, language_code).await;
+    for recipe in linked {
+        let line = t_args_lang(
+            localization,
+            "recipe-created-linked-line",
+            &[("name", &recipe.name), ("main", &main.name)],
+            language_code,
+        );
+        if let Err(e) = bot
+            .send_message(chat_id, line)
+            .disable_notification(true)
+            .await
+        {
+            warn!(error = %e, "Failed to send the created recipe line");
+        }
+    }
+}
+
 /// Ends an action in a private chat (the chat id is the recipe owner): deletes the messages the
 /// action left behind and the previous recipe list (see `cleanup`), then sends the list again
 /// as the last message of the chat, without notification.

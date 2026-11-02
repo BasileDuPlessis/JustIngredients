@@ -431,6 +431,34 @@ pub async fn save_recipe(
     name: &str,
     ingredients: &[NewIngredient<'_>],
 ) -> Result<SavedRecipe> {
+    let parts = [RecipePart {
+        name: name.to_string(),
+        ingredients: ingredients.to_vec(),
+    }];
+    save_recipe_parts(pool, telegram_id, language_code, content, &parts)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or_else(|| anyhow::anyhow!("No recipe saved"))
+}
+
+/// One recipe of a photo: its name and ingredients.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RecipePart<'a> {
+    pub name: String,
+    pub ingredients: Vec<NewIngredient<'a>>,
+}
+
+/// Saves the recipes a photo becomes (UX plan U9: one per part, "Malva pudding" and "Malva
+/// pudding (sauce)") in one transaction, each name made unique like a new recipe's, and links
+/// them all together. Returns them in order, with their stored names.
+pub async fn save_recipe_parts(
+    pool: &PgPool,
+    telegram_id: i64,
+    language_code: Option<&str>,
+    content: &str,
+    parts: &[RecipePart<'_>],
+) -> Result<Vec<SavedRecipe>> {
     let start_time = std::time::Instant::now();
     let mut tx = pool
         .begin()
@@ -449,46 +477,106 @@ pub async fn save_recipe(
     .context("Failed to get or create the recipe owner")?;
 
     // One name per recipe of the user: a second "Tarte" is stored as "Tarte (2)"
-    let taken = recipe_names_of(&mut tx, telegram_id, None).await?;
-    let name = unique_recipe_name(name, &taken);
-    let recipe_id: i64 = sqlx::query_scalar(
-        "INSERT INTO recipes (telegram_id, content, recipe_name) VALUES ($1, $2, $3) RETURNING id",
-    )
-    .bind(telegram_id)
-    .bind(content)
-    .bind(&name)
-    .fetch_one(&mut *tx)
-    .await
-    .context("Failed to insert the recipe")?;
-
-    for (position, ingredient) in ingredients.iter().enumerate() {
-        sqlx::query(
-            "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit) \
-             VALUES ($1, $2, $3, $4, $5)",
+    let mut taken = recipe_names_of(&mut tx, telegram_id, None).await?;
+    let mut saved = Vec::with_capacity(parts.len());
+    let mut statements = 1;
+    for part in parts {
+        let name = unique_recipe_name(&part.name, &taken);
+        let recipe_id: i64 = sqlx::query_scalar(
+            "INSERT INTO recipes (telegram_id, content, recipe_name) VALUES ($1, $2, $3) RETURNING id",
         )
-        .bind(user_id)
-        .bind(recipe_id)
-        .bind(ingredient.name)
-        .bind(ingredient.quantity)
-        .bind(ingredient.unit)
-        .execute(&mut *tx)
+        .bind(telegram_id)
+        .bind(content)
+        .bind(&name)
+        .fetch_one(&mut *tx)
         .await
-        // The position, not the name: errors are logged and must not carry recipe content
-        .with_context(|| format!("Failed to insert ingredient {}", position + 1))?;
+        .context("Failed to insert the recipe")?;
+
+        for (position, ingredient) in part.ingredients.iter().enumerate() {
+            sqlx::query(
+                "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit) \
+                 VALUES ($1, $2, $3, $4, $5)",
+            )
+            .bind(user_id)
+            .bind(recipe_id)
+            .bind(ingredient.name)
+            .bind(ingredient.quantity)
+            .bind(ingredient.unit)
+            .execute(&mut *tx)
+            .await
+            // The position, not the name: errors are logged and must not carry recipe content
+            .with_context(|| format!("Failed to insert ingredient {}", position + 1))?;
+        }
+        statements += 1 + part.ingredients.len() as u64;
+        taken.push(name.clone());
+        saved.push(SavedRecipe {
+            recipe_id,
+            user_id,
+            name,
+        });
+    }
+
+    // Every part linked to every other one, both ways
+    for (index, first) in saved.iter().enumerate() {
+        for second in &saved[index + 1..] {
+            link_in(&mut tx, first.recipe_id, second.recipe_id).await?;
+            statements += 1;
+        }
     }
 
     tx.commit().await.context("Failed to commit the recipe")?;
     observability::record_db_performance_metrics(
         "save_recipe",
         start_time.elapsed(),
-        2 + ingredients.len() as u64,
+        statements,
         crate::observability::QueryComplexity::Medium,
     );
-    Ok(SavedRecipe {
-        recipe_id,
-        user_id,
-        name,
-    })
+    Ok(saved)
+}
+
+async fn link_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    first: i64,
+    second: i64,
+) -> Result<()> {
+    sqlx::query(
+        "INSERT INTO recipe_links (recipe_a, recipe_b) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+    )
+    .bind(first.min(second))
+    .bind(first.max(second))
+    .execute(&mut **tx)
+    .await
+    .context("Failed to link two recipes")?;
+    Ok(())
+}
+
+/// The named recipes of `telegram_id` linked to `recipe_id`, in alphabetical order.
+pub async fn linked_recipes(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+) -> Result<Vec<RecipeSummary>> {
+    let rows = sqlx::query(
+        "SELECT r.id, r.recipe_name, r.created_at FROM recipe_links l \
+         JOIN recipes r ON r.id = CASE WHEN l.recipe_a = $2 THEN l.recipe_b ELSE l.recipe_a END \
+         WHERE (l.recipe_a = $2 OR l.recipe_b = $2) \
+           AND r.telegram_id = $1 AND r.recipe_name IS NOT NULL",
+    )
+    .bind(telegram_id)
+    .bind(recipe_id)
+    .fetch_all(pool)
+    .await
+    .context("Failed to read the linked recipes")?;
+    let mut linked: Vec<RecipeSummary> = rows
+        .into_iter()
+        .map(|row| RecipeSummary {
+            id: row.get(0),
+            name: row.get(1),
+            created_at: row.get(2),
+        })
+        .collect();
+    linked.sort_by(|a, b| crate::search::compare_names(&a.name, &b.name).then(a.id.cmp(&b.id)));
+    Ok(linked)
 }
 
 /// New values of a saved ingredient, written as they are (`None` clears the quantity or unit).
@@ -1257,7 +1345,13 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
     info!("Validating database schema");
 
     // Check that all required tables exist
-    let required_tables = vec!["users", "recipes", "ingredients", "chat_messages"];
+    let required_tables = vec![
+        "users",
+        "recipes",
+        "ingredients",
+        "chat_messages",
+        "recipe_links",
+    ];
     for table_name in required_tables {
         let exists: bool = sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = $1 AND table_schema = 'public')"
@@ -1719,6 +1813,26 @@ pub mod migrations {
                 down: Some(
                     r#"
                     ALTER TABLE users DROP COLUMN IF EXISTS unit_view;
+                "#,
+                ),
+            },
+            Migration {
+                version: 6,
+                name: "recipe_links",
+                // Recipes linked together, both ways (UX plan U9): one row per pair, the smaller
+                // id first, gone with either recipe
+                up: r#"
+                    CREATE TABLE IF NOT EXISTS recipe_links (
+                        recipe_a BIGINT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+                        recipe_b BIGINT NOT NULL REFERENCES recipes(id) ON DELETE CASCADE,
+                        PRIMARY KEY (recipe_a, recipe_b),
+                        CHECK (recipe_a < recipe_b)
+                    );
+                    CREATE INDEX IF NOT EXISTS recipe_links_recipe_b_idx ON recipe_links (recipe_b);
+                "#,
+                down: Some(
+                    r#"
+                    DROP TABLE IF EXISTS recipe_links;
                 "#,
                 ),
             },

@@ -205,6 +205,7 @@ mod tests {
                 start_pos: 0,
                 end_pos: 6,
                 requires_quantity_confirmation: false,
+                section: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -214,6 +215,7 @@ mod tests {
                 start_pos: 8,
                 end_pos: 9,
                 requires_quantity_confirmation: false,
+                section: None,
             },
             MeasurementMatch {
                 quantity: "1".to_string(),
@@ -223,6 +225,7 @@ mod tests {
                 start_pos: 15,
                 end_pos: 21,
                 requires_quantity_confirmation: false,
+                section: None,
             },
         ];
 
@@ -283,6 +286,7 @@ mod tests {
                 start_pos: 0,
                 end_pos: 6,
                 requires_quantity_confirmation: false,
+                section: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -292,6 +296,7 @@ mod tests {
                 start_pos: 8,
                 end_pos: 9,
                 requires_quantity_confirmation: false,
+                section: None,
             },
         ];
 
@@ -383,6 +388,7 @@ mod tests {
                 start_pos: 0,
                 end_pos: 6,
                 requires_quantity_confirmation: false,
+                section: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -392,6 +398,7 @@ mod tests {
                 start_pos: 8,
                 end_pos: 9,
                 requires_quantity_confirmation: false,
+                section: None,
             },
         ];
 
@@ -459,6 +466,7 @@ mod tests {
             start_pos: 0,
             end_pos: 50,
             requires_quantity_confirmation: false,
+            section: None,
         }];
 
         let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"), &manager);
@@ -491,6 +499,7 @@ mod tests {
             start_pos: 0,
             end_pos: 6,
             requires_quantity_confirmation: false,
+            section: None,
         }];
 
         let keyboard = create_ingredient_review_keyboard(&ingredients, Some("en"), &manager);
@@ -542,6 +551,7 @@ mod tests {
                 start_pos: 0,
                 end_pos: 6,
                 requires_quantity_confirmation: false,
+                section: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -551,6 +561,7 @@ mod tests {
                 start_pos: 8,
                 end_pos: 9,
                 requires_quantity_confirmation: false,
+                section: None,
             },
             MeasurementMatch {
                 quantity: "1".to_string(),
@@ -560,6 +571,7 @@ mod tests {
                 start_pos: 15,
                 end_pos: 21,
                 requires_quantity_confirmation: false,
+                section: None,
             },
         ];
 
@@ -610,6 +622,7 @@ mod tests {
                 start_pos: 0,
                 end_pos: 6,
                 requires_quantity_confirmation: false,
+                section: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -619,6 +632,7 @@ mod tests {
                 start_pos: 8,
                 end_pos: 9,
                 requires_quantity_confirmation: false,
+                section: None,
             },
             MeasurementMatch {
                 quantity: "0".to_string(),
@@ -628,6 +642,7 @@ mod tests {
                 start_pos: 10,
                 end_pos: 16,
                 requires_quantity_confirmation: true,
+                section: None,
             },
         ];
 
@@ -993,6 +1008,7 @@ mod tests {
                 start_pos: 0,
                 end_pos: 6,
                 requires_quantity_confirmation: false,
+                section: None,
             },
             MeasurementMatch {
                 quantity: "3".to_string(),
@@ -1002,6 +1018,7 @@ mod tests {
                 start_pos: 8,
                 end_pos: 9,
                 requires_quantity_confirmation: false,
+                section: None,
             },
         ];
 

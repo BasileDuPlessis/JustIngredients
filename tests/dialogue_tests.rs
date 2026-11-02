@@ -31,6 +31,7 @@ async fn test_dialogue_state_serialization() -> Result<()> {
         start_pos: 0,
         end_pos: 6,
         requires_quantity_confirmation: false,
+        section: None,
     }];
 
     let state = RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
@@ -82,6 +83,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             start_pos: 0,
             end_pos: 6,
             requires_quantity_confirmation: false,
+            section: None,
         },
         MeasurementMatch {
             quantity: "3".to_string(),
@@ -91,6 +93,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             start_pos: 8,
             end_pos: 9,
             requires_quantity_confirmation: false,
+            section: None,
         },
     ];
 
@@ -331,6 +334,7 @@ fn test_dialogue_state_transitions_with_original_message_id() {
             start_pos: 0,
             end_pos: 6,
             requires_quantity_confirmation: false,
+            section: None,
         },
         MeasurementMatch {
             quantity: "3".to_string(),
@@ -340,6 +344,7 @@ fn test_dialogue_state_transitions_with_original_message_id() {
             start_pos: 8,
             end_pos: 9,
             requires_quantity_confirmation: false,
+            section: None,
         },
     ];
 
@@ -457,6 +462,7 @@ fn test_review_to_editing_ingredient_transition() {
         start_pos: 0,
         end_pos: 6,
         requires_quantity_confirmation: false,
+        section: None,
     }];
 
     // Simulate transition to editing (what happens when user clicks edit button)
@@ -518,6 +524,7 @@ fn test_saved_ingredients_to_editing_transition() {
         start_pos: 0,
         end_pos: 6,
         requires_quantity_confirmation: false,
+        section: None,
     }];
 
     // Simulate transition to editing single ingredient (what happens when user clicks edit button)

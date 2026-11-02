@@ -24,7 +24,7 @@ use crate::dialogue::{IngredientField, RecipeDialogue, RecipeDialogueState};
 use crate::bot::callbacks::ingredient_menu::show_ingredient_keyboard;
 use crate::bot::cleanup::{self, send_transient};
 use crate::bot::create_ingredient_review_keyboard;
-use crate::bot::home::{send_created_line, send_home};
+use crate::bot::home::send_home;
 use crate::bot::ui_builder::{
     edit_instruction_key, parse_ingredient_action, render_review, IngredientAction,
 };
@@ -656,15 +656,9 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
 
     // One history line replaces the review, then the recipe list
     remove_review_keyboard(&c).await;
-    // The stored name: "Tarte (2)" when the user already has a "Tarte"
-    send_created_line(
-        c.bot,
-        c.chat_id,
-        &saved.name,
-        c.localization,
-        c.language_code,
-    )
-    .await;
+    // The stored names: "Tarte (2)" when the user already has a "Tarte"
+    crate::bot::home::send_created_lines(c.bot, c.chat_id, &saved, c.localization, c.language_code)
+        .await;
     send_home(c.bot, c.pool, c.chat_id, c.localization, c.language_code).await;
     c.dialogue.exit().await?;
     Ok(())

@@ -39,6 +39,7 @@ fn test_recipe_naming_dialogue_workflow() {
             start_pos: 0,
             end_pos: 6,
             requires_quantity_confirmation: false,
+            section: None,
         },
         just_ingredients::MeasurementMatch {
             quantity: "3".to_string(),
@@ -48,6 +49,7 @@ fn test_recipe_naming_dialogue_workflow() {
             start_pos: 8,
             end_pos: 9,
             requires_quantity_confirmation: false,
+            section: None,
         },
     ];
 
@@ -602,6 +604,7 @@ fn test_initial_recipe_creation_editing_workflow() {
             start_pos: 0,
             end_pos: 6,
             requires_quantity_confirmation: false,
+            section: None,
         },
         MeasurementMatch {
             quantity: "3".to_string(),
@@ -611,6 +614,7 @@ fn test_initial_recipe_creation_editing_workflow() {
             start_pos: 8,
             end_pos: 9,
             requires_quantity_confirmation: false,
+            section: None,
         },
         MeasurementMatch {
             quantity: "1".to_string(),
@@ -620,6 +624,7 @@ fn test_initial_recipe_creation_editing_workflow() {
             start_pos: 16,
             end_pos: 17,
             requires_quantity_confirmation: false,
+            section: None,
         },
     ];
 
@@ -687,6 +692,7 @@ fn test_initial_recipe_creation_editing_workflow() {
             start_pos: 0,
             end_pos: 6,
             requires_quantity_confirmation: false,
+            section: None,
         },
         MeasurementMatch {
             quantity: "3".to_string(),
@@ -696,6 +702,7 @@ fn test_initial_recipe_creation_editing_workflow() {
             start_pos: 8,
             end_pos: 9,
             requires_quantity_confirmation: false,
+            section: None,
         },
         MeasurementMatch {
             quantity: "1".to_string(),
@@ -705,6 +712,7 @@ fn test_initial_recipe_creation_editing_workflow() {
             start_pos: 16,
             end_pos: 17,
             requires_quantity_confirmation: false,
+            section: None,
         },
     ];
 
@@ -804,6 +812,7 @@ fn test_saved_recipe_editing_workflow() {
             start_pos: 0,
             end_pos: 6,
             requires_quantity_confirmation: false,
+            section: None,
         },
         MeasurementMatch {
             quantity: "3".to_string(),
@@ -813,6 +822,7 @@ fn test_saved_recipe_editing_workflow() {
             start_pos: 8,
             end_pos: 9,
             requires_quantity_confirmation: false,
+            section: None,
         },
     ];
 
@@ -880,6 +890,7 @@ fn test_saved_recipe_editing_workflow() {
             start_pos: 0,
             end_pos: 6,
             requires_quantity_confirmation: false,
+            section: None,
         },
         MeasurementMatch {
             quantity: "4".to_string(),
@@ -889,6 +900,7 @@ fn test_saved_recipe_editing_workflow() {
             start_pos: 8,
             end_pos: 9,
             requires_quantity_confirmation: false,
+            section: None,
         },
     ];
 
@@ -962,6 +974,7 @@ fn test_message_editing_edge_cases() {
         start_pos: 0,
         end_pos: 6,
         requires_quantity_confirmation: false,
+        section: None,
     }];
 
     let editing_state_no_original = RecipeDialogueState::EditingIngredient {
@@ -1007,6 +1020,7 @@ fn test_message_editing_edge_cases() {
         start_pos: 0,
         end_pos: 6,
         requires_quantity_confirmation: false,
+        section: None,
     }];
 
     let saved_editing_state_no_original = RecipeDialogueState::EditingSavedIngredient {
@@ -1109,6 +1123,7 @@ fn test_unified_multi_word_ingredient_bot_workflow() {
             start_pos: 0,
             end_pos: 6,
             requires_quantity_confirmation: false,
+            section: None,
         },
         just_ingredients::MeasurementMatch {
             quantity: "3".to_string(),
@@ -1118,6 +1133,7 @@ fn test_unified_multi_word_ingredient_bot_workflow() {
             start_pos: 8,
             end_pos: 9,
             requires_quantity_confirmation: false,
+            section: None,
         },
         just_ingredients::MeasurementMatch {
             quantity: "1".to_string(),
@@ -1127,6 +1143,7 @@ fn test_unified_multi_word_ingredient_bot_workflow() {
             start_pos: 16,
             end_pos: 17,
             requires_quantity_confirmation: false,
+            section: None,
         },
     ];
 

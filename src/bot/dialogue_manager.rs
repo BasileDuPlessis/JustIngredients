@@ -31,7 +31,7 @@ use super::ui_builder::{
 
 // Import HandlerContext
 use super::cleanup::{self, send_transient};
-use super::home::{send_created_line, send_home};
+use super::home::send_home;
 use super::HandlerContext;
 
 /// Check if the error is a "message not modified" Telegram API error
@@ -293,11 +293,11 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
             if let Some(prompt_msg_id) = message_id {
                 cleanup::track(msg.chat.id, teloxide::types::MessageId(prompt_msg_id)).await;
             }
-            // The stored name: "Tarte (2)" when the user already has a "Tarte"
-            send_created_line(
+            // The stored names: "Tarte (2)" when the user already has a "Tarte"
+            crate::bot::home::send_created_lines(
                 ctx.bot,
                 msg.chat.id,
-                &saved.name,
+                &saved,
                 ctx.localization,
                 ctx.language_code,
             )
@@ -878,7 +878,9 @@ pub async fn handle_ingredient_review_input(
     Ok(())
 }
 
-/// Save ingredients to database; returns the id of the new recipe.
+/// Save ingredients to database: one recipe, or one per part of the photo, linked together
+/// (UX plan U9: "Malva pudding" and "Malva pudding (sauce)"). Returns the saved recipes, the
+/// one named `recipe_name` first.
 pub async fn save_ingredients_to_database(
     pool: &PgPool,
     telegram_id: i64,
@@ -886,33 +888,45 @@ pub async fn save_ingredients_to_database(
     ingredients: &[MeasurementMatch],
     recipe_name: &str,
     language_code: Option<&str>,
-) -> Result<crate::db::SavedRecipe> {
+) -> Result<Vec<crate::db::SavedRecipe>> {
     let start_time = std::time::Instant::now();
 
     debug!(telegram_id = %telegram_id, ingredient_count = %ingredients.len(), "Starting ingredient save process");
 
-    // User, recipe, name and ingredients in one transaction: nothing is left half-saved
-    let new_ingredients: Vec<crate::db::NewIngredient> = ingredients
+    // User, recipes, names, ingredients and links in one transaction: nothing is left
+    // half-saved
+    let photo_parts = crate::recipe_parts::split_parts(ingredients);
+    let names = crate::recipe_parts::part_names(recipe_name, &photo_parts);
+    let parts: Vec<crate::db::RecipePart> = photo_parts
         .iter()
-        .map(crate::ingredient_editing::to_new_ingredient)
+        .zip(names)
+        .map(|(part, name)| crate::db::RecipePart {
+            name,
+            ingredients: part
+                .lines
+                .iter()
+                .filter_map(|&line| ingredients.get(line))
+                .map(crate::ingredient_editing::to_new_ingredient)
+                .collect(),
+        })
         .collect();
-    let saved = match crate::db::save_recipe(
+    let saved = match crate::db::save_recipe_parts(
         pool,
         telegram_id,
         language_code,
         extracted_text,
-        recipe_name,
-        &new_ingredients,
+        &parts,
     )
     .await
     {
-        Ok(saved) => saved,
+        Ok(saved) if !saved.is_empty() => saved,
+        Ok(_) => return Err(anyhow::anyhow!("No recipe saved")),
         Err(e) => {
             error!(telegram_id = %telegram_id, ingredient_count = ingredients.len(), error = %e, "Recipe save failed, nothing was written");
             return Err(e);
         }
     };
-    let (recipe_id, user_id) = (saved.recipe_id, saved.user_id);
+    let (recipe_id, user_id) = (saved[0].recipe_id, saved[0].user_id);
 
     let processing_duration = start_time.elapsed();
 
@@ -936,6 +950,7 @@ pub async fn save_ingredients_to_database(
         telegram_id = %telegram_id,
         user_id = %user_id,
         recipe_id = %recipe_id,
+        recipes = saved.len(),
         ingredient_count = %ingredients.len(),
         duration_ms = %processing_duration.as_millis(),
         "Ingredient save process completed successfully"

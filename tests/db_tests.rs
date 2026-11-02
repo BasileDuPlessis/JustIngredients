@@ -662,12 +662,18 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
 
     // Check that migrations table was created and version is updated
     let version = migrations::get_current_version(pool).await?;
-    assert_eq!(version, 5);
+    assert_eq!(version, 6);
 
     // Verify that tables were created
     validate_database_schema(pool).await?;
 
     // Roll back with the down scripts, one version at a time, then all tables
+    migrations::rollback_to_version(pool, 5).await?;
+    assert_eq!(migrations::get_current_version(pool).await?, 5);
+    assert!(
+        validate_database_schema(pool).await.is_err(),
+        "recipe_links is required"
+    );
     migrations::rollback_to_version(pool, 4).await?;
     assert_eq!(migrations::get_current_version(pool).await?, 4);
     assert!(
@@ -1237,6 +1243,85 @@ async fn a_second_recipe_with_the_same_name_is_numbered(pool: PgPool) -> Result<
         rename_recipe(&pool, 66, crepes.recipe_id, "Volée").await?,
         None
     );
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_photo_in_parts_becomes_linked_recipes(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let ingredient = |name| NewIngredient {
+        name,
+        quantity: Some(1.0),
+        unit: None,
+    };
+    // An earlier "Malva pudding (sauce)": the new one is numbered
+    save_recipe(&pool, 51, Some("fr"), "texte", "Malva pudding (sauce)", &[]).await?;
+    let parts = [
+        RecipePart {
+            name: "Malva pudding".to_string(),
+            ingredients: vec![ingredient("sucre"), ingredient("œufs")],
+        },
+        RecipePart {
+            name: "Malva pudding (sauce)".to_string(),
+            ingredients: vec![ingredient("crème")],
+        },
+        RecipePart {
+            name: "Malva pudding (glaçage)".to_string(),
+            ingredients: vec![ingredient("sucre glace")],
+        },
+    ];
+    let saved = save_recipe_parts(&pool, 51, Some("fr"), "texte", &parts).await?;
+    let names: Vec<&str> = saved.iter().map(|recipe| recipe.name.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "Malva pudding",
+            "Malva pudding (sauce) (2)",
+            "Malva pudding (glaçage)"
+        ]
+    );
+    let linked_names = |recipe| {
+        let pool = pool.clone();
+        async move {
+            Ok::<Vec<String>, anyhow::Error>(
+                linked_recipes(&pool, 51, recipe)
+                    .await?
+                    .into_iter()
+                    .map(|recipe| recipe.name)
+                    .collect(),
+            )
+        }
+    };
+    assert_eq!(
+        linked_names(saved[0].recipe_id).await?,
+        ["Malva pudding (glaçage)", "Malva pudding (sauce) (2)"],
+        "alphabetical"
+    );
+    assert_eq!(
+        linked_names(saved[1].recipe_id).await?,
+        ["Malva pudding", "Malva pudding (glaçage)"],
+        "both ways, between every part"
+    );
+    let ingredients = get_recipe_ingredients(&pool, 51, saved[1].recipe_id).await?;
+    assert_eq!(ingredients.len(), 1);
+    assert_eq!(ingredients[0].name, "crème");
+    assert!(
+        linked_recipes(&pool, 52, saved[0].recipe_id)
+            .await?
+            .is_empty(),
+        "another user sees no link"
+    );
+
+    // Deleting one recipe deletes only it, and its links
+    assert!(delete_recipe(&pool, 51, saved[2].recipe_id).await?);
+    assert_eq!(
+        linked_names(saved[0].recipe_id).await?,
+        ["Malva pudding (sauce) (2)"]
+    );
+    assert!(read_recipe_with_name(&pool, 51, saved[1].recipe_id)
+        .await?
+        .is_some());
     Ok(())
 }
 
