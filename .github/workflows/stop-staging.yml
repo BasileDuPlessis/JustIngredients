@@ -1,0 +1,52 @@
+name: Stop Staging
+
+# Staging runs only while a change is tested: its bot and its database are stopped once the
+# change is in production, and every night in case none was released (stopped machines cost
+# almost nothing; 2026-11-02, the user's Fly bill). "Deploy to Staging" starts them again: a push
+# to main, or `gh workflow run "Deploy to Staging" --ref main` to try main again.
+on:
+  workflow_run:
+    workflows: ["Deploy to Production"]
+    types: [completed]
+  schedule:
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# The group of the staging deployments: never stopped in the middle of one
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+env:
+  STAGING_APP: just-ingredients-staging
+  STAGING_DB_APP: just-ingredients-staging-db
+
+jobs:
+  stop-staging:
+    # After a production run, only once it succeeded (a failed one may be retried soon)
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    environment: staging
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      FLY_DB_TOKEN: ${{ secrets.FLY_STAGING_DB_TOKEN }}
+    steps:
+    - name: Setup flyctl
+      uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
+
+    - name: Stop the staging bot
+      run: |
+        for id in $(flyctl machine list --app "$STAGING_APP" --quiet); do
+          flyctl machine stop "$id" --app "$STAGING_APP"
+        done
+
+    - name: Stop the staging database
+      if: env.FLY_DB_TOKEN != ''
+      run: |
+        for id in $(FLY_API_TOKEN="$FLY_DB_TOKEN" flyctl machine list --app "$STAGING_DB_APP" --quiet); do
+          FLY_API_TOKEN="$FLY_DB_TOKEN" flyctl machine stop "$id" --app "$STAGING_DB_APP"
+        done

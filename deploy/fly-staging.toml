@@ -30,12 +30,14 @@ primary_region = 'cdg'
     grace_period = '30s'
     path = '/health/live'
 
+# Staging runs only while a change is tested (stop-staging.yml stops it after a production
+# deploy and every night; a deployment starts it): a request must not wake it up
 [http_service]
   internal_port = 8080
   force_https = true
   auto_stop_machines = false
-  auto_start_machines = true
-  min_machines_running = 1
+  auto_start_machines = false
+  min_machines_running = 0
   enable_ha = false
   processes = ['app']
 

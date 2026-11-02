@@ -6,9 +6,10 @@ run-name: Deploy to Staging ${{ github.event.workflow_run.head_sha || github.sha
 # deploys the image that run built for the tested commit. Pull requests (including from forks)
 # never deploy.
 #
-# Staging is a permanent app with its own database and the test bot: it keeps running between
-# deployments, so the test bot can be used to try a change before production. It is created
-# once by hand (see specs/deployment.md), not by this workflow.
+# Staging is a permanent app with its own database and the test bot, created once by hand (see
+# specs/deployment.md), not by this workflow. It runs only while a change is tested: this
+# workflow starts its database and its bot, "Stop Staging" stops both after a production deploy
+# and every night (stopped machines cost almost nothing).
 on:
   workflow_run:
     workflows: ["Build and Test"]
@@ -25,6 +26,7 @@ concurrency:
 
 env:
   STAGING_APP: just-ingredients-staging
+  STAGING_DB_APP: just-ingredients-staging-db
   IMAGE: ghcr.io/basileduplessis/justingredients
   DEPLOY_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
 
@@ -41,6 +43,9 @@ jobs:
     env:
       # Deploy token of the staging app only (environment secret)
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+      # Deploy token of the staging database app (environment secret); without it the
+      # database is left as it is
+      FLY_DB_TOKEN: ${{ secrets.FLY_STAGING_DB_TOKEN }}
     steps:
     - name: Checkout tested commit
       uses: actions/checkout@v4
@@ -49,6 +54,15 @@ jobs:
 
     - name: Setup flyctl
       uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
+
+    # Stopped by "Stop Staging" when no change is being tested; the bot retries until it answers
+    - name: Start the staging database
+      if: env.FLY_DB_TOKEN != ''
+      run: |
+        for id in $(FLY_API_TOKEN="$FLY_DB_TOKEN" flyctl machine list --app "$STAGING_DB_APP" --quiet); do
+          FLY_API_TOKEN="$FLY_DB_TOKEN" flyctl machine start "$id" --app "$STAGING_DB_APP" || true
+        done
+        sleep 15
 
     # One machine only: two bots polling the same token steal each other's updates
     # (Fly creates two machines on the first deploy of an app unless told otherwise)

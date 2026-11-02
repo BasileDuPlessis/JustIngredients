@@ -9,8 +9,8 @@ The bot runs as one Fly.io machine (app `just-ingredients`, region `cdg`) with a
 database. It receives Telegram updates by long polling, so the only HTTP traffic is health
 checks and metrics. GitHub Actions tests every push and pull request to `main` and builds one image per commit of
 `main`;
-that image goes to a permanent staging app (with the test bot), then to production when a
-deployment is started by hand and approved.
+that image goes to a permanent staging app (with the test bot; stopped when no change is
+being tested), then to production when a deployment is started by hand and approved.
 
 ## Components
 | File | Purpose |
@@ -75,8 +75,10 @@ Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` 
   `just-ingredients-staging-db`), `TELEGRAM_BOT_TOKEN` of the test bot, `GEMINI_API_KEY`.
   `METRICS_AUTH_TOKEN` is not set there, so its `/metrics` answers 401.
 - **GitHub environment secrets**: `FLY_API_TOKEN` in `staging` and in `production`, each a deploy
-  token of its own app (`fly tokens create deploy -a <app>`); there is no repository-level token
-  (deleted on 2026-10-27).
+  token of its own app (`fly tokens create deploy -a <app>`); `FLY_STAGING_DB_TOKEN` in `staging`,
+  a deploy token of `just-ingredients-staging-db`, to start and stop the staging database
+  (without it the database keeps running); there is no repository-level token (deleted on
+  2026-10-27).
 - **GitHub repository secrets**: `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` for the production
   deploy notification and the uptime alert.
 - Optional variables with defaults: `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECS`, `GEMINI_THINKING_LEVEL`,
@@ -95,7 +97,8 @@ Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` 
 | Workflow | Trigger | What it does |
 |---|---|---|
 | `build-test.yml` "Build and Test" | Push and PR to `main` | `build`: Postgres 16 service, `cargo build`, `cargo test --all-targets`, doc tests, `db_tests` with `--include-ignored`. `lint`: clippy `-D warnings`, `scripts/check-unwraps.sh`, `cargo fmt --check`. `security`: cargo-deny `check advisories sources`. `image` (pushes to `main` only, after the three others): Buildx with the GitHub Actions layer cache, pushes `ghcr.io/basileduplessis/justingredients:sha-<commit>`; dependencies are compiled in their own layer, rebuilt only when `Cargo.toml` or `Cargo.lock` change. Rust 1.99, `SQLX_OFFLINE=true`, Ubuntu 26.04, no system packages. The benchmarks of `tests/performance_tests.rs` are ignored (IMP-046). |
-| `deploy-staging.yml` "Deploy to Staging" | `workflow_run` after a successful "Build and Test" on a push to `main` from this repository (or manual on `main`) | Run name `Deploy to Staging <sha>`. `flyctl deploy --ha=false --image ghcr.io/…:sha-<sha>` on the permanent staging app (no build; one machine, since two pollers of one bot token steal each other's updates), then the smoke tests (`/health/live`, `/health/ready`). Staging keeps running afterwards. |
+| `deploy-staging.yml` "Deploy to Staging" | `workflow_run` after a successful "Build and Test" on a push to `main` from this repository (or manual on `main`) | Run name `Deploy to Staging <sha>`. `flyctl deploy --ha=false --image ghcr.io/…:sha-<sha>` on the permanent staging app (no build; one machine, since two pollers of one bot token steal each other's updates), then the smoke tests (`/health/live`, `/health/ready`). It first starts the staging database (stopped when idle, below). |
+| `stop-staging.yml` "Stop Staging" | After a successful "Deploy to Production", every night at 02:00 UTC, and manual | Stops the staging bot's machine and, with `FLY_STAGING_DB_TOKEN`, the staging database's: staging runs only while a change is tested (2026-11-02: four machines running all the time went over the account's free allowance; a stopped machine is billed for its disk only). Same concurrency group as the staging deployments. `auto_start_machines = false` in `fly-staging.toml`: a request does not wake it up. |
 | `deploy-production.yml` "Deploy to Production" | Manual, `main` only | Environment `production` with a required reviewer. Gate: a successful "Build and Test" push run for the commit and a successful run named `Deploy to Staging <sha>`. Records the running release: image digest (`fly machines list`) and deployed configuration (`fly config save`). Deploys the image staging ran (`--ha=false --image ghcr.io/…:sha-<sha>`, no build), waits for `/health/live` and `/health/ready` (`scripts/check-health.sh`, 6 tries 10 s apart); on failure deploys the recorded image with the recorded configuration and checks it. Telegram notification: deployed, rolled back, or failed. |
 | `uptime.yml` "Production Uptime" | Every 10 minutes (and manual) | `GET /health/ready` on production, 3 tries 20 s apart; Telegram alert on failure. GitHub may delay scheduled runs and disables them after 60 days without activity. |
 
@@ -121,7 +124,10 @@ Every other path answers 404 (there is no `/health/ocr`, `/health/db`, `/ready` 
   `cargo test --lib` (about a minute); CI runs every other test.
 - Deploy: push to `main`, wait for green CI and staging, then run "Deploy to Production" and
   approve it.
-- Try a change before production: after a push, the test bot runs it on staging.
+- Try a change before production: after a push, the test bot runs it on staging (started by the
+  deployment, stopped again after the release or at night). To start it without a push:
+  `gh workflow run "Deploy to Staging" --ref main`; to stop it at once: `gh workflow run
+  "Stop Staging"`.
 - Rollback: automatic when a production deployment does not come up healthy. By hand: deploy an
   older image, `fly deploy --config deploy/fly.toml -a just-ingredients --image
   ghcr.io/basileduplessis/justingredients:sha-<commit>` (or a `registry.fly.io` image from
@@ -141,5 +147,13 @@ fly secrets set --stage --app just-ingredients-staging \
   TELEGRAM_BOT_TOKEN="<test bot token>" GEMINI_API_KEY="<staging key>"
 ```
 
-The test bot then answers from staging all the time: running the bot locally with the same
-token would steal its updates.
+The test bot then answers from staging while staging runs: running the bot locally with the
+same token would steal its updates.
+
+To let the workflows start and stop the staging database (done once by the user, the token
+never printed):
+
+```bash
+fly tokens create deploy -a just-ingredients-staging-db -x 8760h -n github-staging-db \
+  | gh secret set FLY_STAGING_DB_TOKEN --env staging
+```
