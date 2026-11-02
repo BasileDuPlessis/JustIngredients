@@ -14,7 +14,7 @@ dotenvy = "0.15"
 anyhow = "1.0.100"
 thiserror = "2.0"
 reqwest = { version = "0.12", features = ["json"] }
-base64 = "0.22" # Image encoding for the Gemini API
+base64 = "0.23" # Image encoding for the Gemini API
 bytes = "1" # Request body shared between retries without copying
 sha2 = "0.10" # Image fingerprints for the extraction cache
 image = "0.25"    # For image handling if needed
