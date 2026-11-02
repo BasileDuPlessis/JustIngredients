@@ -112,7 +112,10 @@ the Prometheus and Grafana apps were removed in 2026-11 (they never collected an
   `[metrics]` port), the machines' (CPU, memory, restarts, out of memory), the proxy's and
   Postgres' (`pg_*`). They are shown in Fly's managed Grafana, [fly-metrics.net](https://fly-metrics.net)
   (Fly account), and can be queried on `https://api.fly.io/prometheus/<org>/` with a read-only
-  token.
+  token. Three dashboards, Usage, Gemini et coûts, Santé, are kept in
+  [`monitoring/fly-grafana/`](../monitoring/fly-grafana/README.md) and imported there by hand.
+- Durations are real histograms (buckets from 5 ms to 60 s), so the median and the 95th
+  percentile can be computed over any period.
 - Our metrics are all named `ji_…` (`src/observability/metrics.rs`) and carry no user id nor
   recipe content:
 

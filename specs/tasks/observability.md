@@ -209,6 +209,11 @@ par le bot, et les deux apps de monitoring supprimées ne coûtent plus leur dis
 | O7 | Logs JSON (IMP-051), OpenTelemetry retiré, le ménage (apps, dossier, secrets, docs) |
 | RO | Relecture indépendante, puis mise en production |
 
+Avancement (2026-11-02) : O1 à O6 réalisés, sur staging. Les tableaux de bord ont été vérifiés
+sur un Grafana local avec 14 jours de données synthétiques (requêtes et rendu), pas encore
+importés dans fly-metrics.net. Restent pour O7 les gestes de l'utilisateur (supprimer les deux
+apps, retirer `METRICS_AUTH_TOKEN`, poser `OWNER_CHAT_ID`), puis RO.
+
 ## Décisions (2026-11-02)
 
 1. Les cinq alertes du tableau, avec un seuil de coût de **1 $ par jour**.

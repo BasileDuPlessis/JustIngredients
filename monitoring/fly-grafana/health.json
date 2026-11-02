@@ -1,0 +1,1167 @@
+{
+  "uid": "ji-health",
+  "title": "JustIngredients · Santé",
+  "description": "Erreurs, disjoncteur de Gemini, redémarrages, rapidité, machines et base (plan O).",
+  "tags": [
+    "justingredients"
+  ],
+  "timezone": "Europe/Paris",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-14d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "app",
+        "label": "Bot",
+        "type": "custom",
+        "query": "just-ingredients,just-ingredients-staging",
+        "current": {
+          "text": "just-ingredients",
+          "value": "just-ingredients"
+        },
+        "hide": 0,
+        "options": [
+          {
+            "text": "just-ingredients",
+            "value": "just-ingredients",
+            "selected": true
+          },
+          {
+            "text": "just-ingredients-staging",
+            "value": "just-ingredients-staging",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "name": "db_app",
+        "label": "Base",
+        "type": "custom",
+        "query": "just-ingredients-db,just-ingredients-staging-db",
+        "current": {
+          "text": "just-ingredients-db",
+          "value": "just-ingredients-db"
+        },
+        "hide": 0,
+        "options": [
+          {
+            "text": "just-ingredients-db",
+            "value": "just-ingredients-db",
+            "selected": true
+          },
+          {
+            "text": "just-ingredients-staging-db",
+            "value": "just-ingredients-staging-db",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Disjoncteur Gemini",
+      "description": "Ouvert après plusieurs échecs de suite : les photos sont refusées quelques minutes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(ji_gemini_breaker_open{app=\"$app\"})",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "✔ fermé",
+                  "color": "#0ca30c",
+                  "index": 0
+                },
+                "1": {
+                  "text": "✖ ouvert",
+                  "color": "#d03b3b",
+                  "index": 1
+                }
+              }
+            }
+          ],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Dernier démarrage",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(ji_started_at_seconds{app=\"$app\"}) * 1000",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "dateTimeFromNow",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Redémarrages sur la période",
+      "description": "Mises en production comprises.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(changes(ji_started_at_seconds{app=\"$app\"}[$__range]))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Erreurs sur la période",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_errors_total{app=\"$app\"}[$__range])) or vector(0)",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Erreurs par jour",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_errors_total{app=\"$app\",component=\"gemini\"}[1d]))",
+          "legendFormat": "Gemini",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_errors_total{app=\"$app\",component=\"telegram\"}[1d]))",
+          "legendFormat": "Telegram",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_errors_total{app=\"$app\",component=\"database\"}[1d]))",
+          "legendFormat": "base",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_errors_total{app=\"$app\",component=\"internal\"}[1d]))",
+          "legendFormat": "interne",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Gemini"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Gemini"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Telegram"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Telegram"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "base"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "base"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "interne"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "interne"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "interval": "1d"
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Rapidité, 95 % des cas",
+      "description": "Par jour. Un message avec photo comprend la lecture par Gemini.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(ji_update_duration_seconds_bucket{app=\"$app\",kind=\"message\"}[1d])))",
+          "legendFormat": "message",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(ji_update_duration_seconds_bucket{app=\"$app\",kind=\"callback\"}[1d])))",
+          "legendFormat": "bouton",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(ji_card_shown_seconds_bucket{app=\"$app\"}[1d])))",
+          "legendFormat": "fiche",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "showPoints": "always",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "message"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "message"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "bouton"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "bouton"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "fiche"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "affichage d'une fiche"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "interval": "1d"
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Mémoire utilisée",
+      "description": "Métriques des machines fournies par Fly.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(fly_instance_memory_mem_total{app=\"$app\"} - fly_instance_memory_mem_available{app=\"$app\"})",
+          "legendFormat": "bot",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(fly_instance_memory_mem_total{app=\"$db_app\"} - fly_instance_memory_mem_available{app=\"$db_app\"})",
+          "legendFormat": "base",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "bot"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "bot"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "base"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "base de données"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "CPU",
+      "description": "Part d'un processeur, métriques fournies par Fly.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(fly_instance_cpu{app=\"$app\",mode!=\"idle\"}[$__rate_interval])) / 100",
+          "legendFormat": "bot",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(rate(fly_instance_cpu{app=\"$db_app\",mode!=\"idle\"}[$__rate_interval])) / 100",
+          "legendFormat": "base",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "bot"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "bot"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "base"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "base de données"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "stat",
+      "title": "Taille de la base",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 8,
+        "x": 0,
+        "y": 20
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(pg_database_size_bytes{app=\"$db_app\",datname!~\"template0|template1|postgres|repmgr\"})",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "decimals": 1,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Requêtes en base, 95 % des cas",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 16,
+        "x": 8,
+        "y": 20
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(ji_db_duration_seconds_bucket{app=\"$app\",operation=\"save_recipe\"}[1d])))",
+          "legendFormat": "enregistrement",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(ji_db_duration_seconds_bucket{app=\"$app\",operation=\"apply_ingredient_changes\"}[1d])))",
+          "legendFormat": "modification",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(ji_db_duration_seconds_bucket{app=\"$app\",operation=\"create_recipe\"}[1d])))",
+          "legendFormat": "création",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(ji_db_duration_seconds_bucket{app=\"$app\",operation=\"create_ingredient\"}[1d])))",
+          "legendFormat": "ingrédient",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "showPoints": "always",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "enregistrement"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "enregistrement"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "modification"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "modification"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "création"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "création"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ingrédient"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "ingrédient"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "interval": "1d"
+    }
+  ]
+}

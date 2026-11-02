@@ -6,9 +6,19 @@ use anyhow::Result;
 use metrics_exporter_prometheus::{PrometheusBuilder, PrometheusHandle};
 use std::time::Duration;
 
+/// Upper bounds, in seconds, of the duration histograms: from a database query (milliseconds)
+/// to a photo read with retries (up to the 40 s Gemini budget and beyond). Real histograms, not
+/// the exporter's default summaries over the last minute: Grafana computes the median and the
+/// 95th percentile over any period from them (`histogram_quantile`).
+const DURATION_BUCKETS: [f64; 16] = [
+    0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.0, 3.0, 5.0, 8.0, 12.0, 20.0, 30.0, 60.0,
+];
+
 /// Installs the process-wide recorder; its handle renders the metrics for `/metrics`.
 pub fn install_recorder() -> Result<PrometheusHandle> {
-    Ok(PrometheusBuilder::new().install_recorder()?)
+    Ok(PrometheusBuilder::new()
+        .set_buckets(&DURATION_BUCKETS)?
+        .install_recorder()?)
 }
 
 // --- Usage ---

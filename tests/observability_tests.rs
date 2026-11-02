@@ -11,11 +11,14 @@ async fn get(address: SocketAddr, path: &str) -> anyhow::Result<reqwest::Respons
 
 #[tokio::test]
 async fn health_is_public_and_metrics_internal() -> anyhow::Result<()> {
-    let recorder = PrometheusBuilder::new().build_recorder();
+    let recorder = PrometheusBuilder::new()
+        .set_buckets(&[0.1, 1.0, 10.0])?
+        .build_recorder();
     let handle = recorder.handle();
     metrics::with_local_recorder(&recorder, || {
         observability::photo(PhotoResult::Read);
         observability::gemini_usage("gemini-test", 10, 5, Some(42));
+        observability::card_shown(std::time::Duration::from_millis(300));
     });
     let addresses = server::start(handle, 0, 0, false, None, None).await?;
     assert!(addresses.health.ip().is_loopback() && addresses.metrics.ip().is_loopback());
@@ -30,6 +33,10 @@ async fn health_is_public_and_metrics_internal() -> anyhow::Result<()> {
     assert!(
         body.contains(r#"ji_gemini_cost_micro_usd_total{model="gemini-test"} 42"#),
         "{body}"
+    );
+    assert!(
+        body.contains(r#"ji_card_shown_seconds_bucket{le="1"} 1"#),
+        "durations are histograms: {body}"
     );
     assert_eq!(get(addresses.metrics, "/health/live").await?.status(), 404);
 

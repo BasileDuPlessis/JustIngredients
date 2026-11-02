@@ -1,0 +1,802 @@
+{
+  "uid": "ji-gemini",
+  "title": "JustIngredients · Gemini et coûts",
+  "description": "Appels à Gemini, tokens, coût estimé et durée de lecture d'une photo (plan O).",
+  "tags": [
+    "justingredients"
+  ],
+  "timezone": "Europe/Paris",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-14d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "app",
+        "label": "Bot",
+        "type": "custom",
+        "query": "just-ingredients,just-ingredients-staging",
+        "current": {
+          "text": "just-ingredients",
+          "value": "just-ingredients"
+        },
+        "hide": 0,
+        "options": [
+          {
+            "text": "just-ingredients",
+            "value": "just-ingredients",
+            "selected": true
+          },
+          {
+            "text": "just-ingredients-staging",
+            "value": "just-ingredients-staging",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "name": "db_app",
+        "label": "Base",
+        "type": "custom",
+        "query": "just-ingredients-db,just-ingredients-staging-db",
+        "current": {
+          "text": "just-ingredients-db",
+          "value": "just-ingredients-db"
+        },
+        "hide": 0,
+        "options": [
+          {
+            "text": "just-ingredients-db",
+            "value": "just-ingredients-db",
+            "selected": true
+          },
+          {
+            "text": "just-ingredients-staging-db",
+            "value": "just-ingredients-staging-db",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Coût estimé aujourd'hui",
+      "description": "Depuis minuit (heure de Paris). Alerte Telegram au-delà de 1 $.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_gemini_cost_micro_usd_total{app=\"$app\"}[$__range])) / 1e6",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      },
+      "timeFrom": "now/d"
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Coût estimé sur la période",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_gemini_cost_micro_usd_total{app=\"$app\"}[$__range])) / 1e6",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 2,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Coût par photo lue",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sum(increase(ji_gemini_cost_micro_usd_total{app=\"$app\"}[$__range])) / 1e6) / sum(increase(ji_photos_total{app=\"$app\",result=\"read\"}[$__range]))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "decimals": 3,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Photos servies par le cache",
+      "description": "Une photo déjà lue est resservie sans nouvel appel payant.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "(sum(increase(ji_gemini_cache_hits_total{app=\"$app\"}[$__range])) or vector(0)) / ((sum(increase(ji_gemini_cache_hits_total{app=\"$app\"}[$__range])) or vector(0)) + sum(increase(ji_gemini_requests_total{app=\"$app\",result!=\"circuit_open\"}[$__range])))",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "none",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Appels par jour",
+      "description": "Les échecs par type (délai, quota, réponse invalide…) : ji_gemini_requests_total dans Explore, ou les logs.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_gemini_requests_total{app=\"$app\",result=\"success\"}[1d]))",
+          "legendFormat": "succès",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_gemini_requests_total{app=\"$app\",result!~\"success|circuit_open\"}[1d]))",
+          "legendFormat": "échec",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_gemini_requests_total{app=\"$app\",result=\"circuit_open\"}[1d]))",
+          "legendFormat": "refusé par le disjoncteur",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "succès"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "succès"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "échec"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "échec"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "refusé par le disjoncteur"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "refusé par le disjoncteur"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "interval": "1d"
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Coût estimé par jour",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_gemini_cost_micro_usd_total{app=\"$app\"}[1d])) / 1e6",
+          "legendFormat": "coût",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "currencyUSD",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "decimals": 3
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "interval": "1d"
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Tokens par jour",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_gemini_tokens_total{app=\"$app\",kind=\"input\"}[1d]))",
+          "legendFormat": "entrée",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_gemini_tokens_total{app=\"$app\",kind=\"output\"}[1d]))",
+          "legendFormat": "sortie",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "entrée"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "entrée"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "sortie"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "sortie"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "interval": "1d"
+    },
+    {
+      "id": 8,
+      "type": "timeseries",
+      "title": "Durée d'une lecture de photo",
+      "description": "Nouvelles tentatives comprises, par jour.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.5, sum by (le) (increase(ji_gemini_duration_seconds_bucket{app=\"$app\"}[1d])))",
+          "legendFormat": "médiane",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (increase(ji_gemini_duration_seconds_bucket{app=\"$app\"}[1d])))",
+          "legendFormat": "95 %",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "showPoints": "always",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "médiane"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "médiane"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "95 %"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "95 %"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "interval": "1d"
+    }
+  ]
+}

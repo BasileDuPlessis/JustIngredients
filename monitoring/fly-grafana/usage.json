@@ -1,0 +1,1115 @@
+{
+  "uid": "ji-usage",
+  "title": "JustIngredients · Usage",
+  "description": "Utilisateurs, photos, recettes et actions (plan O, specs/tasks/observability.md). Fly garde 15 jours ; au-delà, /stats et le bilan du lundi.",
+  "tags": [
+    "justingredients"
+  ],
+  "timezone": "Europe/Paris",
+  "editable": true,
+  "graphTooltip": 1,
+  "refresh": "5m",
+  "schemaVersion": 39,
+  "version": 1,
+  "time": {
+    "from": "now-14d",
+    "to": "now"
+  },
+  "templating": {
+    "list": [
+      {
+        "name": "datasource",
+        "label": "Source",
+        "type": "datasource",
+        "query": "prometheus",
+        "current": {},
+        "hide": 0
+      },
+      {
+        "name": "app",
+        "label": "Bot",
+        "type": "custom",
+        "query": "just-ingredients,just-ingredients-staging",
+        "current": {
+          "text": "just-ingredients",
+          "value": "just-ingredients"
+        },
+        "hide": 0,
+        "options": [
+          {
+            "text": "just-ingredients",
+            "value": "just-ingredients",
+            "selected": true
+          },
+          {
+            "text": "just-ingredients-staging",
+            "value": "just-ingredients-staging",
+            "selected": false
+          }
+        ]
+      },
+      {
+        "name": "db_app",
+        "label": "Base",
+        "type": "custom",
+        "query": "just-ingredients-db,just-ingredients-staging-db",
+        "current": {
+          "text": "just-ingredients-db",
+          "value": "just-ingredients-db"
+        },
+        "hide": 0,
+        "options": [
+          {
+            "text": "just-ingredients-db",
+            "value": "just-ingredients-db",
+            "selected": true
+          },
+          {
+            "text": "just-ingredients-staging-db",
+            "value": "just-ingredients-staging-db",
+            "selected": false
+          }
+        ]
+      }
+    ]
+  },
+  "annotations": {
+    "list": []
+  },
+  "links": [],
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Utilisateurs actifs 24 h",
+      "description": "Vus dans les dernières 24 heures (calculé chaque heure).",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(ji_users{app=\"$app\",period=\"day\"})",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "area",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Utilisateurs actifs 7 jours",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(ji_users{app=\"$app\",period=\"week\"})",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "area",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Inscrits",
+      "description": "Toute personne qui a écrit au bot.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(ji_users{app=\"$app\",period=\"total\"})",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "area",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 4,
+      "type": "stat",
+      "title": "Recettes enregistrées",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 0
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(ji_recipes{app=\"$app\"})",
+          "instant": false,
+          "range": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "mappings": [],
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "none",
+        "graphMode": "area",
+        "textMode": "value",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "wideLayout": true,
+        "showPercentChange": false
+      }
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Photos par jour",
+      "description": "Résultat de chaque photo reçue.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_photos_total{app=\"$app\",result=\"read\"}[1d]))",
+          "legendFormat": "lue",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_photos_total{app=\"$app\",result=\"not_recipe\"}[1d]))",
+          "legendFormat": "pas une recette",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_photos_total{app=\"$app\",result=\"unreadable\"}[1d]))",
+          "legendFormat": "illisible",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_photos_total{app=\"$app\",result=\"too_large\"}[1d]))",
+          "legendFormat": "trop grande",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_photos_total{app=\"$app\",result=\"daily_limit\"}[1d]))",
+          "legendFormat": "limite du jour",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "F",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_photos_total{app=\"$app\",result=\"gemini_error\"}[1d]))",
+          "legendFormat": "erreur Gemini",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "lue"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "lue"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "pas une recette"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "pas une recette"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "illisible"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "illisible"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trop grande"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "trop grande"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "limite du jour"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "limite du jour"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d55181"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "erreur Gemini"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "erreur Gemini"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#008300"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "interval": "1d"
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Recettes créées par jour",
+      "description": "« recette liée » : chaque partie de plus d'une photo à plusieurs sections.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 4
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_recipes_created_total{app=\"$app\",kind=\"photo\"}[1d]))",
+          "legendFormat": "photo",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_recipes_created_total{app=\"$app\",kind=\"linked\"}[1d]))",
+          "legendFormat": "recette liée",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "photo"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "photo"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "recette liée"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "recette liée"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "interval": "1d"
+    },
+    {
+      "id": 7,
+      "type": "timeseries",
+      "title": "Actions par jour",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 0,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_actions_total{app=\"$app\"}[1d]))",
+          "legendFormat": "actions",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "decimals": 0
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "interval": "1d"
+    },
+    {
+      "id": 8,
+      "type": "bargauge",
+      "title": "Actions sur la période",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 11,
+        "w": 12,
+        "x": 12,
+        "y": 12
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sort_desc(sum by (action) (increase(ji_actions_total{app=\"$app\"}[$__range])))",
+          "legendFormat": "{{action}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#3987e5",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "start"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "/start"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "help"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "aide"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "list"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "liste"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "search"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "recherche"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "card_opened"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "fiche ouverte"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "linked_opened"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "recette liée ouverte"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "rename"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "renommage"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "edit"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "modification"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "delete"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "suppression"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "review_confirmed"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "photo validée"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ingredient_edited"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "ingrédient modifié"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "ingredient_deleted"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "ingrédient supprimé"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "unit_view_chosen"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "vue des unités choisie"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": false,
+        "valueMode": "text",
+        "namePlacement": "left",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        }
+      }
+    },
+    {
+      "id": 9,
+      "type": "timeseries",
+      "title": "Utilisateurs actifs dans le temps",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 23
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(ji_users{app=\"$app\",period=\"day\"})",
+          "legendFormat": "24 h",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "max(ji_users{app=\"$app\",period=\"week\"})",
+          "legendFormat": "7 jours",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "none",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "24 h"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "24 h"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "7 jours"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "7 jours"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      }
+    }
+  ]
+}
