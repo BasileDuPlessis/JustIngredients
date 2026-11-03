@@ -873,6 +873,11 @@ they can be pulled into 1-hour micro-tasks without another review.
 
 ### IMP-036: Oversized modules and duplicated handlers
 - [ ] Done
+- Status: Partly done (2026-11-03): `src/db.rs` (2,170 lines) is `src/db/` with seven modules,
+  the largest `recipes.rs` (about 640 lines), all re-exported so no caller changed. The routing
+  written twice and the recipe views written twice no longer exist (one routing function,
+  `callback_handler_with_cache`; they went before this triage). Left: `dialogue_manager.rs` (1,278 lines), `ui_builder.rs` (1,068),
+  `editing_callbacks.rs` (982) and the long functions in them.
 - Priority: P3. Effort: L. Area: Code organization.
 - Location: `src/bot/dialogue_manager.rs` (1,658 lines), `src/db.rs` (1,592 lines),
   `src/bot/message_handler.rs:42` (306-line function), `src/bot/callbacks/editing_callbacks.rs:431`

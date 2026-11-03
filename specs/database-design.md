@@ -34,6 +34,13 @@ The database design provides persistent storage for user data, recipes, and extr
 - [x] Data integrity maintained through constraints
 - [x] Versioned migration system with rollback support
 
+## Code Layout
+`src/db/`, one module per table group, all re-exported by `db/mod.rs` (callers write
+`crate::db::…`): `users.rs`, `recipes.rs` (recipes, links, lists, names), `ingredients.rs`,
+`chat_messages.rs`, `usage.rs` (`usage_days`, `app_state`), `schema.rs` (startup setup and
+check), `migrations.rs`. The dialogue states (`dialogues`) are read and written by
+`src/dialogue_storage.rs`.
+
 ## Architecture
 
 ### Schema Design
@@ -153,7 +160,7 @@ pub struct Ingredient {
 
 ## Migration System
 
-Versioned schema migrations with rollback support (`src/db.rs` `migrations` submodule):
+Versioned schema migrations with rollback support (`src/db/migrations.rs`, `db::migrations`):
 
 ```rust
 // Apply all pending migrations in order
