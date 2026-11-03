@@ -583,8 +583,13 @@ async fn dispatch_message(
     } else if msg.document().is_some() {
         handle_document_message(&bot, &msg, dialogue, pool, &localization, &extractor).await
     } else {
-        let in_action = dialogue.get().await?.is_some_and(|state| state.is_action());
-        handle_unsupported_message(&bot, &msg, in_action, &localization).await
+        match dialogue.get().await {
+            Ok(state) => {
+                let in_action = state.is_some_and(|state| state.is_action());
+                handle_unsupported_message(&bot, &msg, in_action, &localization).await
+            }
+            Err(error) => Err(error.into()),
+        }
     };
 
     let duration = start_time.elapsed();

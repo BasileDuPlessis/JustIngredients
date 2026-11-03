@@ -596,7 +596,10 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
     )
     .await
     {
-        Ok(saved) => saved,
+        Ok(saved) => {
+            crate::dialogue::end_after_write(c.dialogue).await;
+            saved
+        }
         Err(_) => {
             // Logged by the save; nothing was written: the review stays open to try again
             send_transient(
@@ -628,7 +631,6 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
         c.language_code,
     )
     .await;
-    c.dialogue.exit().await?;
     Ok(())
 }
 

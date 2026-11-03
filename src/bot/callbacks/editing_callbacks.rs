@@ -545,6 +545,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             }
             return Ok(());
         }
+        crate::dialogue::end_after_write(dialogue).await;
 
         // Fetch updated recipe details and ingredients
         let recipe = match crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await {

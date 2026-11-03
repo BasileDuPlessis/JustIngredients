@@ -5,7 +5,8 @@ use just_ingredients::config::AppConfig;
 use just_ingredients::db;
 use just_ingredients::db_connection::{self, DEFAULT_CONNECT_BACKOFF};
 use just_ingredients::deduplication;
-use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
+use just_ingredients::dialogue::RecipeDialogue;
+use just_ingredients::dialogue_storage::PgDialogueStorage;
 use just_ingredients::extraction::gemini::GeminiExtractor;
 use just_ingredients::extraction::guard::GuardedExtractor;
 use just_ingredients::extraction::SharedExtractor;
@@ -15,7 +16,6 @@ use just_ingredients::telegram_connection::{self, TELEGRAM_CONNECT_BACKOFF};
 use std::env;
 use std::sync::Arc;
 use std::time::Duration;
-use teloxide::dispatching::dialogue::InMemStorage;
 use teloxide::prelude::*;
 use tracing::{info, warn};
 
@@ -291,8 +291,27 @@ async fn main() -> Result<()> {
 
     info!("Bot initialized with 30s timeout, starting dispatcher");
 
-    // Create shared dialogue storage
-    let dialogue_storage = InMemStorage::<RecipeDialogueState>::new();
+    // Running actions are kept in the database: a deploy or a restart does not lose them. They
+    // are resumed only if this version ran a moment ago, which it notes every minute.
+    let dialogue_storage = PgDialogueStorage::new((*shared_pool).clone());
+    match dialogue_storage.start().await {
+        Ok(0) => {}
+        Ok(purged) => info!(dialogues = purged, "Dropped dialogue states not resumed"),
+        Err(e) => warn!(error = %e, "Could not prepare the dialogue states"),
+    }
+    tokio::spawn({
+        let storage = Arc::clone(&dialogue_storage);
+        async move {
+            let mut every_minute = tokio::time::interval(std::time::Duration::from_secs(60));
+            every_minute.tick().await;
+            loop {
+                every_minute.tick().await;
+                if let Err(e) = storage.mark_alive().await {
+                    warn!(error = %e, "Could not note that the dialogue states are kept");
+                }
+            }
+        }
+    });
 
     // Set up the dispatcher with shared connection and dialogue support
     let handler = dptree::entry()
@@ -381,8 +400,11 @@ async fn main() -> Result<()> {
             LoggingErrorHandler::with_custom_text("An error from the update listener"),
         )
         .await;
-    // The last minute of usage counts, before exiting
+    // The last minute of usage counts, before exiting; the next start resumes the actions
     observability::usage::flush(&shared_pool).await;
+    if let Err(e) = dialogue_storage.mark_alive().await {
+        warn!(error = %e, "Could not note that the dialogue states are kept");
+    }
     dispatched
         .map_err(|e| anyhow::anyhow!("Telegram API unreachable when the dispatcher started: {e}"))
 }

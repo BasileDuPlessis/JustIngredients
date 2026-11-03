@@ -2,7 +2,9 @@
 
 use crate::text_processing::MeasurementMatch;
 use serde::{Deserialize, Serialize};
-use teloxide::dispatching::dialogue::{Dialogue, InMemStorage};
+use teloxide::dispatching::dialogue::Dialogue;
+
+use crate::dialogue_storage::PgDialogueStorage;
 
 // Import database types for editing saved ingredients
 use crate::db::Ingredient;
@@ -19,7 +21,12 @@ pub enum IngredientField {
     Name,
 }
 
-/// Represents the conversation state for recipe name dialogue
+/// Represents the conversation state for recipe name dialogue.
+///
+/// Kept as JSON across deploys (`dialogue_storage`): a state written by the previous release is
+/// read by the next one. A new field needs `#[serde(default)]`; a field or variant whose meaning
+/// changes takes a new name, so an old state is dropped (its buttons say they are no longer
+/// active) instead of being read with the wrong meaning.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub enum RecipeDialogueState {
     #[default]
@@ -92,5 +99,19 @@ impl RecipeDialogueState {
     }
 }
 
-/// Type alias for our recipe dialogue
-pub type RecipeDialogue = Dialogue<RecipeDialogueState, InMemStorage<RecipeDialogueState>>;
+/// A chat's dialogue, kept in Postgres across restarts (`dialogue_storage`)
+pub type RecipeDialogue = Dialogue<RecipeDialogueState, PgDialogueStorage>;
+
+/// Ends the action right after its result was written (a recipe saved, renamed, edited), before
+/// anything is sent: a state left behind would write it again at the next answer. Tried twice; a
+/// failure is logged and counted, not returned, since the chat must still show the result.
+pub async fn end_after_write(dialogue: &RecipeDialogue) {
+    if dialogue.exit().await.is_ok() {
+        return;
+    }
+    tokio::time::sleep(std::time::Duration::from_millis(200)).await;
+    if let Err(error) = dialogue.exit().await {
+        tracing::error!(error = %error, "Could not end the action after its write");
+        crate::observability::error("database", "dialogue_exit");
+    }
+}

@@ -288,6 +288,7 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
             return Ok(());
         }
         Ok(saved) => {
+            crate::dialogue::end_after_write(&dialogue).await;
             if let Some(main) = saved.first() {
                 list_at = crate::bot::home::ListAt::Recipe(main.recipe_id);
             }
@@ -307,8 +308,6 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
         }
     }
 
-    // End the dialogue
-    dialogue.exit().await?;
     crate::bot::home::send_home_at(
         ctx.bot,
         pool,
@@ -468,6 +467,7 @@ pub async fn handle_recipe_rename_input(
                 }
                 None => Ok(None),
             };
+            crate::dialogue::end_after_write(&dialogue).await;
             // The history keeps one line for a rename; an error stays until the next action
             let mut keep = Vec::new();
             match rename_result {
@@ -525,10 +525,7 @@ pub async fn handle_recipe_rename_input(
                         &e,
                         "update_recipe_name",
                         Some(msg.chat.id.0),
-                        Some(&[
-                            ("recipe_id", &recipe_id.to_string()),
-                            ("current_name", &current_name),
-                        ]),
+                        Some(&[("recipe_id", &recipe_id.to_string())]),
                     );
                     let message = format!(
                         "❌ {}\n\n{}",
@@ -546,7 +543,6 @@ pub async fn handle_recipe_rename_input(
                     keep.push(bot.send_message(msg.chat.id, message).await?.id);
                 }
             }
-            dialogue.exit().await?;
             // The list on the page of the recipe, where its new name puts it
             super::home::send_home_keeping_at(
                 bot,

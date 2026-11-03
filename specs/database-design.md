@@ -43,6 +43,10 @@ Database Schema
 ├── users table          # User profiles and language preferences
 ├── recipes table        # Recipe records owned by a telegram user
 ├── ingredients table    # Parsed ingredient data linked to recipes
+├── chat_messages        # Ids of messages a later action deletes or edits (migration 3)
+├── recipe_links         # Pairs of linked recipes (migration 6)
+├── usage_days, app_state # Usage history and values kept across restarts (migration 7)
+├── dialogues            # Each chat's running action (migration 8)
 ├── schema_migrations    # Versioned migration tracking
 └── FTS index           # GIN index on the generated content_tsv column (content only)
 ```
@@ -164,7 +168,7 @@ pub async fn get_current_version(pool: &PgPool) -> Result<i32>
 pub async fn rollback_to_version(pool: &PgPool, target_version: i32) -> Result<()>
 ```
 
-Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There are six: version 1 `create_initial_tables`, version 2 `recipes_owner_index_and_ingredient_cascade` (owner index on `recipes`, `ON DELETE CASCADE` on `ingredients.recipe_id`), version 3 `chat_messages` (see below) and version 4 `number_duplicate_recipe_names` (a placeholder since RU6: the numbering runs at every startup in `number_duplicate_recipe_names()`, after the schema validation, with the rule of new names — the oldest of a user's same-name recipes keeps the name, the others take the first free "(n)" — and does nothing once names are unique) version 5 `users_unit_view` (`users.unit_view TEXT NOT NULL DEFAULT 'french'`) and version 6 `recipe_links` (`recipe_links (recipe_a, recipe_b)`, one row per pair of linked recipes, the smaller id first, both foreign keys `ON DELETE CASCADE`, index on `recipe_b`: UX plan U9); each has a down script. Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch. After it come the duplicate numbering and `normalize_saved_units()`, which rewrites the units saved before normalization ("G", "litres", "cl" → g, l, ml with the quantity converted…) one ingredient at a time, skips what `units::renormalized` finds unsafe (an unstable spelling, a quantity that does not fit), logs a failed row and goes on, and does nothing once every unit is normalized; its own failure never stops the startup.
+Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There are eight: version 1 `create_initial_tables`, version 2 `recipes_owner_index_and_ingredient_cascade` (owner index on `recipes`, `ON DELETE CASCADE` on `ingredients.recipe_id`), version 3 `chat_messages` (see below) and version 4 `number_duplicate_recipe_names` (a placeholder since RU6: the numbering runs at every startup in `number_duplicate_recipe_names()`, after the schema validation, with the rule of new names — the oldest of a user's same-name recipes keeps the name, the others take the first free "(n)" — and does nothing once names are unique) version 5 `users_unit_view` (`users.unit_view TEXT NOT NULL DEFAULT 'french'`) and version 6 `recipe_links` (`recipe_links (recipe_a, recipe_b)`, one row per pair of linked recipes, the smaller id first, both foreign keys `ON DELETE CASCADE`, index on `recipe_b`: UX plan U9), version 7 `usage_history` (`users.last_seen_at` and its index, `usage_days`, `app_state`: plan O, see [deployment.md](deployment.md)) and version 8 `dialogues` (below: backlog IMP-022); each has a down script. Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch. After it come the duplicate numbering and `normalize_saved_units()`, which rewrites the units saved before normalization ("G", "litres", "cl" → g, l, ml with the quantity converted…) one ingredient at a time, skips what `units::renormalized` finds unsafe (an unstable spelling, a quantity that does not fit), logs a failed row and goes on, and does nothing once every unit is normalized; its own failure never stops the startup. Just before the dispatcher starts, `PgDialogueStorage::start` deletes the dialogue states that are not resumed; its failure is only logged.
 
 ### Constraints
 - **Data Types**: Appropriate PostgreSQL types for performance
@@ -240,6 +244,23 @@ CREATE INDEX chat_messages_chat_kind_idx ON chat_messages (chat_id, kind);
 ```
 `record_chat_message` (upsert), `forget_chat_message`, `take_chat_messages` (delete and return,
 with whether the message is under 48 hours old, the limit for Telegram deletions).
+
+### Dialogues Table (migration 8)
+```sql
+-- Each chat's running action (review, edit, rename), so a deploy or a restart does not lose it
+CREATE TABLE dialogues (
+    chat_id BIGINT PRIMARY KEY,
+    state JSON NOT NULL,             -- RecipeDialogueState; json, not jsonb: keeps \u0000
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+```
+`dialogue_storage::PgDialogueStorage` implements teloxide's `Storage`: an upsert per state
+change, a delete when the action ends (also when there is none). A state unchanged for 48 hours
+is not read; a state that no longer reads is deleted. `start` (at startup) deletes the states
+unchanged for 48 hours, or all of them when the `app_state` row `dialogues_alive` (noted by
+`mark_alive` every minute and at shutdown) is missing or over 10 minutes old; the schema check
+includes the table's columns.
+Timings in `ji_db_duration_seconds{operation="dialogue_get|dialogue_update|dialogue_remove|dialogue_purge"}`.
 
 ### Migrations Table
 ```sql

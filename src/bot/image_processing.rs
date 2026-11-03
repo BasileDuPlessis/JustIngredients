@@ -266,6 +266,12 @@ pub async fn download_and_process_image(
             }
         };
 
+    // The photo and the list stay while the ingredients are reviewed, then go with the review's
+    // messages, also when a command ends the review (a cancel keeps the list as its notice).
+    // Recorded first: if the review cannot be kept, the next action still removes them.
+    crate::bot::cleanup::track(chat_id, photo_message_id).await;
+    crate::bot::cleanup::track(chat_id, sent_message.id).await;
+
     // Update dialogue state to review ingredients with caption-derived recipe name
     dialogue
         .update(RecipeDialogueState::ReviewIngredients {
@@ -277,11 +283,6 @@ pub async fn download_and_process_image(
             recipe_name_from_caption,
         })
         .await?;
-
-    // The photo and the list stay while the ingredients are reviewed, then go with the review's
-    // messages, also when a command ends the review (a cancel keeps the list as its notice)
-    crate::bot::cleanup::track(chat_id, photo_message_id).await;
-    crate::bot::cleanup::track(chat_id, sent_message.id).await;
 
     debug!(user_id = %chat_id, "Ingredients review interface sent successfully");
     Ok(extracted_text)

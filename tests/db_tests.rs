@@ -662,12 +662,18 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
 
     // Check that migrations table was created and version is updated
     let version = migrations::get_current_version(pool).await?;
-    assert_eq!(version, 7);
+    assert_eq!(version, 8);
 
     // Verify that tables were created
     validate_database_schema(pool).await?;
 
     // Roll back with the down scripts, one version at a time, then all tables
+    migrations::rollback_to_version(pool, 7).await?;
+    assert_eq!(migrations::get_current_version(pool).await?, 7);
+    assert!(
+        validate_database_schema(pool).await.is_err(),
+        "dialogues is required"
+    );
     migrations::rollback_to_version(pool, 6).await?;
     assert_eq!(migrations::get_current_version(pool).await?, 6);
     assert!(
@@ -1633,5 +1639,194 @@ async fn visits_and_daily_usage_are_recorded(pool: PgPool) -> Result<()> {
         (later.active_users, later.new_users, later.users),
         (0, 0, 2)
     );
+    Ok(())
+}
+
+/// A running action is kept in `dialogues` (backlog IMP-022): written by one storage, it is read
+/// by the next one, as after a deploy or a restart.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_dialogue_storage_survives_a_restart(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_dialogue_storage_survives_a_restart_impl(&pool).await
+}
+
+async fn test_dialogue_storage_survives_a_restart_impl(pool: &PgPool) -> Result<()> {
+    use anyhow::Context;
+    use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
+    use just_ingredients::dialogue_storage::PgDialogueStorage;
+    use teloxide::types::ChatId;
+
+    let review = RecipeDialogueState::ReviewIngredients {
+        recipe_name: "Tarte".to_string(),
+        ingredients: vec![just_ingredients::MeasurementMatch {
+            quantity: "1 1/2".to_string(),
+            measurement: Some("cup".to_string()),
+            ingredient_name: "farine « T55 »".to_string(),
+            line_number: 0,
+            start_pos: 0,
+            end_pos: 16,
+            requires_quantity_confirmation: true,
+            section: Some("Pour la pâte".to_string()),
+        }],
+        language_code: Some("fr".to_string()),
+        message_id: Some(42),
+        extracted_text: "1 1/2 cup farine « T55 »\n".to_string(),
+        recipe_name_from_caption: Some("Tarte".to_string()),
+    };
+
+    let dialogue = RecipeDialogue::new(PgDialogueStorage::new(pool.clone()), ChatId(42));
+    assert!(dialogue.get().await?.is_none());
+    dialogue.update(review.clone()).await?;
+
+    let after_restart = RecipeDialogue::new(PgDialogueStorage::new(pool.clone()), ChatId(42));
+    let read = after_restart
+        .get()
+        .await?
+        .context("the review survives a restart")?;
+    assert_eq!(serde_json::to_value(&read)?, serde_json::to_value(&review)?);
+
+    // Each chat has its own state
+    let other_chat = RecipeDialogue::new(PgDialogueStorage::new(pool.clone()), ChatId(7));
+    assert!(other_chat.get().await?.is_none());
+
+    // A new state replaces the previous one; ending the action removes it, and ending it again
+    // is not an error
+    after_restart
+        .update(RecipeDialogueState::RenamingRecipe {
+            recipe_id: 3,
+            current_name: "Tarte".to_string(),
+            language_code: None,
+        })
+        .await?;
+    assert!(matches!(
+        dialogue.get().await?,
+        Some(RecipeDialogueState::RenamingRecipe { recipe_id: 3, .. })
+    ));
+    dialogue.exit().await?;
+    assert!(dialogue.get().await?.is_none());
+    dialogue.exit().await?;
+
+    Ok(())
+}
+
+/// At startup, after a deploy (this version ran a moment ago): a state left for over 48 hours is
+/// gone, the others are resumed; a state that no longer reads, written by another version, is
+/// dropped; a state keeps a `\u0000` read from a photo.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_dialogue_storage_expiry(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_dialogue_storage_expiry_impl(&pool).await
+}
+
+async fn test_dialogue_storage_expiry_impl(pool: &PgPool) -> Result<()> {
+    use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
+    use just_ingredients::dialogue_storage::PgDialogueStorage;
+    use teloxide::types::ChatId;
+
+    let storage = PgDialogueStorage::new(pool.clone());
+    storage.mark_alive().await?;
+    let renaming = || RecipeDialogueState::RenamingRecipe {
+        recipe_id: 1,
+        current_name: "Tarte".to_string(),
+        language_code: Some("fr".to_string()),
+    };
+    let old = RecipeDialogue::new(storage.clone(), ChatId(1));
+    let fresh = RecipeDialogue::new(storage.clone(), ChatId(2));
+    old.update(renaming()).await?;
+    fresh.update(renaming()).await?;
+    sqlx::query("UPDATE dialogues SET updated_at = now() - interval '49 hours' WHERE chat_id = 1")
+        .execute(pool)
+        .await?;
+
+    assert!(old.get().await?.is_none(), "over 48 hours");
+    assert!(fresh.get().await?.is_some());
+    assert_eq!(storage.start().await?, 1, "the expired state goes");
+    assert_eq!(storage.start().await?, 0);
+    assert!(fresh.get().await?.is_some(), "resumed after a deploy");
+
+    sqlx::query(
+        r#"INSERT INTO dialogues (chat_id, state) VALUES (3, '{"RemovedState": {"x": 1}}')"#,
+    )
+    .execute(pool)
+    .await?;
+    let unreadable = RecipeDialogue::new(storage.clone(), ChatId(3));
+    assert!(unreadable.get().await?.is_none());
+    let left: i64 = sqlx::query_scalar("SELECT count(*) FROM dialogues WHERE chat_id = 3")
+        .fetch_one(pool)
+        .await?;
+    assert_eq!(left, 0, "the unreadable state is deleted");
+
+    // `jsonb` would refuse it
+    let with_nul = RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
+        ingredients: Vec::new(),
+        language_code: None,
+        extracted_text: "200 g\u{0} farine".to_string(),
+        recipe_name_from_caption: None,
+        message_id: None,
+    };
+    let review = RecipeDialogue::new(storage.clone(), ChatId(4));
+    review.update(with_nul).await?;
+    assert!(matches!(
+        review.get().await?,
+        Some(RecipeDialogueState::WaitingForRecipeNameAfterConfirm { extracted_text, .. })
+            if extracted_text == "200 g\u{0} farine"
+    ));
+
+    Ok(())
+}
+
+/// The states are not resumed after a gap: an older version keeping them in memory may have run
+/// meanwhile (an automatic rollback), and the user may have started over. The first start of the
+/// version that keeps them drops whatever is there.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_dialogue_storage_not_resumed_after_a_gap(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    test_dialogue_storage_not_resumed_after_a_gap_impl(&pool).await
+}
+
+async fn test_dialogue_storage_not_resumed_after_a_gap_impl(pool: &PgPool) -> Result<()> {
+    use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
+    use just_ingredients::dialogue_storage::PgDialogueStorage;
+    use teloxide::types::ChatId;
+
+    let storage = PgDialogueStorage::new(pool.clone());
+    let renaming = || RecipeDialogueState::RenamingRecipe {
+        recipe_id: 1,
+        current_name: "Tarte".to_string(),
+        language_code: None,
+    };
+    // Never noted: the first start
+    RecipeDialogue::new(storage.clone(), ChatId(1))
+        .update(renaming())
+        .await?;
+    assert_eq!(storage.start().await?, 1);
+
+    // Noted 11 minutes ago, then a start
+    RecipeDialogue::new(storage.clone(), ChatId(1))
+        .update(renaming())
+        .await?;
+    RecipeDialogue::new(storage.clone(), ChatId(2))
+        .update(renaming())
+        .await?;
+    sqlx::query(
+        "UPDATE app_state SET updated_at = now() - interval '11 minutes' WHERE key = 'dialogues_alive'",
+    )
+    .execute(pool)
+    .await?;
+    assert_eq!(storage.start().await?, 2);
+    assert!(RecipeDialogue::new(storage.clone(), ChatId(2))
+        .get()
+        .await?
+        .is_none());
+
+    // The start noted it: a restart right after resumes
+    RecipeDialogue::new(storage.clone(), ChatId(2))
+        .update(renaming())
+        .await?;
+    assert_eq!(storage.start().await?, 0);
+
     Ok(())
 }

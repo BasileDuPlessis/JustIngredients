@@ -595,7 +595,17 @@ they can be pulled into 1-hour micro-tasks without another review.
   test or counter showing each `.ftl` resource is parsed once per process.
 
 ### IMP-022: Dialogue state is in memory only; lost on every deploy
-- [ ] Done
+- [x] Done (2026-11-03): `dialogue_storage::PgDialogueStorage`, teloxide's `Storage` on a
+  `dialogues` table (migration 8, `json` state, `updated_at`). A state unchanged for 48 hours is
+  ignored and purged at startup; one that no longer reads is dropped; none is resumed after a
+  gap over 10 minutes (an older version may have run). Review (one reviewer): a rollback to an
+  in-memory version then a new deploy revived old states (the gap check); a failed end after a
+  save let the next answer save again (`end_after_write`, right after the write); a button left
+  spinning on a database error; review messages not recorded if the state write failed; `jsonb`
+  refused `\u0000`; columns not checked; recipe names in two logs. All fixed. DB tests: a state
+  written by one storage is read by the next (a restart), expiry, a gap, an unreadable state,
+  `\u0000`, migration 8 and its rollback. To check on staging: a review started before a
+  redeploy saves after it.
 - Status: Partly done (2026-10-28, short term): after a restart, review and edit buttons say they are no longer active instead of doing nothing. Left: dialogues are still lost on every deploy (persistent storage).
 - Priority: P2. Effort: M. Area: Dialogue.
 - Location: `src/main.rs:258` (`InMemStorage`), `src/dialogue.rs:85`.

@@ -22,8 +22,22 @@ are in English or French, following the Telegram app language.
   `private-chat-only` (other text and service messages get nothing, so a group where the bot sees
   every message is not flooded), and a button pressed in a group answers it as a toast. So the
   chat id is always the user id.
-- Dialogue state: `InMemStorage<RecipeDialogueState>` keyed by chat id. It is lost on every
-  restart or deploy.
+- Dialogue state: `RecipeDialogueState` keyed by chat id, kept in Postgres (`dialogues`,
+  migration 8, `dialogue_storage::PgDialogueStorage`), so a review, an edit or a rename running
+  during a deploy or a restart goes on after it.
+  - Resumed only when this version ran a moment ago: it notes it every minute and when it stops
+    (`app_state` key `dialogues_alive`). A start more than 10 minutes after that note (an older
+    version keeping states in memory ran in between, e.g. after an automatic rollback, or the bot
+    was down) drops every state.
+  - A state unchanged for 48 hours is ignored and purged at startup (Telegram no longer lets the
+    bot delete the action's messages). A state that no longer reads (its shape changed in a
+    release) is dropped, with a warning that never quotes it; `RecipeDialogueState` documents the
+    rule for changing it.
+  - A database error reading the state fails the update (a button is still answered; logged and
+    counted), rather than acting as if no action were running.
+  - An action that wrote its result (recipe saved, renamed, edited) ends right after the write,
+    before anything is sent (`dialogue::end_after_write`, tried twice): a state left behind would
+    write it again at the next answer.
 - Duplicate deliveries of a message are dropped by `deduplication` (key: chat id + message id,
   5 minutes, 10,000 entries). Callback queries are not deduplicated.
 - Telegram client timeout 30 s. A heartbeat (`getMe` every minute) feeds the health checks.
@@ -322,8 +336,8 @@ without deleting (Telegram refuses them). A database error only leaves the messa
 `callback_handler_with_cache` first runs the handler of the current state, then the prefix
 handlers below, which work in any state. The query is always answered, also when a handler
 failed (the error is logged). A review or edit button pressed while no review or edit is running
-(`is_stale_button`: the bot restarted since, dialogues being in memory, or a newer action replaced
-it), or on a message older than the running review or edit (message ids grow within a chat, so
+(`is_stale_button`: a newer action replaced it, it was left over 48 hours, or its state no longer
+reads after a release), or on a message older than the running review or edit (message ids grow within a chat, so
 the list of a previous photo cannot save or edit the current one), answers `button-expired`,
 loses its keyboard and is not passed to the state handler.
 

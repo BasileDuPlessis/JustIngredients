@@ -6,7 +6,6 @@
 #[test]
 fn test_dialogue_flow_integrity_with_multi_line_ingredients() {
     use just_ingredients::dialogue::RecipeDialogueState;
-    use teloxide::dispatching::dialogue::InMemStorage;
 
     // Test that dialogue states can handle multi-line ingredients without breaking flow
     let ingredients = vec![
@@ -48,7 +47,7 @@ fn test_dialogue_flow_integrity_with_multi_line_ingredients() {
         ingredients: state_ingredients,
         extracted_text,
         ..
-    } = review_state
+    } = &review_state
     {
         assert_eq!(recipe_name, "Oatmeal Cookies");
         assert_eq!(state_ingredients.len(), 2);
@@ -65,12 +64,13 @@ fn test_dialogue_flow_integrity_with_multi_line_ingredients() {
         panic!("Expected ReviewIngredients state");
     }
 
-    // Test dialogue storage can handle the state
-    let _storage = InMemStorage::<RecipeDialogueState>::new();
-
-    // This tests that the dialogue system can handle multi-line ingredients
-    // without any serialization or state management issues
-    // The storage is created successfully if we reach this point
+    // The dialogue storage keeps states as JSON (`dialogue_storage`): the state reads back whole
+    let json = serde_json::to_string(&review_state).expect("the state serializes");
+    let read: RecipeDialogueState = serde_json::from_str(&json).expect("the state reads back");
+    assert_eq!(
+        serde_json::to_value(&read).expect("the read state serializes"),
+        serde_json::to_value(&review_state).expect("the state serializes")
+    );
 
     println!("✅ Dialogue flow integrity with multi-line ingredients test passed");
 }

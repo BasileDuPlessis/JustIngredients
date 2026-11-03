@@ -53,9 +53,18 @@ pub async fn callback_handler_with_cache(
             q.from.language_code.as_deref(),
         );
 
-        // Check dialogue state
-        let dialogue_state = dialogue.get().await?;
-        debug!(user_id = %q.from.id, dialogue_state = ?dialogue_state, "Retrieved dialogue state");
+        // The running action; without it (database error) the button is answered, nothing acts,
+        // and the handling counts as failed
+        let dialogue_state = match dialogue.get().await {
+            Ok(state) => state,
+            Err(error) => {
+                if let Err(answer_error) = bot.answer_callback_query(q.id.clone()).await {
+                    debug!(error = %answer_error, "Could not answer the callback query");
+                }
+                crate::observability::error("handler", "callback");
+                return Err(error.into());
+            }
+        };
 
         let data = q.data.as_deref().unwrap_or("");
         let pressed = q.message.as_ref().map(|message| message.id().0);
@@ -219,8 +228,8 @@ pub async fn callback_handler_with_cache(
         .await;
 
         // Always answer, even when a handler failed (otherwise the button keeps spinning). A review
-        // or edit button with no dialogue left (bot restarted, or a newer action) did nothing: say so
-        // and remove the inactive keyboard.
+        // or edit button with no dialogue left (a newer action, over 48 hours, or a state an older
+        // version wrote) did nothing: say so and remove the inactive keyboard.
         let mut answer = bot.answer_callback_query(q.id.clone());
         if stale {
             answer = answer.text(t_lang(
@@ -229,7 +238,7 @@ pub async fn callback_handler_with_cache(
                 q.from.language_code.as_deref(),
             ));
             if let Some(message) = &q.message {
-                // With no action running (e.g. after a restart) this message may be the bottom
+                // With no action running (e.g. an expired one) this message may be the bottom
                 // one: it keeps a way out, "📚 Liste des recettes". During an action it is an
                 // older list in the history: it just loses its buttons.
                 let request = bot.edit_message_reply_markup(message.chat().id, message.id());
@@ -288,9 +297,10 @@ const RETIRED_PREFIXES: [&str; 3] = [
     "recipe_action:statistics:",
 ];
 
-/// A review or edit button that cannot act: no review or edit is running (the bot restarted
-/// since, dialogues being kept in memory, or a newer action replaced it), or it is on an older
-/// list than the running one. Retired buttons are always stale.
+/// A review or edit button that cannot act: no review or edit is running (a newer action
+/// replaced it, it was left over 48 hours, or its state no longer reads after a release: see
+/// `dialogue_storage`), or it is on an older list than the running one. Retired buttons are
+/// always stale.
 fn is_stale_button(data: &str, state: Option<&RecipeDialogueState>, pressed: Option<i32>) -> bool {
     if RETIRED_BUTTONS.contains(&data)
         || RETIRED_PREFIXES
@@ -591,7 +601,10 @@ mod tests {
             "cancel_review",
             "add_more",
         ] {
-            assert!(is_stale_button(data, None, None), "{data} after a restart");
+            assert!(
+                is_stale_button(data, None, None),
+                "{data} with no action running"
+            );
             assert!(
                 is_stale_button(data, Some(&RecipeDialogueState::Start), None),
                 "{data} with no action"

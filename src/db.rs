@@ -1564,6 +1564,7 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
         "recipe_links",
         "usage_days",
         "app_state",
+        "dialogues",
     ];
     for table_name in required_tables {
         let exists: bool = sqlx::query_scalar(
@@ -1582,6 +1583,18 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
         }
         debug!("✓ Table '{}' exists", table_name);
     }
+
+    // The running actions (migration 8): `json` keeps a state as written, `\u0000` included
+    validate_table_columns(
+        pool,
+        "dialogues",
+        &[
+            ("chat_id", "bigint"),
+            ("state", "json"),
+            ("updated_at", "timestamp with time zone"),
+        ],
+    )
+    .await?;
 
     // Validate users table schema
     validate_table_columns(
@@ -2081,6 +2094,24 @@ pub mod migrations {
                     DROP TABLE IF EXISTS usage_days;
                     DROP INDEX IF EXISTS users_last_seen_at_idx;
                     ALTER TABLE users DROP COLUMN IF EXISTS last_seen_at;
+                "#,
+                ),
+            },
+            Migration {
+                version: 8,
+                name: "dialogues",
+                // Backlog IMP-022: each chat's running action (review, edit, rename) as JSON, so
+                // a deploy or a restart does not lose it (`dialogue_storage`)
+                up: r#"
+                    CREATE TABLE IF NOT EXISTS dialogues (
+                        chat_id BIGINT PRIMARY KEY,
+                        state JSON NOT NULL,
+                        updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                    );
+                "#,
+                down: Some(
+                    r#"
+                    DROP TABLE IF EXISTS dialogues;
                 "#,
                 ),
             },
