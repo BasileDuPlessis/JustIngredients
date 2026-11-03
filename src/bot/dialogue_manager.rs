@@ -386,35 +386,34 @@ pub async fn handle_ingredient_edit_input(
     // Parse and validate the user input
     let parse_result =
         crate::ingredient_editing::apply_edit(field, ingredients.get(editing_index), edit_input);
-    let result = if let Ok(new_ingredient) = parse_result {
-        handle_edit_success(EditSuccessParams {
-            ctx: handler_ctx,
-            msg,
-            dialogue,
-            ingredients,
-            editing_index,
-            new_ingredient,
-            recipe_name,
-            message_id,
-            extracted_text,
-            user_input_message_id,
-            recipe_name_from_caption: recipe_name_from_caption.clone(),
-        })
-        .await
-    } else if let Err(error) = parse_result {
-        handle_edit_error(
-            bot,
-            msg,
-            handler_ctx.localization,
-            error,
-            handler_ctx.language_code,
-        )
-        .await
-    } else {
-        unreachable!()
-    };
-    result?;
-    Ok(())
+    match parse_result {
+        Ok(new_ingredient) => {
+            handle_edit_success(EditSuccessParams {
+                ctx: handler_ctx,
+                msg,
+                dialogue,
+                ingredients,
+                editing_index,
+                new_ingredient,
+                recipe_name,
+                message_id,
+                extracted_text,
+                user_input_message_id,
+                recipe_name_from_caption: recipe_name_from_caption.clone(),
+            })
+            .await
+        }
+        Err(error) => {
+            handle_edit_error(
+                bot,
+                msg,
+                handler_ctx.localization,
+                error,
+                handler_ctx.language_code,
+            )
+            .await
+        }
+    }
 }
 
 /// Handle recipe rename input during dialogue

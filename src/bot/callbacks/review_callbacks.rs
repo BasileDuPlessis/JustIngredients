@@ -5,7 +5,7 @@
 //! and canceling ingredient reviews.
 
 use crate::bot::html::edit_html;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
@@ -173,7 +173,7 @@ pub async fn handle_review_ingredients_callbacks(
 async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
     let ingredients = params
         .ingredients_slice
-        .expect("Ingredients slice should be provided for edit callback");
+        .context("Ingredients slice should be provided for edit callback")?;
     let Some(IngredientAction::Edit(field, index)) = params.data.and_then(parse_ingredient_action)
     else {
         return Ok(());
@@ -200,7 +200,7 @@ async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
 async fn handle_add_button(params: ReviewIngredientsParams<'_>) -> Result<()> {
     let ingredients = params
         .ingredients_slice
-        .expect("Ingredients slice should be provided for add callback");
+        .context("Ingredients slice should be provided for add callback")?;
     let lang = params.dialogue_lang_code.as_deref();
     let prompt = format!(
         "➕ {}\n\n{}",
@@ -233,7 +233,7 @@ async fn open_line_prompt(
         ..
     } = params;
     let ingredients =
-        ingredients_slice.expect("Ingredients slice should be provided for edit callback");
+        ingredients_slice.context("Ingredients slice should be provided for edit callback")?;
     let Some(chat_id) = q.message.as_ref().map(|message| message.chat().id) else {
         return Ok(());
     };
@@ -304,10 +304,10 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
     } = params;
 
     let data = data.unwrap_or("");
-    let ingredients = ingredients.expect("Ingredients should be provided for delete callback");
+    let ingredients = ingredients.context("Ingredients should be provided for delete callback")?;
     let index: usize = data
         .strip_prefix("delete_")
-        .expect("Delete callback data should start with 'delete_'")
+        .context("Delete callback data should start with 'delete_'")?
         .parse()
         .unwrap_or(0);
 
@@ -363,12 +363,12 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
                 .edit_message_text(
                     q.message
                         .as_ref()
-                        .expect("Callback query should have a message")
+                        .context("Callback query should have a message")?
                         .chat()
                         .id,
                     q.message
                         .as_ref()
-                        .expect("Callback query should have a message")
+                        .context("Callback query should have a message")?
                         .id(),
                     empty_message,
                 )
@@ -401,12 +401,12 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
                 ctx.bot,
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message")
+                    .context("Callback query should have a message")?
                     .chat()
                     .id,
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message")
+                    .context("Callback query should have a message")?
                     .id(),
                 review_message,
             )

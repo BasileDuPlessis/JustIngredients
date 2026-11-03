@@ -3,6 +3,18 @@
 //! A Telegram bot that reads the ingredient list of a recipe photo (Gemini vision API), lets the
 //! user check it, and stores the recipe and its ingredients in Postgres.
 
+// No panic outside tests (IMP-018): a panic stops the handling of an update without a reply.
+// Errors go up with `?`; the few constant patterns that cannot fail say so with an `allow`.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 pub mod bot;
 pub mod config;
 pub mod conversion;

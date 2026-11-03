@@ -48,7 +48,8 @@ cargo clippy --all-targets --all-features -- -D warnings
 cargo test
 ```
 
-- `.unwrap()` is not allowed outside tests (`scripts/check-unwraps.sh`).
+- No `unwrap`, `expect`, `panic!` or `unreachable!` outside tests: `lib.rs` and `main.rs` deny
+  them, so clippy fails (`scripts/check-unwraps.sh` also checks `.unwrap()`).
 - Database tests are ignored by default; run them against a throwaway database:
   `DATABASE_URL=postgres://.../ji_test cargo test --test db_tests -- --include-ignored`.
 - Benchmarks (`tests/performance_tests.rs`) are ignored by default: `-- --ignored`.

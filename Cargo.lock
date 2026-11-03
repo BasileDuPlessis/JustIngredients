@@ -1652,7 +1652,6 @@ dependencies = [
  "hyper",
  "hyper-util",
  "image",
- "lazy_static",
  "metrics",
  "metrics-exporter-prometheus",
  "metrics-util",

@@ -11,22 +11,26 @@
 
 use crate::errors::AppError;
 use crate::text_processing::MeasurementMatch;
-use lazy_static::lazy_static;
 use regex::Regex;
+use std::sync::LazyLock;
 
 /// A quantity: "1 1/2", "1/2", "2,5", "250". ASCII digits only: "２" is no quantity.
 const QUANTITY: &str = r"[0-9]+ [0-9]+/[0-9]+|[0-9]+/[0-9]+|[0-9]+(?:[.,][0-9]+)?";
 
-lazy_static! {
-    /// A quantity starting a typed line, also before a unit without a space ("250g").
-    static ref LEADING_QUANTITY: Regex =
-        Regex::new(&format!("^(?:{QUANTITY})")).expect("Invalid quantity regex pattern");
-    /// A range starting a typed line: "2-3", "100 – 150", "2 à 3", "2 ou 3", "2 to 3".
-    static ref LEADING_RANGE: Regex = Regex::new(&format!(
+// The patterns are constants, compiled by the tests of this module: they cannot fail at run time.
+/// A quantity starting a typed line, also before a unit without a space ("250g").
+#[allow(clippy::expect_used)]
+static LEADING_QUANTITY: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!("^(?:{QUANTITY})")).expect("Invalid quantity regex pattern")
+});
+/// A range starting a typed line: "2-3", "100 – 150", "2 à 3", "2 ou 3", "2 to 3".
+#[allow(clippy::expect_used)]
+static LEADING_RANGE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(&format!(
         "^({QUANTITY})(?: ?[-–—] ?| (?:à|ou|to|or) )({QUANTITY})"
     ))
-    .expect("Invalid range regex pattern");
-}
+    .expect("Invalid range regex pattern")
+});
 
 /// Longest ingredient name accepted, in characters: typed lines and name edits.
 pub const MAX_INGREDIENT_NAME_CHARS: usize = 100;

@@ -3,7 +3,7 @@
 //! This module contains all callback handlers related to UI workflow and navigation,
 //! including recipe listing, pagination, and post-confirmation actions.
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
@@ -174,7 +174,7 @@ pub async fn handle_workflow_button(
             bot.send_message(
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message")
+                    .context("Callback query should have a message")?
                     .chat()
                     .id,
                 t_lang(
@@ -195,7 +195,7 @@ pub async fn handle_workflow_button(
                 bot,
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message"),
+                    .context("Callback query should have a message")?,
                 pool.clone(),
                 dialogue,
                 &q.from.language_code,

@@ -1,3 +1,15 @@
+// No panic outside tests (IMP-018): a panic stops the handling of an update without a reply.
+// Errors go up with `?`; the few constant patterns that cannot fail say so with an `allow`.
+#![cfg_attr(
+    not(test),
+    deny(
+        clippy::unwrap_used,
+        clippy::expect_used,
+        clippy::panic,
+        clippy::unreachable
+    )
+)]
+
 use anyhow::Result;
 use just_ingredients::bot;
 use just_ingredients::config::AppConfig;

@@ -22,7 +22,6 @@ rand = "0.9.2" # For random jitter in retry delays
 fluent-bundle = "0.16" # Fluent bundle for message management
 unic-langid = "0.9" # Language identifier support
 regex = "1.12" # Regular expressions for text processing
-lazy_static = "1.5.0" # Lazy static initialization
 chrono = { version = "0.4.42", features = ["serde"] } # DateTime handling
 tracing = "0.1" # Structured logging
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] } # Tracing subscriber with filtering

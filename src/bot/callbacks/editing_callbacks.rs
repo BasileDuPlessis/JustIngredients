@@ -1,7 +1,7 @@
 //! Editing Callbacks module for handling EditingSavedIngredients dialogue state
 
 use crate::bot::html::edit_html;
-use anyhow::Result;
+use anyhow::{Context, Result};
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
@@ -157,8 +157,8 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
         ..
     } = params;
 
-    let current_matches =
-        current_matches_slice.expect("Current matches slice should be provided for edit callback");
+    let current_matches = current_matches_slice
+        .context("Current matches slice should be provided for edit callback")?;
     let Some(IngredientAction::Edit(field, index)) = data.and_then(parse_ingredient_action) else {
         return Ok(());
     };
@@ -198,12 +198,12 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
             .edit_message_text(
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message")
+                    .context("Callback query should have a message")?
                     .chat()
                     .id,
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message")
+                    .context("Callback query should have a message")?
                     .id(),
                 edit_prompt.clone(),
             )
@@ -223,7 +223,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
                     .send_message(
                         q.message
                             .as_ref()
-                            .expect("Callback query should have a message")
+                            .context("Callback query should have a message")?
                             .chat()
                             .id,
                         edit_prompt,
@@ -246,7 +246,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
                 original_message_id: Some(
                     q.message
                         .as_ref()
-                        .expect("Callback query should have a message")
+                        .context("Callback query should have a message")?
                         .id()
                         .0,
                 ),
@@ -273,11 +273,11 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
 
     let data = data.unwrap_or("");
     let current_matches =
-        current_matches.expect("Current matches should be provided for delete callback");
+        current_matches.context("Current matches should be provided for delete callback")?;
 
     let index: usize = data
         .strip_prefix("delete_")
-        .expect("Delete callback data should start with 'delete_'")
+        .context("Delete callback data should start with 'delete_'")?
         .parse()
         .unwrap_or(0);
 
@@ -329,12 +329,12 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
                 .edit_message_text(
                     q.message
                         .as_ref()
-                        .expect("Callback query should have a message")
+                        .context("Callback query should have a message")?
                         .chat()
                         .id,
                     q.message
                         .as_ref()
-                        .expect("Callback query should have a message")
+                        .context("Callback query should have a message")?
                         .id(),
                     empty_message,
                 )
@@ -371,12 +371,12 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
                 ctx.bot,
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message")
+                    .context("Callback query should have a message")?
                     .chat()
                     .id,
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message")
+                    .context("Callback query should have a message")?
                     .id(),
                 review_message,
             )
@@ -435,8 +435,8 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
     } = params;
 
     let current_matches = current_matches_slice
-        .expect("Current matches slice should be provided for confirm callback");
-    let pool = pool.expect("Database pool should be provided for confirm callback");
+        .context("Current matches slice should be provided for confirm callback")?;
+    let pool = pool.context("Database pool should be provided for confirm callback")?;
 
     // Saving an empty list would delete every ingredient, and the recipe could not be edited
     // again: refuse it, the editing stays open
@@ -561,7 +561,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                     .send_message(
                         q.message
                             .as_ref()
-                            .expect("Callback query should have a message")
+                            .context("Callback query should have a message")?
                             .chat()
                             .id,
                         t_lang(
@@ -584,7 +584,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                     .send_message(
                         q.message
                             .as_ref()
-                            .expect("Callback query should have a message")
+                            .context("Callback query should have a message")?
                             .chat()
                             .id,
                         t_lang(
@@ -652,12 +652,12 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 ctx.bot,
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message")
+                    .context("Callback query should have a message")?
                     .chat()
                     .id,
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message")
+                    .context("Callback query should have a message")?
                     .id(),
                 recipe_message,
             )
@@ -694,7 +694,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                     .send_message(
                         q.message
                             .as_ref()
-                            .expect("Callback query should have a message")
+                            .context("Callback query should have a message")?
                             .chat()
                             .id,
                         t_lang(
@@ -717,7 +717,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                     .send_message(
                         q.message
                             .as_ref()
-                            .expect("Callback query should have a message")
+                            .context("Callback query should have a message")?
                             .chat()
                             .id,
                         t_lang(
@@ -766,12 +766,12 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 ctx.bot,
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message")
+                    .context("Callback query should have a message")?
                     .chat()
                     .id,
                 q.message
                     .as_ref()
-                    .expect("Callback query should have a message")
+                    .context("Callback query should have a message")?
                     .id(),
                 recipe_message,
             )
@@ -956,7 +956,7 @@ async fn handle_add_ingredient_button(
             bot,
             q.message
                 .as_ref()
-                .expect("Callback query should have a message")
+                .context("Callback query should have a message")?
                 .chat()
                 .id,
             t_lang(

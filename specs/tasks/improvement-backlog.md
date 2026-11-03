@@ -517,7 +517,13 @@ they can be pulled into 1-hour micro-tasks without another review.
   `ValidationError` maps to an existing `.ftl` key in both languages.
 
 ### IMP-018: No-panic policy not enforced (~70 `expect`/`unreachable!` in scope)
-- [ ] Done
+- [x] Done (2026-11-03): the 33 `expect`s of the button handlers (optional parameters and
+  `q.message`) are `.context(…)?`: the button is answered, the error logged and counted. The
+  `unreachable!` of the typed edit is a `match`. The two constant regexes of `validation.rs`
+  are `LazyLock`s with an explicit `allow` (the `lazy_static` dependency is gone, IMP-034).
+  `lib.rs` and `main.rs` deny `unwrap_used`, `expect_used`, `panic` and `unreachable` outside
+  tests, and CI no longer passes `--allow clippy::expect_used`. Not done: per-handler parameter
+  structs without `Option` fields (a refactor, IMP-036).
 - Priority: P2. Effort: M. Area: Error handling.
 - Location: `src/bot/callbacks/editing_callbacks.rs` (29 sites), `src/bot/callbacks/review_callbacks.rs`
   (22), `src/db.rs:335`, `src/db.rs:354`, `src/db.rs:366`, `src/db.rs:385`, `src/db.rs:397`,
@@ -799,6 +805,8 @@ they can be pulled into 1-hour micro-tasks without another review.
 
 ### IMP-034: Dependency hygiene: unused crates, duplicates, two TLS stacks, no MSRV
 - [ ] Done
+- Status: Partly done (2026-11-03): `lazy_static` removed (IMP-018). Left: see the triage of
+  2026-11-02 (`native-tls`, `rust-version`, duplicated crates).
 - Priority: P3. Effort: M. Area: Dependencies.
 - Related: LLM migration (Task 5.1 removes `leptess`, `image` and `rand`, and Task 5.3 pins the Docker
   images).

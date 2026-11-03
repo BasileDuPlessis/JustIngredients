@@ -70,7 +70,7 @@ jobs:
       uses: Swatinem/rust-cache@v2
 
     - name: Run clippy
-      run: cargo clippy --all-targets --all-features -- -D warnings --allow clippy::expect_used
+      run: cargo clippy --all-targets --all-features -- -D warnings
 
     - name: Check for unwrap violations
       run: ./scripts/check-unwraps.sh
