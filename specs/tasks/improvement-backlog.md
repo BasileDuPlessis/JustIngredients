@@ -477,7 +477,13 @@ they can be pulled into 1-hour micro-tasks without another review.
 ## P2: Quality
 
 ### IMP-016: `AppConfig` is not the source of truth; many settings ignored
-- [ ] Done
+- [x] Done (2026-11-03): `main.rs` reads `AppConfig::from_env()` once and calls `validate()`,
+  which was never called (nor `ExtractionConfig::validate` at startup); its two copies of the
+  checks (`validate_environment_variables`, `validate_http_client_config`) are gone. The bot
+  token, the dedup TTL (`REQUEST_DEDUPLICATION_TTL_SECS`) and the Telegram client timeout
+  (`HTTP_CLIENT_TIMEOUT_SECS`) come from it; the unused `MAX_CONCURRENT_REQUESTS_PER_USER` went.
+  `AppConfig::from_lookup` lets tests check each variable without the process environment
+  (OpenTelemetry settings went with plan O; the pool already read its settings).
 - Priority: P2. Effort: M. Area: Config.
 - Related: LLM migration (Task 1.2 adds `GeminiConfig` to `AppConfig`, so do this first or together).
 - Location: `src/config.rs:329` (`OcrConfig::default()`), `src/config.rs:332`

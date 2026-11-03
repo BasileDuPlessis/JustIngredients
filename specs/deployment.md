@@ -94,9 +94,12 @@ service). Every other path answers 404.
 - Optional variables with defaults: `GEMINI_MODEL`, `GEMINI_TIMEOUT_SECS`, `GEMINI_THINKING_LEVEL`,
   `GEMINI_MAX_CONCURRENCY`, `EXTRACTION_DAILY_LIMIT_PER_USER`, `HEALTH_PORT`, `METRICS_PORT`,
   `METRICS_BIND_ALL_INTERFACES`, `DATABASE_MAX_CONNECTIONS`, `DATABASE_MIN_CONNECTIONS`,
-  `DATABASE_CONNECT_TIMEOUT_SECS`, `LOG_FORMAT`, `RUST_LOG`, `OWNER_CHAT_ID`; see `.env.example`.
-- Not applied although read: `HTTP_CLIENT_TIMEOUT_SECS` is fixed at 30 s in `main.rs`; `REQUEST_DEDUPLICATION_TTL_SECS` is
-  parsed but the deduplicator keeps 300 s and 10,000 entries.
+  `DATABASE_CONNECT_TIMEOUT_SECS`, `HTTP_CLIENT_TIMEOUT_SECS` (Telegram client, 30 s),
+  `REQUEST_DEDUPLICATION_TTL_SECS` (300 s; the deduplicator keeps 10,000 entries), `LOG_FORMAT`,
+  `RUST_LOG`, `OWNER_CHAT_ID`; see `.env.example`.
+- Read once at startup by `AppConfig::from_env` and checked by `AppConfig::validate` (token
+  format, database URL, ranges, ports, Gemini settings): an invalid value stops the startup with
+  its name. The startup log shows `AppConfig::summary()` (token and URL redacted).
 
 ## CI/CD (`.github/workflows/`)
 | Workflow | Trigger | What it does |

@@ -17,10 +17,8 @@ pub struct BotConfig {
     pub token: String,
     /// HTTP client timeout in seconds
     pub http_timeout_secs: u64,
-    /// Request deduplication TTL in seconds
+    /// How long a delivered message is remembered to drop a duplicate delivery, in seconds
     pub deduplication_ttl_secs: u64,
-    /// Maximum concurrent requests per user
-    pub max_concurrent_requests_per_user: usize,
 }
 
 impl Default for BotConfig {
@@ -29,7 +27,6 @@ impl Default for BotConfig {
             token: String::new(),
             http_timeout_secs: 30,
             deduplication_ttl_secs: 300, // 5 minutes
-            max_concurrent_requests_per_user: 3,
         }
     }
 }
@@ -82,12 +79,6 @@ impl BotConfig {
         if self.deduplication_ttl_secs == 0 {
             return Err(AppError::Config(
                 "Deduplication TTL cannot be 0".to_string(),
-            ));
-        }
-
-        if self.max_concurrent_requests_per_user == 0 {
-            return Err(AppError::Config(
-                "Max concurrent requests per user cannot be 0".to_string(),
             ));
         }
 
@@ -251,82 +242,66 @@ pub struct AppConfig {
 }
 
 impl AppConfig {
-    /// Load configuration from environment variables
+    /// Loads the configuration from environment variables (read once, in `main`).
     pub fn from_env() -> AppResult<Self> {
-        let mut config = Self::default();
+        Self::from_lookup(|name| env::var(name).ok())
+    }
 
-        // Load bot configuration
-        config.bot.token = env::var("TELEGRAM_BOT_TOKEN").map_err(|_| {
-            AppError::Config("TELEGRAM_BOT_TOKEN environment variable is required".to_string())
-        })?;
-        config.bot.http_timeout_secs = env::var("HTTP_CLIENT_TIMEOUT_SECS")
-            .unwrap_or_else(|_| "30".to_string())
-            .parse()
-            .map_err(|_| {
-                AppError::Config("HTTP_CLIENT_TIMEOUT_SECS must be a valid number".to_string())
-            })?;
-        config.bot.deduplication_ttl_secs = env::var("REQUEST_DEDUPLICATION_TTL_SECS")
-            .unwrap_or_else(|_| "300".to_string())
-            .parse()
-            .map_err(|_| {
-                AppError::Config(
-                    "REQUEST_DEDUPLICATION_TTL_SECS must be a valid number".to_string(),
-                )
-            })?;
-        config.bot.max_concurrent_requests_per_user = env::var("MAX_CONCURRENT_REQUESTS_PER_USER")
-            .unwrap_or_else(|_| "3".to_string())
-            .parse()
-            .map_err(|_| {
-                AppError::Config(
-                    "MAX_CONCURRENT_REQUESTS_PER_USER must be a valid number".to_string(),
-                )
-            })?;
+    /// Loads the configuration from `lookup`, which returns the value of a variable if set.
+    /// Tests pass a map instead of mutating the process environment.
+    pub fn from_lookup(lookup: impl Fn(&str) -> Option<String>) -> AppResult<Self> {
+        let defaults = Self::default();
+        let get = |name: &str| lookup(name).filter(|value| !value.trim().is_empty());
+        let required = |name: &str| {
+            get(name)
+                .ok_or_else(|| AppError::Config(format!("{name} environment variable is required")))
+        };
+        let flag =
+            |name: &str| get(name).is_some_and(|value| value.trim().eq_ignore_ascii_case("true"));
 
-        // Load database configuration
-        config.database.url = env::var("DATABASE_URL").map_err(|_| {
-            AppError::Config("DATABASE_URL environment variable is required".to_string())
-        })?;
-        config.database.max_connections = env::var("DATABASE_MAX_CONNECTIONS")
-            .unwrap_or_else(|_| "10".to_string())
-            .parse()
-            .map_err(|_| {
-                AppError::Config("DATABASE_MAX_CONNECTIONS must be a valid number".to_string())
-            })?;
-        config.database.connect_timeout_secs = env::var("DATABASE_CONNECT_TIMEOUT_SECS")
-            .unwrap_or_else(|_| "30".to_string())
-            .parse()
-            .map_err(|_| {
-                AppError::Config("DATABASE_CONNECT_TIMEOUT_SECS must be a valid number".to_string())
-            })?;
-        config.database.min_connections = env::var("DATABASE_MIN_CONNECTIONS")
-            .unwrap_or_else(|_| "1".to_string())
-            .parse()
-            .map_err(|_| {
-                AppError::Config("DATABASE_MIN_CONNECTIONS must be a valid number".to_string())
-            })?;
-
-        // Load server configuration
-        config.server.health_port = env::var("HEALTH_PORT")
-            .unwrap_or_else(|_| "8080".to_string())
-            .parse()
-            .map_err(|_| AppError::Config("HEALTH_PORT must be a valid port number".to_string()))?;
-        config.server.metrics_port = env::var("METRICS_PORT")
-            .unwrap_or_else(|_| "9091".to_string())
-            .parse()
-            .map_err(|_| {
-                AppError::Config("METRICS_PORT must be a valid port number".to_string())
-            })?;
-        config.server.allow_privileged_ports = env::var("ALLOW_PRIVILEGED_PORTS")
-            .unwrap_or_else(|_| "false".to_string())
-            .to_lowercase()
-            == "true";
-        config.server.bind_all_interfaces = env::var("METRICS_BIND_ALL_INTERFACES")
-            .is_ok_and(|value| value.trim().eq_ignore_ascii_case("true"));
-
-        // Load extraction configuration (Gemini client)
-        config.extraction = ExtractionConfig::from_env()?;
-
-        Ok(config)
+        Ok(Self {
+            bot: BotConfig {
+                token: required("TELEGRAM_BOT_TOKEN")?,
+                http_timeout_secs: number(
+                    get("HTTP_CLIENT_TIMEOUT_SECS"),
+                    "HTTP_CLIENT_TIMEOUT_SECS",
+                )?
+                .unwrap_or(defaults.bot.http_timeout_secs),
+                deduplication_ttl_secs: number(
+                    get("REQUEST_DEDUPLICATION_TTL_SECS"),
+                    "REQUEST_DEDUPLICATION_TTL_SECS",
+                )?
+                .unwrap_or(defaults.bot.deduplication_ttl_secs),
+            },
+            database: DatabaseConfig {
+                url: required("DATABASE_URL")?,
+                max_connections: number(
+                    get("DATABASE_MAX_CONNECTIONS"),
+                    "DATABASE_MAX_CONNECTIONS",
+                )?
+                .unwrap_or(defaults.database.max_connections),
+                min_connections: number(
+                    get("DATABASE_MIN_CONNECTIONS"),
+                    "DATABASE_MIN_CONNECTIONS",
+                )?
+                .unwrap_or(defaults.database.min_connections),
+                connect_timeout_secs: number(
+                    get("DATABASE_CONNECT_TIMEOUT_SECS"),
+                    "DATABASE_CONNECT_TIMEOUT_SECS",
+                )?
+                .unwrap_or(defaults.database.connect_timeout_secs),
+                ..DatabaseConfig::default()
+            },
+            server: ServerConfig {
+                health_port: number(get("HEALTH_PORT"), "HEALTH_PORT")?
+                    .unwrap_or(defaults.server.health_port),
+                metrics_port: number(get("METRICS_PORT"), "METRICS_PORT")?
+                    .unwrap_or(defaults.server.metrics_port),
+                allow_privileged_ports: flag("ALLOW_PRIVILEGED_PORTS"),
+                bind_all_interfaces: flag("METRICS_BIND_ALL_INTERFACES"),
+            },
+            extraction: ExtractionConfig::from_lookup(&lookup)?,
+        })
     }
 
     /// Validate all configuration sections
@@ -347,6 +322,18 @@ impl AppConfig {
             self.extraction.gemini.model
         )
     }
+}
+
+/// A number from a variable, `None` when it is not set.
+fn number<T: std::str::FromStr>(value: Option<String>, name: &str) -> AppResult<Option<T>> {
+    value
+        .map(|value| {
+            value
+                .trim()
+                .parse()
+                .map_err(|_| AppError::Config(format!("{name} must be a valid number")))
+        })
+        .transpose()
 }
 
 #[cfg(test)]
@@ -389,11 +376,6 @@ mod tests {
         config.deduplication_ttl_secs = 0;
         assert!(config.validate().is_err());
         config.deduplication_ttl_secs = 300;
-
-        // Invalid: zero max concurrent requests
-        config.max_concurrent_requests_per_user = 0;
-        assert!(config.validate().is_err());
-        config.max_concurrent_requests_per_user = 3;
 
         assert!(config.validate().is_ok());
     }
@@ -450,5 +432,95 @@ mod tests {
         // Valid: privileged ports with permission
         config.allow_privileged_ports = true;
         assert!(config.validate().is_ok());
+    }
+
+    const TOKEN: &str = "123456789:AAFakeTokenForTestingPurposes1234567890";
+
+    fn load(vars: &[(&str, &str)]) -> AppResult<AppConfig> {
+        let vars: std::collections::HashMap<String, String> = vars
+            .iter()
+            .map(|(name, value)| (name.to_string(), value.to_string()))
+            .collect();
+        AppConfig::from_lookup(|name| vars.get(name).cloned())
+    }
+
+    /// What production sets (`fly.toml` and the Fly secrets): it loads and validates.
+    #[test]
+    fn production_like_configuration_is_valid() -> AppResult<()> {
+        let config = load(&[
+            ("TELEGRAM_BOT_TOKEN", TOKEN),
+            (
+                "DATABASE_URL",
+                "postgres://user:pass@db.internal:5432/app?sslmode=disable",
+            ),
+            ("GEMINI_API_KEY", "key"),
+            ("HEALTH_PORT", "8080"),
+            ("METRICS_PORT", "9091"),
+            ("METRICS_BIND_ALL_INTERFACES", "true"),
+        ])?;
+        config.validate()?;
+        assert_eq!(config.bot.http_timeout_secs, 30);
+        assert_eq!(config.bot.deduplication_ttl_secs, 300);
+        assert!(config.server.bind_all_interfaces);
+        assert!(!config.summary().contains(TOKEN));
+        Ok(())
+    }
+
+    /// Each variable fills its field (IMP-016: settings were read but not applied).
+    #[test]
+    fn each_variable_sets_its_field() -> AppResult<()> {
+        let config = load(&[
+            ("TELEGRAM_BOT_TOKEN", TOKEN),
+            ("DATABASE_URL", "postgres://user:pass@localhost/db"),
+            ("HTTP_CLIENT_TIMEOUT_SECS", "45"),
+            ("REQUEST_DEDUPLICATION_TTL_SECS", " 120 "),
+            ("DATABASE_MAX_CONNECTIONS", "7"),
+            ("DATABASE_MIN_CONNECTIONS", "2"),
+            ("DATABASE_CONNECT_TIMEOUT_SECS", "12"),
+            ("HEALTH_PORT", "8081"),
+            ("METRICS_PORT", "9092"),
+            ("ALLOW_PRIVILEGED_PORTS", "TRUE"),
+            ("METRICS_BIND_ALL_INTERFACES", "false"),
+        ])?;
+        assert_eq!(config.bot.token, TOKEN);
+        assert_eq!(config.bot.http_timeout_secs, 45);
+        assert_eq!(config.bot.deduplication_ttl_secs, 120);
+        assert_eq!(config.database.max_connections, 7);
+        assert_eq!(config.database.min_connections, 2);
+        assert_eq!(config.database.connect_timeout_secs, 12);
+        assert_eq!(config.server.health_port, 8081);
+        assert_eq!(config.server.metrics_port, 9092);
+        assert!(config.server.allow_privileged_ports);
+        assert!(!config.server.bind_all_interfaces);
+        Ok(())
+    }
+
+    #[test]
+    fn missing_or_unreadable_variables_are_refused() {
+        assert!(
+            load(&[("DATABASE_URL", "postgres://u:p@h/d")]).is_err(),
+            "no token"
+        );
+        assert!(
+            load(&[("TELEGRAM_BOT_TOKEN", TOKEN)]).is_err(),
+            "no database"
+        );
+        assert!(load(&[
+            ("TELEGRAM_BOT_TOKEN", "  "),
+            ("DATABASE_URL", "postgres://u:p@h/d")
+        ])
+        .is_err());
+        for name in [
+            "HTTP_CLIENT_TIMEOUT_SECS",
+            "REQUEST_DEDUPLICATION_TTL_SECS",
+            "HEALTH_PORT",
+        ] {
+            let loaded = load(&[
+                ("TELEGRAM_BOT_TOKEN", TOKEN),
+                ("DATABASE_URL", "postgres://u:p@h/d"),
+                (name, "soon"),
+            ]);
+            assert!(loaded.is_err(), "{name}");
+        }
     }
 }

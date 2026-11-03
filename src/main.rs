@@ -30,144 +30,18 @@ use std::time::Duration;
 use teloxide::prelude::*;
 use tracing::{info, warn};
 
-/// Validate environment variables at startup
-fn validate_environment_variables() -> Result<()> {
-    // Validate TELEGRAM_BOT_TOKEN
-    let bot_token = env::var("TELEGRAM_BOT_TOKEN")
-        .map_err(|_| anyhow::anyhow!("TELEGRAM_BOT_TOKEN environment variable is required but not set. Please set it to your Telegram bot token."))?;
-
-    if bot_token.trim().is_empty() {
-        return Err(anyhow::anyhow!("TELEGRAM_BOT_TOKEN cannot be empty"));
-    }
-
-    // Basic bot token format validation (Telegram bot tokens have a specific format: numbers:letters)
-    if !bot_token.contains(':') {
-        return Err(anyhow::anyhow!("TELEGRAM_BOT_TOKEN format is invalid. Telegram bot tokens should contain a colon (:) character."));
-    }
-
-    let parts: Vec<&str> = bot_token.split(':').collect();
-    if parts.len() != 2 {
-        return Err(anyhow::anyhow!(
-            "TELEGRAM_BOT_TOKEN format is invalid. Expected format: 'bot_id:bot_token'"
-        ));
-    }
-
-    // Validate bot ID is numeric
-    if parts[0].parse::<u64>().is_err() {
-        return Err(anyhow::anyhow!("TELEGRAM_BOT_TOKEN bot ID must be numeric"));
-    }
-
-    // Validate bot token length (should be reasonably long)
-    if parts[1].len() < 20 {
-        return Err(anyhow::anyhow!(
-            "TELEGRAM_BOT_TOKEN appears to be too short. Please verify it's a valid bot token."
-        ));
-    }
-
-    // Validate DATABASE_URL
-    let database_url = env::var("DATABASE_URL")
-        .map_err(|_| anyhow::anyhow!("DATABASE_URL environment variable is required but not set. Please set it to your PostgreSQL connection string."))?;
-
-    if database_url.trim().is_empty() {
-        return Err(anyhow::anyhow!("DATABASE_URL cannot be empty"));
-    }
-
-    // Basic PostgreSQL URL validation
-    if !database_url.starts_with("postgresql://") && !database_url.starts_with("postgres://") {
-        return Err(anyhow::anyhow!(
-            "DATABASE_URL must start with 'postgresql://' or 'postgres://'"
-        ));
-    }
-
-    // Check for required components (at minimum: postgresql://user:pass@host:port/db)
-    let url_parts: Vec<&str> = database_url.split("://").collect();
-    if url_parts.len() != 2 {
-        return Err(anyhow::anyhow!("DATABASE_URL format is invalid"));
-    }
-
-    let connection_part = url_parts[1];
-    if !connection_part.contains('@') {
-        return Err(anyhow::anyhow!("DATABASE_URL must contain authentication information (user:password@host:port/database)"));
-    }
-
-    info!("Environment variables validated successfully");
-    Ok(())
-}
-
-/// Validate HTTP client configuration
-fn validate_http_client_config() -> Result<()> {
-    // Validate HTTP timeout from environment (default 30 seconds)
-    let timeout_secs = env::var("HTTP_CLIENT_TIMEOUT_SECS")
-        .unwrap_or_else(|_| "30".to_string())
-        .parse::<u64>()
-        .map_err(|_| {
-            anyhow::anyhow!("HTTP_CLIENT_TIMEOUT_SECS must be a valid number of seconds")
-        })?;
-
-    if timeout_secs == 0 {
-        return Err(anyhow::anyhow!("HTTP_CLIENT_TIMEOUT_SECS cannot be 0"));
-    }
-
-    if timeout_secs > 300 {
-        return Err(anyhow::anyhow!(
-            "HTTP_CLIENT_TIMEOUT_SECS cannot be greater than 300 seconds (5 minutes)"
-        ));
-    }
-
-    // Validate database connection pool settings
-    let max_connections = env::var("DATABASE_MAX_CONNECTIONS")
-        .unwrap_or_else(|_| "10".to_string())
-        .parse::<u32>()
-        .map_err(|_| anyhow::anyhow!("DATABASE_MAX_CONNECTIONS must be a valid number"))?;
-
-    if max_connections == 0 {
-        return Err(anyhow::anyhow!("DATABASE_MAX_CONNECTIONS cannot be 0"));
-    }
-
-    if max_connections > 100 {
-        return Err(anyhow::anyhow!(
-            "DATABASE_MAX_CONNECTIONS cannot be greater than 100"
-        ));
-    }
-
-    // Validate connection timeout
-    let connect_timeout_secs = env::var("DATABASE_CONNECT_TIMEOUT_SECS")
-        .unwrap_or_else(|_| "30".to_string())
-        .parse::<u64>()
-        .map_err(|_| {
-            anyhow::anyhow!("DATABASE_CONNECT_TIMEOUT_SECS must be a valid number of seconds")
-        })?;
-
-    if connect_timeout_secs == 0 {
-        return Err(anyhow::anyhow!("DATABASE_CONNECT_TIMEOUT_SECS cannot be 0"));
-    }
-
-    if connect_timeout_secs > 300 {
-        return Err(anyhow::anyhow!(
-            "DATABASE_CONNECT_TIMEOUT_SECS cannot be greater than 300 seconds"
-        ));
-    }
-
-    info!("HTTP client and server configuration validated successfully");
-    Ok(())
-}
-
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load environment variables from .env file first
     dotenvy::dotenv().ok();
 
-    // Validate environment variables early
-    validate_environment_variables()?;
-
-    // Load configuration and start logging before anything else, so that startup
-    // messages (including database connection retries) are visible.
+    // The configuration is read and checked once, here, before anything starts; then logging
+    // starts, so that startup messages (including database connection retries) are visible.
     let app_config = AppConfig::from_env()?;
+    app_config.validate()?;
     observability::init_logging()?;
-
-    // Get bot token from environment
-    let bot_token = env::var("TELEGRAM_BOT_TOKEN")
-        .map_err(|_| anyhow::anyhow!("TELEGRAM_BOT_TOKEN must be set"))?;
+    info!("{}", app_config.summary());
+    let bot_token = app_config.bot.token.clone();
 
     info!(
         database = %db_connection::describe_database_target(&app_config.database.url),
@@ -203,11 +77,11 @@ async fn main() -> Result<()> {
     bot::cleanup::init(Arc::clone(&shared_pool));
 
     // Initialize request deduplicator to prevent duplicate message processing
-    let deduplicator = crate::deduplication::create_shared_deduplicator(300, 10000); // 5 min TTL, 10k entries
+    let deduplicator = crate::deduplication::create_shared_deduplicator(
+        app_config.bot.deduplication_ttl_secs,
+        10_000,
+    );
     info!("Request deduplicator initialized for duplicate message prevention");
-
-    // Validate HTTP client configuration
-    validate_http_client_config()?;
 
     // The metrics, the public health server and the internal metrics one (logging already
     // runs).
@@ -257,7 +131,7 @@ async fn main() -> Result<()> {
 
     // Initialize the bot with custom client configuration for better reliability
     let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(30)) // 30 second timeout
+        .timeout(Duration::from_secs(app_config.bot.http_timeout_secs))
         .build()
         .map_err(|e| anyhow::anyhow!("Failed to create HTTP client: {}", e))?;
 
@@ -296,7 +170,10 @@ async fn main() -> Result<()> {
         }
     });
 
-    info!("Bot initialized with 30s timeout, starting dispatcher");
+    info!(
+        timeout_secs = app_config.bot.http_timeout_secs,
+        "Bot initialized, starting dispatcher"
+    );
 
     // Running actions are kept in the database: a deploy or a restart does not lose them. They
     // are resumed only if this version ran a moment ago, which it notes every minute.
