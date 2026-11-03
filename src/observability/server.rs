@@ -128,7 +128,6 @@ pub struct Addresses {
 /// What a health check request needs.
 struct HealthState {
     db_pool: Option<Arc<PgPool>>,
-    bot_token: Option<String>,
     rate_limiter: RateLimiter,
 }
 
@@ -146,7 +145,6 @@ pub async fn start(
     metrics_port: u16,
     bind_all: bool,
     db_pool: Option<Arc<PgPool>>,
-    bot_token: Option<String>,
 ) -> Result<Addresses> {
     let ip = if bind_all {
         IpAddr::V6(Ipv6Addr::UNSPECIFIED)
@@ -162,7 +160,6 @@ pub async fn start(
 
     let health = Arc::new(HealthState {
         db_pool,
-        bot_token,
         // 10 requests per minute per client
         rate_limiter: RateLimiter::new(10, 60),
     });
@@ -251,12 +248,7 @@ async fn handle_health(
         }
         // Readiness: database and Telegram. The reason is logged, never sent to the caller.
         (&hyper::Method::GET, "/health/ready") => {
-            match super::health_checks::perform_readiness_checks(
-                state.db_pool.clone(),
-                state.bot_token.clone(),
-            )
-            .await
-            {
+            match super::health_checks::perform_readiness_checks(state.db_pool.clone()).await {
                 Ok(_) => text_response(StatusCode::OK, "OK"),
                 Err(error) => {
                     tracing::warn!(error = %error, "Readiness check failed");

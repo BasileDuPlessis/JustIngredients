@@ -461,8 +461,13 @@ pub async fn handle_recipe_rename_input(
             // message; a message without a sender is handled like a missing recipe.
             let rename_result = match msg.from.as_ref() {
                 Some(user) => {
-                    crate::db::rename_recipe(pool, user.id.0 as i64, recipe_id, validated_name)
-                        .await
+                    crate::db::rename_recipe(
+                        pool,
+                        crate::bot::telegram_id(user.id),
+                        recipe_id,
+                        validated_name,
+                    )
+                    .await
                 }
                 None => Ok(None),
             };
@@ -478,20 +483,24 @@ pub async fn handle_recipe_rename_input(
                             bot,
                             pool,
                             msg.chat.id,
-                            user.id.0 as i64,
+                            crate::bot::telegram_id(user.id),
                             recipe_id,
                             handler_ctx.language_code,
                             handler_ctx.localization,
                         )
                         .await;
                         // And the cards that name it among their linked recipes
-                        let linked =
-                            super::cards::linked_ids(pool, user.id.0 as i64, recipe_id).await;
+                        let linked = super::cards::linked_ids(
+                            pool,
+                            crate::bot::telegram_id(user.id),
+                            recipe_id,
+                        )
+                        .await;
                         super::cards::refresh_linked_cards(
                             bot,
                             pool,
                             msg.chat.id,
-                            user.id.0 as i64,
+                            crate::bot::telegram_id(user.id),
                             &linked,
                             handler_ctx.language_code,
                             handler_ctx.localization,

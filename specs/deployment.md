@@ -65,7 +65,7 @@ first. Bodies are fixed texts: failure reasons go to the logs only.
 | Endpoint | Behaviour |
 |---|---|
 | `GET /health/live` | 200 `OK` while the Telegram heartbeat is fresh; 503 `NOT LIVE` after 5 minutes without a successful Telegram call (`getMe` every minute, 5-minute grace at startup). |
-| `GET /health/ready` | 200 when the database answers `SELECT 1`, a Telegram call has succeeded since the start and recently (no startup grace: required from before the server starts, and the startup `getMe` counts), and the bot token is well formed; 503 `NOT READY` otherwise, the reason logged as a warning. Gemini is not called. |
+| `GET /health/ready` | 200 when the database answers `SELECT 1`, a Telegram call has succeeded since the start and recently (no startup grace: required from before the server starts, and the startup `getMe` counts); 503 `NOT READY` otherwise (the token's format is checked once, at startup, and the health server never holds the token), the reason logged as a warning. Gemini is not called. |
 
 Every other path answers 404, `/metrics` included (there is no `/health/ocr`, `/health/db`,
 `/ready` or `/live`).

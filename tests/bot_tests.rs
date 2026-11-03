@@ -913,7 +913,7 @@ mod tests {
 
         let dialogue_state = RecipeDialogueState::EditingSavedIngredients {
             recipe_id,
-            original_ingredients: original_ingredients.clone(),
+            original_ingredients,
             current_matches,
             language_code: Some("en".to_string()),
             message_id: Some(12345),

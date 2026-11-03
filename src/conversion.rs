@@ -594,10 +594,11 @@ pub fn find_ingredient(name: &str) -> Option<&'static Ingredient> {
         .iter()
         .filter_map(|candidate| {
             let start = find_run(&words, &candidate.words)?;
+            // Word positions in a name: small, they always fit
             let position = if candidate.french {
-                -(start as i64)
+                -i64::try_from(start).ok()?
             } else {
-                (start + candidate.words.len()) as i64
+                i64::try_from(start + candidate.words.len()).ok()?
             };
             Some(((candidate.words.len(), position), candidate.ingredient))
         })

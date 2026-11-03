@@ -166,7 +166,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
 
     // Test WaitingForRecipeNameAfterConfirm state
     let confirm_state = RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
-        ingredients: ingredients.clone(),
+        ingredients,
         language_code: Some("en".to_string()),
         extracted_text: "Test OCR text".to_string(),
         recipe_name_from_caption: None,
@@ -412,8 +412,8 @@ fn test_dialogue_state_transitions_with_original_message_id() {
 
     let editing_saved_state = RecipeDialogueState::EditingSavedIngredient {
         recipe_id: 200,
-        original_ingredients: saved_ingredients.clone(),
-        current_matches: ingredients.clone(),
+        original_ingredients: saved_ingredients,
+        current_matches: ingredients,
         editing_index: 1,
         field: just_ingredients::dialogue::IngredientField::Line,
         language_code: Some("en".to_string()),
@@ -468,7 +468,7 @@ fn test_review_to_editing_ingredient_transition() {
     // Simulate transition to editing (what happens when user clicks edit button)
     let editing_state = RecipeDialogueState::EditingIngredient {
         recipe_name: "Test Recipe".to_string(),
-        ingredients: ingredients.clone(),
+        ingredients,
         editing_index: 0,
         field: just_ingredients::dialogue::IngredientField::Line,
         language_code: Some("en".to_string()),
@@ -530,8 +530,8 @@ fn test_saved_ingredients_to_editing_transition() {
     // Simulate transition to editing single ingredient (what happens when user clicks edit button)
     let editing_single_state = RecipeDialogueState::EditingSavedIngredient {
         recipe_id: 200,
-        original_ingredients: saved_ingredients.clone(),
-        current_matches: current_matches.clone(),
+        original_ingredients: saved_ingredients,
+        current_matches,
         editing_index: 0,
         field: just_ingredients::dialogue::IngredientField::Line,
         language_code: Some("en".to_string()),

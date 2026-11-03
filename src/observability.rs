@@ -50,7 +50,6 @@ pub fn init_logging() -> anyhow::Result<()> {
 /// metrics), and records the time of this start.
 pub async fn start(
     db_pool: Option<std::sync::Arc<sqlx::PgPool>>,
-    bot_token: Option<String>,
     config: &crate::config::AppConfig,
 ) -> anyhow::Result<server::Addresses> {
     let handle = metrics::install_recorder()?;
@@ -70,7 +69,6 @@ pub async fn start(
         config.server.metrics_port,
         config.server.bind_all_interfaces,
         db_pool,
-        bot_token,
     )
     .await?;
     metrics::started();

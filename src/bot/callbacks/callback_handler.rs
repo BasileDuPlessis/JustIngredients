@@ -40,14 +40,14 @@ pub async fn callback_handler_with_cache(
 ) -> Result<()> {
     let span = crate::observability::telegram_span(
         "callback_handler_with_cache",
-        Some(q.from.id.0 as i64),
+        Some(crate::bot::telegram_id(q.from.id)),
     );
     // Instrumented, not entered: an entered span would tag other tasks across .await
     async {
         let start_time = std::time::Instant::now();
         crate::observability::usage::seen(
             &pool,
-            q.from.id.0 as i64,
+            crate::bot::telegram_id(q.from.id),
             q.from.language_code.as_deref(),
         );
 

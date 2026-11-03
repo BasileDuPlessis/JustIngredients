@@ -117,13 +117,19 @@ pub async fn handle_editing_saved_ingredients_callbacks(
                 })
                 .await?;
             } else if data == "add_ingredient" || data == "add_more" {
-                handle_add_ingredient_button(bot, q, &language_code, dialogue, localization)
-                    .await?;
+                handle_add_ingredient_button(
+                    bot,
+                    q,
+                    language_code.as_deref(),
+                    dialogue,
+                    localization,
+                )
+                .await?;
             } else if data == "cancel_review" {
                 handle_cancel_saved_ingredients_button(
                     bot,
                     q,
-                    &language_code,
+                    language_code.as_deref(),
                     dialogue,
                     localization,
                     pool.clone(),
@@ -216,7 +222,7 @@ async fn handle_edit_saved_ingredient_button(params: SavedIngredientsParams<'_>)
                     &e,
                     "handle_edit_saved_ingredient_button",
                     "Failed to edit message for ingredient editing prompt",
-                    Some(q.from.id.0 as i64),
+                    Some(crate::bot::telegram_id(q.from.id)),
                 );
                 // Fallback: send new message if editing fails
                 ctx.bot
@@ -347,7 +353,7 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
                         &e,
                         "callback_handler",
                         "Failed to edit message for empty ingredients",
-                        Some(q.from.id.0 as i64),
+                        Some(crate::bot::telegram_id(q.from.id)),
                     );
                 }
             }
@@ -389,7 +395,7 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
                         &e,
                         "callback_handler",
                         "Failed to edit message after ingredient deletion",
-                        Some(q.from.id.0 as i64),
+                        Some(crate::bot::telegram_id(q.from.id)),
                     );
                 }
             }
@@ -412,7 +418,7 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
                     &e,
                     "callback_handler",
                     "Failed to update dialogue state after deletion",
-                    Some(q.from.id.0 as i64),
+                    Some(crate::bot::telegram_id(q.from.id)),
                 );
             }
         }
@@ -457,7 +463,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
     }
 
     // The recipe owner is the sender of the callback query, never a value from callback data
-    let telegram_id = q.from.id.0 as i64;
+    let telegram_id = crate::bot::telegram_id(q.from.id);
 
     crate::observability::action(crate::observability::Action::Edit);
 
@@ -528,7 +534,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             error_logging::log_database_error(
                 &e,
                 "apply_ingredient_changes",
-                Some(q.from.id.0 as i64),
+                Some(crate::bot::telegram_id(q.from.id)),
                 Some(&[("recipe_id", &recipe_id.to_string())]),
             );
             if let Some(message) = &q.message {
@@ -555,7 +561,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                     &anyhow::anyhow!("Recipe not found"),
                     "handle_confirm_saved_ingredients_button",
                     "Recipe not found after confirmation",
-                    Some(q.from.id.0 as i64),
+                    Some(crate::bot::telegram_id(q.from.id)),
                 );
                 ctx.bot
                     .send_message(
@@ -577,7 +583,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 error_logging::log_database_error(
                     &e,
                     "read_recipe_with_name",
-                    Some(q.from.id.0 as i64),
+                    Some(crate::bot::telegram_id(q.from.id)),
                     Some(&[("recipe_id", &recipe_id.to_string())]),
                 );
                 ctx.bot
@@ -670,7 +676,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                         &e,
                         "handle_confirm_saved_ingredients_button",
                         "Failed to update message with recipe details after confirmation",
-                        Some(q.from.id.0 as i64),
+                        Some(crate::bot::telegram_id(q.from.id)),
                     );
                 }
             }
@@ -688,7 +694,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                     &anyhow::anyhow!("Recipe not found"),
                     "handle_confirm_saved_ingredients_button",
                     "Recipe not found after confirmation (no changes)",
-                    Some(q.from.id.0 as i64),
+                    Some(crate::bot::telegram_id(q.from.id)),
                 );
                 ctx.bot
                     .send_message(
@@ -710,7 +716,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                 error_logging::log_database_error(
                     &e,
                     "read_recipe_with_name",
-                    Some(q.from.id.0 as i64),
+                    Some(crate::bot::telegram_id(q.from.id)),
                     Some(&[("recipe_id", &recipe_id.to_string())]),
                 );
                 ctx.bot
@@ -784,7 +790,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
                         &e,
                         "handle_confirm_saved_ingredients_button",
                         "Failed to update message with recipe details after confirmation (no changes)",
-                        Some(q.from.id.0 as i64),
+                        Some(crate::bot::telegram_id(q.from.id)),
                     );
                 }
             }
@@ -822,7 +828,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
 async fn handle_cancel_saved_ingredients_button(
     bot: &Bot,
     q: &teloxide::types::CallbackQuery,
-    language_code: &Option<String>,
+    language_code: Option<&str>,
     dialogue: &RecipeDialogue,
     localization: &Arc<crate::localization::LocalizationManager>,
     pool: Arc<PgPool>,
@@ -837,8 +843,8 @@ async fn handle_cancel_saved_ingredients_button(
         &pool,
         dialogue,
         message.chat().id,
-        q.from.id.0 as i64,
-        language_code.as_deref(),
+        crate::bot::telegram_id(q.from.id),
+        language_code,
     )
     .await
 }
@@ -938,7 +944,7 @@ pub async fn cancel_saved_editing(
 async fn handle_add_ingredient_button(
     bot: &Bot,
     q: &teloxide::types::CallbackQuery,
-    language_code: &Option<String>,
+    language_code: Option<&str>,
     dialogue: &RecipeDialogue,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
@@ -959,11 +965,7 @@ async fn handle_add_ingredient_button(
                 .context("Callback query should have a message")?
                 .chat()
                 .id,
-            t_lang(
-                localization,
-                "add-ingredient-prompt",
-                language_code.as_deref(),
-            ),
+            t_lang(localization, "add-ingredient-prompt", language_code),
         )
         .await?;
 
@@ -973,7 +975,7 @@ async fn handle_add_ingredient_button(
                 recipe_id,
                 original_ingredients,
                 current_matches,
-                language_code: language_code.clone(),
+                language_code: language_code.map(str::to_string),
                 message_id,
             })
             .await?;

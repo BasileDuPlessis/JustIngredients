@@ -42,3 +42,9 @@ hyper-util = { version = "0.1.17", features = ["tokio"] } # Hyper utilities
 tempfile = "3.23.0" # Temporary files in tests
 wiremock = "0.6" # HTTP mock server for the Gemini client tests
 metrics-util = { version = "0.20", features = ["debugging"] } # In-process recorder for metric tests
+# A few clippy lints beyond the defaults (IMP-038), for every target; CI's `-D warnings` makes
+# them errors. The no-panic and no-wrapping-cast rules are in lib.rs and main.rs (not tests).
+[lints.clippy]
+ref_option = "warn"
+unused_async = "warn"
+redundant_clone = "warn"

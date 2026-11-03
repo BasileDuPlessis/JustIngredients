@@ -154,7 +154,7 @@ pub async fn handle_review_ingredients_callbacks(
                 handle_cancel_review_button(
                     bot,
                     q,
-                    &dialogue_lang_code,
+                    dialogue_lang_code.as_deref(),
                     dialogue,
                     localization,
                     &pool,
@@ -253,7 +253,7 @@ async fn open_line_prompt(
                     &e,
                     "open_line_prompt",
                     "Failed to replace recipe display with editing prompt",
-                    Some(q.from.id.0 as i64),
+                    Some(crate::bot::telegram_id(q.from.id)),
                 );
             })
             .ok(),
@@ -381,7 +381,7 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
                         &e,
                         "callback_handler",
                         "Failed to edit message for empty ingredients",
-                        Some(q.from.id.0 as i64),
+                        Some(crate::bot::telegram_id(q.from.id)),
                     );
                 }
             }
@@ -419,7 +419,7 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
                         &e,
                         "callback_handler",
                         "Failed to edit message after ingredient deletion",
-                        Some(q.from.id.0 as i64),
+                        Some(crate::bot::telegram_id(q.from.id)),
                     );
                 }
             }
@@ -443,7 +443,7 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
                     &e,
                     "callback_handler",
                     "Failed to update dialogue state after deletion",
-                    Some(q.from.id.0 as i64),
+                    Some(crate::bot::telegram_id(q.from.id)),
                 );
             }
         }
@@ -485,7 +485,7 @@ async fn handle_confirm_button(params: ReviewIngredientsParams<'_>) -> Result<()
         pool,
         dialogue,
         chat_id: message.chat().id,
-        owner_id: q.from.id.0 as i64,
+        owner_id: crate::bot::telegram_id(q.from.id),
         // The message the button is on is the review list
         review_message_id: Some(message.id()),
         ingredients,
@@ -654,7 +654,7 @@ async fn remove_review_keyboard(c: &ReviewConfirmation<'_>) {
 async fn handle_cancel_review_button(
     bot: &Bot,
     q: &teloxide::types::CallbackQuery,
-    dialogue_lang_code: &Option<String>,
+    dialogue_lang_code: Option<&str>,
     dialogue: &RecipeDialogue,
     localization: &Arc<crate::localization::LocalizationManager>,
     pool: &PgPool,
@@ -669,7 +669,7 @@ async fn handle_cancel_review_button(
         dialogue,
         message.chat().id,
         Some(message.id()),
-        dialogue_lang_code.as_deref(),
+        dialogue_lang_code,
     )
     .await
 }

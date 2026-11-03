@@ -3,17 +3,13 @@
 //! This module provides:
 //! - Database connectivity checks
 //! - Telegram reachability (heartbeat)
-//! - Bot token validation checks
 //! - Comprehensive readiness checks
 
 use anyhow::Result;
 use sqlx::PgPool;
 
 /// Perform comprehensive readiness checks
-pub async fn perform_readiness_checks(
-    db_pool: Option<std::sync::Arc<PgPool>>,
-    bot_token: Option<String>,
-) -> Result<()> {
+pub async fn perform_readiness_checks(db_pool: Option<std::sync::Arc<PgPool>>) -> Result<()> {
     // Check database connectivity
     if let Some(pool) = &db_pool {
         check_database_health(pool.as_ref()).await?;
@@ -22,11 +18,6 @@ pub async fn perform_readiness_checks(
     // Ready means Telegram answered since the start, not just "still in the startup grace":
     // a release that cannot reach Telegram then fails the deploy checks and is rolled back
     check_telegram_confirmed()?;
-
-    // Check bot token validity
-    if let Some(token) = &bot_token {
-        check_bot_token_health(token).await?;
-    }
 
     Ok(())
 }
@@ -40,23 +31,6 @@ pub async fn check_database_health(pool: &PgPool) -> Result<()> {
         .map_err(|e| anyhow::anyhow!("Database health check failed: {}", e))?;
 
     tracing::debug!("Database health check passed");
-    Ok(())
-}
-
-/// Check Telegram bot token validity by testing API access
-pub async fn check_bot_token_health(token: &str) -> Result<()> {
-    // Create a minimal bot instance to test token validity
-    // This doesn't make actual API calls, just validates the token format
-    if token.is_empty() {
-        return Err(anyhow::anyhow!("Bot token is empty"));
-    }
-
-    // Basic token format validation (Telegram bot tokens have a specific format)
-    if !token.contains(':') {
-        return Err(anyhow::anyhow!("Bot token format is invalid"));
-    }
-
-    tracing::debug!("Bot token health check passed");
     Ok(())
 }
 

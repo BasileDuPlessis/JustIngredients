@@ -1,4 +1,5 @@
 // No panic outside tests (IMP-018): a panic stops the handling of an update without a reply.
+// No wrapping cast (IMP-038): a Telegram id goes through `bot::telegram_id`.
 // Errors go up with `?`; the few constant patterns that cannot fail say so with an `allow`.
 #![cfg_attr(
     not(test),
@@ -6,7 +7,8 @@
         clippy::unwrap_used,
         clippy::expect_used,
         clippy::panic,
-        clippy::unreachable
+        clippy::unreachable,
+        clippy::cast_possible_wrap
     )
 )]
 
@@ -87,12 +89,7 @@ async fn main() -> Result<()> {
     // runs).
     // Readiness waits for a Telegram success from the start, not only once the heartbeat runs
     observability::health_checks::expect_telegram();
-    observability::start(
-        Some(Arc::clone(&shared_pool)),
-        Some(bot_token.clone()),
-        &app_config,
-    )
-    .await?;
+    observability::start(Some(Arc::clone(&shared_pool)), &app_config).await?;
     // The usage history: visits and daily totals, the user and recipe gauges
     tokio::spawn(observability::usage::run(Arc::clone(&shared_pool)));
 

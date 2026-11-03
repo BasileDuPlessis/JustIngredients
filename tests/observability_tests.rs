@@ -20,7 +20,7 @@ async fn health_is_public_and_metrics_internal() -> anyhow::Result<()> {
         observability::gemini_usage("gemini-test", 10, 5, Some(42));
         observability::card_shown(std::time::Duration::from_millis(300));
     });
-    let addresses = server::start(handle, 0, 0, false, None, None).await?;
+    let addresses = server::start(handle, 0, 0, false, None).await?;
     assert!(addresses.health.ip().is_loopback() && addresses.metrics.ip().is_loopback());
 
     let metrics = get(addresses.metrics, "/metrics").await?;

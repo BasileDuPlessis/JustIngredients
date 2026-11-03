@@ -39,7 +39,7 @@ pub async fn handle_recipe_action(
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     let language_code = &from.language_code;
-    let telegram_id = from.id.0 as i64;
+    let telegram_id = crate::bot::telegram_id(from.id);
 
     // Parse callback data (format: "recipe_action:{action}:{recipe_id}")
     let parts: Vec<&str> = data.split(':').collect();
@@ -222,7 +222,7 @@ pub async fn handle_delete_recipe_confirmation(
     dialogue: &RecipeDialogue,
 ) -> Result<()> {
     let language_code = &from.language_code;
-    let telegram_id = from.id.0 as i64;
+    let telegram_id = crate::bot::telegram_id(from.id);
 
     debug!(data = %data, "Handling delete recipe confirmation");
 
@@ -409,7 +409,7 @@ async fn handle_edit_ingredients_callback(
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Result<()> {
     let language_code = &from.language_code;
-    let telegram_id = from.id.0 as i64;
+    let telegram_id = crate::bot::telegram_id(from.id);
 
     debug!(recipe_id = %recipe_id, "Handling edit ingredients callback");
 

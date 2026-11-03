@@ -4,6 +4,7 @@
 //! user check it, and stores the recipe and its ingredients in Postgres.
 
 // No panic outside tests (IMP-018): a panic stops the handling of an update without a reply.
+// No wrapping cast (IMP-038): a Telegram id goes through `bot::telegram_id`.
 // Errors go up with `?`; the few constant patterns that cannot fail say so with an `allow`.
 #![cfg_attr(
     not(test),
@@ -11,7 +12,8 @@
         clippy::unwrap_used,
         clippy::expect_used,
         clippy::panic,
-        clippy::unreachable
+        clippy::unreachable,
+        clippy::cast_possible_wrap
     )
 )]
 

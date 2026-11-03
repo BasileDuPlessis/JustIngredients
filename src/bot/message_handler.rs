@@ -458,7 +458,11 @@ async fn dispatch_message(
 ) -> Result<()> {
     let start_time = std::time::Instant::now();
     if let Some(user) = &msg.from {
-        crate::observability::usage::seen(&pool, user.id.0 as i64, user.language_code.as_deref());
+        crate::observability::usage::seen(
+            &pool,
+            crate::bot::telegram_id(user.id),
+            user.language_code.as_deref(),
+        );
     }
     let result = if msg.text().is_some() {
         handle_text_message(&bot, &msg, dialogue, pool, &localization).await
@@ -511,7 +515,7 @@ pub async fn message_handler_with_cache(
     } = services;
     let span = crate::observability::telegram_span(
         "message_handler_with_cache",
-        msg.from.as_ref().map(|u| u.id.0 as i64),
+        msg.from.as_ref().map(|u| crate::bot::telegram_id(u.id)),
     );
     // Instrumented, not entered: an entered span would tag other tasks across .await
     async {

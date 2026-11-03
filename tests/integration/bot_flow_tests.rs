@@ -55,7 +55,7 @@ fn test_recipe_naming_dialogue_workflow() {
 
     let waiting_state = RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
         extracted_text: extracted_text.to_string(),
-        ingredients: ingredients.clone(),
+        ingredients,
         language_code: Some("en".to_string()),
         recipe_name_from_caption: None,
         message_id: None,
@@ -197,7 +197,7 @@ fn test_photo_caption_workflow_integration() {
     // Step 4: Simulate dialogue state transition
     let dialogue_state = RecipeDialogueState::ReviewIngredients {
         recipe_name: recipe_name_candidate.to_string(),
-        ingredients: ingredients.clone(),
+        ingredients,
         language_code: Some("en".to_string()),
         message_id: None,
         extracted_text: recipe_text.to_string(),
@@ -688,7 +688,7 @@ fn test_initial_recipe_creation_editing_workflow() {
     // Step 4: After successful edit, return to review state with updated ingredients
     let updated_review_state = RecipeDialogueState::ReviewIngredients {
         recipe_name: "Chocolate Chip Cookies".to_string(),
-        ingredients: updated_ingredients.clone(),
+        ingredients: updated_ingredients,
         language_code: Some("en".to_string()),
         message_id: Some(1000), // Back to original message ID for replacement
         extracted_text: "2 cups flour\n3 eggs\n1 cup sugar".to_string(),
@@ -714,7 +714,7 @@ fn test_initial_recipe_creation_editing_workflow() {
     // Step 5: Test cancel functionality during editing
     let cancel_state = RecipeDialogueState::ReviewIngredients {
         recipe_name: "Chocolate Chip Cookies".to_string(),
-        ingredients: ingredients.clone(), // Original ingredients restored
+        ingredients, // Original ingredients restored
         language_code: Some("en".to_string()),
         message_id: Some(1000), // Original message ID restored
         extracted_text: "2 cups flour\n3 eggs\n1 cup sugar".to_string(),
@@ -877,7 +877,7 @@ fn test_saved_recipe_editing_workflow() {
     let updated_editing_state = RecipeDialogueState::EditingSavedIngredients {
         recipe_id: 200,
         original_ingredients: saved_ingredients.clone(),
-        current_matches: updated_matches.clone(),
+        current_matches: updated_matches,
         language_code: Some("en".to_string()),
         message_id: Some(2000), // Back to original message ID for replacement
     };
@@ -901,8 +901,8 @@ fn test_saved_recipe_editing_workflow() {
     // Step 5: Test cancel functionality during editing
     let cancel_state = RecipeDialogueState::EditingSavedIngredients {
         recipe_id: 200,
-        original_ingredients: saved_ingredients.clone(),
-        current_matches: current_matches.clone(), // Original matches restored
+        original_ingredients: saved_ingredients,
+        current_matches, // Original matches restored
         language_code: Some("en".to_string()),
         message_id: Some(2000), // Original message ID restored
     };
@@ -1018,7 +1018,7 @@ fn test_message_editing_edge_cases() {
     // The review message 3000 becomes the original message of the edit
     let editing_from_review = RecipeDialogueState::EditingIngredient {
         recipe_name: "Test Recipe".to_string(),
-        ingredients: ingredients.clone(),
+        ingredients,
         editing_index: 0,
         language_code: Some("en".to_string()),
         message_id: Some(3001),          // New editing message
@@ -1044,8 +1044,8 @@ fn test_message_editing_edge_cases() {
     // Edge Case 4: Complex workflow with multiple message replacements
     let complex_editing_state = RecipeDialogueState::EditingSavedIngredients {
         recipe_id: 400,
-        original_ingredients: saved_ingredients.clone(),
-        current_matches: current_matches.clone(),
+        original_ingredients: saved_ingredients,
+        current_matches,
         language_code: Some("en".to_string()),
         message_id: Some(4000), // Latest message ID after multiple edits
     };

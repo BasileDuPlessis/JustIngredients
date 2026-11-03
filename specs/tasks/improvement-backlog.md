@@ -656,7 +656,9 @@ they can be pulled into 1-hour micro-tasks without another review.
   recipe, and a DB failure keeps `ReviewIngredients`).
 
 ### IMP-024: User identity mixes `chat.id` and `from.id`; group chats share data
-- [ ] Done
+- [x] Done (2026-11-03): with private chats only (2026-10-28) the leak was gone; the user id
+  now goes to the database through one function, `bot::telegram_id` (IMP-038), rather than a
+  newtype through every `db.rs` signature (churn for no gain).
 - Status: Partly done (2026-10-28): the dispatcher only serves private chats; groups and channels get `private-chat-only`, so `chat.id` equals `from.id` everywhere. Left: the `owner_id` newtype (cleanup, no longer a data leak).
 - Priority: P2. Effort: S. Area: Security / Bot.
 - Location: `src/bot/command_handlers.rs:108`, `src/bot/callbacks/workflow_callbacks.rs:78`,
@@ -896,7 +898,13 @@ they can be pulled into 1-hour micro-tasks without another review.
   succeeds.
 
 ### IMP-038: `u64 as i64` casts for Telegram ids; curated clippy pedantic set
-- [ ] Done
+- [x] Done (2026-11-03): the 29 `….id.0 as i64` go through `bot::telegram_id` (`i64::try_from`,
+  `i64::MAX` for an id that would not fit, never a wrap to another user's id); the two `usize`
+  word positions of `conversion.rs` are checked. `lib.rs` and `main.rs` deny
+  `cast_possible_wrap` outside tests; `Cargo.toml` `[lints.clippy]` turns on `ref_option` (three
+  handlers took `&Option<String>`), `unused_async` and `redundant_clone` (18 clones in tests
+  removed) for every target. `significant_drop_tightening` (nursery) is left out: its 7 sites
+  hold a guard a few lines longer, never across an `.await`.
 - Priority: P3. Effort: S. Area: Lints.
 - Location: about 45 `user.id.0 as i64` / `q.from.id.0 as i64` sites, e.g.
   `src/bot/callbacks/editing_callbacks.rs:158`, `src/bot/command_handlers.rs:34`,
@@ -915,6 +923,8 @@ they can be pulled into 1-hour micro-tasks without another review.
 
 ### IMP-039: Health checks load Tesseract every minute; bot-token check is a no-op
 - [x] Done (triage 2026-10-28): no Tesseract; health uses the Telegram heartbeat; readiness needs a Telegram success.
+  2026-11-03: the no-op token format check is gone from readiness, so the public health server no
+  longer holds the bot token (the format is checked at startup by `AppConfig::validate`).
 - Priority: P3. Effort: S. Area: Observability.
 - Related: LLM migration (Task 3.5 replaces the OCR check. Readiness must not call the paid API.)
 - Location: `src/observability/health_checks.rs:47-57` (`LepTess::new` on every readiness call and

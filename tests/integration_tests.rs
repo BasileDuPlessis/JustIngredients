@@ -34,7 +34,7 @@ fn test_dialogue_flow_integrity_with_multi_line_ingredients() {
     // Test ReviewIngredients state with multi-line ingredients
     let review_state = RecipeDialogueState::ReviewIngredients {
         recipe_name: "Oatmeal Cookies".to_string(),
-        ingredients: ingredients.clone(),
+        ingredients,
         language_code: Some("en".to_string()),
         message_id: Some(123),
         extracted_text: "2 cups old-fashioned\nrolled oats\n1 cup sugar".to_string(),
