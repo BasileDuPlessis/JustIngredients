@@ -17,12 +17,12 @@ async fn test_user_operations(pool: PgPool) -> Result<()> {
 async fn test_user_operations_impl(pool: &PgPool) -> Result<()> {
     let user = get_or_create_user(pool, 12345, Some("fr")).await?;
     assert_eq!(user.telegram_id, 12345);
-    assert_eq!(user.language_code, std::sync::Arc::new("fr".to_string()));
+    assert_eq!(user.language_code, "fr");
 
     // Test getting existing user
     let user2 = get_or_create_user(pool, 12345, Some("en")).await?;
     assert_eq!(user2.id, user.id); // Should return same user
-    assert_eq!(user2.language_code, std::sync::Arc::new("fr".to_string())); // Should keep original language
+    assert_eq!(user2.language_code, "fr"); // Should keep original language
 
     // Test get_user_by_telegram_id
     let found_user = get_user_by_telegram_id(pool, 12345).await?;
@@ -51,20 +51,14 @@ async fn test_recipe_operations_impl(pool: &PgPool) -> Result<()> {
     assert!(recipe.is_some());
     let recipe = recipe.unwrap();
     assert_eq!(recipe.telegram_id, 12345);
-    assert_eq!(
-        recipe.content,
-        std::sync::Arc::new("Test OCR content".to_string())
-    );
+    assert_eq!(recipe.content, "Test OCR content");
 
     // Update recipe
     let updated = update_recipe(pool, 12345, recipe_id, "Updated content").await?;
     assert!(updated);
 
     let updated_recipe = read_recipe(pool, 12345, recipe_id).await?;
-    assert_eq!(
-        updated_recipe.unwrap().content,
-        std::sync::Arc::new("Updated content".to_string())
-    );
+    assert_eq!(updated_recipe.unwrap().content, "Updated content");
 
     // Delete recipe
     let deleted = delete_recipe(pool, 12345, recipe_id).await?;
@@ -170,10 +164,7 @@ async fn test_save_recipe_is_all_or_nothing(pool: PgPool) -> Result<()> {
     let recipe = read_recipe_with_name(&pool, 12345, saved.recipe_id)
         .await?
         .expect("saved");
-    assert_eq!(
-        recipe.recipe_name.as_deref().map(|n| n.as_str()),
-        Some("Pain")
-    );
+    assert_eq!(recipe.recipe_name.as_deref(), Some("Pain"));
     let stored = get_recipe_ingredients(&pool, 12345, saved.recipe_id).await?;
     assert_eq!(stored.len(), 2);
     assert_eq!(
@@ -471,10 +462,7 @@ async fn test_recipe_reads_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()>
     let recipe = read_recipe_with_name(pool, OWNER_A, recipe_id)
         .await?
         .expect("owner should read own recipe with name");
-    assert_eq!(
-        recipe.recipe_name.as_deref().map(String::as_str),
-        Some("Secret Cake")
-    );
+    assert_eq!(recipe.recipe_name.as_deref(), Some("Secret Cake"));
     assert_eq!(
         get_recipe_ingredients(pool, OWNER_A, recipe_id)
             .await?
@@ -504,10 +492,7 @@ async fn test_recipe_writes_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()
     let recipe = read_recipe_with_name(pool, OWNER_A, recipe_id)
         .await?
         .expect("B must not delete A's recipe");
-    assert_eq!(
-        recipe.recipe_name.as_deref().map(String::as_str),
-        Some("Secret Cake")
-    );
+    assert_eq!(recipe.recipe_name.as_deref(), Some("Secret Cake"));
     assert_eq!(recipe.content.as_str(), "flour 2 cups");
     assert_eq!(
         get_recipe_ingredients(pool, OWNER_A, recipe_id)
@@ -523,10 +508,7 @@ async fn test_recipe_writes_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()
     let recipe = read_recipe_with_name(pool, OWNER_A, recipe_id)
         .await?
         .expect("owner should read own recipe");
-    assert_eq!(
-        recipe.recipe_name.as_deref().map(String::as_str),
-        Some("Renamed Cake")
-    );
+    assert_eq!(recipe.recipe_name.as_deref(), Some("Renamed Cake"));
     assert_eq!(recipe.content.as_str(), "sugar 1 cup");
 
     assert!(delete_recipe(pool, OWNER_A, recipe_id).await?);
@@ -1490,7 +1472,7 @@ async fn duplicate_names_are_numbered_without_new_collisions(pool: PgPool) -> Re
     let mut names = Vec::new();
     for id in &ids {
         let recipe = read_recipe_with_name(&pool, 77, *id).await?;
-        names.push(recipe.and_then(|r| r.recipe_name.map(|n| n.to_string())));
+        names.push(recipe.and_then(|r| r.recipe_name));
     }
     assert_eq!(
         names,
@@ -1504,7 +1486,7 @@ async fn duplicate_names_are_numbered_without_new_collisions(pool: PgPool) -> Re
     );
     let other_name = read_recipe_with_name(&pool, 88, other)
         .await?
-        .and_then(|r| r.recipe_name.map(|n| n.to_string()));
+        .and_then(|r| r.recipe_name);
     assert_eq!(
         other_name.as_deref(),
         Some("Recipe"),

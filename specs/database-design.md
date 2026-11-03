@@ -118,11 +118,15 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()>
 ```
 
 ### Data Models
+Rows are read with `sqlx::query_as` into these `#[derive(sqlx::FromRow)]` structs (also
+`RecipeSummary` and `ChatMessage`): columns map by name (`quantity::float8 AS quantity`,
+`recipe_name AS name`), and a type mismatch is an error, never a panic. No positional
+`row.get(i)` is left.
 ```rust
 pub struct User {
     pub id: i64,
     pub telegram_id: i64,
-    pub language_code: Arc<String>,
+    pub language_code: String,  // COALESCE(language_code, 'en'): the column is nullable
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
@@ -130,8 +134,8 @@ pub struct User {
 pub struct Recipe {
     pub id: i64,
     pub telegram_id: i64,       // Owner
-    pub content: Arc<String>,   // Extracted text (Gemini transcription; older rows: OCR text)
-    pub recipe_name: Option<Arc<String>>,
+    pub content: String,        // Extracted text (Gemini transcription; older rows: OCR text)
+    pub recipe_name: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 

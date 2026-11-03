@@ -12,27 +12,27 @@ use crate::errors::error_logging;
 pub use crate::observability;
 
 /// Represents a user in the database
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct User {
     pub id: i64,
     pub telegram_id: i64,
-    pub language_code: std::sync::Arc<String>,
+    pub language_code: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
 }
 
 /// Represents a recipe in the database
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct Recipe {
     pub id: i64,
     pub telegram_id: i64,
-    pub content: std::sync::Arc<String>,
-    pub recipe_name: Option<std::sync::Arc<String>>,
+    pub content: String,
+    pub recipe_name: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
 /// Represents an ingredient in the database
-#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize, sqlx::FromRow)]
 pub struct Ingredient {
     pub id: i64,
     pub user_id: i64,
@@ -99,8 +99,8 @@ pub async fn read_recipe(
 ) -> Result<Option<Recipe>> {
     debug!(recipe_id = %recipe_id, "Reading recipe");
 
-    let row = sqlx::query(
-        "SELECT id, telegram_id, content, created_at FROM recipes WHERE id = $1 AND telegram_id = $2",
+    let row = sqlx::query_as::<_, Recipe>(
+        "SELECT id, telegram_id, content, recipe_name, created_at FROM recipes WHERE id = $1 AND telegram_id = $2",
     )
     .bind(recipe_id)
     .bind(telegram_id)
@@ -110,13 +110,7 @@ pub async fn read_recipe(
 
     match row {
         Some(row) => {
-            let recipe = Recipe {
-                id: row.get(0),
-                telegram_id: row.get(1),
-                content: std::sync::Arc::new(row.get(2)),
-                recipe_name: None, // For backward compatibility, existing entries have no recipe name
-                created_at: row.get(3),
-            };
+            let recipe = row;
             debug!(recipe_id = %recipe_id, "Recipe found");
             Ok(Some(recipe))
         }
@@ -729,8 +723,8 @@ pub async fn linked_recipes(
     telegram_id: i64,
     recipe_id: i64,
 ) -> Result<Vec<RecipeSummary>> {
-    let rows = sqlx::query(
-        "SELECT r.id, r.recipe_name, r.created_at FROM recipe_links l \
+    let rows = sqlx::query_as::<_, RecipeSummary>(
+        "SELECT r.id, r.recipe_name AS name, r.created_at FROM recipe_links l \
          JOIN recipes r ON r.id = CASE WHEN l.recipe_a = $2 THEN l.recipe_b ELSE l.recipe_a END \
          WHERE (l.recipe_a = $2 OR l.recipe_b = $2) \
            AND r.telegram_id = $1 AND r.recipe_name IS NOT NULL \
@@ -741,14 +735,7 @@ pub async fn linked_recipes(
     .fetch_all(pool)
     .await
     .context("Failed to read the linked recipes")?;
-    let mut linked: Vec<RecipeSummary> = rows
-        .into_iter()
-        .map(|row| RecipeSummary {
-            id: row.get(0),
-            name: row.get(1),
-            created_at: row.get(2),
-        })
-        .collect();
+    let mut linked: Vec<RecipeSummary> = rows;
     linked.sort_by(|a, b| crate::search::compare_names(&a.name, &b.name).then(a.id.cmp(&b.id)));
     Ok(linked)
 }
@@ -877,8 +864,8 @@ pub async fn get_or_create_user(
     let language_code = language_code.unwrap_or("en");
     debug!(telegram_id = %telegram_id, language_code = %language_code, "Attempting to create new user");
 
-    let insert_result = sqlx::query(
-        "INSERT INTO users (telegram_id, language_code) VALUES ($1, $2) RETURNING id, telegram_id, language_code, created_at, updated_at"
+    let insert_result = sqlx::query_as::<_, User>(
+        "INSERT INTO users (telegram_id, language_code) VALUES ($1, $2) RETURNING id, telegram_id, COALESCE(language_code, 'en') AS language_code, created_at, updated_at"
     )
     .bind(telegram_id)
     .bind(language_code)
@@ -887,13 +874,7 @@ pub async fn get_or_create_user(
 
     match insert_result {
         Ok(row) => {
-            let user = User {
-                id: row.get(0),
-                telegram_id: row.get(1),
-                language_code: std::sync::Arc::new(row.get(2)),
-                created_at: row.get(3),
-                updated_at: row.get(4),
-            };
+            let user = row;
 
             debug!(telegram_id = %telegram_id, user_id = %user.id, returned_telegram_id = %user.telegram_id, "User insert succeeded, verifying data");
 
@@ -926,7 +907,7 @@ pub async fn get_or_create_user(
 pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<Option<User>> {
     debug!(telegram_id = %telegram_id, "Getting user by telegram_id");
 
-    let row = sqlx::query("SELECT id, telegram_id, language_code, created_at, updated_at FROM users WHERE telegram_id = $1")
+    let row = sqlx::query_as::<_, User>("SELECT id, telegram_id, COALESCE(language_code, 'en') AS language_code, created_at, updated_at FROM users WHERE telegram_id = $1")
         .bind(telegram_id)
         .fetch_optional(pool)
         .await
@@ -934,13 +915,7 @@ pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<
 
     match row {
         Some(row) => {
-            let user = User {
-                id: row.get(0),
-                telegram_id: row.get(1),
-                language_code: std::sync::Arc::new(row.get(2)),
-                created_at: row.get(3),
-                updated_at: row.get(4),
-            };
+            let user = row;
             debug!("User found with ID: {}", user.id);
             Ok(Some(user))
         }
@@ -955,8 +930,8 @@ pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<
 pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>> {
     debug!(user_id = %user_id, "Getting user by internal ID");
 
-    let row = sqlx::query(
-        "SELECT id, telegram_id, language_code, created_at, updated_at FROM users WHERE id = $1",
+    let row = sqlx::query_as::<_, User>(
+        "SELECT id, telegram_id, COALESCE(language_code, 'en') AS language_code, created_at, updated_at FROM users WHERE id = $1",
     )
     .bind(user_id)
     .fetch_optional(pool)
@@ -965,13 +940,7 @@ pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>>
 
     match row {
         Some(row) => {
-            let user = User {
-                id: row.get(0),
-                telegram_id: row.get(1),
-                language_code: std::sync::Arc::new(row.get(2)),
-                created_at: row.get(3),
-                updated_at: row.get(4),
-            };
+            let user = row;
             debug!(user_id = %user.id, "User found by internal ID");
             Ok(Some(user))
         }
@@ -999,7 +968,7 @@ pub async fn create_ingredient(
     let start_time = std::time::Instant::now();
     debug!("Creating new ingredient for user_id: {user_id}");
 
-    let result = sqlx::query(
+    let result = sqlx::query_scalar::<_, i64>(
         "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit, raw_text) VALUES ($1, $2, $3, $4, $5, $6) RETURNING id"
     )
     .bind(user_id)
@@ -1016,8 +985,7 @@ pub async fn create_ingredient(
     crate::observability::db_query("create_ingredient", duration);
 
     match result {
-        Ok(row) => {
-            let ingredient_id: i64 = row.get(0);
+        Ok(ingredient_id) => {
             debug!(ingredient_id = %ingredient_id, duration_ms = %duration.as_millis(), user_id = %user_id, recipe_id = ?recipe_id, "Ingredient created successfully");
             Ok(ingredient_id)
         }
@@ -1052,8 +1020,8 @@ pub async fn read_ingredient(
 ) -> Result<Option<Ingredient>> {
     debug!("Reading ingredient with ID: {ingredient_id}");
 
-    let row = sqlx::query(
-        "SELECT i.id, i.user_id, i.recipe_id, i.name, i.quantity::float8, i.unit, i.created_at, i.updated_at FROM ingredients i JOIN recipes r ON r.id = i.recipe_id WHERE i.id = $1 AND r.telegram_id = $2"
+    let row = sqlx::query_as::<_, Ingredient>(
+        "SELECT i.id, i.user_id, i.recipe_id, i.name, i.quantity::float8 AS quantity, i.unit, i.created_at, i.updated_at FROM ingredients i JOIN recipes r ON r.id = i.recipe_id WHERE i.id = $1 AND r.telegram_id = $2"
     )
     .bind(ingredient_id)
     .bind(telegram_id)
@@ -1063,16 +1031,7 @@ pub async fn read_ingredient(
 
     match row {
         Some(row) => {
-            let ingredient = Ingredient {
-                id: row.get(0),
-                user_id: row.get(1),
-                recipe_id: row.get(2),
-                name: row.get(3),
-                quantity: row.get(4),
-                unit: row.get(5),
-                created_at: row.get(6),
-                updated_at: row.get(7),
-            };
+            let ingredient = row;
             debug!(ingredient_id = %ingredient_id, "Ingredient found");
             Ok(Some(ingredient))
         }
@@ -1147,25 +1106,13 @@ pub async fn delete_ingredient(
 pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> {
     debug!("Listing ingredients for user_id: {user_id}");
 
-    let rows = sqlx::query("SELECT id, user_id, recipe_id, name, quantity::float8, unit, created_at, updated_at FROM ingredients WHERE user_id = $1 ORDER BY created_at DESC, id DESC")
+    let rows = sqlx::query_as::<_, Ingredient>("SELECT id, user_id, recipe_id, name, quantity::float8 AS quantity, unit, created_at, updated_at FROM ingredients WHERE user_id = $1 ORDER BY created_at DESC, id DESC")
         .bind(user_id)
         .fetch_all(pool)
         .await
         .context("Failed to list ingredients by user")?;
 
-    let ingredients: Vec<Ingredient> = rows
-        .into_iter()
-        .map(|row| Ingredient {
-            id: row.get(0),
-            user_id: row.get(1),
-            recipe_id: row.get(2),
-            name: row.get(3),
-            quantity: row.get(4),
-            unit: row.get(5),
-            created_at: row.get(6),
-            updated_at: row.get(7),
-        })
-        .collect();
+    let ingredients: Vec<Ingredient> = rows;
 
     debug!(
         "Found {} ingredients for user_id: {user_id}",
@@ -1184,26 +1131,14 @@ pub async fn get_recipe_ingredients(
 ) -> Result<Vec<Ingredient>> {
     debug!("Getting ingredients for recipe_id: {recipe_id}");
 
-    let rows = sqlx::query("SELECT i.id, i.user_id, i.recipe_id, i.name, i.quantity::float8, i.unit, i.created_at, i.updated_at FROM ingredients i JOIN recipes r ON r.id = i.recipe_id WHERE i.recipe_id = $1 AND r.telegram_id = $2 ORDER BY i.created_at ASC, i.id ASC")
+    let rows = sqlx::query_as::<_, Ingredient>("SELECT i.id, i.user_id, i.recipe_id, i.name, i.quantity::float8 AS quantity, i.unit, i.created_at, i.updated_at FROM ingredients i JOIN recipes r ON r.id = i.recipe_id WHERE i.recipe_id = $1 AND r.telegram_id = $2 ORDER BY i.created_at ASC, i.id ASC")
         .bind(recipe_id)
         .bind(telegram_id)
         .fetch_all(pool)
         .await
         .context("Failed to get recipe ingredients")?;
 
-    let ingredients: Vec<Ingredient> = rows
-        .into_iter()
-        .map(|row| Ingredient {
-            id: row.get(0),
-            user_id: row.get(1),
-            recipe_id: row.get(2),
-            name: row.get(3),
-            quantity: row.get(4),
-            unit: row.get(5),
-            created_at: row.get(6),
-            updated_at: row.get(7),
-        })
-        .collect();
+    let ingredients: Vec<Ingredient> = rows;
 
     debug!(
         "Found {} ingredients for recipe_id: {recipe_id}",
@@ -1252,7 +1187,7 @@ pub async fn read_recipe_with_name(
 ) -> Result<Option<Recipe>> {
     debug!(recipe_id = %recipe_id, "Reading recipe with recipe name");
 
-    let row = sqlx::query(
+    let row = sqlx::query_as::<_, Recipe>(
         "SELECT id, telegram_id, content, recipe_name, created_at FROM recipes WHERE id = $1 AND telegram_id = $2",
     )
     .bind(recipe_id)
@@ -1263,13 +1198,7 @@ pub async fn read_recipe_with_name(
 
     match row {
         Some(row) => {
-            let recipe = Recipe {
-                id: row.get(0),
-                telegram_id: row.get(1),
-                content: std::sync::Arc::new(row.get(2)),
-                recipe_name: row.get::<Option<String>, _>(3).map(std::sync::Arc::new),
-                created_at: row.get(4),
-            };
+            let recipe = row;
             debug!(recipe_id = %recipe_id, "Recipe with recipe found");
             Ok(Some(recipe))
         }
@@ -1292,15 +1221,14 @@ pub async fn has_duplicate_recipes(
 
     debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, "Checking for duplicate recipes");
 
-    let row =
-        sqlx::query("SELECT COUNT(*) FROM recipes WHERE telegram_id = $1 AND recipe_name = $2")
+    let count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM recipes WHERE telegram_id = $1 AND recipe_name = $2")
             .bind(telegram_id)
             .bind(recipe_name)
             .fetch_one(pool)
             .await
             .context("Failed to check for duplicate recipes")?;
 
-    let count: i64 = row.get(0);
     let has_duplicates = count > 1;
 
     debug!(telegram_id = %telegram_id, recipe_name = %recipe_name, count = %count, has_duplicates = %has_duplicates, "Duplicate check completed");
@@ -1311,7 +1239,7 @@ pub async fn has_duplicate_recipes(
 }
 
 /// A saved recipe as shown in lists: id, name and creation date.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct RecipeSummary {
     pub id: i64,
     pub name: String,
@@ -1384,8 +1312,8 @@ pub async fn get_user_recipes_alphabetical(
 
 /// Every named recipe of `telegram_id`, in the order of the recipe list.
 async fn alphabetical_recipes(pool: &PgPool, telegram_id: i64) -> Result<Vec<RecipeSummary>> {
-    let rows = sqlx::query(
-        "SELECT id, recipe_name, created_at FROM recipes \
+    let rows = sqlx::query_as::<_, RecipeSummary>(
+        "SELECT id, recipe_name AS name, created_at FROM recipes \
          WHERE telegram_id = $1 AND recipe_name IS NOT NULL",
     )
     .bind(telegram_id)
@@ -1393,14 +1321,7 @@ async fn alphabetical_recipes(pool: &PgPool, telegram_id: i64) -> Result<Vec<Rec
     .await
     .context("Failed to get the recipes")?;
 
-    let mut recipes: Vec<RecipeSummary> = rows
-        .into_iter()
-        .map(|row| RecipeSummary {
-            id: row.get(0),
-            name: row.get(1),
-            created_at: row.get(2),
-        })
-        .collect();
+    let mut recipes: Vec<RecipeSummary> = rows;
     recipes.sort_by(|a, b| {
         crate::search::compare_names(&a.name, &b.name)
             .then(a.created_at.cmp(&b.created_at))
@@ -1640,8 +1561,10 @@ async fn validate_indexes(
 }
 
 /// A message recorded in `chat_messages`, taken back to be deleted or edited.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, sqlx::FromRow)]
 pub struct ChatMessage {
+    /// `BIGINT` in the table; Telegram's message ids fit an `i32`
+    #[sqlx(try_from = "i64")]
     pub message_id: i32,
     /// What it is: `transient`, `home`, `list`, `card` or `active_card`.
     pub kind: String,
@@ -1703,7 +1626,7 @@ pub async fn take_chat_messages_except(
     keep: Option<i32>,
 ) -> Result<Vec<ChatMessage>> {
     let kinds: Vec<String> = kinds.iter().map(|kind| (*kind).to_string()).collect();
-    let rows = sqlx::query(
+    let rows = sqlx::query_as::<_, ChatMessage>(
         "DELETE FROM chat_messages WHERE chat_id = $1 AND kind = ANY($2) \
          AND message_id IS DISTINCT FROM $3 \
          RETURNING message_id, kind, recipe_id, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable",
@@ -1715,13 +1638,7 @@ pub async fn take_chat_messages_except(
     .await
     .context("Failed to take chat messages")?;
     let mut messages: Vec<ChatMessage> = rows
-        .iter()
-        .map(|row| ChatMessage {
-            message_id: i32::try_from(row.get::<i64, _>("message_id")).unwrap_or(0),
-            kind: row.get("kind"),
-            recipe_id: row.get("recipe_id"),
-            deletable: row.get("deletable"),
-        })
+        .into_iter()
         .filter(|message| message.message_id > 0)
         .collect();
     messages.sort_by_key(|message| message.message_id);
@@ -1783,7 +1700,7 @@ pub async fn find_recipe_messages(
     recipe_id: i64,
 ) -> Result<Vec<ChatMessage>> {
     let kinds: Vec<String> = kinds.iter().map(|kind| (*kind).to_string()).collect();
-    let rows = sqlx::query(
+    let rows = sqlx::query_as::<_, ChatMessage>(
         "SELECT message_id, kind, recipe_id, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable \
          FROM chat_messages WHERE chat_id = $1 AND kind = ANY($2) AND recipe_id = $3 ORDER BY message_id",
     )
@@ -1794,13 +1711,7 @@ pub async fn find_recipe_messages(
     .await
     .context("Failed to read the messages of a recipe")?;
     Ok(rows
-        .iter()
-        .map(|row| ChatMessage {
-            message_id: i32::try_from(row.get::<i64, _>("message_id")).unwrap_or(0),
-            kind: row.get("kind"),
-            recipe_id: row.get("recipe_id"),
-            deletable: row.get("deletable"),
-        })
+        .into_iter()
         .filter(|message| message.message_id > 0)
         .collect())
 }

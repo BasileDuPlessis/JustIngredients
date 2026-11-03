@@ -47,11 +47,7 @@ async fn render(
     );
     let linked = linked_recipes(pool, telegram_id, recipe_id).await;
     Ok(Some(render_recipe_card(
-        recipe
-            .recipe_name
-            .as_ref()
-            .map(|name| name.as_str())
-            .unwrap_or("Unnamed Recipe"),
+        recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe"),
         &ingredients,
         &linked,
         view,

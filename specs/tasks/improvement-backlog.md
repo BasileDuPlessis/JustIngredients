@@ -711,7 +711,12 @@ they can be pulled into 1-hour micro-tasks without another review.
   statement removes its ingredients.
 
 ### IMP-027: Positional `row.get(i)` (panics) and duplicated row mapping
-- [ ] Done
+- [x] Done (2026-11-03): `User`, `Recipe`, `Ingredient`, `RecipeSummary` and `ChatMessage`
+  derive `sqlx::FromRow`; the 13 functions that copied rows field by field use
+  `sqlx::query_as` (columns by name), the two counts and ids `query_scalar`. `rg "row.get\(" src`
+  is empty: a type mismatch is an error, no longer a panic. `Arc<String>` fields are plain
+  `String`s. `users.language_code` is nullable: read as `COALESCE(language_code, 'en')`.
+  Runtime-checked queries (no `query_as!`), so no `cargo sqlx prepare --check` to add.
 - Priority: P2. Effort: M. Area: DB.
 - Location: `src/db.rs:104-108`, `src/db.rs:480-491`, `src/db.rs:565-575`, `src/db.rs:596-606`,
   `src/db.rs:777-784`, `src/db.rs:813-820` (same `Recipe`/`Ingredient` mapping repeated). Only

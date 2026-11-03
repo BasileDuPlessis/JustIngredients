@@ -612,7 +612,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         // Show the updated recipe details
         let recipe_name = recipe
             .recipe_name
-            .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
+            .unwrap_or_else(|| "Unnamed Recipe".to_string());
         edited_line = Some(t_args_lang(
             ctx.localization,
             "recipe-edited-line",
@@ -742,7 +742,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
 
         let recipe_name = recipe
             .recipe_name
-            .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
+            .unwrap_or_else(|| "Unnamed Recipe".to_string());
         let recipe_message = render_recipe_summary(
             &recipe_name,
             &matches,
@@ -899,7 +899,7 @@ pub async fn cancel_saved_editing(
                 crate::ingredient_editing::ingredients_to_measurement_matches(&ingredients);
             let recipe_name = recipe
                 .recipe_name
-                .unwrap_or_else(|| std::sync::Arc::new("Unnamed Recipe".to_string()));
+                .unwrap_or_else(|| "Unnamed Recipe".to_string());
             let recipe_message = render_recipe_summary(
                 &recipe_name,
                 &measurement_matches,

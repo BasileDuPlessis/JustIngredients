@@ -74,11 +74,7 @@ pub async fn handle_recipe_action(
             if let Ok(Some(recipe)) =
                 crate::db::read_recipe_with_name(&pool, telegram_id, recipe_id).await
             {
-                let current_name = recipe
-                    .recipe_name
-                    .as_ref()
-                    .map(|s| s.as_str())
-                    .unwrap_or("Unnamed Recipe");
+                let current_name = recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe");
 
                 let message = format!(
                     "🏷️ {}\n\n{}: {}\n\n{}",
@@ -255,7 +251,7 @@ pub async fn handle_delete_recipe_confirmation(
                 .await
                 .ok()
                 .flatten()
-                .and_then(|recipe| recipe.recipe_name.map(|name| name.to_string()));
+                .and_then(|recipe| recipe.recipe_name);
             // Read before the links go with the recipe: their cards name it (U9)
             let linked = crate::bot::cards::linked_ids(&pool, telegram_id, recipe_id).await;
             let result = crate::db::delete_recipe(&pool, telegram_id, recipe_id).await;
@@ -477,13 +473,7 @@ async fn handle_edit_ingredients_callback(
 
     // Send editing interface
     let edit_message = crate::bot::ui_builder::render_saved_editing(
-        Some(
-            recipe
-                .recipe_name
-                .as_ref()
-                .map(|s| s.as_str())
-                .unwrap_or("Unnamed Recipe"),
-        ),
+        Some(recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe")),
         &current_matches,
         language_code.as_deref(),
         localization,
