@@ -2,10 +2,13 @@
 name = "just-ingredients"
 version = "0.1.0"
 edition = "2021"
+# The toolchain of rust-toolchain.toml, deploy/Dockerfile and CI: bump them together
+rust-version = "1.99"
 license = "MIT"
 
 [dependencies]
-teloxide = "0.17.0"
+# rustls only (IMP-034): no OpenSSL in the binary nor in the image
+teloxide = { version = "0.17.0", default-features = false, features = ["ctrlc_handler", "rustls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["raw_value"] }
 sqlx = { version = "0.8", features = [ "postgres", "runtime-tokio-rustls", "chrono" ] }
@@ -13,7 +16,7 @@ tokio = { version = "1.48.0", features = ["full"] }
 dotenvy = "0.15"
 anyhow = "1.0.100"
 thiserror = "2.0"
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls", "charset", "http2", "system-proxy"] }
 base64 = "0.23" # Image encoding for the Gemini API
 bytes = "1" # Request body shared between retries without copying
 sha2 = "0.10" # Image fingerprints for the extraction cache

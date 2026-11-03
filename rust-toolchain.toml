@@ -1,5 +1,5 @@
-# Same toolchain locally, in CI and in the Docker builder (deploy/Dockerfile).
-# Bump all three together.
+# Same toolchain locally, in CI and in the Docker builder (deploy/Dockerfile), declared as
+# `rust-version` in Cargo.toml. Bump them together.
 [toolchain]
 channel = "1.99"
 components = ["clippy", "rustfmt"]

@@ -28,8 +28,8 @@ being tested), then to production when a deployment is started by hand and appro
   binary links against the runtime libraries). Bump Rust here, in `rust-toolchain.toml` and in
   the CI workflow together.
 - `cargo build --release` with `.sqlx/` (offline query checks); the binary is stripped.
-- Builder packages: `build-essential`, `pkg-config`, `libssl-dev`. Runtime packages: CA
-  certificates and libssl only (no OCR engine).
+- Builder packages: `build-essential` (a C compiler for `ring`). Runtime packages: CA
+  certificates only. TLS is rustls everywhere (teloxide, reqwest, sqlx): no OpenSSL.
 - The build fails if `ldd` reports a missing library.
 - Locales, the extraction prompt and its schema are embedded in the binary: the runtime image
   holds the binary only. `RUST_LOG=info,sqlx=warn`.

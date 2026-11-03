@@ -7,11 +7,10 @@ FROM rust:1.99-slim-trixie AS builder
 
 WORKDIR /app
 
+# A C compiler for ring (TLS is rustls only: no OpenSSL to link, IMP-034)
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        build-essential \
-       pkg-config \
-       libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY Cargo.toml Cargo.lock ./
@@ -41,7 +40,6 @@ FROM debian:trixie-slim AS runtime
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
        ca-certificates \
-       libssl3t64 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

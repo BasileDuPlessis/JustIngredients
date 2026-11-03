@@ -810,9 +810,13 @@ they can be pulled into 1-hour micro-tasks without another review.
 ## P3: Nice to Have
 
 ### IMP-034: Dependency hygiene: unused crates, duplicates, two TLS stacks, no MSRV
-- [ ] Done
-- Status: Partly done (2026-11-03): `lazy_static` removed (IMP-018). Left: see the triage of
-  2026-11-02 (`native-tls`, `rust-version`, duplicated crates).
+- [x] Done (2026-11-03): TLS is rustls only: teloxide (`default-features = false`,
+  `ctrlc_handler` and `rustls`) and reqwest (`rustls-tls`, `charset`, `http2`, `system-proxy`);
+  `cargo tree -i native-tls` and `-i openssl-sys` are empty, and only `ring` is left (no
+  `aws-lc`). The image no longer installs `libssl-dev`, `pkg-config` nor `libssl3t64`.
+  `rust-version = "1.99"`, the pinned toolchain (so no separate MSRV job). `lazy_static` went
+  with IMP-018, `tokio-util` and `thiserror` 1 before. Crates in two versions: 53 → 49, all
+  through other dependencies. Not done: the edition 2024 migration (its own task).
 - Priority: P3. Effort: M. Area: Dependencies.
 - Related: LLM migration (Task 5.1 removes `leptess`, `image` and `rand`, and Task 5.3 pins the Docker
   images).
