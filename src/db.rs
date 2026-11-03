@@ -6,7 +6,6 @@ use tracing::Instrument;
 use tracing::{debug, error, info, warn};
 
 // Import cache types
-use crate::cache::Cache;
 
 // Re-export types for easier access
 use crate::errors::error_logging;
@@ -981,107 +980,6 @@ pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>>
             Ok(None)
         }
     }
-}
-
-/// Get or create a user by Telegram ID with caching
-pub async fn get_or_create_user_cached(
-    pool: &PgPool,
-    telegram_id: i64,
-    language_code: Option<&str>,
-    cache: &std::sync::Mutex<crate::cache::CacheManager>,
-) -> Result<User> {
-    // Try cache first
-    {
-        let cache_manager = match cache.lock() {
-            Ok(manager) => manager,
-            Err(poisoned) => {
-                crate::observability::error("internal", "mutex_poisoned");
-                // For poisoned mutex, we can still access the data but log the incident
-                poisoned.into_inner()
-            }
-        };
-        if let Some(user) = cache_manager.user_cache.get(&telegram_id) {
-            debug!(telegram_id = %telegram_id, "User found in cache");
-            return Ok(user);
-        }
-    }
-
-    // Cache miss - fetch from database
-    let user = get_or_create_user(pool, telegram_id, language_code).await?;
-
-    // Cache the result
-    {
-        let mut cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
-        cache_manager.user_cache.insert(
-            telegram_id,
-            user.clone(),
-            std::time::Duration::from_secs(300),
-        ); // 5 minutes
-    }
-
-    Ok(user)
-}
-
-/// Get a user by Telegram ID with caching
-pub async fn get_user_by_telegram_id_cached(
-    pool: &PgPool,
-    telegram_id: i64,
-    cache: &std::sync::Mutex<crate::cache::CacheManager>,
-) -> Result<Option<User>> {
-    // Try cache first
-    {
-        let cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
-        if let Some(user) = cache_manager.user_cache.get(&telegram_id) {
-            debug!(telegram_id = %telegram_id, "User found in cache");
-            return Ok(Some(user));
-        }
-    }
-
-    // Cache miss - fetch from database
-    let user = get_user_by_telegram_id(pool, telegram_id).await?;
-
-    // Cache the result if found
-    if let Some(ref user) = user {
-        let mut cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
-        cache_manager.user_cache.insert(
-            telegram_id,
-            user.clone(),
-            std::time::Duration::from_secs(300),
-        ); // 5 minutes
-    }
-
-    Ok(user)
-}
-
-/// Get a user by internal ID with caching
-pub async fn get_user_by_id_cached(
-    pool: &PgPool,
-    user_id: i64,
-    cache: &std::sync::Mutex<crate::cache::CacheManager>,
-) -> Result<Option<User>> {
-    // Try cache first using the helper method
-    {
-        let cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
-        if let Some(user) = cache_manager.find_user_by_id(user_id) {
-            debug!(user_id = %user_id, "User found in cache by ID");
-            return Ok(Some(user));
-        }
-    }
-
-    // Cache miss - fetch from database
-    let user = get_user_by_id(pool, user_id).await?;
-
-    // Cache the result if found (by telegram_id for future lookups)
-    if let Some(ref user) = user {
-        let mut cache_manager = cache.lock().expect("Failed to acquire cache manager lock");
-        cache_manager.user_cache.insert(
-            user.telegram_id,
-            user.clone(),
-            std::time::Duration::from_secs(300),
-        );
-    }
-
-    Ok(user)
 }
 
 /// Create a new ingredient in the database

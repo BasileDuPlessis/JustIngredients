@@ -32,7 +32,6 @@ The database design provides persistent storage for user data, recipes, and extr
 - [ ] Search used by the bot (planned: UX Phase U4; the existing query covers content only)
 - [x] Performance meets sub-second requirements
 - [x] Data integrity maintained through constraints
-- [x] In-memory caching reduces repeated DB lookups
 - [x] Versioned migration system with rollback support
 
 ## Architecture
@@ -76,11 +75,6 @@ pub async fn get_or_create_user(pool: &PgPool, telegram_id: i64, language_code: 
 pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<Option<User>>
 pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>> // not called by the bot
 
-// Cached user lookups (5-minute TTL), none called by the bot
-pub async fn get_or_create_user_cached(pool, telegram_id, language_code, cache) -> Result<User>
-pub async fn get_user_by_telegram_id_cached(pool, telegram_id, cache) -> Result<Option<User>>
-pub async fn get_user_by_id_cached(pool, user_id, cache) -> Result<Option<User>>
-
 // Recipe CRUD (owner-scoped: rows of another telegram_id behave as missing)
 pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Result<i64>
 pub async fn read_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Option<Recipe>> // not called by the bot
@@ -115,8 +109,8 @@ pub async fn delete_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i
 pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> // by users.id, not called by the bot
 pub async fn get_recipe_ingredients(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Vec<Ingredient>> // ORDER BY created_at, id: a recipe saved in one transaction gives all its ingredients the same created_at
 
-// The user *_cached functions keep results 5 minutes; the bot reads recipes and ingredients
-// without a cache (the recipe caches were removed on 2026-10-28, IMP-010)
+// No cache: the bot reads users, recipes and ingredients from the database each time (the
+// recipe caches went on 2026-10-28, IMP-010; the unused user caches on 2026-11-03, IMP-035)
 
 // Schema management
 pub async fn init_database_schema(pool: &PgPool) -> Result<()>

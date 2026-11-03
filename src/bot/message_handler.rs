@@ -424,122 +424,6 @@ async fn handle_command(
     }
 }
 
-/// Main message handler for Telegram bot interactions
-///
-/// Implements comprehensive message routing and dialogue state management.
-/// This function orchestrates the entire bot interaction flow, handling different
-/// message types and managing conversation state across multiple dialogue phases.
-///
-/// ## Message Routing Algorithm
-///
-/// ```text
-/// 1. Extract message metadata (type, language, user info)
-/// 2. Route by message type:
-///    ├── Text → handle_text_message()
-///    ├── Photo → handle_photo_message()
-///    ├── Document → handle_document_message()
-///    └── Other → handle_unsupported_message()
-/// 3. Handle dialogue state transitions
-/// 4. Measure the handling time (`ji_update_duration_seconds`)
-/// 5. Return result with error handling
-/// ```
-///
-/// ## Dialogue State Machine
-///
-/// The bot maintains complex conversation state using `RecipeDialogueState`:
-///
-/// ```text
-/// Start ──photo read──► ReviewIngredients ────user confirms, no name───► WaitingForRecipeNameAfterConfirm
-///                              │                                      │
-///                              │ user edits                           │ user provides name
-///                              ▼                                      ▼
-///                       EditingIngredient ──► ReviewIngredients ──► [Recipe Saved]
-/// ```
-///
-/// ## State-Specific Message Handling
-///
-/// ### Text Messages
-/// - **Any State**: Commands win (see `commands::route_text`) and end the running action
-/// - **ReviewIngredients**: Handle ingredient review commands (edit/delete/confirm)
-/// - **EditingIngredient**: Process ingredient edit input
-/// - **WaitingForRecipeNameAfterConfirm**: Handle post-confirmation recipe naming
-///
-/// ### Photo Messages
-/// - Extract caption for automatic recipe naming
-/// - Download the image and read its ingredients (Gemini)
-/// - Transition to ingredient review interface
-/// - Handle caption validation and fallback logic
-///
-/// ### Document Messages
-/// - Validate image MIME types
-/// - Process supported image formats
-/// - Same reading as photos (no caption support)
-///
-/// ## Language Detection & Localization
-///
-/// ```text
-/// 1. Extract language_code from Telegram user.language_code
-/// 2. Fallback to 'en' if not available
-/// 3. Load appropriate Fluent bundle for localization
-/// 4. Use localized messages throughout interaction
-/// ```
-///
-/// ## Error Handling Strategy
-///
-/// - **Graceful Degradation**: Unsupported messages get helpful guidance
-/// - **User-Friendly Messages**: Localized error responses
-/// - **State Preservation**: Dialogue state maintained across errors
-/// - **Logging**: Comprehensive error logging for debugging
-///
-/// ## Thread Safety
-///
-/// - Uses `Arc<PgPool>` for database connection sharing
-/// - Dialogue state managed per chat_id
-/// - Localization manager shared across requests
-///
-/// # Arguments
-///
-/// * `bot` - Telegram bot instance for sending responses
-/// * `msg` - Incoming Telegram message to process
-/// * `pool` - PostgreSQL connection pool for data persistence
-/// * `dialogue` - Dialogue state manager for conversation flow
-/// * `localization` - Localization manager for multi-language support
-///
-/// # Returns
-///
-/// Returns `Result<(), anyhow::Error>` indicating success or failure
-///
-/// # Message Type Support
-///
-/// - **Text**: Commands, dialogue input, recipe management
-/// - **Photo**: Image processing with optional captions
-/// - **Document**: Image files uploaded as documents
-/// - **Unsupported**: Guidance for unsupported message types
-pub async fn message_handler(
-    bot: Bot,
-    msg: Message,
-    pool: Arc<PgPool>,
-    dialogue: RecipeDialogue,
-    localization: Arc<crate::localization::LocalizationManager>,
-    deduplicator: Option<&crate::deduplication::SharedDeduplicator>,
-    extractor: SharedExtractor,
-) -> Result<()> {
-    let span = crate::observability::telegram_span(
-        "message_handler",
-        msg.from.as_ref().map(|u| u.id.0 as i64),
-    );
-    // Instrumented, not entered: an entered span would tag other tasks across .await
-    async {
-        if is_duplicate_message(deduplicator, msg.chat.id, msg.id)? {
-            return Ok(());
-        }
-
-        dispatch_message(bot, msg, pool, dialogue, localization, extractor).await
-    }
-    .instrument(span)
-    .await
-}
-
 /// Records the request in the deduplicator and returns `true` when it was already seen.
 ///
 /// Each incoming message must go through this check exactly once: the deduplicator records
@@ -607,15 +491,12 @@ async fn dispatch_message(
 pub struct MessageServices {
     pub pool: Arc<PgPool>,
     pub localization: Arc<crate::localization::LocalizationManager>,
-    pub cache: Arc<std::sync::Mutex<crate::cache::CacheManager>>,
     pub deduplicator: Option<crate::deduplication::SharedDeduplicator>,
     pub extractor: SharedExtractor,
 }
 
-/// Cache-enabled message handler for improved performance
-///
-/// This version includes caching for database queries
-/// to reduce processing time and database load.
+/// The message branch of the dispatcher: drops duplicate deliveries, then handles the message
+/// by its type (text, photo, document, other).
 pub async fn message_handler_with_cache(
     bot: Bot,
     msg: Message,
@@ -625,7 +506,6 @@ pub async fn message_handler_with_cache(
     let MessageServices {
         pool,
         localization,
-        cache: _,
         deduplicator,
         extractor,
     } = services;

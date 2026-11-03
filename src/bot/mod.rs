@@ -40,7 +40,7 @@ pub struct HandlerContext<'a> {
 
 // Re-export main handler functions for use in main.rs
 pub use callbacks::callback_handler::callback_handler_with_cache;
-pub use message_handler::{message_handler, message_handler_with_cache, MessageServices};
+pub use message_handler::{message_handler_with_cache, MessageServices};
 
 // Re-export utility functions that might be used elsewhere
 pub use crate::validation::parse_ingredient_from_text;

@@ -29,10 +29,8 @@ use super::editing_callbacks;
 // Import localization
 use crate::localization::t_lang;
 
-/// Cache-enabled callback handler for improved performance
-///
-/// This version includes caching for database queries to reduce
-/// database load and improve response times.
+/// The button branch of the dispatcher: the running action's handler first, then the handlers
+/// that work in any state; the query is always answered.
 pub async fn callback_handler_with_cache(
     bot: Bot,
     q: teloxide::types::CallbackQuery,

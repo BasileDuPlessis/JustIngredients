@@ -78,8 +78,10 @@ src/bot/
 
 ### `MessageServices`
 Built once in `main.rs` and cloned per message (all fields reference-counted):
-`pool` (Postgres), `localization`, `cache` (`CacheManager`), `deduplicator`, `extractor`
-(`SharedExtractor`). The callback branch receives the pool, localization and cache directly.
+`pool` (Postgres), `localization`, `deduplicator`, `extractor` (`SharedExtractor`). The
+callback branch receives the pool and localization directly. There is no in-memory cache of
+database reads (the database answers in a few milliseconds); the only cache is the extraction
+guard's, of Gemini results by image hash.
 
 ## Messages and Commands
 | Input | Behaviour |

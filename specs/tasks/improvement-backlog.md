@@ -821,6 +821,13 @@ they can be pulled into 1-hour micro-tasks without another review.
 
 ### IMP-035: Dead code (unused caches, DB functions, handlers, helpers)
 - [ ] Done
+- Status: Partly done (2026-11-03): `src/cache.rs` deleted (`CacheManager`, `MemoryCache`,
+  `DbQueryCache`, about 670 lines: nothing read it, `MessageServices.cache` was ignored), with
+  the three `*_cached` user functions of `db.rs` and the uncalled `message_handler` (only
+  `message_handler_with_cache` is routed). Left: `read_recipe`, `update_recipe`,
+  `read_ingredient`, `update_ingredient`, `delete_ingredient`, `list_ingredients_by_user` and
+  `take_chat_messages` are used only by `db_tests`, among them the owner-check tests (IMP-002):
+  to remove when those tests move to the functions the bot calls.
 - Priority: P3. Effort: M. Area: Code organization.
 - Related: LLM migration (Task 3.4 plans to reuse `OcrResultCache`. It is unbounded and never purged
   (IMP-010), so use a bounded cache instead.)

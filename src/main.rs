@@ -1,6 +1,5 @@
 use anyhow::Result;
 use just_ingredients::bot;
-use just_ingredients::cache::CacheManager;
 use just_ingredients::config::AppConfig;
 use just_ingredients::db;
 use just_ingredients::db_connection::{self, DEFAULT_CONNECT_BACKOFF};
@@ -191,10 +190,6 @@ async fn main() -> Result<()> {
     // Messages to delete at the end of an action are recorded in the database
     bot::cleanup::init(Arc::clone(&shared_pool));
 
-    // Initialize cache manager for performance optimization
-    let cache_manager = Arc::new(std::sync::Mutex::new(CacheManager::new()));
-    info!("Cache manager initialized for performance optimization");
-
     // Initialize request deduplicator to prevent duplicate message processing
     let deduplicator = crate::deduplication::create_shared_deduplicator(300, 10000); // 5 min TTL, 10k entries
     info!("Request deduplicator initialized for duplicate message prevention");
@@ -356,7 +351,6 @@ async fn main() -> Result<()> {
             let services = bot::MessageServices {
                 pool: Arc::clone(&shared_pool),
                 localization: Arc::clone(&localization_manager),
-                cache: Arc::clone(&cache_manager),
                 deduplicator: Some(Arc::clone(&deduplicator)),
                 extractor: Arc::clone(&extractor),
             };

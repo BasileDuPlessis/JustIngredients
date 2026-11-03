@@ -4,7 +4,6 @@
 //! user check it, and stores the recipe and its ingredients in Postgres.
 
 pub mod bot;
-pub mod cache;
 pub mod config;
 pub mod conversion;
 pub mod db;
