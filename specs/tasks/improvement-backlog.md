@@ -953,7 +953,13 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: one push produces one image digest, visible in both staging and production releases.
 
 ### IMP-042: Deprecated Node 20 actions; smoke tests on Node 18 check health only
-- [ ] Done
+- [x] Done (2026-11-03): the actions run on current versions and the smoke tests on Node 22.
+  Telegram is covered: `/health/ready` needs a confirmed `getMe` (`expect_telegram`), so a
+  revoked bot token fails the staging smoke tests. Gemini: the user chose (2026-11-03) an alert
+  rather than a blocking check: when the startup check (`verify_access`, a free read of the
+  model) fails, the owner gets 🔴 "Gemini ne répond pas au démarrage (reason)"; the bot still
+  starts and readiness does not depend on Gemini (an outage at a restart would look like the bot
+  down).
 - Priority: P3. Effort: S. Area: CI/CD.
 - Location: all workflows (`actions/checkout@v4`, `actions/setup-node@v4`, `docker/*` actions),
   `.github/workflows/deploy-staging.yml` (`node-version: '18'`), `smoke-tests.js`.
@@ -1080,7 +1086,11 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: the reverse locale test passes.
 
 ### IMP-050: Deploys use the image tag, not its digest
-- [ ] Done
+- [x] Done (2026-11-03), simpler than a digest: the per-commit tag is immutable. The `image` job
+  of "Build and Test" pushes nothing when `sha-<commit>` already exists
+  (`docker buildx imagetools inspect`), so a re-run cannot replace the image staging ran;
+  staging and production keep deploying the tag. Production still records the running digest for
+  its rollback.
 - Priority: P3. Effort: S. Area: CI/CD.
 - Location: `.github/workflows/deploy-staging.yml`, `deploy-production.yml` (`--image …:sha-<commit>`).
 - Problem: re-running the `image` job of "Build and Test" pushes a new digest under the same

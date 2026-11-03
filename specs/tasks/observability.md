@@ -148,6 +148,7 @@ et par sujet :
 | 💸 Coût du jour | le coût estimé de la journée dépasse un seuil (1 $ proposé) |
 | 🟠 Base de données | une requête échoue alors que la base répondait (une fois par panne) |
 | 🔁 Redémarrage | le bot a redémarré : au démarrage, il le dit (sauf après une mise en production, déjà notifiée) |
+| 🔴 Gemini au démarrage | ajoutée le 2026-11-03 (IMP-042, choix 2 de l'utilisateur) : la vérification de Gemini au démarrage échoue (clé refusée, modèle introuvable, injoignable) ; le bot démarre quand même, sans bloquer le déploiement |
 
 « Production Uptime » reste l'alerte quand le bot ne répond plus du tout : un bot arrêté ne peut
 pas prévenir.

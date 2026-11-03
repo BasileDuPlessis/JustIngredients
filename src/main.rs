@@ -107,7 +107,10 @@ async fn main() -> Result<()> {
         );
     }
     let gemini = GeminiExtractor::new(&app_config.extraction.gemini)?;
-    match gemini.verify_access().await {
+    // Its failure does not stop the bot (lists and recipes still work): the owner is told once
+    // the alerts run, below
+    let gemini_check = gemini.verify_access().await;
+    match &gemini_check {
         Ok(()) => info!(model = %app_config.extraction.gemini.model, "Gemini API access verified"),
         Err(error) => tracing::error!(
             model = %app_config.extraction.gemini.model,
@@ -151,6 +154,9 @@ async fn main() -> Result<()> {
         &shared_pool,
     )));
     if let Some(owner) = observability::alerts::start(bot.clone(), Arc::clone(&shared_pool)).await {
+        if let Err(error) = &gemini_check {
+            observability::alerts::gemini_failed_at_start(error);
+        }
         tokio::spawn(observability::report::run(
             bot.clone(),
             Arc::clone(&shared_pool),

@@ -114,7 +114,20 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ secrets.GITHUB_TOKEN }}
 
+    - name: Keep the image already pushed for this commit
+      # A re-run must not push another image under the same tag: staging ran the first one and
+      # production deploys the tag after it (IMP-050). Not found (or unreadable): build it.
+      id: existing
+      run: |
+        if docker buildx imagetools inspect "$IMAGE:sha-$GITHUB_SHA" > /dev/null 2>&1; then
+          echo "The image of this commit is already pushed: kept as is"
+          echo "pushed=true" >> "$GITHUB_OUTPUT"
+        else
+          echo "pushed=false" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Build and push the image
+      if: steps.existing.outputs.pushed != 'true'
       uses: docker/build-push-action@v7
       with:
         context: .

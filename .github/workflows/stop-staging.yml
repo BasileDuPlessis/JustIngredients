@@ -39,9 +39,13 @@ jobs:
       uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
     - name: Stop the staging bot
+      # `machine stop` returns once the signal is sent: wait until the bot has stopped, so that
+      # its last writes (usage, the dialogue heartbeat) find the database still running
       run: |
         for id in $(flyctl machine list --app "$STAGING_APP" --quiet); do
           flyctl machine stop "$id" --app "$STAGING_APP"
+          flyctl machine wait "$id" --app "$STAGING_APP" --state stopped --wait-timeout 60s \
+            || echo "::warning::The staging bot $id did not report stopped within 60 s"
         done
 
     - name: Stop the staging database

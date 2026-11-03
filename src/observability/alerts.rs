@@ -54,6 +54,11 @@ pub enum Alert {
     DatabaseBack,
     /// The bot started again without a new release (a crash, or Fly moving the machine).
     Restarted,
+    /// The startup check of Gemini failed (a key refused, a model gone, unreachable): photos
+    /// will fail. Not a down/back pair: the breaker's alerts tell what comes next.
+    GeminiFailedAtStart {
+        reason: &'static str,
+    },
 }
 
 impl Alert {
@@ -65,6 +70,7 @@ impl Alert {
             Self::DailyCost { .. } => "daily_cost",
             Self::DatabaseDown | Self::DatabaseBack => "database_down",
             Self::Restarted => "restarted",
+            Self::GeminiFailedAtStart { .. } => "gemini_start",
         }
     }
 
@@ -87,6 +93,10 @@ impl Alert {
                 .to_string(),
             Self::DatabaseBack => "🟢 Base de données de nouveau joignable.".to_string(),
             Self::Restarted => "🔁 Le bot a redémarré (sans mise en production).".to_string(),
+            Self::GeminiFailedAtStart { reason } => format!(
+                "🔴 Gemini ne répond pas au démarrage ({reason}) : les photos vont échouer. \
+                 À vérifier : la clé GEMINI_API_KEY et le modèle."
+            ),
         }
     }
 }
@@ -239,6 +249,30 @@ pub fn gemini_cost(micro_usd: u64) {
     let alert = watch().cost(micro_usd, super::usage::today());
     if let Some(alert) = alert {
         raise(alert);
+    }
+}
+
+/// The startup check of Gemini failed: tells the owner why, in a few words. Call it after
+/// [`start`], which opens the way to the owner.
+pub fn gemini_failed_at_start(error: &crate::extraction::ExtractionError) {
+    raise(Alert::GeminiFailedAtStart {
+        reason: start_failure_reason(error),
+    });
+}
+
+/// A few words for the owner on why the startup check of Gemini failed.
+fn start_failure_reason(error: &crate::extraction::ExtractionError) -> &'static str {
+    use crate::extraction::ExtractionError;
+    match error {
+        ExtractionError::Api {
+            status: 400 | 401 | 403,
+            ..
+        }
+        | ExtractionError::Config(_) => "clé refusée",
+        ExtractionError::Api { status: 404, .. } => "modèle introuvable",
+        ExtractionError::RateLimited { .. } => "limite d'appels atteinte",
+        ExtractionError::Timeout | ExtractionError::Network(_) => "injoignable",
+        _ => "réponse inattendue",
     }
 }
 
@@ -451,5 +485,47 @@ mod tests {
         }
         .text()
         .contains("2 échecs sur 5 appels"));
+    }
+
+    #[test]
+    fn a_failed_startup_check_says_why_in_a_few_words() {
+        use crate::extraction::ExtractionError;
+        let api = |status| ExtractionError::Api {
+            status,
+            message: "the API's own text".to_string(),
+        };
+        assert_eq!(start_failure_reason(&api(403)), "clé refusée");
+        assert_eq!(start_failure_reason(&api(400)), "clé refusée");
+        assert_eq!(start_failure_reason(&api(404)), "modèle introuvable");
+        assert_eq!(start_failure_reason(&api(500)), "réponse inattendue");
+        assert_eq!(
+            start_failure_reason(&ExtractionError::Timeout),
+            "injoignable"
+        );
+        assert_eq!(
+            start_failure_reason(&ExtractionError::Network("dns".to_string())),
+            "injoignable"
+        );
+        let text = Alert::GeminiFailedAtStart {
+            reason: "clé refusée",
+        }
+        .text();
+        assert!(text.contains("(clé refusée)") && text.contains("les photos vont échouer"));
+        assert!(!text.contains("the API's own text"));
+    }
+
+    #[test]
+    fn the_startup_check_alert_has_its_own_subject() {
+        let mut gate = Gate::default();
+        let now = Instant::now();
+        assert!(gate.admits(&Alert::GeminiDown, now));
+        let failed = Alert::GeminiFailedAtStart {
+            reason: "injoignable",
+        };
+        assert!(
+            gate.admits(&failed, now),
+            "not held back by the breaker's alert"
+        );
+        assert!(!gate.admits(&failed, now), "once an hour");
     }
 }
