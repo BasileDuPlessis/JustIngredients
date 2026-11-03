@@ -102,7 +102,7 @@ review-quantities-to-check = ⚠️ Vérifiez la quantité de : {$ingredients}. 
 error-invalid-edit = Index d'ingrédient invalide pour l'édition.
 confirm = Confirmer
 cancel = Annuler
-review-help = Utilisez les boutons, ou répondez "valider" pour enregistrer ces ingrédients ou "annuler" pour abandonner.
+review-not-understood = 🤔 Je n'ai pas compris ce message. Pour corriger un ingrédient, touchez-le dans la liste ci-dessous, puis « 🔢 Quantité », « 🏷️ Nom » ou « ✏️ Toute la ligne ». ✅ enregistre la recette, ❌ l'abandonne.
 
 # Messages de pagination
 previous = Précédent

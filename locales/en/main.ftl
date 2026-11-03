@@ -103,7 +103,7 @@ edit-invalid-quantity-answer = Quantity not recognised. Type a number, with or w
 edit-invalid-input = Input not recognised.
 review-quantities-to-check = ⚠️ Please check the quantity of: {$ingredients}. Tap an ingredient to fix it, then confirm again.
 error-invalid-edit = Invalid ingredient index for editing.
-review-help = Use the buttons, or reply "confirm" to save these ingredients or "cancel" to discard them.
+review-not-understood = 🤔 I did not understand this message. To fix an ingredient, tap it in the list below, then “🔢 Quantity”, “🏷️ Name” or “✏️ Whole line”. ✅ saves the recipe, ❌ discards it.
 
 # Pagination messages
 previous = Previous

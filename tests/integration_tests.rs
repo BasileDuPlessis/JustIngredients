@@ -39,6 +39,7 @@ fn test_dialogue_flow_integrity_with_multi_line_ingredients() {
         message_id: Some(123),
         extracted_text: "2 cups old-fashioned\nrolled oats\n1 cup sugar".to_string(),
         recipe_name_from_caption: None,
+        open_menu: None,
     };
 
     // Verify state contains correct data
@@ -145,4 +146,21 @@ fn test_multi_line_ingredients_ui_display_formatting() {
     );
 
     println!("✅ Multi-line ingredients UI display formatting test passed");
+}
+
+/// A review stored before `open_menu` existed (the release before 2026-11-03) still reads after
+/// the deploy, with no menu open.
+#[test]
+fn a_review_stored_without_an_open_menu_still_reads() {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    let stored = r#"{"ReviewIngredients":{"recipe_name":"Recipe","ingredients":[],"language_code":"fr","message_id":12,"extracted_text":"","recipe_name_from_caption":null}}"#;
+    let state: RecipeDialogueState = serde_json::from_str(stored).expect("an older state reads");
+    assert!(matches!(
+        state,
+        RecipeDialogueState::ReviewIngredients {
+            open_menu: None,
+            message_id: Some(12),
+            ..
+        }
+    ));
 }

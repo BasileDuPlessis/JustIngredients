@@ -1655,6 +1655,7 @@ async fn test_dialogue_storage_survives_a_restart_impl(pool: &PgPool) -> Result<
         message_id: Some(42),
         extracted_text: "1 1/2 cup farine « T55 »\n".to_string(),
         recipe_name_from_caption: Some("Tarte".to_string()),
+        open_menu: None,
     };
 
     let dialogue = RecipeDialogue::new(PgDialogueStorage::new(pool.clone()), ChatId(42));

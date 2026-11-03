@@ -310,6 +310,7 @@ mod tests {
             message_id: None,
             extracted_text: "Test OCR text".to_string(),
             recipe_name_from_caption: None,
+            open_menu: None,
         };
 
         // Simulate deleting an ingredient
@@ -323,6 +324,7 @@ mod tests {
             message_id: None,
             extracted_text: "Test OCR text".to_string(),
             recipe_name_from_caption: None,
+            open_menu: None,
         };
 
         // Verify the states are different
@@ -356,6 +358,7 @@ mod tests {
             message_id: None,
             extracted_text: "Test OCR text".to_string(),
             recipe_name_from_caption: None,
+            open_menu: None,
         };
 
         match empty_state {

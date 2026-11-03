@@ -38,6 +38,10 @@ pub enum RecipeDialogueState {
         message_id: Option<i32>, // ID of the review message to edit
         extracted_text: String,  // The ingredient text read from the photo
         recipe_name_from_caption: Option<String>, // Track recipe name from photo caption
+        /// The ingredient whose menu (quantity, name, line, delete) is open on the review list:
+        /// a typed answer applies to it.
+        #[serde(default)]
+        open_menu: Option<usize>,
     },
     EditingIngredient {
         recipe_name: String,

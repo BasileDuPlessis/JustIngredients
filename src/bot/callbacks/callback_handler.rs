@@ -427,6 +427,7 @@ async fn handle_editing_ingredient_callbacks(
                         message_id: original_message_id, // Use original message ID for the restored display
                         extracted_text,
                         recipe_name_from_caption, // Preserve original caption info
+                        open_menu: None,
                     })
                     .await?;
             }
@@ -585,6 +586,7 @@ mod tests {
             message_id: None,
             extracted_text: String::new(),
             recipe_name_from_caption: None,
+            open_menu: None,
         }
     }
 
@@ -623,6 +625,7 @@ mod tests {
             message_id: Some(50),
             extracted_text: String::new(),
             recipe_name_from_caption: None,
+            open_menu: None,
         };
         assert!(
             is_stale_button("confirm", Some(&review), Some(40)),

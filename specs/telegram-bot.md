@@ -147,7 +147,8 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
 - `item_<i>`: the keyboard of the same message becomes the ingredient's menu
   (`create_ingredient_menu_keyboard`, `callbacks::ingredient_menu`): 👉 the line (`noop`),
   🔢 `qty_<i>`, 🏷️ `name_<i>`, ✏️ `edit_<i>`, 🗑️ `delete_<i>`, ⬅️ `back_review` (list keyboard
-  again).
+  again). During a review the open menu is kept in the state (`ReviewIngredients.open_menu`),
+  so a text typed instead of choosing applies to that ingredient (below).
 - `qty_<i>`, `name_<i>`, `edit_<i>`: the message becomes a focused prompt with only a Cancel
   button (`cancel_ingredient_editing`); state `EditingIngredient` with `field` `Quantity`, `Name`
   or `Line` (`ingredient_editing::apply_edit`). A quantity answer is a number in range or `-`
@@ -186,7 +187,9 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
 - `confirm` (and a typed confirm word, see below; both call `review_callbacks::confirm_review`):
   an empty list gets `review-empty-confirm` (a recipe without ingredients could not be edited
   later); **quantity guard**: if a line has ⚠️, the bot sends `review-quantities-to-check`
-  with their names and stays in the review until they are edited or deleted. The review list is
+  with their names, then the review list again below it with its buttons (the one above is
+  deleted: `review_callbacks::move_review_down`), and stays in the review until they are edited
+  or deleted. The review list is
   recorded for cleanup as soon as it is sent (with the photo), so a command that ends the review
   deletes it too, and so does a cancel. Then:
   - name from the caption or the page title: saved at once; the review loses its buttons; the
@@ -211,8 +214,12 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
 
 Typed text in `ReviewIngredients`: a confirm word ("confirm", "ok", "yes", "save", "valider",
 "valide", "confirmer", "oui", "enregistrer") does exactly what ✅ does (quantity guard, then save
-under the caption or title name, or ask for the name); a cancel word cancels; anything else
-answers `review-help`. Cancel words, everywhere a prompt is open: "cancel",
+under the caption or title name, or ask for the name); a cancel word cancels. With an
+ingredient's menu open, another text is that ingredient's new quantity ("4", "1/2 cuillère à
+soupe") or else its whole new line, and the list comes down below the answer (user report of
+2026-11-03: a quantity typed without choosing 🔢 got a copy of the list without buttons, the
+buttons out of view). Anything else answers `review-not-understood` (what to tap), then the list
+comes down below it with its buttons. Cancel words, everywhere a prompt is open: "cancel",
 "stop", "back", "annuler", "annule", "retour", "arrêter" (`is_cancellation_command`).
 
 Saving (`save_ingredients_to_database` → `db::save_recipe`): the user, the recipe with its name
@@ -256,7 +263,7 @@ Before sending the list, `send_home` deletes what the action left behind (`bot::
 - the messages recorded during the action: every text the user typed in a dialogue state
   (recorded in `handle_text_message`) and the bot prompts sent with `cleanup::send_transient`:
   quantity questions and the "check the quantities" warning, "try again" answers (name, edit,
-  quantity), `review-help`, `use-buttons-instruction`, the rename and add-ingredient prompts,
+  quantity), `review-not-understood`, `use-buttons-instruction`, the rename and add-ingredient prompts,
   and the name prompt when the name is cancelled;
 - the user's photo or image document, recorded once its review starts: it stays while the
   ingredients are reviewed and goes when the review ends (saved, cancelled or interrupted by a
@@ -372,7 +379,7 @@ of the message that opened it.
 | State | Entered by | Text input |
 |---|---|---|
 | `Start` (default) | no state | Commands and echo |
-| `ReviewIngredients` | Successful extraction; end of an edit | "confirm"/"ok"/"yes"/"save", "cancel"/"stop", else help |
+| `ReviewIngredients` | Successful extraction; end of an edit | "confirm"/"ok"/"yes"/"save", "cancel"/"stop"; with a menu open, that ingredient's quantity or line; else `review-not-understood` and the list below |
 | `EditingIngredient` | `qty_<i>`, `name_<i>`, `edit_<i>` or `add_ingredient` in a review | Quantity, name or whole line (`field`); a new line when adding |
 | `WaitingForRecipeNameAfterConfirm` | `confirm` (button or typed) without a caption or title name | Recipe name |
 | `RenamingRecipe` | `recipe_action:rename` | New name |

@@ -281,6 +281,7 @@ pub async fn download_and_process_image(
             message_id: Some(sent_message.id.0 as i32),
             extracted_text: extracted_text.clone(),
             recipe_name_from_caption,
+            open_menu: None,
         })
         .await?;
 

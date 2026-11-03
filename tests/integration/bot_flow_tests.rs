@@ -202,6 +202,7 @@ fn test_photo_caption_workflow_integration() {
         message_id: None,
         extracted_text: recipe_text.to_string(),
         recipe_name_from_caption: Some(recipe_name_candidate.to_string()),
+        open_menu: None,
     };
 
     // Verify dialogue state contains caption-derived name
@@ -503,6 +504,7 @@ fn test_caption_preservation_after_ingredient_deletion() {
         message_id: Some(12345),
         extracted_text: recipe_text.to_string(),
         recipe_name_from_caption: recipe_name_from_caption.clone(),
+        open_menu: None,
     };
 
     // Verify initial state has caption info
@@ -526,6 +528,7 @@ fn test_caption_preservation_after_ingredient_deletion() {
         message_id: Some(12345),
         extracted_text: recipe_text.to_string(),
         recipe_name_from_caption: recipe_name_from_caption.clone(), // This should be preserved!
+        open_menu: None,
     };
 
     // Verify the caption info is still preserved after deletion
@@ -604,6 +607,7 @@ fn test_initial_recipe_creation_editing_workflow() {
         message_id: Some(1000), // Original recipe display message ID
         extracted_text: "2 cups flour\n3 eggs\n1 cup sugar".to_string(),
         recipe_name_from_caption: None,
+        open_menu: None,
     };
 
     // Verify initial state
@@ -693,6 +697,7 @@ fn test_initial_recipe_creation_editing_workflow() {
         message_id: Some(1000), // Back to original message ID for replacement
         extracted_text: "2 cups flour\n3 eggs\n1 cup sugar".to_string(),
         recipe_name_from_caption: None,
+        open_menu: None,
     };
 
     // Verify the flour ingredient was updated
@@ -719,6 +724,7 @@ fn test_initial_recipe_creation_editing_workflow() {
         message_id: Some(1000), // Original message ID restored
         extracted_text: "2 cups flour\n3 eggs\n1 cup sugar".to_string(),
         recipe_name_from_caption: None,
+        open_menu: None,
     };
 
     // Verify cancel restored original ingredients

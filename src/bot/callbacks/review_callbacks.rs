@@ -56,6 +56,7 @@ pub async fn handle_review_ingredients_callbacks(
         message_id,
         extracted_text,
         recipe_name_from_caption,
+        open_menu: _,
     }) = dialogue_state
     {
         if q.message.is_some() {
@@ -70,6 +71,22 @@ pub async fn handle_review_ingredients_callbacks(
                     localization,
                 )
                 .await?;
+                // A typed answer applies to the ingredient whose menu is open
+                let open_menu = match action {
+                    IngredientAction::Menu(index) if index < ingredients.len() => Some(index),
+                    _ => None,
+                };
+                dialogue
+                    .update(RecipeDialogueState::ReviewIngredients {
+                        recipe_name,
+                        ingredients,
+                        language_code: dialogue_lang_code,
+                        message_id,
+                        extracted_text,
+                        recipe_name_from_caption,
+                        open_menu,
+                    })
+                    .await?;
             } else if let Some(IngredientAction::Edit(..)) = action {
                 handle_edit_button(ReviewIngredientsParams {
                     ctx: &HandlerContext {
@@ -434,6 +451,7 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
                 message_id,
                 extracted_text: extracted_text.to_string(),
                 recipe_name_from_caption: recipe_name_from_caption.cloned().flatten(), // Preserve caption info
+                open_menu: None,
             })
             .await
         {
@@ -544,6 +562,15 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
             ),
         )
         .await?;
+        // The list comes down below the message, with the buttons to fix them
+        move_review_down(
+            c.bot,
+            c.chat_id,
+            c.dialogue,
+            c.localization,
+            c.language_code,
+        )
+        .await?;
         return Ok(());
     }
 
@@ -631,6 +658,62 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
         c.language_code,
     )
     .await;
+    Ok(())
+}
+
+/// Sends the review list again at the bottom of the chat, with its buttons, after an answer
+/// that pushed it out of view (a quantity check, a typed text not understood), and deletes the
+/// one above (or only removes its buttons when Telegram refuses): its buttons stay at hand.
+/// An open ingredient menu closes.
+pub async fn move_review_down(
+    bot: &Bot,
+    chat_id: ChatId,
+    dialogue: &RecipeDialogue,
+    localization: &Arc<crate::localization::LocalizationManager>,
+    language_code: Option<&str>,
+) -> Result<()> {
+    let Some(RecipeDialogueState::ReviewIngredients {
+        recipe_name,
+        ingredients,
+        language_code: state_language,
+        message_id,
+        extracted_text,
+        recipe_name_from_caption,
+        open_menu: _,
+    }) = dialogue.get().await?
+    else {
+        return Ok(());
+    };
+    let review = crate::bot::html::send_html(
+        bot,
+        chat_id,
+        render_review(&ingredients, language_code, localization),
+    )
+    .reply_markup(create_ingredient_review_keyboard(
+        &ingredients,
+        language_code,
+        localization,
+    ))
+    .await?;
+    cleanup::track(chat_id, review.id).await;
+    if let Some(above) = message_id.map(teloxide::types::MessageId) {
+        if bot.delete_message(chat_id, above).await.is_ok() {
+            cleanup::untrack(chat_id, above).await;
+        } else if let Err(error) = bot.edit_message_reply_markup(chat_id, above).await {
+            debug!(error = %error, "Could not remove the buttons of the review list above");
+        }
+    }
+    dialogue
+        .update(RecipeDialogueState::ReviewIngredients {
+            recipe_name,
+            ingredients,
+            language_code: state_language,
+            message_id: Some(review.id.0),
+            extracted_text,
+            recipe_name_from_caption,
+            open_menu: None,
+        })
+        .await?;
     Ok(())
 }
 

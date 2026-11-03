@@ -49,6 +49,9 @@ pub struct IngredientReviewInputParams<'a> {
     pub extracted_text: String,
     /// The review message (ingredient list), deleted once the review is confirmed.
     pub review_message_id: Option<i32>,
+    pub recipe_name: String,
+    /// The ingredient whose menu is open on the review list: a typed answer applies to it.
+    pub open_menu: Option<usize>,
 }
 
 /// Parameters for recipe name success handling
@@ -692,6 +695,7 @@ async fn handle_edit_cancellation(params: EditCancellationParams<'_>) -> Result<
             message_id,
             extracted_text,
             recipe_name_from_caption, // Preserve caption info
+            open_menu: None,
         })
         .await?;
 
@@ -769,6 +773,7 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
                 message_id,
                 extracted_text,
                 recipe_name_from_caption: recipe_name_from_caption.clone(), // Preserve caption info
+                open_menu: None,
             })
             .await?;
     } else {
@@ -787,6 +792,7 @@ async fn handle_edit_success(params: EditSuccessParams<'_>) -> Result<()> {
                 message_id,
                 extracted_text,
                 recipe_name_from_caption: recipe_name_from_caption.clone(), // Preserve caption info
+                open_menu: None,
             })
             .await?;
     }
@@ -842,6 +848,8 @@ pub async fn handle_ingredient_review_input(
         ctx: handler_ctx,
         extracted_text,
         review_message_id,
+        recipe_name,
+        open_menu,
     } = params;
     let input = review_input.trim().to_lowercase();
 
@@ -879,22 +887,67 @@ pub async fn handle_ingredient_review_input(
             .await?;
         }
         _ => {
-            // Unknown command, show help
-            let help_message = format!(
-                "{}\n\n{}",
+            // An ingredient's menu is open: the answer is its new quantity ("4", "1/2 cuillère
+            // à soupe"), else its whole new line
+            if let Some(index) = open_menu.filter(|index| *index < ingredients.len()) {
+                let current = ingredients.get(index);
+                let edited = crate::ingredient_editing::apply_edit(
+                    IngredientField::Quantity,
+                    current,
+                    review_input,
+                )
+                .or_else(|_| {
+                    crate::ingredient_editing::apply_edit(
+                        IngredientField::Line,
+                        current,
+                        review_input,
+                    )
+                });
+                if let Ok(new_ingredient) = edited {
+                    handle_edit_success(EditSuccessParams {
+                        ctx: handler_ctx,
+                        msg,
+                        dialogue: dialogue.clone(),
+                        ingredients,
+                        editing_index: index,
+                        new_ingredient,
+                        recipe_name,
+                        message_id: review_message_id,
+                        extracted_text,
+                        user_input_message_id: Some(msg.id.0),
+                        recipe_name_from_caption,
+                    })
+                    .await?;
+                    // The answer is below the list: the list comes down with its buttons
+                    return super::callbacks::review_callbacks::move_review_down(
+                        bot,
+                        msg.chat.id,
+                        &dialogue,
+                        handler_ctx.localization,
+                        handler_ctx.language_code,
+                    )
+                    .await;
+                }
+            }
+            // Not understood: say so, then the list comes down below it with its buttons
+            send_transient(
+                bot,
+                msg.chat.id,
                 t_lang(
                     handler_ctx.localization,
-                    "review-help",
-                    handler_ctx.language_code
-                ),
-                crate::bot::ui_builder::format_review_list(
-                    &ingredients,
+                    "review-not-understood",
                     handler_ctx.language_code,
-                    handler_ctx.localization
-                )
-            );
-            send_transient(bot, msg.chat.id, help_message).await?;
-            // Keep dialogue active
+                ),
+            )
+            .await?;
+            super::callbacks::review_callbacks::move_review_down(
+                bot,
+                msg.chat.id,
+                &dialogue,
+                handler_ctx.localization,
+                handler_ctx.language_code,
+            )
+            .await?;
         }
     }
 

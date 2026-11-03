@@ -456,4 +456,31 @@ mod tests {
         assert_eq!(sugar_update.1.ingredient_name, "butter");
         assert_eq!(sugar_update.1.measurement, None);
     }
+
+    /// The answer typed in the user's report of 2026-11-03 while the ingredient's menu was open
+    /// (the review applies it as the quantity, else as the whole line).
+    #[test]
+    fn a_typed_quantity_with_its_unit_fixes_a_flagged_line() {
+        let parsley = line("1", Some("tbsp"), "persil ou de coriandre ciselée", true);
+        let fixed = apply_edit(
+            IngredientField::Quantity,
+            Some(&parsley),
+            "1/2 cuillère à soupe",
+        )
+        .expect("a quantity with its unit");
+        assert_eq!(fixed.quantity, "0.5");
+        assert_eq!(fixed.measurement.as_deref(), Some("tbsp"));
+        assert_eq!(fixed.ingredient_name, "persil ou de coriandre ciselée");
+        assert!(!fixed.requires_quantity_confirmation, "the ⚠️ goes");
+
+        let shallot = line("1", None, "échalote ou 1 oignon, hachés fin", true);
+        let fixed = apply_edit(IngredientField::Quantity, Some(&shallot), "4").expect("a number");
+        assert_eq!(fixed.quantity, "4");
+
+        // Not a quantity: read as the whole line
+        assert!(apply_edit(IngredientField::Quantity, Some(&shallot), "2 échalotes").is_err());
+        let line_answer =
+            apply_edit(IngredientField::Line, Some(&shallot), "2 échalotes").expect("a whole line");
+        assert_eq!(line_answer.quantity, "2");
+    }
 }

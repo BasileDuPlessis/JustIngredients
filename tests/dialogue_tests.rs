@@ -104,6 +104,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
         message_id: Some(123),
         extracted_text: "Test OCR text".to_string(),
         recipe_name_from_caption: None,
+        open_menu: None,
     };
 
     // Verify state structure
@@ -115,6 +116,7 @@ async fn test_ingredient_review_dialogue_states() -> Result<()> {
             message_id,
             extracted_text,
             recipe_name_from_caption: _,
+            open_menu: _,
         } => {
             assert_eq!(recipe_name, "Test Recipe");
             assert_eq!(ingr.len(), 2);

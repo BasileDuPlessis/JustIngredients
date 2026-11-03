@@ -115,12 +115,13 @@ async fn handle_text_message(
                 .await;
             }
             Some(RecipeDialogueState::ReviewIngredients {
-                recipe_name: _,
+                recipe_name,
                 ingredients,
                 language_code: dialogue_lang_code,
                 message_id: review_message_id,
                 extracted_text,
                 recipe_name_from_caption,
+                open_menu,
             }) => {
                 // Use dialogue language code if available, otherwise fall back to message language
                 let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
@@ -145,6 +146,8 @@ async fn handle_text_message(
                         },
                         extracted_text,
                         review_message_id,
+                        recipe_name,
+                        open_menu,
                     },
                 )
                 .await;
