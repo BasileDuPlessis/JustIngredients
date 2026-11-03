@@ -96,10 +96,6 @@ fn test_recipe_naming_dialogue_workflow() {
 /// Test multi-language end-to-end workflow
 #[test]
 fn test_multi_language_end_to_end_workflow() {
-    use just_ingredients::localization::create_localization_manager;
-
-    let manager = create_localization_manager().unwrap();
-
     // Test English workflow
     let english_text = r#"
     Pancakes Recipe
@@ -144,14 +140,6 @@ fn test_multi_language_end_to_end_workflow() {
     assert!(french_oeufs.is_some());
     assert_eq!(french_oeufs.unwrap().quantity, "4");
     assert!(french_oeufs.unwrap().measurement.is_none());
-
-    // Test localization messages
-    let english_success = manager.get_message_in_language("success-extraction", "en", None);
-    let french_success = manager.get_message_in_language("success-extraction", "fr", None);
-
-    assert!(!english_success.is_empty());
-    assert!(!french_success.is_empty());
-    assert_ne!(english_success, french_success); // Should be different translations
 
     println!(
         "✅ Multi-language workflow: {} English measurements, {} French measurements, localized messages working",
@@ -410,10 +398,6 @@ fn test_backward_compatibility_no_captions() {
 /// Test caption feature with multi-language support
 #[test]
 fn test_caption_multi_language_integration() {
-    use just_ingredients::localization::create_localization_manager;
-
-    let manager = create_localization_manager().unwrap();
-
     // Test English caption workflow
     let english_caption = Some("Chocolate Chip Cookies".to_string());
 
@@ -437,21 +421,6 @@ fn test_caption_multi_language_integration() {
     };
 
     assert_eq!(recipe_name_fr, "Crêpes au Chocolat");
-
-    // Test localization messages work with captions
-    let caption_used_en = manager.get_message_in_language("caption-used", "en", None);
-    let caption_used_fr = manager.get_message_in_language("caption-used", "fr", None);
-
-    assert!(caption_used_en.contains("{$caption}"));
-    assert!(caption_used_fr.contains("{$caption}"));
-    assert_ne!(caption_used_en, caption_used_fr);
-
-    // Test message formatting
-    let formatted_en = caption_used_en.replace("{$caption}", recipe_name_en);
-    let formatted_fr = caption_used_fr.replace("{$caption}", recipe_name_fr);
-
-    assert!(formatted_en.contains("Chocolate Chip Cookies"));
-    assert!(formatted_fr.contains("Crêpes au Chocolat"));
 
     println!("✅ Multi-language caption integration test passed");
 }

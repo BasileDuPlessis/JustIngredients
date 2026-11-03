@@ -687,41 +687,6 @@ mod tests {
         assert!(!invalid_callback.starts_with("page:"));
     }
 
-    /// Test workflow localization keys
-    #[test]
-    fn test_workflow_localization_keys() {
-        let manager = setup_localization();
-        use just_ingredients::localization::t_lang;
-
-        // Test English workflow keys
-        let recipe_saved_en = t_lang(&manager, "workflow-recipe-saved", Some("en"));
-        let what_next_en = t_lang(&manager, "workflow-what-next", Some("en"));
-        let list_recipes_en = t_lang(&manager, "workflow-list-recipes", Some("en"));
-        let search_recipes_en = t_lang(&manager, "workflow-search-recipes", Some("en"));
-
-        assert!(!recipe_saved_en.is_empty());
-        assert!(!what_next_en.is_empty());
-        assert!(!list_recipes_en.is_empty());
-        assert!(!search_recipes_en.is_empty());
-
-        // Test French workflow keys
-        let recipe_saved_fr = t_lang(&manager, "workflow-recipe-saved", Some("fr"));
-        let what_next_fr = t_lang(&manager, "workflow-what-next", Some("fr"));
-        let list_recipes_fr = t_lang(&manager, "workflow-list-recipes", Some("fr"));
-        let search_recipes_fr = t_lang(&manager, "workflow-search-recipes", Some("fr"));
-
-        assert!(!recipe_saved_fr.is_empty());
-        assert!(!what_next_fr.is_empty());
-        assert!(!list_recipes_fr.is_empty());
-        assert!(!search_recipes_fr.is_empty());
-
-        // French and English should be different
-        assert_ne!(recipe_saved_en, recipe_saved_fr);
-        assert_ne!(what_next_en, what_next_fr);
-        assert_ne!(list_recipes_en, list_recipes_fr);
-        assert_ne!(search_recipes_en, search_recipes_fr);
-    }
-
     /// Test workflow callback data parsing
     #[test]
     fn test_workflow_callback_data_parsing() {
@@ -732,32 +697,6 @@ mod tests {
         // Test that these are distinct from other callbacks
         assert_ne!("workflow_list_recipes", "cancel_review");
         assert_ne!("workflow_search_recipes", "add_more");
-    }
-
-    /// Test workflow message formatting
-    #[test]
-    fn test_workflow_message_formatting() {
-        let manager = setup_localization();
-        use just_ingredients::localization::t_lang;
-
-        // Test confirmation message formatting
-        let recipe_saved = t_lang(&manager, "workflow-recipe-saved", Some("en"));
-        let what_next = t_lang(&manager, "workflow-what-next", Some("en"));
-        let confirmation_message = format!("✅ **{}**\n\n{}", recipe_saved, what_next);
-
-        assert!(confirmation_message.contains("Recipe saved"));
-        assert!(confirmation_message.contains("What would you like to do next"));
-        assert!(confirmation_message.contains("✅"));
-        assert!(confirmation_message.contains("**"));
-
-        // Test French version
-        let recipe_saved_fr = t_lang(&manager, "workflow-recipe-saved", Some("fr"));
-        let what_next_fr = t_lang(&manager, "workflow-what-next", Some("fr"));
-        let confirmation_message_fr = format!("✅ **{}**\n\n{}", recipe_saved_fr, what_next_fr);
-
-        assert!(confirmation_message_fr.contains("Recette"));
-        assert!(confirmation_message_fr.contains("ensuite"));
-        assert_ne!(confirmation_message, confirmation_message_fr);
     }
 
     /// Test photo caption extraction and validation
@@ -836,56 +775,6 @@ mod tests {
         }
 
         println!("✅ Caption recipe name assignment tests passed");
-    }
-
-    /// Test caption localization messages
-    #[test]
-    fn test_caption_localization_messages() {
-        let manager = setup_localization();
-        use just_ingredients::localization::t_lang;
-
-        // Test English caption messages
-        let caption_used_en = t_lang(&manager, "caption-used", Some("en"));
-        let caption_invalid_en = t_lang(&manager, "caption-invalid", Some("en"));
-
-        assert!(!caption_used_en.is_empty());
-        assert!(!caption_invalid_en.is_empty());
-        assert!(caption_used_en.contains("{$caption}"));
-        assert!(caption_invalid_en.contains("{$caption}"));
-        // The invalid message doesn't use {$default_name}, it just says "using default recipe name instead"
-        assert!(caption_invalid_en.contains("default recipe name"));
-
-        // Test French caption messages
-        let caption_used_fr = t_lang(&manager, "caption-used", Some("fr"));
-        let caption_invalid_fr = t_lang(&manager, "caption-invalid", Some("fr"));
-
-        assert!(!caption_used_fr.is_empty());
-        assert!(!caption_invalid_fr.is_empty());
-        assert!(caption_used_fr.contains("{$caption}"));
-        // French invalid message uses {$default_name} but not {$caption}
-        assert!(caption_invalid_fr.contains("{$default_name}"));
-
-        // French and English should be different
-        assert_ne!(caption_used_en, caption_used_fr);
-        assert_ne!(caption_invalid_en, caption_invalid_fr);
-
-        // Test message formatting with arguments
-        let formatted_used_en = caption_used_en.replace("{$caption}", "Test Recipe");
-        // English invalid message doesn't use {$default_name}, just replace {$caption}
-        let formatted_invalid_en = caption_invalid_en.replace("{$caption}", "Invalid!!!");
-
-        let formatted_used_fr = caption_used_fr.replace("{$caption}", "Recette Test");
-        // French invalid message doesn't use {$caption}, just {$default_name}
-        let formatted_invalid_fr = caption_invalid_fr.replace("{$default_name}", "Recette");
-
-        assert!(formatted_used_en.contains("Test Recipe"));
-        assert!(formatted_invalid_en.contains("Invalid!!!"));
-
-        assert!(formatted_used_fr.contains("Recette Test"));
-        // French invalid message doesn't contain the original caption, just the default name
-        assert!(formatted_invalid_fr.contains("Recette"));
-
-        println!("✅ Caption localization message tests passed");
     }
 
     /// Test edge cases for caption processing

@@ -405,7 +405,8 @@ dispatcher.
 - Language: `language_code` of the message or callback sender, `fr-FR` → `fr`; `fr` and `en`
   are supported, anything else gets English. A key missing in French falls back to English,
   then to "Missing translation: <key>". Tests check that every literal key used in `src/`
-  exists in both files, that both files have the same keys, and that every message formats.
+  exists in both files, that every key of the files is named in `src/` (keys are never built
+  from parts), that both files have the same keys, and that every message formats.
 - `users.language_code` is stored when the user is created but not used to pick the language.
 - The key screens are sent in HTML (`parse_mode = HTML`) through `bot::html`: an `Html` value is
   built only from escaped text, `<b>` and `<pre>`, and sent only with `send_html`/`edit_html`. Bold:

@@ -50,12 +50,12 @@ mod tests {
         let manager = setup_localization();
 
         let mut args = HashMap::new();
-        args.insert("recipe_name", "Test Recipe");
-        args.insert("ingredient_count", "5");
+        args.insert("count", "5");
+        args.insert("query", "tarte");
 
-        let message = manager.get_message_in_language("recipe-complete", "en", Some(&args));
+        let message = manager.get_message_in_language("search-results", "en", Some(&args));
         assert!(!message.is_empty());
-        assert!(message.contains("Test Recipe"));
+        assert!(message.contains("tarte"));
         assert!(message.contains("5"));
     }
 
@@ -64,7 +64,7 @@ mod tests {
         let manager = setup_localization();
 
         // Test with missing required args - should handle gracefully
-        let message = manager.get_message_in_language("recipe-complete", "en", None);
+        let message = manager.get_message_in_language("search-results", "en", None);
         // Either returns the message with placeholder or handles error
         assert!(!message.is_empty());
     }
@@ -101,45 +101,34 @@ mod tests {
         assert!(!message.is_empty());
 
         // Test t_args_lang function
-        let args = vec![("recipe_name", "Test Recipe"), ("ingredient_count", "3")];
-        let message_with_args = t_args_lang(&manager, "recipe-complete", &args, Some("en"));
+        let args = vec![("old_name", "Tarte"), ("new_name", "Tarte aux pommes")];
+        let message_with_args = t_args_lang(&manager, "recipe-renamed-line", &args, Some("en"));
         assert!(!message_with_args.is_empty());
-        assert!(message_with_args.contains("Test Recipe"));
-        assert!(message_with_args.contains("3"));
+        assert!(message_with_args.contains("Tarte"));
+        assert!(message_with_args.contains("Tarte aux pommes"));
     }
 
     #[test]
-    fn test_duplicate_recipe_messages() {
+    fn test_message_args_in_both_languages() {
         let manager = setup_localization();
 
-        // Test multiple recipes found message with count
         let mut args = HashMap::new();
         args.insert("count", "3");
-
-        let english_message =
-            manager.get_message_in_language("multiple-recipes-found", "en", Some(&args));
-        let french_message =
-            manager.get_message_in_language("multiple-recipes-found", "fr", Some(&args));
-
-        assert!(!english_message.is_empty());
-        assert!(!french_message.is_empty());
-        assert!(english_message.contains("3"));
-        assert!(french_message.contains("3"));
+        args.insert("query", "crêpes");
+        let english_message = manager.get_message_in_language("search-results", "en", Some(&args));
+        let french_message = manager.get_message_in_language("search-results", "fr", Some(&args));
+        assert!(english_message.contains('3') && english_message.contains("crêpes"));
+        assert!(french_message.contains('3') && french_message.contains("crêpes"));
         assert_ne!(english_message, french_message);
 
-        // Test recipe created message with date
-        let mut date_args = HashMap::new();
-        date_args.insert("date", "2024-01-15");
-
+        let name_args = HashMap::from([("name", "Tarte")]);
         let english_created =
-            manager.get_message_in_language("recipe-created", "en", Some(&date_args));
+            manager.get_message_in_language("recipe-created-line", "en", Some(&name_args));
         let french_created =
-            manager.get_message_in_language("recipe-created", "fr", Some(&date_args));
-
-        assert!(!english_created.is_empty());
-        assert!(!french_created.is_empty());
-        assert!(english_created.contains("2024-01-15"));
-        assert!(french_created.contains("2024-01-15"));
+            manager.get_message_in_language("recipe-created-line", "fr", Some(&name_args));
+        assert!(english_created.contains("Tarte"));
+        assert!(french_created.contains("Tarte"));
+        assert_ne!(english_created, french_created);
     }
 
     #[test]
@@ -148,7 +137,6 @@ mod tests {
 
         // Test recipe details and action messages
         let messages = vec![
-            "recipe-actions",
             "edit-recipe-name",
             "delete-recipe",
             "back-to-recipes",
@@ -186,12 +174,9 @@ mod tests {
         let workflow_messages = vec![
             "confirm",
             "cancel",
-            "recipe-deleted",
-            "recipe-deleted-help",
             "error-deleting-recipe",
             "error-deleting-recipe-help",
             "recipe-not-found",
-            "delete-cancelled",
         ];
 
         for message_key in workflow_messages {
@@ -212,38 +197,14 @@ mod tests {
     }
 
     #[test]
-    fn test_pluralization_and_formatting() {
+    fn test_count_formatting() {
         let manager = setup_localization();
 
-        // Test that messages with variables are properly formatted
-        let mut args = HashMap::new();
-        args.insert("count", "1");
-
-        let singular_message =
-            manager.get_message_in_language("multiple-recipes-found", "en", Some(&args));
-        assert!(singular_message.contains("1"));
-        assert!(singular_message.contains("recipes"));
-
-        args.insert("count", "5");
-        let plural_message =
-            manager.get_message_in_language("multiple-recipes-found", "en", Some(&args));
-        assert!(plural_message.contains("5"));
-        assert!(plural_message.contains("recipes"));
-
-        // Test French pluralization
-        let french_singular = manager.get_message_in_language(
-            "multiple-recipes-found",
-            "fr",
-            Some(&HashMap::from([("count", "1")])),
-        );
-        let french_plural = manager.get_message_in_language(
-            "multiple-recipes-found",
-            "fr",
-            Some(&HashMap::from([("count", "5")])),
-        );
-
-        assert!(french_singular.contains("1"));
-        assert!(french_plural.contains("5"));
+        for (language, count) in [("en", "1"), ("en", "5"), ("fr", "1"), ("fr", "5")] {
+            let args = HashMap::from([("count", count), ("query", "tarte")]);
+            let message = manager.get_message_in_language("search-results", language, Some(&args));
+            assert!(message.contains(count), "{language}: {message}");
+        }
     }
 }
 
@@ -272,23 +233,24 @@ fn user_messages_have_no_technical_prefix_or_markdown() {
     }
 }
 
+/// The `.rs` files under `dir`, recursively.
+fn rust_files(dir: &std::path::Path, files: &mut Vec<std::path::PathBuf>) {
+    for entry in std::fs::read_dir(dir).expect("read src directory") {
+        let path = entry.expect("directory entry").path();
+        if path.is_dir() {
+            rust_files(&path, files);
+        } else if path.extension().is_some_and(|ext| ext == "rs") {
+            files.push(path);
+        }
+    }
+}
+
 /// Every message key the code asks for exists in both locales (IMP-045): a missing key shows
 /// "Missing translation: <key>" to the user.
 #[test]
 fn every_key_used_in_code_exists_in_both_locales() {
     use std::collections::BTreeSet;
     use std::path::Path;
-
-    fn rust_files(dir: &Path, files: &mut Vec<std::path::PathBuf>) {
-        for entry in std::fs::read_dir(dir).expect("read src directory") {
-            let path = entry.expect("directory entry").path();
-            if path.is_dir() {
-                rust_files(&path, files);
-            } else if path.extension().is_some_and(|ext| ext == "rs") {
-                files.push(path);
-            }
-        }
-    }
 
     // The key is the literal right after the localization manager argument
     let calls = [
@@ -328,6 +290,37 @@ fn every_key_used_in_code_exists_in_both_locales() {
         assert!(
             missing.is_empty(),
             "{language}: keys used in code but missing: {missing:?}"
+        );
+    }
+}
+
+/// Every key of the locales is named in the code (IMP-049): a key nobody asks for is text that
+/// translators keep up and nobody sees. Keys are named as string literals (`"key"`), never built.
+#[test]
+fn every_key_in_the_locales_is_used_by_the_code() {
+    let mut files = Vec::new();
+    rust_files(
+        std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src")),
+        &mut files,
+    );
+    let code: String = files
+        .iter()
+        .map(|file| std::fs::read_to_string(file).expect("read source file"))
+        .collect();
+
+    let defined = regex::Regex::new(r"(?m)^([a-z][a-z0-9-]*)\s*=").expect("valid pattern");
+    for (language, source) in [
+        ("en", include_str!("../locales/en/main.ftl")),
+        ("fr", include_str!("../locales/fr/main.ftl")),
+    ] {
+        let unused: Vec<&str> = defined
+            .captures_iter(source)
+            .filter_map(|c| c.get(1).map(|m| m.as_str()))
+            .filter(|key| !code.contains(&format!("\"{key}\"")))
+            .collect();
+        assert!(
+            unused.is_empty(),
+            "{language}: keys never named in src/: {unused:?}"
         );
     }
 }

@@ -604,8 +604,8 @@ they can be pulled into 1-hour micro-tasks without another review.
   spinning on a database error; review messages not recorded if the state write failed; `jsonb`
   refused `\u0000`; columns not checked; recipe names in two logs. All fixed. DB tests: a state
   written by one storage is read by the next (a restart), expiry, a gap, an unreadable state,
-  `\u0000`, migration 8 and its rollback. To check on staging: a review started before a
-  redeploy saves after it.
+  `\u0000`, migration 8 and its rollback. Checked on staging on 2026-11-03 by the user: a
+  review sent before a redeploy (release v64) was saved after it.
 - Status: Partly done (2026-10-28, short term): after a restart, review and edit buttons say they are no longer active instead of doing nothing. Left: dialogues are still lost on every deploy (persistent storage).
 - Priority: P2. Effort: M. Area: Dialogue.
 - Location: `src/main.rs:258` (`InMemStorage`), `src/dialogue.rs:85`.
@@ -620,7 +620,9 @@ they can be pulled into 1-hour micro-tasks without another review.
   review continues once storage is persistent.
 
 ### IMP-023: Small dialogue handler bugs (rename, cancel text, lost state)
-- [ ] Done
+- [x] Done (checked 2026-11-03): the two points left went with U2.5 (`43ab51d`). A typed confirm
+  word calls `confirm_review` with the caption, like ✅; the code that set the prompt's id on a
+  copy of the state was deleted (the prompt id is now stored with `dialogue.update`).
 - Status: Partly done (2026-10-28): a failed save keeps the review or the name prompt open and answers `save-failed-retry` (nothing is written, one transaction), on all four save paths. Rename bugs fixed in U1.4 and U1.7. Left: typed confirm drops the caption (U2.5), the quantity prompt id edits a copy of the state.
 - Priority: P2. Effort: S. Area: Dialogue.
 - Location: `src/bot/dialogue_manager.rs:680-720`, `src/bot/dialogue_manager.rs:615`,
@@ -1040,7 +1042,10 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: `git grep ocr_ -- src tests` is empty; tests green.
 
 ### IMP-049: About 40 locale keys are never used by the code
-- [ ] Done
+- [x] Done (2026-11-03): 43 keys removed from both files (190 → 147): 28 named nowhere, 13 named
+  only by tests of their own text (those tests are gone, the formatting tests use live keys), 2
+  named only in the untracked `editing_callbacks.rs.bak`. `tests/localization_tests.rs`
+  `every_key_in_the_locales_is_used_by_the_code` keeps it so.
 - Status: Partly done (2026-10-28): `caption-empty`, `help-step5` and `help-tip5`, unused and missing in `fr`, were removed from `en`.
 - Priority: P3. Effort: S. Area: Localization.
 - Location: `locales/en/main.ftl`, `locales/fr/main.ftl` (e.g. `help-step5`, `help-tip5`,
