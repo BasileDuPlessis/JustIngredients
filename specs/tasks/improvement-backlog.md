@@ -901,8 +901,10 @@ they can be pulled into 1-hour micro-tasks without another review.
   re-exported. `editing_callbacks.rs`: the 395-line ✅ of a saved recipe's edit
   (`handle_confirm_saved_ingredients_button`) is 170 lines, its two near-identical branches
   (changes or none) one sequence with `saved_recipe_card` (1,002 → 840 lines). `ui_builder.rs`
-  is 591 lines of code (the rest tests). Left: the long functions of `message_handler.rs`
-  (`handle_text_message`, about 325 lines), `callback_handler.rs` and `recipe_callbacks.rs`.
+  is 591 lines of code (the rest tests). `handle_text_message` (325 lines) is a 56-line router
+  over `answer_in_action` (the per-state arms, moved unchanged) and `answer_free_text` (search
+  or photo tip), with handler tests for both before the move. Left: `callback_handler_with_cache`
+  (about 240 lines) and the long functions of `recipe_callbacks.rs`.
 - Priority: P3. Effort: L. Area: Code organization.
 - Location: `src/bot/dialogue_manager.rs` (1,658 lines), `src/db.rs` (1,592 lines),
   `src/bot/message_handler.rs:42` (306-line function), `src/bot/callbacks/editing_callbacks.rs:431`

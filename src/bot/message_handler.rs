@@ -80,291 +80,333 @@ async fn handle_text_message(
             TextRoute::FreeText => {}
         }
 
-        match dialogue_state {
-            Some(RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
-                ingredients,
-                language_code: dialogue_lang_code,
-                extracted_text,
-                recipe_name_from_caption: _,
-                message_id,
-            }) => {
-                // Use dialogue language code if available, otherwise fall back to message language
-                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
-
-                // Handle recipe name input after ingredient confirmation
-                return handle_recipe_name_after_confirm_input(
-                    DialogueContext {
-                        bot,
-                        msg,
-                        dialogue,
-                        localization,
-                    },
-                    RecipeNameAfterConfirmInputParams {
-                        pool,
-                        recipe_name_input: text,
-                        ingredients,
-                        ctx: &HandlerContext {
-                            bot,
-                            localization,
-                            language_code: effective_language_code,
-                        },
-                        extracted_text,
-                        message_id,
-                    },
-                )
-                .await;
-            }
-            Some(RecipeDialogueState::ReviewIngredients {
-                recipe_name,
-                ingredients,
-                language_code: dialogue_lang_code,
-                message_id: review_message_id,
-                extracted_text,
-                recipe_name_from_caption,
-                open_menu,
-            }) => {
-                // Use dialogue language code if available, otherwise fall back to message language
-                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
-
-                // Handle ingredient review commands
-                return handle_ingredient_review_input(
-                    DialogueContext {
-                        bot,
-                        msg,
-                        dialogue,
-                        localization,
-                    },
-                    IngredientReviewInputParams {
-                        pool,
-                        review_input: text,
-                        recipe_name_from_caption,
-                        ingredients,
-                        ctx: &HandlerContext {
-                            bot,
-                            localization,
-                            language_code: effective_language_code,
-                        },
-                        extracted_text,
-                        review_message_id,
-                        recipe_name,
-                        open_menu,
-                    },
-                )
-                .await;
-            }
-            Some(RecipeDialogueState::EditingIngredient {
-                recipe_name,
-                ingredients,
-                editing_index,
-                field,
-                language_code: dialogue_lang_code,
-                message_id,
-                original_message_id: _original_message_id,
-                extracted_text,
-                recipe_name_from_caption,
-            }) => {
-                // Use dialogue language code if available, otherwise fall back to message language
-                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
-
-                // Handle ingredient edit input
-                return handle_ingredient_edit_input(
-                    DialogueContext {
-                        bot,
-                        msg,
-                        dialogue,
-                        localization,
-                    },
-                    IngredientEditInputParams {
-                        edit_input: text,
-                        recipe_name,
-                        ingredients,
-                        editing_index,
-                        field,
-                        ctx: &HandlerContext {
-                            bot,
-                            localization,
-                            language_code: effective_language_code,
-                        },
-                        message_id,
-                        extracted_text,
-                        user_input_message_id: Some(msg.id.0), // Add user's input message ID for reply functionality
-                        recipe_name_from_caption,
-                    },
-                )
-                .await;
-            }
-            Some(RecipeDialogueState::RenamingRecipe {
-                recipe_id,
-                current_name,
-                language_code: dialogue_lang_code,
-            }) => {
-                // Use dialogue language code if available, otherwise fall back to message language
-                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
-
-                // Handle recipe rename input
-                return handle_recipe_rename_input(
-                    DialogueContext {
-                        bot,
-                        msg,
-                        dialogue,
-                        localization,
-                    },
-                    RecipeRenameInputParams {
-                        pool: &pool,
-                        new_name_input: text,
-                        recipe_id,
-                        current_name,
-                        ctx: &HandlerContext {
-                            bot,
-                            localization,
-                            language_code: effective_language_code,
-                        },
-                    },
-                )
-                .await;
-            }
-            Some(RecipeDialogueState::AddingIngredientToSavedRecipe {
-                recipe_id,
-                original_ingredients,
-                current_matches,
-                language_code: dialogue_lang_code,
-                message_id,
-            }) => {
-                // Use dialogue language code if available, otherwise fall back to message language
-                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
-
-                // Handle adding new ingredient input for saved recipes
-                return handle_add_ingredient_input(
-                    DialogueContext {
-                        bot,
-                        msg,
-                        dialogue,
-                        localization,
-                    },
-                    AddIngredientInputParams {
-                        pool: &pool,
-                        add_input: text,
-                        recipe_id,
-                        original_ingredients: &original_ingredients,
-                        current_matches: &current_matches,
-                        ctx: &HandlerContext {
-                            bot,
-                            localization,
-                            language_code: effective_language_code,
-                        },
-                        message_id,
-                    },
-                )
-                .await;
-            }
-            Some(RecipeDialogueState::EditingSavedIngredient {
-                recipe_id,
-                original_ingredients,
-                current_matches,
-                editing_index,
-                field,
-                language_code: dialogue_lang_code,
-                message_id,
-                original_message_id,
-            }) => {
-                // Use dialogue language code if available, otherwise fall back to message language
-                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
-
-                // Handle editing individual ingredient input for saved recipes
-                return handle_saved_ingredient_edit_input(
-                    DialogueContext {
-                        bot,
-                        msg,
-                        dialogue,
-                        localization,
-                    },
-                    SavedIngredientEditInputParams {
-                        pool: &pool,
-                        edit_input: text,
-                        recipe_id,
-                        original_ingredients: &original_ingredients,
-                        current_matches: &current_matches,
-                        ctx: &HandlerContext {
-                            bot,
-                            localization,
-                            language_code: effective_language_code,
-                        },
-                        message_id,
-                        editing_index,
-                        field,
-                        original_message_id,
-                        user_input_message_id: Some(msg.id.0), // Add user's input message ID for reply functionality
-                    },
-                )
-                .await;
-            }
-            Some(RecipeDialogueState::EditingSavedIngredients {
-                language_code: dialogue_lang_code,
-                ..
-            }) if super::dialogue_manager::is_cancellation_command(&text.trim().to_lowercase()) => {
-                // Exactly what ❌ does: back to the recipe card as saved
-                let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
-                return super::callbacks::editing_callbacks::cancel_saved_editing(
-                    bot,
-                    localization,
-                    &pool,
-                    &dialogue,
-                    msg.chat.id,
-                    msg.chat.id.0,
-                    effective_language_code,
-                )
-                .await;
-            }
-            Some(RecipeDialogueState::EditingSavedIngredients { .. }) => {
-                // Other text: an answer to the open ingredient menu, or not understood
-                return super::dialogue_manager::handle_saved_editing_text(
-                    bot,
-                    msg,
-                    &dialogue,
-                    localization,
-                    language_code,
-                    text,
-                )
-                .await;
-            }
-            Some(RecipeDialogueState::Start) | None => {
-                // Continue with normal command handling
-            }
-        }
-
-        // A pasted recipe is no search: it stays in the history, under a reminder that recipes
-        // come from photos
-        if !crate::search::is_query(text) {
-            let tip = cleanup::send_transient(
-                bot,
-                msg.chat.id,
-                t_lang(localization, "free-text-tip", language_code),
-            )
-            .await?;
-            super::home::answer_at_bottom(
-                bot,
-                msg.chat.id,
-                tip.id,
-                false,
-                localization,
-                language_code,
-            )
-            .await;
+        if answer_in_action(
+            bot,
+            msg,
+            dialogue,
+            Arc::clone(&pool),
+            localization,
+            language_code,
+            dialogue_state,
+        )
+        .await?
+        {
             return Ok(());
         }
-        // Other free text outside an action is a search in the user's recipes (U4.2); the typed
-        // text goes with the previous answers
-        cleanup::track(msg.chat.id, msg.id).await;
-        crate::bot::recipe_list::show_search_results(
+        answer_free_text(bot, msg, &pool, localization, language_code, text).await?;
+    }
+    Ok(())
+}
+
+/// A text typed during an action (a name, an answer to a prompt, an edit): passed to that
+/// action's handler. `false` when no action runs (the text is free text).
+async fn answer_in_action(
+    bot: &Bot,
+    msg: &Message,
+    dialogue: RecipeDialogue,
+    pool: Arc<PgPool>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+    language_code: Option<&str>,
+    dialogue_state: Option<RecipeDialogueState>,
+) -> Result<bool> {
+    let Some(text) = msg.text() else {
+        return Ok(false);
+    };
+    match dialogue_state {
+        Some(RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
+            ingredients,
+            language_code: dialogue_lang_code,
+            extracted_text,
+            recipe_name_from_caption: _,
+            message_id,
+        }) => {
+            // Use dialogue language code if available, otherwise fall back to message language
+            let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+
+            // Handle recipe name input after ingredient confirmation
+            return handle_recipe_name_after_confirm_input(
+                DialogueContext {
+                    bot,
+                    msg,
+                    dialogue,
+                    localization,
+                },
+                RecipeNameAfterConfirmInputParams {
+                    pool,
+                    recipe_name_input: text,
+                    ingredients,
+                    ctx: &HandlerContext {
+                        bot,
+                        localization,
+                        language_code: effective_language_code,
+                    },
+                    extracted_text,
+                    message_id,
+                },
+            )
+            .await
+            .map(|()| true);
+        }
+        Some(RecipeDialogueState::ReviewIngredients {
+            recipe_name,
+            ingredients,
+            language_code: dialogue_lang_code,
+            message_id: review_message_id,
+            extracted_text,
+            recipe_name_from_caption,
+            open_menu,
+        }) => {
+            // Use dialogue language code if available, otherwise fall back to message language
+            let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+
+            // Handle ingredient review commands
+            return handle_ingredient_review_input(
+                DialogueContext {
+                    bot,
+                    msg,
+                    dialogue,
+                    localization,
+                },
+                IngredientReviewInputParams {
+                    pool,
+                    review_input: text,
+                    recipe_name_from_caption,
+                    ingredients,
+                    ctx: &HandlerContext {
+                        bot,
+                        localization,
+                        language_code: effective_language_code,
+                    },
+                    extracted_text,
+                    review_message_id,
+                    recipe_name,
+                    open_menu,
+                },
+            )
+            .await
+            .map(|()| true);
+        }
+        Some(RecipeDialogueState::EditingIngredient {
+            recipe_name,
+            ingredients,
+            editing_index,
+            field,
+            language_code: dialogue_lang_code,
+            message_id,
+            original_message_id: _original_message_id,
+            extracted_text,
+            recipe_name_from_caption,
+        }) => {
+            // Use dialogue language code if available, otherwise fall back to message language
+            let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+
+            // Handle ingredient edit input
+            return handle_ingredient_edit_input(
+                DialogueContext {
+                    bot,
+                    msg,
+                    dialogue,
+                    localization,
+                },
+                IngredientEditInputParams {
+                    edit_input: text,
+                    recipe_name,
+                    ingredients,
+                    editing_index,
+                    field,
+                    ctx: &HandlerContext {
+                        bot,
+                        localization,
+                        language_code: effective_language_code,
+                    },
+                    message_id,
+                    extracted_text,
+                    user_input_message_id: Some(msg.id.0), // Add user's input message ID for reply functionality
+                    recipe_name_from_caption,
+                },
+            )
+            .await
+            .map(|()| true);
+        }
+        Some(RecipeDialogueState::RenamingRecipe {
+            recipe_id,
+            current_name,
+            language_code: dialogue_lang_code,
+        }) => {
+            // Use dialogue language code if available, otherwise fall back to message language
+            let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+
+            // Handle recipe rename input
+            return handle_recipe_rename_input(
+                DialogueContext {
+                    bot,
+                    msg,
+                    dialogue,
+                    localization,
+                },
+                RecipeRenameInputParams {
+                    pool: &pool,
+                    new_name_input: text,
+                    recipe_id,
+                    current_name,
+                    ctx: &HandlerContext {
+                        bot,
+                        localization,
+                        language_code: effective_language_code,
+                    },
+                },
+            )
+            .await
+            .map(|()| true);
+        }
+        Some(RecipeDialogueState::AddingIngredientToSavedRecipe {
+            recipe_id,
+            original_ingredients,
+            current_matches,
+            language_code: dialogue_lang_code,
+            message_id,
+        }) => {
+            // Use dialogue language code if available, otherwise fall back to message language
+            let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+
+            // Handle adding new ingredient input for saved recipes
+            return handle_add_ingredient_input(
+                DialogueContext {
+                    bot,
+                    msg,
+                    dialogue,
+                    localization,
+                },
+                AddIngredientInputParams {
+                    pool: &pool,
+                    add_input: text,
+                    recipe_id,
+                    original_ingredients: &original_ingredients,
+                    current_matches: &current_matches,
+                    ctx: &HandlerContext {
+                        bot,
+                        localization,
+                        language_code: effective_language_code,
+                    },
+                    message_id,
+                },
+            )
+            .await
+            .map(|()| true);
+        }
+        Some(RecipeDialogueState::EditingSavedIngredient {
+            recipe_id,
+            original_ingredients,
+            current_matches,
+            editing_index,
+            field,
+            language_code: dialogue_lang_code,
+            message_id,
+            original_message_id,
+        }) => {
+            // Use dialogue language code if available, otherwise fall back to message language
+            let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+
+            // Handle editing individual ingredient input for saved recipes
+            return handle_saved_ingredient_edit_input(
+                DialogueContext {
+                    bot,
+                    msg,
+                    dialogue,
+                    localization,
+                },
+                SavedIngredientEditInputParams {
+                    pool: &pool,
+                    edit_input: text,
+                    recipe_id,
+                    original_ingredients: &original_ingredients,
+                    current_matches: &current_matches,
+                    ctx: &HandlerContext {
+                        bot,
+                        localization,
+                        language_code: effective_language_code,
+                    },
+                    message_id,
+                    editing_index,
+                    field,
+                    original_message_id,
+                    user_input_message_id: Some(msg.id.0), // Add user's input message ID for reply functionality
+                },
+            )
+            .await
+            .map(|()| true);
+        }
+        Some(RecipeDialogueState::EditingSavedIngredients {
+            language_code: dialogue_lang_code,
+            ..
+        }) if super::dialogue_manager::is_cancellation_command(&text.trim().to_lowercase()) => {
+            // Exactly what ❌ does: back to the recipe card as saved
+            let effective_language_code = dialogue_lang_code.as_deref().or(language_code);
+            return super::callbacks::editing_callbacks::cancel_saved_editing(
+                bot,
+                localization,
+                &pool,
+                &dialogue,
+                msg.chat.id,
+                msg.chat.id.0,
+                effective_language_code,
+            )
+            .await
+            .map(|()| true);
+        }
+        Some(RecipeDialogueState::EditingSavedIngredients { .. }) => {
+            // Other text: an answer to the open ingredient menu, or not understood
+            return super::dialogue_manager::handle_saved_editing_text(
+                bot,
+                msg,
+                &dialogue,
+                localization,
+                language_code,
+                text,
+            )
+            .await
+            .map(|()| true);
+        }
+        Some(RecipeDialogueState::Start) | None => {}
+    }
+    Ok(false)
+}
+
+/// A text typed outside an action: a search in the user's recipes, or, for a pasted recipe, the
+/// reminder that recipes come from photos.
+async fn answer_free_text(
+    bot: &Bot,
+    msg: &Message,
+    pool: &PgPool,
+    localization: &Arc<crate::localization::LocalizationManager>,
+    language_code: Option<&str>,
+    text: &str,
+) -> Result<()> {
+    // A pasted recipe is no search: it stays in the history, under a reminder that recipes
+    // come from photos
+    if !crate::search::is_query(text) {
+        let tip = cleanup::send_transient(
             bot,
-            &pool,
             msg.chat.id,
-            text,
-            language_code,
-            localization,
+            t_lang(localization, "free-text-tip", language_code),
         )
         .await?;
+        super::home::answer_at_bottom(bot, msg.chat.id, tip.id, false, localization, language_code)
+            .await;
+        return Ok(());
     }
+    // Other free text outside an action is a search in the user's recipes (U4.2); the typed
+    // text goes with the previous answers
+    cleanup::track(msg.chat.id, msg.id).await;
+    crate::bot::recipe_list::show_search_results(
+        bot,
+        pool,
+        msg.chat.id,
+        text,
+        language_code,
+        localization,
+    )
+    .await?;
     Ok(())
 }
 

@@ -674,3 +674,49 @@ async fn the_ninth_recipe_is_on_the_next_page(pool: PgPool) -> Result<()> {
     assert!(has_button(&bot.get_responses(), &ninth), "on the next page");
     Ok(())
 }
+
+/// Outside an action, a word typed is a search in the user's recipes (U4.2).
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn free_text_outside_an_action_is_a_search(pool: PgPool) -> Result<()> {
+    let services = services(&pool, Vec::new()).await?;
+    let ids = save_recipes(&pool, &["Tarte aux poireaux", "Gratin dauphinois"]).await?;
+
+    let mut bot = mock_bot(MockMessageText::new().text("gratin"), services.clone());
+    bot.dispatch().await;
+    let responses = bot.get_responses();
+    assert!(has_button(
+        &responses,
+        &format!("recipe_instance:{}", ids[1])
+    ));
+    assert!(!has_button(
+        &responses,
+        &format!("recipe_instance:{}", ids[0])
+    ));
+    Ok(())
+}
+
+/// A pasted recipe (several lines) is no search: it gets the reminder that recipes come from
+/// photos.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_pasted_recipe_gets_the_photo_tip(pool: PgPool) -> Result<()> {
+    let services = services(&pool, Vec::new()).await?;
+    let localization = Arc::clone(&services.messages.localization);
+    save_recipes(&pool, &["Tarte aux poireaux"]).await?;
+
+    let mut bot = mock_bot(
+        MockMessageText::new().text("200 g de farine\n3 œufs\n50 cl de lait"),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    let tip = t_lang(&localization, "free-text-tip", None);
+    assert!(
+        bot.get_responses()
+            .sent_messages
+            .iter()
+            .any(|message| message.text() == Some(tip.as_str())),
+        "the photo tip"
+    );
+    Ok(())
+}
