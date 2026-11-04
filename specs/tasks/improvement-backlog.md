@@ -701,8 +701,8 @@ they can be pulled into 1-hour micro-tasks without another review.
   on staging in both languages.
 
 ### IMP-026: Schema: missing index, no cascade, raw text duplicated per ingredient
-- [ ] Done
-- Status: Partly done (2026-10-28): migration 2 adds `recipes_telegram_id_created_at_idx` (the newest-first list uses it, checked with `EXPLAIN` in `db_tests`) and `ON DELETE CASCADE` on `ingredients.recipe_id` (a single `DELETE FROM recipes` removes the ingredients, tested); new ingredients no longer copy the extracted text into `raw_text`. `delete_recipe` keeps its two statements. Left: no FK from `recipes.telegram_id` to `users`, and the English search configuration (U4.1).
+- [x] Done
+- Status: Done (2026-11-04): migration 9 `recipes_owner_fk` adds a `users` row for any recipe owner without one, then the foreign key `recipes.telegram_id → users.telegram_id` (no cascade: users are never deleted). Tests: an orphan owner gets its row once, a recipe of nobody is refused. `MIGRATOR.ignore_missing` so that a rollback to the release before a migration still starts (tested). The English search configuration is U4.1's (search runs in Rust, `src/search.rs`). Earlier part (2026-10-28): migration 2 adds `recipes_telegram_id_created_at_idx` (the newest-first list uses it, checked with `EXPLAIN` in `db_tests`) and `ON DELETE CASCADE` on `ingredients.recipe_id` (a single `DELETE FROM recipes` removes the ingredients, tested); new ingredients no longer copy the extracted text into `raw_text`. `delete_recipe` keeps its two statements.
 - Priority: P2. Effort: S. Area: DB.
 - Related: LLM migration (Task 3.2 decides what goes into `recipes.content` and `ingredients.raw_text`).
 - Location: `src/db.rs:1315-1322` (`recipes`, no index on `telegram_id`), `src/db.rs:1328`

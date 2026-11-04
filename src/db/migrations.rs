@@ -14,7 +14,15 @@ use sqlx::postgres::PgPool;
 use tracing::info;
 
 /// The migrations of `migrations/`, embedded at build time (`build.rs` rebuilds on a change).
-pub static MIGRATOR: Migrator = sqlx::migrate!("./migrations");
+///
+/// Versions applied but unknown to this build are ignored: after a rollback to an older release
+/// (the deploy's automatic one, or a manual one) the database is ahead of the binary, and the
+/// release must still start. The checksums of the versions it knows stay checked.
+pub static MIGRATOR: Migrator = {
+    let mut migrator = sqlx::migrate!("./migrations");
+    migrator.ignore_missing = true;
+    migrator
+};
 
 /// Applies the pending migrations, after adopting the versions recorded by the former
 /// migration table.

@@ -38,8 +38,14 @@ async fn test_recipe_operations(pool: PgPool) -> Result<()> {
     test_recipe_operations_impl(&pool).await
 }
 
+/// A recipe of `telegram_id`, whose user row is created first (the foreign key of migration 9).
+async fn recipe_of(pool: &PgPool, telegram_id: i64, content: &str) -> Result<i64> {
+    get_or_create_user(pool, telegram_id, Some("en")).await?;
+    create_recipe(pool, telegram_id, content).await
+}
+
 async fn test_recipe_operations_impl(pool: &PgPool) -> Result<()> {
-    let recipe_id = create_recipe(pool, 12345, "Test OCR content").await?;
+    let recipe_id = recipe_of(pool, 12345, "Test OCR content").await?;
     assert!(recipe_id > 0);
 
     let recipe = read_recipe_with_name(pool, 12345, recipe_id)
@@ -318,12 +324,12 @@ async fn test_get_user_recipes_alphabetical(pool: PgPool) -> Result<()> {
     // the unnamed one is left out
     let mut ids = Vec::new();
     for name in ["Tarte", "Crêpes", "Tarte"] {
-        let id = create_recipe(&pool, 12345, "content").await?;
+        let id = recipe_of(&pool, 12345, "content").await?;
         update_recipe_name(&pool, 12345, id, name).await?;
         ids.push(id);
     }
-    create_recipe(&pool, 12345, "unnamed").await?;
-    let other = create_recipe(&pool, 67890, "content").await?;
+    recipe_of(&pool, 12345, "unnamed").await?;
+    let other = recipe_of(&pool, 67890, "content").await?;
     update_recipe_name(&pool, 67890, other, "Pancakes").await?;
 
     let (recipes, total) = get_user_recipes_alphabetical(&pool, 12345, 2, 0).await?;
@@ -360,14 +366,14 @@ async fn test_has_duplicate_recipes(pool: PgPool) -> Result<()> {
 
 async fn test_has_duplicate_recipes_impl(pool: &PgPool) -> Result<()> {
     // Create multiple recipes with the same name
-    let recipe1_id = create_recipe(pool, 12345, "flour 2 cups").await?;
+    let recipe1_id = recipe_of(pool, 12345, "flour 2 cups").await?;
     update_recipe_name(pool, 12345, recipe1_id, "Chocolate Cake").await?;
 
-    let recipe2_id = create_recipe(pool, 12345, "butter 100g").await?;
+    let recipe2_id = recipe_of(pool, 12345, "butter 100g").await?;
     update_recipe_name(pool, 12345, recipe2_id, "Chocolate Cake").await?;
 
     // Create single recipe with different name
-    let recipe3_id = create_recipe(pool, 12345, "milk 250ml").await?;
+    let recipe3_id = recipe_of(pool, 12345, "milk 250ml").await?;
     update_recipe_name(pool, 12345, recipe3_id, "Vanilla Pudding").await?;
 
     // Test duplicate detection - should return true for "Chocolate Cake"
@@ -618,7 +624,7 @@ async fn test_migration_system(pool: PgPool) -> Result<()> {
 
 async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
     // Every migration applied and recorded by sqlx
-    assert_eq!(migrations::current_version(pool).await?, 8);
+    assert_eq!(migrations::current_version(pool).await?, 9);
     validate_database_schema(pool).await?;
 
     // Reverted with the down scripts, one version at a time, then all
@@ -652,7 +658,7 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
 
     // And applied again from nothing
     init_database_schema(pool).await?;
-    assert_eq!(migrations::current_version(pool).await?, 8);
+    assert_eq!(migrations::current_version(pool).await?, 9);
     validate_database_schema(pool).await?;
 
     Ok(())
@@ -1055,7 +1061,7 @@ async fn list_positions_follow_the_alphabetical_order(pool: PgPool) -> Result<()
         let saved = save_recipe(&pool, 61, Some("fr"), "texte", name, &[]).await?;
         ids.insert(name, saved.recipe_id);
     }
-    let unnamed = create_recipe(&pool, 61, "texte").await?;
+    let unnamed = recipe_of(&pool, 61, "texte").await?;
     let other = save_recipe(&pool, 62, Some("fr"), "texte", "Abricots", &[]).await?;
 
     let position = |name| ids[name];
@@ -1269,11 +1275,11 @@ async fn duplicate_names_are_numbered_without_new_collisions(pool: PgPool) -> Re
     // existing "Recipe (2)" that a naive numbering would collide with
     let mut ids = Vec::new();
     for name in ["Recipe", "Recipe", "Recipe (2)", "Recipe"] {
-        let id = create_recipe(&pool, 77, "texte").await?;
+        let id = recipe_of(&pool, 77, "texte").await?;
         update_recipe_name(&pool, 77, id, name).await?;
         ids.push(id);
     }
-    let other = create_recipe(&pool, 88, "texte").await?;
+    let other = recipe_of(&pool, 88, "texte").await?;
     update_recipe_name(&pool, 88, other, "Recipe").await?;
 
     assert_eq!(number_duplicate_recipe_names(&pool).await?, 2);
@@ -1651,6 +1657,7 @@ async fn make_legacy(pool: &PgPool, version: i32) -> Result<()> {
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
+    migrations::undo_to(&pool, 8).await?;
     make_legacy(&pool, 8).await?;
 
     init_database_schema(&pool).await?;
@@ -1660,9 +1667,15 @@ async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
             .await?;
     assert_eq!(
         rows.iter().map(|(v, _)| *v).collect::<Vec<_>>(),
-        (1..=8).collect::<Vec<_>>()
+        (1..=9).collect::<Vec<_>>()
     );
-    assert!(rows.iter().all(|(_, time)| *time == 0), "adopted, not run");
+    assert!(
+        rows.iter()
+            .filter(|(v, _)| *v <= 8)
+            .all(|(_, time)| *time == 0),
+        "adopted, not run"
+    );
+    assert!(rows.iter().any(|(v, time)| *v == 9 && *time > 0), "9 ran");
     validate_database_schema(&pool).await?;
     let legacy: i64 = sqlx::query_scalar("SELECT count(*) FROM schema_migrations")
         .fetch_one(&pool)
@@ -1671,7 +1684,7 @@ async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
 
     // A second start finds everything applied
     init_database_schema(&pool).await?;
-    assert_eq!(migrations::current_version(&pool).await?, 8);
+    assert_eq!(migrations::current_version(&pool).await?, 9);
     Ok(())
 }
 
@@ -1684,12 +1697,78 @@ async fn test_legacy_migrations_then_the_new_ones(pool: PgPool) -> Result<()> {
     make_legacy(&pool, 7).await?;
 
     init_database_schema(&pool).await?;
-    assert_eq!(migrations::current_version(&pool).await?, 8);
+    assert_eq!(migrations::current_version(&pool).await?, 9);
     validate_database_schema(&pool).await?;
     let run: i64 =
         sqlx::query_scalar("SELECT execution_time FROM _sqlx_migrations WHERE version = 8")
             .fetch_one(&pool)
             .await?;
     assert!(run > 0, "version 8 ran");
+    Ok(())
+}
+
+/// After a rollback the database is ahead of the binary (a version it does not know is
+/// applied): the release still starts, and changes nothing.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_a_database_ahead_of_the_binary_starts(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    sqlx::query(
+        "INSERT INTO _sqlx_migrations (version, description, success, checksum, execution_time) \
+         VALUES (99, 'from a newer release', TRUE, '\\x00', 0)",
+    )
+    .execute(&pool)
+    .await?;
+
+    init_database_schema(&pool).await?;
+    validate_database_schema(&pool).await?;
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(count, 10, "nothing applied or removed");
+    Ok(())
+}
+
+/// A database left at version 8 with recipes whose owner has no `users` row (saved before users
+/// were always created): migration 9 gives each owner a row, then adds the foreign key.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_owner_key_migration_adds_missing_users(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    migrations::undo_to(&pool, 8).await?;
+    for owner in [501_i64, 501, 502] {
+        sqlx::query("INSERT INTO recipes (telegram_id, content) VALUES ($1, 'orphan')")
+            .bind(owner)
+            .execute(&pool)
+            .await?;
+    }
+    get_or_create_user(&pool, 503, Some("fr")).await?;
+
+    init_database_schema(&pool).await?;
+    assert_eq!(migrations::current_version(&pool).await?, 9);
+    let owners: Vec<i64> = sqlx::query_scalar(
+        "SELECT telegram_id FROM users WHERE telegram_id IN (501, 502, 503) ORDER BY telegram_id",
+    )
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(owners, vec![501, 502, 503], "one row per owner, none twice");
+    let recipes: i64 = sqlx::query_scalar("SELECT count(*) FROM recipes")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(recipes, 3, "no recipe lost");
+    Ok(())
+}
+
+/// With the foreign key, a recipe of nobody is refused; a recipe of a known user is not.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_recipe_needs_its_owner(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    assert!(
+        create_recipe(&pool, 9_001, "no owner").await.is_err(),
+        "no users row for 9001"
+    );
+    get_or_create_user(&pool, 9_001, Some("fr")).await?;
+    create_recipe(&pool, 9_001, "with its owner").await?;
     Ok(())
 }
