@@ -24,6 +24,9 @@ RUN mkdir -p src \
     && rm -rf src
 
 COPY src ./src
+COPY build.rs ./
+# The schema migrations are embedded into the binary (sqlx::migrate!)
+COPY migrations ./migrations
 # The extraction prompt and schema are compiled into the binary (include_str!)
 COPY config ./config
 COPY locales ./locales

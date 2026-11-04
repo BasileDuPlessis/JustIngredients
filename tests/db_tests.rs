@@ -598,8 +598,9 @@ async fn test_schema_validation_impl(pool: &PgPool) -> Result<()> {
     assert!(result.unwrap_err().to_string().contains("ingredients"));
 
     // Recreate the table and test again. The migration is recorded as applied, so reset the
-    // migration state first, otherwise init_database_schema has nothing to apply.
-    sqlx::query("DROP TABLE IF EXISTS schema_migrations CASCADE")
+    // migration state first, otherwise init_database_schema has nothing to apply (the scripts
+    // are idempotent: they run again over what is left).
+    sqlx::query("DROP TABLE IF EXISTS _sqlx_migrations CASCADE")
         .execute(pool)
         .await?;
     init_database_schema(pool).await?;
@@ -616,69 +617,43 @@ async fn test_migration_system(pool: PgPool) -> Result<()> {
 }
 
 async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
-    // Clean up any existing migration state
-    sqlx::query("DROP TABLE IF EXISTS schema_migrations CASCADE")
-        .execute(pool)
-        .await?;
-    sqlx::query("DROP TABLE IF EXISTS ingredients CASCADE")
-        .execute(pool)
-        .await?;
-    sqlx::query("DROP TABLE IF EXISTS recipes CASCADE")
-        .execute(pool)
-        .await?;
-    sqlx::query("DROP TABLE IF EXISTS users CASCADE")
-        .execute(pool)
-        .await?;
-
-    // Test initial state - no migrations applied (the tracking table exists but is empty)
-    migrations::init_migrations_table(pool).await?;
-    let version = migrations::get_current_version(pool).await?;
-    assert_eq!(version, 0);
-
-    // Apply migrations
-    migrations::apply_pending_migrations(pool).await?;
-
-    // Check that migrations table was created and version is updated
-    let version = migrations::get_current_version(pool).await?;
-    assert_eq!(version, 8);
-
-    // Verify that tables were created
+    // Every migration applied and recorded by sqlx
+    assert_eq!(migrations::current_version(pool).await?, 8);
     validate_database_schema(pool).await?;
 
-    // Roll back with the down scripts, one version at a time, then all tables
-    migrations::rollback_to_version(pool, 7).await?;
-    assert_eq!(migrations::get_current_version(pool).await?, 7);
+    // Reverted with the down scripts, one version at a time, then all
+    migrations::undo_to(pool, 7).await?;
+    assert_eq!(migrations::current_version(pool).await?, 7);
     assert!(
         validate_database_schema(pool).await.is_err(),
         "dialogues is required"
     );
-    migrations::rollback_to_version(pool, 6).await?;
-    assert_eq!(migrations::get_current_version(pool).await?, 6);
+    migrations::undo_to(pool, 6).await?;
+    assert_eq!(migrations::current_version(pool).await?, 6);
     assert!(
         validate_database_schema(pool).await.is_err(),
         "usage_days is required"
     );
-    migrations::rollback_to_version(pool, 5).await?;
-    assert_eq!(migrations::get_current_version(pool).await?, 5);
+    migrations::undo_to(pool, 5).await?;
+    assert_eq!(migrations::current_version(pool).await?, 5);
     assert!(
         validate_database_schema(pool).await.is_err(),
         "recipe_links is required"
     );
-    migrations::rollback_to_version(pool, 4).await?;
-    assert_eq!(migrations::get_current_version(pool).await?, 4);
+    migrations::undo_to(pool, 4).await?;
+    assert_eq!(migrations::current_version(pool).await?, 4);
     assert!(
         validate_database_schema(pool).await.is_err(),
         "users.unit_view is required"
     );
-    migrations::rollback_to_version(pool, 3).await?;
-    assert_eq!(migrations::get_current_version(pool).await?, 3);
-    migrations::rollback_to_version(pool, 2).await?;
-    assert_eq!(migrations::get_current_version(pool).await?, 2);
-    migrations::rollback_to_version(pool, 1).await?;
-    assert_eq!(migrations::get_current_version(pool).await?, 1);
-    migrations::rollback_to_version(pool, 0).await?;
-    assert_eq!(migrations::get_current_version(pool).await?, 0);
+    migrations::undo_to(pool, 0).await?;
+    assert_eq!(migrations::current_version(pool).await?, 0);
     assert!(validate_database_schema(pool).await.is_err());
+
+    // And applied again from nothing
+    init_database_schema(pool).await?;
+    assert_eq!(migrations::current_version(pool).await?, 8);
+    validate_database_schema(pool).await?;
 
     Ok(())
 }
@@ -748,175 +723,6 @@ async fn test_schema_validation_details_impl(pool: &PgPool) -> Result<()> {
     }
 
     Ok(())
-}
-
-#[test]
-fn test_split_sql_statements_single_statement() {
-    let sql = "CREATE TABLE test (id INT);";
-    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(
-        statements,
-        Ok(vec!["CREATE TABLE test (id INT);".to_string()])
-    );
-}
-
-#[test]
-fn test_split_sql_statements_multiple_statements() {
-    let sql = "CREATE TABLE test (id INT); INSERT INTO test VALUES (1);";
-    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(
-        statements,
-        Ok(vec![
-            "CREATE TABLE test (id INT);".to_string(),
-            "INSERT INTO test VALUES (1);".to_string()
-        ])
-    );
-}
-
-#[test]
-fn test_split_sql_statements_with_string_literals() {
-    let sql = "INSERT INTO test VALUES ('hello;world'); CREATE TABLE test2 (id INT);";
-    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(
-        statements,
-        Ok(vec![
-            "INSERT INTO test VALUES ('hello;world');".to_string(),
-            "CREATE TABLE test2 (id INT);".to_string()
-        ])
-    );
-}
-
-#[test]
-fn test_split_sql_statements_with_double_quotes() {
-    let sql = r#"INSERT INTO test VALUES ("hello;world"); CREATE TABLE test2 (id INT);"#;
-    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(
-        statements,
-        Ok(vec![
-            r#"INSERT INTO test VALUES ("hello;world");"#.to_string(),
-            "CREATE TABLE test2 (id INT);".to_string()
-        ])
-    );
-}
-
-#[test]
-fn test_split_sql_statements_with_comments() {
-    let sql = r#"
-        -- This is a comment
-        CREATE TABLE test (id INT);
-        -- Another comment
-        INSERT INTO test VALUES (1);
-    "#;
-    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(
-        statements,
-        Ok(vec![
-            "-- This is a comment\n        CREATE TABLE test (id INT);".to_string(),
-            "-- Another comment\n        INSERT INTO test VALUES (1);".to_string()
-        ])
-    );
-}
-
-#[test]
-fn test_split_sql_statements_mixed_strings_and_comments() {
-    let sql = r#"
-        -- Create table
-        CREATE TABLE test (
-            id INT,
-            name VARCHAR(100) DEFAULT 'test;value'
-        );
-        -- Insert data
-        INSERT INTO test VALUES (1, 'hello;world');
-    "#;
-    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    match statements {
-        Ok(stmts) => {
-            assert_eq!(stmts.len(), 2);
-            assert!(stmts[0].contains("CREATE TABLE"));
-            assert!(stmts[1].contains("INSERT INTO"));
-        }
-        Err(e) => panic!("Failed to split SQL: {}", e),
-    }
-}
-
-#[test]
-fn test_split_sql_statements_empty_input() {
-    let sql = "";
-    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(statements, Ok(Vec::<String>::new()));
-}
-
-#[test]
-fn test_split_sql_statements_only_whitespace() {
-    let sql = "   \n\t   ";
-    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(statements, Ok(Vec::<String>::new()));
-}
-
-#[test]
-fn test_split_sql_statements_no_trailing_semicolon() {
-    let sql = "CREATE TABLE test (id INT)";
-    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    assert_eq!(
-        statements,
-        Ok(vec!["CREATE TABLE test (id INT)".to_string()])
-    );
-}
-
-#[test]
-fn test_split_sql_statements_complex_migration_sql() {
-    let sql = r#"
-        -- Create users table
-        CREATE TABLE IF NOT EXISTS users (
-            id BIGSERIAL PRIMARY KEY,
-            telegram_id BIGINT UNIQUE NOT NULL,
-            language_code VARCHAR(10) DEFAULT 'en',
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
-        );
-
-        -- Create recipes table
-        CREATE TABLE IF NOT EXISTS recipes (
-            id BIGSERIAL PRIMARY KEY,
-            telegram_id BIGINT NOT NULL,
-            content TEXT NOT NULL,
-            recipe_name VARCHAR(255),
-            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
-            content_tsv tsvector GENERATED ALWAYS AS (to_tsvector('english', content)) STORED
-        );
-
-        -- Create indexes
-        CREATE INDEX IF NOT EXISTS recipes_content_tsv_idx ON recipes USING GIN (content_tsv);
-    "#;
-    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    match statements {
-        Ok(stmts) => {
-            assert_eq!(stmts.len(), 3);
-            assert!(stmts[0].contains("CREATE TABLE IF NOT EXISTS users"));
-            assert!(stmts[1].contains("CREATE TABLE IF NOT EXISTS recipes"));
-            assert!(stmts[2].contains("CREATE INDEX IF NOT EXISTS recipes_content_tsv_idx"));
-        }
-        Err(e) => panic!("Failed to split SQL: {}", e),
-    }
-}
-
-#[test]
-fn test_split_sql_statements_semicolon_in_string_and_comment() {
-    let sql = r#"
-        -- This comment has ; in it
-        INSERT INTO test VALUES ('value;with;semicolons');
-        -- Another ; comment
-        UPDATE test SET value = 'new;value';
-    "#;
-    let statements = just_ingredients::db::migrations::split_sql_statements(sql);
-    match statements {
-        Ok(stmts) => {
-            assert_eq!(stmts.len(), 2);
-            assert!(stmts[0].contains("INSERT INTO"));
-            assert!(stmts[1].contains("UPDATE"));
-        }
-        Err(e) => panic!("Failed to split SQL: {}", e),
-    }
 }
 
 #[sqlx::test(migrations = false)]
@@ -1815,5 +1621,75 @@ async fn test_dialogue_storage_not_resumed_after_a_gap_impl(pool: &PgPool) -> Re
         .await?;
     assert_eq!(storage.start().await?, 0);
 
+    Ok(())
+}
+
+/// Turns a database migrated by sqlx into one the former system left at `version`: no
+/// `_sqlx_migrations`, the versions in `schema_migrations`.
+async fn make_legacy(pool: &PgPool, version: i32) -> Result<()> {
+    sqlx::query("DROP TABLE _sqlx_migrations")
+        .execute(pool)
+        .await?;
+    sqlx::query(
+        "CREATE TABLE schema_migrations (version INTEGER PRIMARY KEY, name TEXT NOT NULL, \
+         applied_at TIMESTAMPTZ DEFAULT NOW())",
+    )
+    .execute(pool)
+    .await?;
+    for v in 1..=version {
+        sqlx::query("INSERT INTO schema_migrations (version, name) VALUES ($1, 'legacy')")
+            .bind(v)
+            .execute(pool)
+            .await?;
+    }
+    Ok(())
+}
+
+/// A database the former system left at version 8 (production, staging): its versions are
+/// adopted by sqlx, nothing runs again, and schema_migrations stays for an older release.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    make_legacy(&pool, 8).await?;
+
+    init_database_schema(&pool).await?;
+    let rows: Vec<(i64, i64)> =
+        sqlx::query_as("SELECT version, execution_time FROM _sqlx_migrations ORDER BY version")
+            .fetch_all(&pool)
+            .await?;
+    assert_eq!(
+        rows.iter().map(|(v, _)| *v).collect::<Vec<_>>(),
+        (1..=8).collect::<Vec<_>>()
+    );
+    assert!(rows.iter().all(|(_, time)| *time == 0), "adopted, not run");
+    validate_database_schema(&pool).await?;
+    let legacy: i64 = sqlx::query_scalar("SELECT count(*) FROM schema_migrations")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(legacy, 8, "kept for a release from before the switch");
+
+    // A second start finds everything applied
+    init_database_schema(&pool).await?;
+    assert_eq!(migrations::current_version(&pool).await?, 8);
+    Ok(())
+}
+
+/// A database the former system left at version 7: versions 1 to 7 are adopted, 8 runs.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_legacy_migrations_then_the_new_ones(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    migrations::undo_to(&pool, 7).await?;
+    make_legacy(&pool, 7).await?;
+
+    init_database_schema(&pool).await?;
+    assert_eq!(migrations::current_version(&pool).await?, 8);
+    validate_database_schema(&pool).await?;
+    let run: i64 =
+        sqlx::query_scalar("SELECT execution_time FROM _sqlx_migrations WHERE version = 8")
+            .fetch_one(&pool)
+            .await?;
+    assert!(run > 0, "version 8 ran");
     Ok(())
 }

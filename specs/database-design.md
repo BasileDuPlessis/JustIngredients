@@ -53,7 +53,7 @@ Database Schema
 ├── recipe_links         # Pairs of linked recipes (migration 6)
 ├── usage_days, app_state # Usage history and values kept across restarts (migration 7)
 ├── dialogues            # Each chat's running action (migration 8)
-├── schema_migrations    # Versioned migration tracking
+├── _sqlx_migrations     # Applied migrations, by sqlx (schema_migrations: the former table, kept)
 └── FTS index           # GIN index on the generated content_tsv column (content only)
 ```
 
@@ -153,20 +153,26 @@ pub struct Ingredient {
 
 ## Migration System
 
-Versioned schema migrations with rollback support (`src/db/migrations.rs`, `db::migrations`):
+Versioned schema migrations with rollback support, run by sqlx (backlog IMP-028,
+`src/db/migrations.rs`): one pair of SQL files per version in `migrations/`
+(`NNNN_name.up.sql` and `.down.sql`), embedded at build time by `sqlx::migrate!` (`build.rs`
+rebuilds when they change; the Dockerfile copies the folder).
 
 ```rust
-// Apply all pending migrations in order
-pub async fn apply_pending_migrations(pool: &PgPool) -> Result<()>
-
-// Get current schema version
-pub async fn get_current_version(pool: &PgPool) -> Result<i32>
-
-// Rollback to a specific version
-pub async fn rollback_to_version(pool: &PgPool, target_version: i32) -> Result<()>
+pub static MIGRATOR: Migrator                                   // the embedded migrations
+pub async fn run(pool: &PgPool) -> Result<()>                   // adopt, then apply the pending ones
+pub async fn current_version(pool: &PgPool) -> Result<i64>      // 0 without migrations
+pub async fn undo_to(pool: &PgPool, target: i64) -> Result<()>  // down scripts above `target`
 ```
 
-Migrations are applied at startup via `init_database_schema()`. Each migration is idempotent and recorded in `schema_migrations`. There are eight: version 1 `create_initial_tables`, version 2 `recipes_owner_index_and_ingredient_cascade` (owner index on `recipes`, `ON DELETE CASCADE` on `ingredients.recipe_id`), version 3 `chat_messages` (see below) and version 4 `number_duplicate_recipe_names` (a placeholder since RU6: the numbering runs at every startup in `number_duplicate_recipe_names()`, after the schema validation, with the rule of new names — the oldest of a user's same-name recipes keeps the name, the others take the first free "(n)" — and does nothing once names are unique) version 5 `users_unit_view` (`users.unit_view TEXT NOT NULL DEFAULT 'french'`) and version 6 `recipe_links` (`recipe_links (recipe_a, recipe_b)`, one row per pair of linked recipes, the smaller id first, both foreign keys `ON DELETE CASCADE`, index on `recipe_b`: UX plan U9), version 7 `usage_history` (`users.last_seen_at` and its index, `usage_days`, `app_state`: plan O, see [deployment.md](deployment.md)) and version 8 `dialogues` (below: backlog IMP-022); each has a down script. Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch. After it come the duplicate numbering and `normalize_saved_units()`, which rewrites the units saved before normalization ("G", "litres", "cl" → g, l, ml with the quantity converted…) one ingredient at a time, skips what `units::renormalized` finds unsafe (an unstable spelling, a quantity that does not fit), logs a failed row and goes on, and does nothing once every unit is normalized; its own failure never stops the startup. Just before the dispatcher starts, `PgDialogueStorage::start` deletes the dialogue states that are not resumed; its failure is only logged.
+Migrations are applied at startup via `init_database_schema()`, each in a transaction, under
+sqlx's advisory lock, recorded with its checksum in `_sqlx_migrations` (a changed file is an
+error, never applied silently). A database migrated by the former in-house system has no
+`_sqlx_migrations` but a `schema_migrations` table: the first start records its versions in
+`_sqlx_migrations` as applied, with the files' checksums, without running them again
+(`adopt_legacy_versions`), then runs what comes after. `schema_migrations` is left as it is, so
+that a release from before the switch (an automatic rollback) still reads its version. Each
+migration is idempotent. There are eight: version 1 `create_initial_tables`, version 2 `recipes_owner_index_and_ingredient_cascade` (owner index on `recipes`, `ON DELETE CASCADE` on `ingredients.recipe_id`), version 3 `chat_messages` (see below) and version 4 `number_duplicate_recipe_names` (a placeholder since RU6: the numbering runs at every startup in `number_duplicate_recipe_names()`, after the schema validation, with the rule of new names — the oldest of a user's same-name recipes keeps the name, the others take the first free "(n)" — and does nothing once names are unique) version 5 `users_unit_view` (`users.unit_view TEXT NOT NULL DEFAULT 'french'`) and version 6 `recipe_links` (`recipe_links (recipe_a, recipe_b)`, one row per pair of linked recipes, the smaller id first, both foreign keys `ON DELETE CASCADE`, index on `recipe_b`: UX plan U9), version 7 `usage_history` (`users.last_seen_at` and its index, `usage_days`, `app_state`: plan O, see [deployment.md](deployment.md)) and version 8 `dialogues` (below: backlog IMP-022); each has a down script. Then `validate_database_schema()` checks the tables and columns and stops the startup on a mismatch. After it come the duplicate numbering and `normalize_saved_units()`, which rewrites the units saved before normalization ("G", "litres", "cl" → g, l, ml with the quantity converted…) one ingredient at a time, skips what `units::renormalized` finds unsafe (an unstable spelling, a quantity that does not fit), logs a failed row and goes on, and does nothing once every unit is normalized; its own failure never stops the startup. Just before the dispatcher starts, `PgDialogueStorage::start` deletes the dialogue states that are not resumed; its failure is only logged.
 
 ### Constraints
 - **Data Types**: Appropriate PostgreSQL types for performance
@@ -260,7 +266,10 @@ unchanged for 48 hours, or all of them when the `app_state` row `dialogues_alive
 includes the table's columns.
 Timings in `ji_db_duration_seconds{operation="dialogue_get|dialogue_update|dialogue_remove|dialogue_purge"}`.
 
-### Migrations Table
+### Migrations Tables
+`_sqlx_migrations` is sqlx's (version, description, installed_on, success, checksum,
+execution_time; adopted versions have `execution_time` 0). The former table, kept for a
+rollback to a release from before the switch and no longer written:
 ```sql
 CREATE TABLE schema_migrations (
     version INTEGER PRIMARY KEY,

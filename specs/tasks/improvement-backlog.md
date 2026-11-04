@@ -739,7 +739,14 @@ they can be pulled into 1-hour micro-tasks without another review.
 - Validation: `rg "row.get\(" src` is empty, and `cargo sqlx prepare --check` runs in CI.
 
 ### IMP-028: Inline migrations with a hand-written SQL splitter
-- [ ] Done
+- [x] Done (2026-11-04): the 8 migrations are SQL files in `migrations/` (up and down), run by
+  `sqlx::migrate!` (a transaction each, an advisory lock, checksums in `_sqlx_migrations`); the
+  splitter and its 11 tests are gone. A database of the former system (production, staging) is
+  adopted on its first start: its `schema_migrations` versions are recorded in
+  `_sqlx_migrations` without running again, and `schema_migrations` stays for a rollback to an
+  older release. DB tests: up and down to 0 and up again; a former database at 8 adopted
+  (nothing run, a second start fine); one at 7 adopted then 8 run. A volume snapshot of the
+  production database is taken before the release (the user's request).
 - Priority: P2. Effort: M. Area: DB.
 - Location: `src/db.rs:1288-1592` (`migrations` module, `split_sql_statements` at
   `src/db.rs:1353`).

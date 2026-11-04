@@ -11,7 +11,7 @@ pub async fn init_database_schema(pool: &PgPool) -> Result<()> {
     info!("Initializing database schema using migrations");
 
     // Apply any pending migrations
-    migrations::apply_pending_migrations(pool).await?;
+    migrations::run(pool).await?;
 
     info!("Database schema initialized successfully");
     Ok(())
