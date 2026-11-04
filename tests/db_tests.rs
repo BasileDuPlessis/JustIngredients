@@ -49,9 +49,11 @@ async fn test_recipe_operations_impl(pool: &PgPool) -> Result<()> {
     assert_eq!(recipe.content, "Test OCR content");
 
     assert!(delete_recipe(pool, 12345, recipe_id).await?);
-    assert!(read_recipe_with_name(pool, 12345, recipe_id)
-        .await?
-        .is_none());
+    assert!(
+        read_recipe_with_name(pool, 12345, recipe_id)
+            .await?
+            .is_none()
+    );
 
     Ok(())
 }
@@ -107,9 +109,11 @@ async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
         &[ingredient_id],
     )
     .await?;
-    assert!(get_recipe_ingredients(pool, 12345, recipe_id)
-        .await?
-        .is_empty());
+    assert!(
+        get_recipe_ingredients(pool, 12345, recipe_id)
+            .await?
+            .is_empty()
+    );
 
     Ok(())
 }
@@ -292,12 +296,16 @@ async fn test_delete_recipe_removes_its_ingredients(pool: PgPool) -> Result<()> 
         "another user's recipe"
     );
     assert!(delete_recipe(&pool, 777, saved.recipe_id).await?);
-    assert!(read_recipe_with_name(&pool, 777, saved.recipe_id)
-        .await?
-        .is_none());
-    assert!(get_recipe_ingredients(&pool, 777, saved.recipe_id)
-        .await?
-        .is_empty());
+    assert!(
+        read_recipe_with_name(&pool, 777, saved.recipe_id)
+            .await?
+            .is_none()
+    );
+    assert!(
+        get_recipe_ingredients(&pool, 777, saved.recipe_id)
+            .await?
+            .is_empty()
+    );
     Ok(())
 }
 
@@ -335,9 +343,11 @@ async fn test_get_user_recipes_alphabetical(pool: PgPool) -> Result<()> {
     let (recipes, total) = get_user_recipes_alphabetical(&pool, 99999, 3, 0).await?;
     assert_eq!((recipes.len(), total), (0, 0));
 
-    assert!(get_user_recipes_alphabetical(&pool, 12345, 0, 0)
-        .await
-        .is_err());
+    assert!(
+        get_user_recipes_alphabetical(&pool, 12345, 0, 0)
+            .await
+            .is_err()
+    );
     Ok(())
 }
 
@@ -424,12 +434,16 @@ async fn test_recipe_reads_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()>
     create_recipe_with_ingredient(pool, OTHER_B, "Other Cake").await?;
 
     // User B: A's recipe is not found
-    assert!(read_recipe_with_name(pool, OTHER_B, recipe_id)
-        .await?
-        .is_none());
-    assert!(get_recipe_ingredients(pool, OTHER_B, recipe_id)
-        .await?
-        .is_empty());
+    assert!(
+        read_recipe_with_name(pool, OTHER_B, recipe_id)
+            .await?
+            .is_none()
+    );
+    assert!(
+        get_recipe_ingredients(pool, OTHER_B, recipe_id)
+            .await?
+            .is_empty()
+    );
 
     // User A: still sees the recipe and its ingredients
     let recipe = read_recipe_with_name(pool, OWNER_A, recipe_id)
@@ -487,12 +501,16 @@ async fn test_recipe_writes_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()
     assert_eq!(recipe.recipe_name.as_deref(), Some("Renamed Cake"));
 
     assert!(delete_recipe(pool, OWNER_A, recipe_id).await?);
-    assert!(read_recipe_with_name(pool, OWNER_A, recipe_id)
-        .await?
-        .is_none());
-    assert!(get_recipe_ingredients(pool, OWNER_A, recipe_id)
-        .await?
-        .is_empty());
+    assert!(
+        read_recipe_with_name(pool, OWNER_A, recipe_id)
+            .await?
+            .is_none()
+    );
+    assert!(
+        get_recipe_ingredients(pool, OWNER_A, recipe_id)
+            .await?
+            .is_empty()
+    );
 
     Ok(())
 }
@@ -1048,9 +1066,11 @@ async fn chat_messages_are_taken_once_per_chat_and_kind(pool: PgPool) -> Result<
     record_chat_message(&pool, 42, 11, "transient", None).await?;
     forget_chat_message(&pool, 42, 10).await?;
     record_chat_message(&pool, 42, 11, "home", None).await?;
-    assert!(take_chat_messages_except(&pool, 42, &["transient"], None)
-        .await?
-        .is_empty());
+    assert!(
+        take_chat_messages_except(&pool, 42, &["transient"], None)
+            .await?
+            .is_empty()
+    );
     assert_eq!(
         ids(take_chat_messages_except(&pool, 42, &["home"], None).await?),
         vec![11]
@@ -1159,9 +1179,11 @@ async fn recipe_cards_are_found_per_chat_and_recipe(pool: PgPool) -> Result<()> 
         ids(find_recipe_messages(&pool, 42, &["card"], 8).await?),
         vec![21, 26]
     );
-    assert!(take_chat_messages_except(&pool, 42, &["transient"], None)
-        .await?
-        .is_empty());
+    assert!(
+        take_chat_messages_except(&pool, 42, &["transient"], None)
+            .await?
+            .is_empty()
+    );
     Ok(())
 }
 
@@ -1333,9 +1355,11 @@ async fn a_photo_in_parts_becomes_linked_recipes(pool: PgPool) -> Result<()> {
         linked_names(saved[0].recipe_id).await?,
         ["Malva pudding (sauce) (2)"]
     );
-    assert!(read_recipe_with_name(&pool, 51, saved[1].recipe_id)
-        .await?
-        .is_some());
+    assert!(
+        read_recipe_with_name(&pool, 51, saved[1].recipe_id)
+            .await?
+            .is_some()
+    );
     Ok(())
 }
 
@@ -1778,10 +1802,12 @@ async fn test_dialogue_storage_not_resumed_after_a_gap_impl(pool: &PgPool) -> Re
     .execute(pool)
     .await?;
     assert_eq!(storage.start().await?, 2);
-    assert!(RecipeDialogue::new(storage.clone(), ChatId(2))
-        .get()
-        .await?
-        .is_none());
+    assert!(
+        RecipeDialogue::new(storage.clone(), ChatId(2))
+            .get()
+            .await?
+            .is_none()
+    );
 
     // The start noted it: a restart right after resumes
     RecipeDialogue::new(storage.clone(), ChatId(2))

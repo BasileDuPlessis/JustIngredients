@@ -1,6 +1,6 @@
 //! Image processing: download, ingredient extraction and the review message
 
-use crate::bot::html::{edit_html, Html};
+use crate::bot::html::{Html, edit_html};
 use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;

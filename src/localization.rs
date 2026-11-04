@@ -1,6 +1,6 @@
 use anyhow::Result;
-use fluent_bundle::concurrent::FluentBundle;
 use fluent_bundle::FluentResource;
+use fluent_bundle::concurrent::FluentBundle;
 use std::collections::HashMap;
 use std::sync::Arc;
 use unic_langid::LanguageIdentifier;

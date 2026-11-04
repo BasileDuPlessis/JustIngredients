@@ -8,7 +8,7 @@ use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::types::BotCommand;
 
-use crate::localization::{detect_language, t_lang, LocalizationManager};
+use crate::localization::{LocalizationManager, detect_language, t_lang};
 
 /// A command typed by the user.
 #[derive(Debug, Clone, PartialEq, Eq)]

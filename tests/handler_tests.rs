@@ -7,8 +7,8 @@
 use std::sync::Arc;
 
 use anyhow::{Context, Result};
-use just_ingredients::bot::dispatch::{handler_tree, BotServices};
 use just_ingredients::bot::MessageServices;
+use just_ingredients::bot::dispatch::{BotServices, handler_tree};
 use just_ingredients::dialogue_storage::PgDialogueStorage;
 use just_ingredients::extraction::{
     ExtractedIngredient, Extraction, ExtractionFuture, ImageInput, IngredientExtractor,
@@ -104,8 +104,8 @@ async fn seed_review_with(
     caption: Option<&str>,
     message_id: Option<i32>,
 ) -> Result<()> {
-    use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
     use just_ingredients::MeasurementMatch;
+    use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
     let line = |quantity: &str, unit: Option<&str>, name: &str| MeasurementMatch {
         quantity: quantity.to_string(),
         measurement: unit.map(str::to_string),
@@ -407,7 +407,7 @@ async fn an_older_list_cannot_save(pool: PgPool) -> Result<()> {
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn editing_a_saved_recipe_writes_the_typed_quantity(pool: PgPool) -> Result<()> {
-    use just_ingredients::db::{get_recipe_ingredients, save_recipe, NewIngredient};
+    use just_ingredients::db::{NewIngredient, get_recipe_ingredients, save_recipe};
     use just_ingredients::dialogue::RecipeDialogueState;
     use teloxide_tests::MockCallbackQuery;
     let services = services(&pool, Vec::new()).await?;
@@ -546,8 +546,8 @@ async fn save_recipes(pool: &PgPool, names: &[&str]) -> Result<Vec<i64>> {
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn a_review_in_parts_saves_linked_recipes(pool: PgPool) -> Result<()> {
-    use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
     use just_ingredients::MeasurementMatch;
+    use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
     use teloxide_tests::MockCallbackQuery;
     let services = services(&pool, Vec::new()).await?;
     let list = MockMessageText::new().text("📝 Ingrédients").build();
@@ -769,7 +769,7 @@ async fn deleting_review_lines_down_to_none(pool: PgPool) -> Result<()> {
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn deleting_an_ingredient_of_a_saved_recipe(pool: PgPool) -> Result<()> {
-    use just_ingredients::db::{get_recipe_ingredients, save_recipe, NewIngredient};
+    use just_ingredients::db::{NewIngredient, get_recipe_ingredients, save_recipe};
     use teloxide_tests::MockCallbackQuery;
     let services = services(&pool, Vec::new()).await?;
     let ingredient = |name| NewIngredient {
@@ -848,11 +848,12 @@ async fn a_too_long_new_name_is_refused(pool: PgPool) -> Result<()> {
         Some(RecipeDialogueState::RenamingRecipe { .. })
     ));
     let too_long = t_lang(&localization, "recipe-name-too-long", None);
-    assert!(bot
-        .get_responses()
-        .sent_messages
-        .iter()
-        .any(|message| message.text() == Some(too_long.as_str())));
+    assert!(
+        bot.get_responses()
+            .sent_messages
+            .iter()
+            .any(|message| message.text() == Some(too_long.as_str()))
+    );
     Ok(())
 }
 
@@ -896,7 +897,7 @@ async fn the_quantity_prompt_of_a_review_line(pool: PgPool) -> Result<()> {
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn the_quantity_prompt_of_a_saved_line(pool: PgPool) -> Result<()> {
-    use just_ingredients::db::{get_recipe_ingredients, save_recipe, NewIngredient};
+    use just_ingredients::db::{NewIngredient, get_recipe_ingredients, save_recipe};
     use just_ingredients::dialogue::RecipeDialogueState;
     use teloxide_tests::MockCallbackQuery;
     let services = services(&pool, Vec::new()).await?;

@@ -81,10 +81,9 @@ pub async fn handle_show_list(
     if matches!(
         crate::bot::cleanup::is_recorded(msg.chat.id, msg.id).await,
         Some(false)
-    ) {
-        if let Err(e) = bot.edit_message_reply_markup(msg.chat.id, msg.id).await {
-            debug!(error = %e, "Could not remove the buttons of an old card");
-        }
+    ) && let Err(e) = bot.edit_message_reply_markup(msg.chat.id, msg.id).await
+    {
+        debug!(error = %e, "Could not remove the buttons of an old card");
     }
     if dialogue.get().await?.is_some_and(|state| state.is_action()) {
         dialogue.exit().await?;

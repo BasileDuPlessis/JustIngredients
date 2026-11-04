@@ -15,7 +15,7 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import HandlerContext
 use crate::bot::cleanup::send_transient;
-use crate::bot::ui_builder::{parse_ingredient_action, IngredientAction};
+use crate::bot::ui_builder::{IngredientAction, parse_ingredient_action};
 
 // Import callback types module
 use crate::bot::callbacks::callback_types::SavedIngredientsParams;

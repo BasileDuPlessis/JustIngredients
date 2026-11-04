@@ -12,7 +12,7 @@ use crate::localization::t_lang;
 use crate::dialogue::{IngredientField, RecipeDialogueState};
 
 // Import UI components for the focused editing interface
-use crate::bot::ui_builder::{parse_ingredient_action, render_review, IngredientAction};
+use crate::bot::ui_builder::{IngredientAction, parse_ingredient_action, render_review};
 use crate::bot::ui_components::create_ingredient_editing_keyboard;
 
 // Import callback types module

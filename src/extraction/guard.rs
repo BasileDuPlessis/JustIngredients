@@ -59,10 +59,10 @@ impl DailyUsage {
 
     /// Gives back a call counted on `day` that did not reach the service.
     fn give_back(&mut self, user: i64, day: u64) {
-        if self.day == day {
-            if let Some(calls) = self.calls.get_mut(&user) {
-                *calls = calls.saturating_sub(1);
-            }
+        if self.day == day
+            && let Some(calls) = self.calls.get_mut(&user)
+        {
+            *calls = calls.saturating_sub(1);
         }
     }
 }
@@ -235,8 +235,8 @@ impl IngredientExtractor for GuardedExtractor {
 mod tests {
     use super::*;
     use crate::extraction::{ExtractedIngredient, RecipeLanguage};
-    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     /// Counts calls and the highest number of calls in flight at once.
     #[derive(Debug, Default)]
@@ -356,9 +356,11 @@ mod tests {
         let (a, b) = tokio::join!(guarded.extract(&first), guarded.extract(&second));
         let results = [a, b];
         assert!(results.iter().any(Result::is_ok));
-        assert!(results
-            .iter()
-            .any(|r| matches!(r, Err(ExtractionError::RateLimited { .. }))));
+        assert!(
+            results
+                .iter()
+                .any(|r| matches!(r, Err(ExtractionError::RateLimited { .. })))
+        );
         Ok(())
     }
 

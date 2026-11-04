@@ -1,7 +1,7 @@
 [package]
 name = "just-ingredients"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 # The toolchain of rust-toolchain.toml, deploy/Dockerfile and CI: bump them together
 rust-version = "1.99"
 license = "MIT"

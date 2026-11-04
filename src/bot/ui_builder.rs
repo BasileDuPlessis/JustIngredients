@@ -673,9 +673,11 @@ mod tests {
         );
         let without_name =
             render_saved_editing(None, &[named("frites")], Some("en"), &localization);
-        assert!(without_name
-            .as_str()
-            .starts_with("✏️ <b>Editing recipe</b>\n\n"));
+        assert!(
+            without_name
+                .as_str()
+                .starts_with("✏️ <b>Editing recipe</b>\n\n")
+        );
     }
 
     #[test]
@@ -996,11 +998,13 @@ mod tests {
             ]
         );
         assert!(keyboard.inline_keyboard[0][0].text.contains("farine"));
-        assert!(keyboard
-            .inline_keyboard
-            .iter()
-            .flatten()
-            .all(|button| !button.text.contains("Missing translation")));
+        assert!(
+            keyboard
+                .inline_keyboard
+                .iter()
+                .flatten()
+                .all(|button| !button.text.contains("Missing translation"))
+        );
     }
 
     #[test]

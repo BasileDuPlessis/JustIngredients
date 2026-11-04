@@ -479,12 +479,14 @@ mod tests {
             .text(),
             "💸 Coût Gemini du jour : 1,23 $, au-dessus du seuil de 1 $."
         );
-        assert!(Alert::GeminiFailing {
-            failures: 2,
-            calls: 5
-        }
-        .text()
-        .contains("2 échecs sur 5 appels"));
+        assert!(
+            Alert::GeminiFailing {
+                failures: 2,
+                calls: 5
+            }
+            .text()
+            .contains("2 échecs sur 5 appels")
+        );
     }
 
     #[test]

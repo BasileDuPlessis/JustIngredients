@@ -312,21 +312,27 @@ mod tests {
     fn only_temporary_failures_are_transient() {
         assert!(ExtractionError::Timeout.is_transient());
         assert!(ExtractionError::RateLimited { retry_after: None }.is_transient());
-        assert!(ExtractionError::Api {
-            status: 503,
-            message: String::new()
-        }
-        .is_transient());
-        assert!(ExtractionError::Api {
-            status: 429,
-            message: String::new()
-        }
-        .is_transient());
-        assert!(!ExtractionError::Api {
-            status: 400,
-            message: String::new()
-        }
-        .is_transient());
+        assert!(
+            ExtractionError::Api {
+                status: 503,
+                message: String::new()
+            }
+            .is_transient()
+        );
+        assert!(
+            ExtractionError::Api {
+                status: 429,
+                message: String::new()
+            }
+            .is_transient()
+        );
+        assert!(
+            !ExtractionError::Api {
+                status: 400,
+                message: String::new()
+            }
+            .is_transient()
+        );
         assert!(!ExtractionError::Blocked("SAFETY".to_string()).is_transient());
         assert!(!ExtractionError::InvalidResponse(String::new()).is_transient());
     }

@@ -47,7 +47,7 @@ impl CircuitBreaker {
         let trial = match *state {
             State::Closed { .. } => false,
             State::Open { until } if Instant::now() < until => {
-                return Err(ExtractionError::CircuitOpen)
+                return Err(ExtractionError::CircuitOpen);
             }
             State::Open { .. }
             | State::HalfOpen {

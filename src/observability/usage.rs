@@ -44,10 +44,11 @@ fn visit_is_due(
     now: Instant,
     day: NaiveDate,
 ) -> bool {
-    if let Some(&(at, seen_on)) = visits.get(&telegram_id) {
-        if seen_on == day && now.duration_since(at) < VISIT_EVERY {
-            return false;
-        }
+    if let Some(&(at, seen_on)) = visits.get(&telegram_id)
+        && seen_on == day
+        && now.duration_since(at) < VISIT_EVERY
+    {
+        return false;
     }
     if visits.len() >= MAX_REMEMBERED {
         visits.retain(|_, (at, _)| now.duration_since(*at) < VISIT_EVERY);

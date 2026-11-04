@@ -10,7 +10,7 @@ use teloxide::prelude::*;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, MaybeInaccessibleMessage};
 use tracing::warn;
 
-use crate::localization::{t_args_lang, t_lang, LocalizationManager};
+use crate::localization::{LocalizationManager, t_args_lang, t_lang};
 use crate::unit_view::UnitView;
 
 /// Callback data of a view button: `unit_view:<view>:<recipe to show again, 0 for none>`.
@@ -197,9 +197,11 @@ mod tests {
             .map(|(text, data)| (text.to_string(), data.to_string()))
         );
         let (_, keyboard) = render_chooser(UnitView::Us, None, Some("en"), &localization);
-        assert!(keyboard.inline_keyboard[3][0]
-            .text
-            .starts_with("✓ US units"));
+        assert!(
+            keyboard.inline_keyboard[3][0]
+                .text
+                .starts_with("✓ US units")
+        );
     }
 
     #[test]

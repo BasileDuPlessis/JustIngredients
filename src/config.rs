@@ -317,9 +317,7 @@ impl AppConfig {
     pub fn summary(&self) -> String {
         format!(
             "Configuration: bot_token=[REDACTED], db_url=[REDACTED], health_port={}, metrics_port={}, gemini_model={}",
-            self.server.health_port,
-            self.server.metrics_port,
-            self.extraction.gemini.model
+            self.server.health_port, self.server.metrics_port, self.extraction.gemini.model
         )
     }
 }
@@ -505,11 +503,13 @@ mod tests {
             load(&[("TELEGRAM_BOT_TOKEN", TOKEN)]).is_err(),
             "no database"
         );
-        assert!(load(&[
-            ("TELEGRAM_BOT_TOKEN", "  "),
-            ("DATABASE_URL", "postgres://u:p@h/d")
-        ])
-        .is_err());
+        assert!(
+            load(&[
+                ("TELEGRAM_BOT_TOKEN", "  "),
+                ("DATABASE_URL", "postgres://u:p@h/d")
+            ])
+            .is_err()
+        );
         for name in [
             "HTTP_CLIENT_TIMEOUT_SECS",
             "REQUEST_DEDUPLICATION_TTL_SECS",

@@ -268,8 +268,8 @@ pub fn error_from_status(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::extraction::prompt::{response_schema, EXTRACTION_PROMPT};
     use crate::extraction::RecipeLanguage;
+    use crate::extraction::prompt::{EXTRACTION_PROMPT, response_schema};
 
     const SUCCESS: &str = include_str!("../../../tests/fixtures/gemini/success.json");
     const NOT_FOUND: &str =

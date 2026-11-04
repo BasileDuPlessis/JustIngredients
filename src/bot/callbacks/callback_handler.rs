@@ -6,8 +6,8 @@ use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
 use teloxide::types::{MaybeInaccessibleMessage, User};
-use tracing::debug;
 use tracing::Instrument;
+use tracing::debug;
 
 // Import dialogue types
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
@@ -190,20 +190,19 @@ async fn route_any_state(
         // a card already in the history: nothing more to do.
         if let (Ok(recipe_id), MaybeInaccessibleMessage::Regular(message)) =
             (linked.parse::<i64>(), msg)
+            && crate::bot::cleanup::is_active_card(message.chat.id, message.id).await
         {
-            if crate::bot::cleanup::is_active_card(message.chat.id, message.id).await {
-                crate::observability::action(crate::observability::Action::LinkedOpened);
-                crate::bot::cards::show_card(
-                    bot,
-                    pool,
-                    message.chat.id,
-                    None,
-                    recipe_id,
-                    q.from.language_code.as_deref(),
-                    localization,
-                )
-                .await?;
-            }
+            crate::observability::action(crate::observability::Action::LinkedOpened);
+            crate::bot::cards::show_card(
+                bot,
+                pool,
+                message.chat.id,
+                None,
+                recipe_id,
+                q.from.language_code.as_deref(),
+                localization,
+            )
+            .await?;
         }
     } else if crate::bot::unit_choice::is_choice(data) {
         crate::bot::unit_choice::handle_choice(
@@ -373,68 +372,66 @@ async fn handle_editing_ingredient_callbacks(
         recipe_name_from_caption,
         ..
     }) = dialogue_state
+        && data == "cancel_ingredient_editing"
+        && let Some(msg) = &q.message
     {
-        if data == "cancel_ingredient_editing" {
-            if let Some(msg) = &q.message {
-                // Restore the original recipe display
-                let review_message = crate::bot::ui_builder::render_review(
-                    &ingredients,
-                    language_code.as_deref(),
-                    localization,
-                );
+        // Restore the original recipe display
+        let review_message = crate::bot::ui_builder::render_review(
+            &ingredients,
+            language_code.as_deref(),
+            localization,
+        );
 
-                let keyboard = crate::bot::create_ingredient_review_keyboard(
-                    &ingredients,
-                    language_code.as_deref(),
-                    localization,
-                );
+        let keyboard = crate::bot::create_ingredient_review_keyboard(
+            &ingredients,
+            language_code.as_deref(),
+            localization,
+        );
 
-                // Use the original message ID to restore the recipe display
-                if let Some(original_msg_id) = original_message_id {
-                    match edit_html(
-                        bot,
-                        msg.chat().id,
-                        teloxide::types::MessageId(original_msg_id),
-                        review_message.clone(),
-                    )
-                    .reply_markup(keyboard.clone())
-                    .await
-                    {
-                        Ok(_) => (),
-                        Err(e) => {
-                            crate::errors::error_logging::log_internal_error(
-                                &e,
-                                "handle_editing_ingredient_callbacks",
-                                "Failed to restore original recipe display after cancel",
-                                Some(msg.chat().id.0),
-                            );
-                            // Fallback: send new message if editing fails
-                            send_html(bot, msg.chat().id, review_message)
-                                .reply_markup(keyboard)
-                                .await?;
-                        }
-                    }
-                } else {
-                    // No original message ID, send new message
+        // Use the original message ID to restore the recipe display
+        if let Some(original_msg_id) = original_message_id {
+            match edit_html(
+                bot,
+                msg.chat().id,
+                teloxide::types::MessageId(original_msg_id),
+                review_message.clone(),
+            )
+            .reply_markup(keyboard.clone())
+            .await
+            {
+                Ok(_) => (),
+                Err(e) => {
+                    crate::errors::error_logging::log_internal_error(
+                        &e,
+                        "handle_editing_ingredient_callbacks",
+                        "Failed to restore original recipe display after cancel",
+                        Some(msg.chat().id.0),
+                    );
+                    // Fallback: send new message if editing fails
                     send_html(bot, msg.chat().id, review_message)
                         .reply_markup(keyboard)
                         .await?;
                 }
-
-                // Reset dialogue state to review ingredients
-                dialogue
-                    .update(RecipeDialogueState::ReviewIngredients {
-                        recipe_name,
-                        ingredients,
-                        language_code,
-                        message_id: original_message_id, // Use original message ID for the restored display
-                        extracted_text,
-                        recipe_name_from_caption, // Preserve original caption info
-                        open_menu: None,
-                    })
-                    .await?;
             }
+        } else {
+            // No original message ID, send new message
+            send_html(bot, msg.chat().id, review_message)
+                .reply_markup(keyboard)
+                .await?;
         }
+
+        // Reset dialogue state to review ingredients
+        dialogue
+            .update(RecipeDialogueState::ReviewIngredients {
+                recipe_name,
+                ingredients,
+                language_code,
+                message_id: original_message_id, // Use original message ID for the restored display
+                extracted_text,
+                recipe_name_from_caption, // Preserve original caption info
+                open_menu: None,
+            })
+            .await?;
     }
 
     Ok(())
@@ -463,68 +460,66 @@ async fn handle_editing_saved_ingredient_callbacks(
         original_message_id,
         ..
     }) = dialogue_state
+        && data == "cancel_ingredient_editing"
+        && let Some(msg) = &q.message
     {
-        if data == "cancel_ingredient_editing" {
-            if let Some(msg) = &q.message {
-                // Restore the editing list view
-                let edit_message = crate::bot::ui_builder::render_saved_editing(
-                    None,
-                    &current_matches,
-                    language_code.as_deref(),
-                    localization,
-                );
+        // Restore the editing list view
+        let edit_message = crate::bot::ui_builder::render_saved_editing(
+            None,
+            &current_matches,
+            language_code.as_deref(),
+            localization,
+        );
 
-                let keyboard = crate::bot::create_ingredient_review_keyboard(
-                    &current_matches,
-                    language_code.as_deref(),
-                    localization,
-                );
+        let keyboard = crate::bot::create_ingredient_review_keyboard(
+            &current_matches,
+            language_code.as_deref(),
+            localization,
+        );
 
-                // Use the original message ID to restore the editing list
-                if let Some(original_msg_id) = original_message_id {
-                    match edit_html(
-                        bot,
-                        msg.chat().id,
-                        teloxide::types::MessageId(original_msg_id),
-                        edit_message.clone(),
-                    )
-                    .reply_markup(keyboard.clone())
-                    .await
-                    {
-                        Ok(_) => (),
-                        Err(e) => {
-                            crate::errors::error_logging::log_internal_error(
-                                &e,
-                                "handle_editing_saved_ingredient_callbacks",
-                                "Failed to restore editing list after cancel",
-                                Some(msg.chat().id.0),
-                            );
-                            // Fallback: send new message if editing fails
-                            send_html(bot, msg.chat().id, edit_message)
-                                .reply_markup(keyboard)
-                                .await?;
-                        }
-                    }
-                } else {
-                    // No original message ID, send new message
+        // Use the original message ID to restore the editing list
+        if let Some(original_msg_id) = original_message_id {
+            match edit_html(
+                bot,
+                msg.chat().id,
+                teloxide::types::MessageId(original_msg_id),
+                edit_message.clone(),
+            )
+            .reply_markup(keyboard.clone())
+            .await
+            {
+                Ok(_) => (),
+                Err(e) => {
+                    crate::errors::error_logging::log_internal_error(
+                        &e,
+                        "handle_editing_saved_ingredient_callbacks",
+                        "Failed to restore editing list after cancel",
+                        Some(msg.chat().id.0),
+                    );
+                    // Fallback: send new message if editing fails
                     send_html(bot, msg.chat().id, edit_message)
                         .reply_markup(keyboard)
                         .await?;
                 }
-
-                // Reset dialogue state to editing saved ingredients
-                dialogue
-                    .update(RecipeDialogueState::EditingSavedIngredients {
-                        recipe_id,
-                        original_ingredients,
-                        current_matches,
-                        language_code,
-                        message_id: original_message_id, // Use original message ID for the restored display
-                        open_menu: None,
-                    })
-                    .await?;
             }
+        } else {
+            // No original message ID, send new message
+            send_html(bot, msg.chat().id, edit_message)
+                .reply_markup(keyboard)
+                .await?;
         }
+
+        // Reset dialogue state to editing saved ingredients
+        dialogue
+            .update(RecipeDialogueState::EditingSavedIngredients {
+                recipe_id,
+                original_ingredients,
+                current_matches,
+                language_code,
+                message_id: original_message_id, // Use original message ID for the restored display
+                open_menu: None,
+            })
+            .await?;
     }
 
     Ok(())

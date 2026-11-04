@@ -5,8 +5,8 @@ use crate::dialogue::IngredientField;
 use crate::errors::{AppError, ValidationError};
 use crate::text_processing::MeasurementMatch;
 use crate::validation::{
-    parse_ingredient_from_text, parse_quantity_answer, parse_quantity_with_unit,
-    MAX_INGREDIENT_NAME_CHARS,
+    MAX_INGREDIENT_NAME_CHARS, parse_ingredient_from_text, parse_quantity_answer,
+    parse_quantity_with_unit,
 };
 
 /// The values to store for an ingredient: quantities are parsed like typed ones ("1/2",
@@ -375,14 +375,18 @@ mod tests {
             assert_eq!(changes.to_update.len(), 1, "{edited_quantity:?}");
         }
         let unchanged = [line("1", Some("cup"), "sucre", false)];
-        assert!(detect_ingredient_changes(&stored, &unchanged)
-            .to_update
-            .is_empty());
+        assert!(
+            detect_ingredient_changes(&stored, &unchanged)
+                .to_update
+                .is_empty()
+        );
         let no_quantity = [create_test_ingredient(2, "sel", None, None)];
         let still_none = [line("", None, "sel", false)];
-        assert!(detect_ingredient_changes(&no_quantity, &still_none)
-            .to_update
-            .is_empty());
+        assert!(
+            detect_ingredient_changes(&no_quantity, &still_none)
+                .to_update
+                .is_empty()
+        );
     }
 
     #[test]

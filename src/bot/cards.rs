@@ -9,10 +9,10 @@ use sqlx::postgres::PgPool;
 use teloxide::prelude::*;
 use tracing::{debug, info};
 
-use crate::localization::{t_lang, LocalizationManager};
+use crate::localization::{LocalizationManager, t_lang};
 
 use super::cleanup;
-use super::html::{edit_html, send_html, Html};
+use super::html::{Html, edit_html, send_html};
 use super::ui_builder::{create_recipe_details_keyboard, render_recipe_card};
 
 /// Cards of a recipe updated after a rename or an edit, the most recent first.
@@ -144,10 +144,10 @@ pub async fn show_card(
     };
     let rendered = started.elapsed();
     // A second tap on the list's button reaches the card it became: nothing more to show
-    if let Some(pressed) = pressed {
-        if cleanup::is_card(chat_id, pressed).await {
-            return Ok(());
-        }
+    if let Some(pressed) = pressed
+        && cleanup::is_card(chat_id, pressed).await
+    {
+        return Ok(());
     }
     let keyboard = card_keyboard(pool, telegram_id, recipe_id, language_code, localization).await;
 

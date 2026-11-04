@@ -258,7 +258,7 @@ mod tests {
             _ => {
                 return Err(TestError::UnexpectedButtonType(
                     "Expected callback button".to_string(),
-                ))
+                ));
             }
         }
         Ok(())

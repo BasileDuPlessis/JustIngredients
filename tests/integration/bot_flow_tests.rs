@@ -3,8 +3,8 @@
 //! This module contains integration tests for bot interaction flows,
 //! dialogue workflows, and user experience scenarios.
 
-use just_ingredients::validation::parse_ingredient_from_text;
 use just_ingredients::MeasurementMatch;
+use just_ingredients::validation::parse_ingredient_from_text;
 
 /// The ingredients of a recipe text: its lines read like typed lines, keeping those with a
 /// quantity (titles and headings are skipped). Photos go through `extraction::mapping`; these
@@ -548,8 +548,10 @@ fn test_caption_preservation_after_ingredient_deletion() {
     // This tests the core bug fix: even after deletion, caption should still trigger streamlined workflow
     let should_use_streamlined_workflow = recipe_name_from_caption.is_some();
 
-    assert!(should_use_streamlined_workflow,
-        "Should still use streamlined workflow after ingredient deletion when caption was originally provided");
+    assert!(
+        should_use_streamlined_workflow,
+        "Should still use streamlined workflow after ingredient deletion when caption was originally provided"
+    );
 
     // Verify the recipe name that would be saved
     let final_recipe_name = recipe_name_from_caption.as_ref().unwrap();
@@ -742,7 +744,9 @@ fn test_initial_recipe_creation_editing_workflow() {
         panic!("Expected ReviewIngredients state after cancel");
     }
 
-    println!("✅ Initial recipe creation editing workflow test passed - message replacement and state transitions work correctly");
+    println!(
+        "✅ Initial recipe creation editing workflow test passed - message replacement and state transitions work correctly"
+    );
 }
 
 /// Test saved recipe editing workflow with message replacement
@@ -932,7 +936,9 @@ fn test_saved_recipe_editing_workflow() {
         panic!("Expected EditingSavedIngredients state after cancel");
     }
 
-    println!("✅ Saved recipe editing workflow test passed - message replacement and state transitions work correctly");
+    println!(
+        "✅ Saved recipe editing workflow test passed - message replacement and state transitions work correctly"
+    );
 }
 
 /// Test message editing edge cases and fallback behavior
@@ -1073,7 +1079,9 @@ fn test_message_editing_edge_cases() {
         panic!("Expected EditingSavedIngredients state");
     }
 
-    println!("✅ Message editing edge cases test passed - handles None message IDs and preserves tracking through transitions");
+    println!(
+        "✅ Message editing edge cases test passed - handles None message IDs and preserves tracking through transitions"
+    );
 }
 
 /// Test unified multi-word ingredient extraction in bot workflows

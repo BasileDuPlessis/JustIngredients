@@ -8,10 +8,10 @@ use teloxide::prelude::*;
 use tracing::debug;
 
 use crate::bot::ui_builder::{
-    create_ingredient_menu_keyboard, create_ingredient_review_keyboard, IngredientAction,
+    IngredientAction, create_ingredient_menu_keyboard, create_ingredient_review_keyboard,
 };
 use crate::errors::error_logging;
-use crate::localization::{t_lang, LocalizationManager};
+use crate::localization::{LocalizationManager, t_lang};
 use crate::text_processing::MeasurementMatch;
 
 /// Swaps the keyboard of the ingredient list message for `IngredientAction::Menu` and

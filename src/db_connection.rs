@@ -12,7 +12,7 @@ use sqlx::postgres::{PgConnectOptions, PgPool, PgPoolOptions};
 use tracing::{info, warn};
 
 use crate::config::DatabaseConfig;
-use crate::retry::{retry_with_backoff, Backoff, RetryDecision};
+use crate::retry::{Backoff, RetryDecision, retry_with_backoff};
 
 /// Retry schedule while the database is unreachable at startup: 1 s doubling up to 30 s,
 /// for at most 10 minutes (a Postgres restart on Fly takes a few minutes).

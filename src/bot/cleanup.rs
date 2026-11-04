@@ -323,10 +323,10 @@ pub async fn remove_legacy_message(bot: &Bot, chat: ChatId, id: MessageId) {
     ) {
         return;
     }
-    if bot.delete_message(chat, id).await.is_err() {
-        if let Err(e) = bot.edit_message_text(chat, id, OLD_LIST_LINE).await {
-            debug!(error = %e, "Could not remove an old list");
-        }
+    if bot.delete_message(chat, id).await.is_err()
+        && let Err(e) = bot.edit_message_text(chat, id, OLD_LIST_LINE).await
+    {
+        debug!(error = %e, "Could not remove an old list");
     }
 }
 

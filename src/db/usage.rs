@@ -1,8 +1,8 @@
 //! Usage history (`usage_days`) and values kept across restarts (`app_state`).
 
 use anyhow::{Context, Result};
-use sqlx::postgres::PgPool;
 use sqlx::Row;
+use sqlx::postgres::PgPool;
 
 /// What happened during part of a day, added to its line of `usage_days`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]

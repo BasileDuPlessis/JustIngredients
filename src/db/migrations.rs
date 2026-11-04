@@ -242,7 +242,7 @@ pub fn split_sql_statements(sql: &str) -> Result<Vec<String>, String> {
                     match chars.next() {
                         Some(second_dash) => current_statement.push(second_dash), // Push second -
                         None => {
-                            return Err("Unexpected end of input while parsing comment".to_string())
+                            return Err("Unexpected end of input while parsing comment".to_string());
                         }
                     }
                 } else {

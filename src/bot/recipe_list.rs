@@ -10,10 +10,10 @@ use sqlx::postgres::PgPool;
 use teloxide::prelude::*;
 use teloxide::types::{InlineKeyboardButton, InlineKeyboardMarkup, MessageId};
 
-use crate::db::{get_user_recipes_alphabetical, RecipeSummary};
-use crate::localization::{t_args_lang, t_lang, LocalizationManager};
+use crate::db::{RecipeSummary, get_user_recipes_alphabetical};
+use crate::localization::{LocalizationManager, t_args_lang, t_lang};
 
-use super::html::{edit_html, send_html, Html};
+use super::html::{Html, edit_html, send_html};
 use super::ui_builder::format_recipe_date;
 use super::ui_components::{create_pagination_buttons, truncate_text};
 

@@ -11,7 +11,7 @@ use teloxide::types::Me;
 use teloxide::{ApiError, RequestError};
 use tracing::{info, warn};
 
-use crate::retry::{retry_with_backoff, Backoff, RetryDecision};
+use crate::retry::{Backoff, RetryDecision, retry_with_backoff};
 
 /// Retry schedule while Telegram is unreachable at startup: 1 s doubling up to 30 s, for at most
 /// 10 minutes, then the process exits and the restart policy starts it again.
@@ -79,8 +79,8 @@ fn startup_error(error: RequestError) -> anyhow::Error {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicU32, Ordering};
     use std::sync::Arc;
+    use std::sync::atomic::{AtomicU32, Ordering};
     use teloxide::types::Seconds;
 
     const FAST: Backoff = Backoff {

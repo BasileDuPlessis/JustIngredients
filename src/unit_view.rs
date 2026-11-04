@@ -8,8 +8,8 @@
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 
-use crate::conversion::{find_ingredient, unit_amount, Amount, Ingredient, CUP_ML};
-use crate::units::{canonicalize_unit, normalize_measurement, CanonicalUnit};
+use crate::conversion::{Amount, CUP_ML, Ingredient, find_ingredient, unit_amount};
+use crate::units::{CanonicalUnit, canonicalize_unit, normalize_measurement};
 
 /// How a user's recipe cards show measures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -354,11 +354,7 @@ fn label(unit: CanonicalUnit, quantity: f64, labels: Labels) -> &'static str {
 /// "1.5" or "1,5", at most 3 decimals.
 fn decimal(value: f64, french: bool) -> String {
     let text = crate::extraction::mapping::format_quantity(value);
-    if french {
-        text.replace('.', ",")
-    } else {
-        text
-    }
+    if french { text.replace('.', ",") } else { text }
 }
 
 /// "1200" → "1 200" (a no-break space) in French, "1,200" in English.

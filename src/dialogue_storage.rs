@@ -16,7 +16,7 @@ use std::pin::Pin;
 use std::sync::Arc;
 use std::time::Instant;
 
-use serde::{de::DeserializeOwned, Serialize};
+use serde::{Serialize, de::DeserializeOwned};
 use sqlx::PgPool;
 use teloxide::dispatching::dialogue::Storage;
 use teloxide::types::ChatId;

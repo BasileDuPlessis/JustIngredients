@@ -4,8 +4,8 @@ use anyhow::Result;
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
 use teloxide::prelude::*;
-use tracing::debug;
 use tracing::Instrument;
+use tracing::debug;
 
 // Import localization
 use crate::localization::t_lang;
@@ -20,7 +20,7 @@ use super::command_handlers::{
     handle_help_command, handle_recipes_command, handle_search_command, handle_start_command,
     handle_unknown_command, handle_unsupported_message,
 };
-use super::commands::{route_text, Command, TextRoute};
+use super::commands::{Command, TextRoute, route_text};
 
 // Import media handlers
 use super::media_handlers::{handle_document_message, handle_photo_message};

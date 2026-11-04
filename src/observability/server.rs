@@ -107,10 +107,10 @@ pub fn check_request_size<B>(req: &hyper::Request<B>) -> bool {
     const MAX_REQUEST_SIZE: u64 = 1024 * 1024; // 1MB limit
 
     if let Some(content_length) = req.headers().get("content-length") {
-        if let Ok(size_str) = content_length.to_str() {
-            if let Ok(size) = size_str.parse::<u64>() {
-                return size <= MAX_REQUEST_SIZE;
-            }
+        if let Ok(size_str) = content_length.to_str()
+            && let Ok(size) = size_str.parse::<u64>()
+        {
+            return size <= MAX_REQUEST_SIZE;
         }
         return false; // Invalid content-length header
     }

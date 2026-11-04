@@ -18,9 +18,9 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 use crate::bot::ui_builder::render_recipe_summary;
 
 // Import HandlerContext
+use crate::bot::HandlerContext;
 use crate::bot::cleanup::send_transient;
 use crate::bot::home::send_home;
-use crate::bot::HandlerContext;
 use crate::ingredient_editing::to_new_ingredient;
 
 // Import callback types module

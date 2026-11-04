@@ -4,7 +4,7 @@
 //! testing message retrieval and formatting with various edge cases.
 
 use just_ingredients::localization::{
-    create_localization_manager, detect_language, t_args_lang, t_lang, LocalizationManager,
+    LocalizationManager, create_localization_manager, detect_language, t_args_lang, t_lang,
 };
 use std::collections::HashMap;
 use std::sync::Arc;

@@ -14,7 +14,7 @@ use crate::dialogue::RecipeDialogue;
 use crate::extraction::SharedExtractor;
 
 // Import image processing functions
-use super::image_processing::{download_and_process_image, ImageProcessingParams};
+use super::image_processing::{ImageProcessingParams, download_and_process_image};
 
 // Import HandlerContext
 // use super::HandlerContext;
@@ -40,29 +40,29 @@ pub async fn handle_photo_message(
 
     debug!(user_id = %msg.chat.id, "Received photo message from user");
 
-    if let Some(photos) = msg.photo() {
-        if let Some(largest_photo) = photos.last() {
-            // Extract caption if present - this will be used as recipe name candidate
-            // PHOTO CAPTION FEATURE: Captions provide automatic recipe naming for better UX
-            let caption = msg.caption().map(|s| s.to_string());
+    if let Some(photos) = msg.photo()
+        && let Some(largest_photo) = photos.last()
+    {
+        // Extract caption if present - this will be used as recipe name candidate
+        // PHOTO CAPTION FEATURE: Captions provide automatic recipe naming for better UX
+        let caption = msg.caption().map(|s| s.to_string());
 
-            let _temp_path = download_and_process_image(
-                bot,
-                ImageProcessingParams {
-                    file_id: largest_photo.file.id.clone(),
-                    chat_id: msg.chat.id,
-                    success_message: &t_lang(localization, "processing-reading", language_code),
-                    language_code,
-                    dialogue,
-                    pool,
-                    caption,
-                    extractor: SharedExtractor::clone(extractor),
-                    photo_message_id: msg.id,
-                },
-                localization,
-            )
-            .await;
-        }
+        let _temp_path = download_and_process_image(
+            bot,
+            ImageProcessingParams {
+                file_id: largest_photo.file.id.clone(),
+                chat_id: msg.chat.id,
+                success_message: &t_lang(localization, "processing-reading", language_code),
+                language_code,
+                dialogue,
+                pool,
+                caption,
+                extractor: SharedExtractor::clone(extractor),
+                photo_message_id: msg.id,
+            },
+            localization,
+        )
+        .await;
     }
     Ok(())
 }

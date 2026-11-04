@@ -5,23 +5,23 @@
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE, RETRY_AFTER};
+use reqwest::header::{CONTENT_TYPE, HeaderMap, HeaderValue, RETRY_AFTER};
 use serde_json::value::RawValue;
-use tracing::{info, warn, Instrument};
+use tracing::{Instrument, info, warn};
 
 use super::types::{
-    error_from_status, GenerateContentRequest, GenerateContentResponse, UsageMetadata,
+    GenerateContentRequest, GenerateContentResponse, UsageMetadata, error_from_status,
 };
 use crate::extraction::breaker::CircuitBreaker;
 use crate::extraction::config::is_valid_model_id;
 use crate::extraction::pricing::estimated_cost_micro_usd;
-use crate::extraction::prompt::{response_schema, EXTRACTION_PROMPT};
+use crate::extraction::prompt::{EXTRACTION_PROMPT, response_schema};
 use crate::extraction::{
     Extraction, ExtractionError, ExtractionFuture, GeminiConfig, ImageInput, IngredientExtractor,
     ThinkingLevel,
 };
 use crate::observability::{gemini_request, gemini_usage};
-use crate::retry::{retry_with_backoff, Backoff, RetryDecision};
+use crate::retry::{Backoff, RetryDecision, retry_with_backoff};
 
 /// Production endpoint of the Gemini API.
 pub const DEFAULT_BASE_URL: &str = "https://generativelanguage.googleapis.com/v1beta";
@@ -518,8 +518,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn client_errors_are_not_retried_and_do_not_open_the_breaker(
-    ) -> Result<(), ExtractionError> {
+    async fn client_errors_are_not_retried_and_do_not_open_the_breaker()
+    -> Result<(), ExtractionError> {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .respond_with(ResponseTemplate::new(404).set_body_string(NOT_FOUND))

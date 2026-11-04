@@ -1,7 +1,7 @@
 //! The two servers of plan O1 over real sockets (`specs/tasks/observability.md`): the public one
 //! answers the health checks and not `/metrics`; the internal one, read by Fly, only `/metrics`.
 
-use just_ingredients::observability::{self, server, PhotoResult};
+use just_ingredients::observability::{self, PhotoResult, server};
 use metrics_exporter_prometheus::PrometheusBuilder;
 use std::net::SocketAddr;
 

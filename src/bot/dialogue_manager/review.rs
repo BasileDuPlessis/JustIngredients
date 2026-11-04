@@ -21,7 +21,7 @@ use crate::bot::cleanup::send_transient;
 
 use super::*;
 use crate::bot::callbacks::review_callbacks::{
-    cancel_review, confirm_review, move_review_down, ReviewConfirmation,
+    ReviewConfirmation, cancel_review, confirm_review, move_review_down,
 };
 
 /// Handle ingredient edit input during dialogue

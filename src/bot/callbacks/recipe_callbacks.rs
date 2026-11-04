@@ -380,15 +380,15 @@ async fn delete_confirmed(
     let result = crate::db::delete_recipe(pool, telegram_id, recipe_id).await;
 
     // The confirmation goes in every case
-    if let MaybeInaccessibleMessage::Regular(msg) = msg {
-        if let Err(e) = bot.delete_message(chat_id, msg.id).await {
-            error_logging::log_internal_error(
-                &e,
-                "handle_delete_recipe_confirmation",
-                "Failed to delete confirmation message",
-                Some(chat_id.0),
-            );
-        }
+    if let MaybeInaccessibleMessage::Regular(msg) = msg
+        && let Err(e) = bot.delete_message(chat_id, msg.id).await
+    {
+        error_logging::log_internal_error(
+            &e,
+            "handle_delete_recipe_confirmation",
+            "Failed to delete confirmation message",
+            Some(chat_id.0),
+        );
     }
     let card = original_message_id.map(teloxide::types::MessageId);
 

@@ -8,7 +8,7 @@ use tracing::warn;
 
 use super::cleanup;
 pub use super::recipe_list::ListAt;
-use crate::localization::{t_args_lang, LocalizationManager};
+use crate::localization::{LocalizationManager, t_args_lang};
 
 /// Sends the history line of a recipe that was just saved: "✅ Recette « X » créée", without
 /// notification (the card shows when the recipe is opened from the list). Never fails: the

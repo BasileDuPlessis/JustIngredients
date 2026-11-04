@@ -848,7 +848,10 @@ they can be pulled into 1-hour micro-tasks without another review.
   `aws-lc`). The image no longer installs `libssl-dev`, `pkg-config` nor `libssl3t64`.
   `rust-version = "1.99"`, the pinned toolchain (so no separate MSRV job). `lazy_static` went
   with IMP-018, `tokio-util` and `thiserror` 1 before. Crates in two versions: 53 → 49, all
-  through other dependencies. Not done: the edition 2024 migration (its own task).
+  through other dependencies. Edition 2024 (2026-11-04): `cargo fix --edition` only rewrote
+  `if let … else` into `match` to keep the old drop timing, reverted since no scrutinee there
+  holds a lock; 16 nested `if`s became let chains (clippy), and rustfmt's 2024 style reformatted
+  50 files. No `env::set_var`, no `gen` identifier.
 - Priority: P3. Effort: M. Area: Dependencies.
 - Related: LLM migration (Task 5.1 removes `leptess`, `image` and `rand`, and Task 5.3 pins the Docker
   images).

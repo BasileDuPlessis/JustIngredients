@@ -152,10 +152,10 @@ pub fn validate_basic_input(input: &str) -> Result<(), AppError> {
 /// assert_eq!(validate_quantity_range(&invalid_match).unwrap_err(), AppError::Validation(ValidationError::InvalidQuantity));
 /// ```
 pub fn validate_quantity_range(measurement_match: &MeasurementMatch) -> Result<(), AppError> {
-    if let Some(qty) = parse_quantity(&measurement_match.quantity) {
-        if qty <= 0.0 || qty > MAX_QUANTITY {
-            return Err(AppError::Validation(ValidationError::InvalidQuantity));
-        }
+    if let Some(qty) = parse_quantity(&measurement_match.quantity)
+        && (qty <= 0.0 || qty > MAX_QUANTITY)
+    {
+        return Err(AppError::Validation(ValidationError::InvalidQuantity));
     }
     Ok(())
 }

@@ -3,8 +3,8 @@
 use anyhow::{Context, Result};
 use chrono::{DateTime, Utc};
 use sqlx::postgres::PgPool;
-use tracing::debug;
 use tracing::Instrument;
+use tracing::debug;
 
 use super::*;
 

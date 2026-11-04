@@ -13,7 +13,7 @@ use crate::localization::t_lang;
 
 // Import UI builder functions
 use super::commands::command_lines;
-use super::html::{send_html, Html};
+use super::html::{Html, send_html};
 
 // Import HandlerContext
 // use super::HandlerContext;
@@ -298,8 +298,10 @@ mod tests {
             assert!(welcome.as_str().contains(&commands), "{language}");
             assert!(help.as_str().contains(&commands), "{language}");
         }
-        assert!(render_help(&localization, Some("fr"))
-            .as_str()
-            .starts_with("<b>🆘 Aide d'Ingredients Bot</b>"));
+        assert!(
+            render_help(&localization, Some("fr"))
+                .as_str()
+                .starts_with("<b>🆘 Aide d'Ingredients Bot</b>")
+        );
     }
 }
