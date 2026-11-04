@@ -818,3 +818,40 @@ async fn deleting_an_ingredient_of_a_saved_recipe(pool: PgPool) -> Result<()> {
     assert_eq!(left[0].name, "beurre");
     Ok(())
 }
+
+/// A new name over the limit is refused with its own message; the rename waits for another.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_too_long_new_name_is_refused(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::save_recipe;
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let localization = Arc::clone(&services.messages.localization);
+    let saved = save_recipe(&pool, OWNER, Some("fr"), "", "Gratin", &[]).await?;
+    let card = MockMessageText::new().text("Gratin").build();
+    let chat = card.chat.id;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new()
+            .data(format!("recipe_action:rename:{}", saved.recipe_id))
+            .message(card),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    bot.update(MockMessageText::new().text("G".repeat(300)));
+    bot.dispatch().await;
+
+    assert_eq!(recipe_names(&pool).await?, ["Gratin"], "not renamed");
+    assert!(matches!(
+        action(&services, chat).await?,
+        Some(RecipeDialogueState::RenamingRecipe { .. })
+    ));
+    let too_long = t_lang(&localization, "recipe-name-too-long", None);
+    assert!(bot
+        .get_responses()
+        .sent_messages
+        .iter()
+        .any(|message| message.text() == Some(too_long.as_str())));
+    Ok(())
+}

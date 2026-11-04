@@ -75,49 +75,16 @@ pub async fn handle_recipe_rename_input(
             let mut keep = Vec::new();
             match rename_result {
                 Ok(Some(new_name)) => {
-                    crate::observability::action(crate::observability::Action::Rename);
-                    // The cards already shown get the new name
-                    if let Some(user) = msg.from.as_ref() {
-                        crate::bot::cards::refresh_cards(
-                            bot,
-                            pool,
-                            msg.chat.id,
-                            crate::bot::telegram_id(user.id),
-                            recipe_id,
-                            handler_ctx.language_code,
-                            handler_ctx.localization,
-                        )
-                        .await;
-                        // And the cards that name it among their linked recipes
-                        let linked = crate::bot::cards::linked_ids(
-                            pool,
-                            crate::bot::telegram_id(user.id),
-                            recipe_id,
-                        )
-                        .await;
-                        crate::bot::cards::refresh_linked_cards(
-                            bot,
-                            pool,
-                            msg.chat.id,
-                            crate::bot::telegram_id(user.id),
-                            &linked,
-                            handler_ctx.language_code,
-                            handler_ctx.localization,
-                        )
-                        .await;
-                    }
-                    // Renamed to its own name: nothing changed, no line
-                    if new_name != current_name {
-                        let line = t_args_lang(
-                            handler_ctx.localization,
-                            "recipe-renamed-line",
-                            &[("old_name", &current_name), ("new_name", &new_name)],
-                            handler_ctx.language_code,
-                        );
-                        bot.send_message(msg.chat.id, line)
-                            .disable_notification(true)
-                            .await?;
-                    }
+                    show_renamed(
+                        bot,
+                        msg,
+                        pool,
+                        recipe_id,
+                        &current_name,
+                        &new_name,
+                        handler_ctx,
+                    )
+                    .await?;
                 }
                 Ok(None) => {
                     let message = t_lang(
@@ -163,47 +130,72 @@ pub async fn handle_recipe_rename_input(
             .await;
             Ok(())
         }
-        Err(AppError::Validation(error_msg)) if error_msg == "empty" => {
+        Err(error) => {
+            // Keep the dialogue: the user can type another name
+            let key = match &error {
+                AppError::Validation(reason) if reason == "too_long" => "recipe-name-too-long",
+                _ => "recipe-name-invalid",
+            };
             send_transient(
                 bot,
                 msg.chat.id,
-                t_lang(
-                    handler_ctx.localization,
-                    "recipe-name-invalid",
-                    handler_ctx.language_code,
-                ),
+                t_lang(handler_ctx.localization, key, handler_ctx.language_code),
             )
             .await?;
-            // Keep the dialogue: the user can type another name
-            Ok(())
-        }
-        Err(AppError::Validation(error_msg)) if error_msg == "too_long" => {
-            send_transient(
-                bot,
-                msg.chat.id,
-                t_lang(
-                    handler_ctx.localization,
-                    "recipe-name-too-long",
-                    handler_ctx.language_code,
-                ),
-            )
-            .await?;
-            // Keep the dialogue: the user can type another name
-            Ok(())
-        }
-        Err(_) => {
-            send_transient(
-                bot,
-                msg.chat.id,
-                t_lang(
-                    handler_ctx.localization,
-                    "recipe-name-invalid",
-                    handler_ctx.language_code,
-                ),
-            )
-            .await?;
-            // Keep the dialogue: the user can type another name
             Ok(())
         }
     }
+}
+
+/// A rename done: the recipe's cards, and the cards that name it among their linked recipes,
+/// show the new name; the history gets one line, unless the name did not change.
+async fn show_renamed(
+    bot: &Bot,
+    msg: &Message,
+    pool: &PgPool,
+    recipe_id: i64,
+    current_name: &str,
+    new_name: &str,
+    handler_ctx: &HandlerContext<'_>,
+) -> Result<()> {
+    crate::observability::action(crate::observability::Action::Rename);
+    // The cards already shown get the new name
+    if let Some(user) = msg.from.as_ref() {
+        crate::bot::cards::refresh_cards(
+            bot,
+            pool,
+            msg.chat.id,
+            crate::bot::telegram_id(user.id),
+            recipe_id,
+            handler_ctx.language_code,
+            handler_ctx.localization,
+        )
+        .await;
+        // And the cards that name it among their linked recipes
+        let linked =
+            crate::bot::cards::linked_ids(pool, crate::bot::telegram_id(user.id), recipe_id).await;
+        crate::bot::cards::refresh_linked_cards(
+            bot,
+            pool,
+            msg.chat.id,
+            crate::bot::telegram_id(user.id),
+            &linked,
+            handler_ctx.language_code,
+            handler_ctx.localization,
+        )
+        .await;
+    }
+    // Renamed to its own name: nothing changed, no line
+    if new_name != current_name {
+        let line = t_args_lang(
+            handler_ctx.localization,
+            "recipe-renamed-line",
+            &[("old_name", current_name), ("new_name", new_name)],
+            handler_ctx.language_code,
+        );
+        bot.send_message(msg.chat.id, line)
+            .disable_notification(true)
+            .await?;
+    }
+    Ok(())
 }
