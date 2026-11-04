@@ -56,24 +56,10 @@ pub async fn handle_recipe_rename_input(
     // Validate the new recipe name
     match validate_recipe_name(new_name_input) {
         Ok(validated_name) => {
-            // Update the recipe name in the database. The owner is the sender of the
-            // message; a message without a sender is handled like a missing recipe.
-            let rename_result = match msg.from.as_ref() {
-                Some(user) => {
-                    crate::db::rename_recipe(
-                        pool,
-                        crate::bot::telegram_id(user.id),
-                        recipe_id,
-                        validated_name,
-                    )
-                    .await
-                }
-                None => Ok(None),
-            };
+            let rename_result = rename_for_sender(pool, msg, recipe_id, validated_name).await;
             crate::dialogue::end_after_write(&dialogue).await;
             // The history keeps one line for a rename; an error stays until the next action
-            let mut keep = Vec::new();
-            match rename_result {
+            let failure = match rename_result {
                 Ok(Some(new_name)) => {
                     show_renamed(
                         bot,
@@ -85,15 +71,13 @@ pub async fn handle_recipe_rename_input(
                         handler_ctx,
                     )
                     .await?;
+                    None
                 }
-                Ok(None) => {
-                    let message = t_lang(
-                        handler_ctx.localization,
-                        "recipe-not-found",
-                        handler_ctx.language_code,
-                    );
-                    keep.push(bot.send_message(msg.chat.id, message).await?.id);
-                }
+                Ok(None) => Some(t_lang(
+                    handler_ctx.localization,
+                    "recipe-not-found",
+                    handler_ctx.language_code,
+                )),
                 Err(e) => {
                     error_logging::log_database_error(
                         &e,
@@ -101,21 +85,18 @@ pub async fn handle_recipe_rename_input(
                         Some(msg.chat.id.0),
                         Some(&[("recipe_id", &recipe_id.to_string())]),
                     );
-                    let message = format!(
+                    let text =
+                        |key| t_lang(handler_ctx.localization, key, handler_ctx.language_code);
+                    Some(format!(
                         "❌ {}\n\n{}",
-                        t_lang(
-                            handler_ctx.localization,
-                            "error-renaming-recipe",
-                            handler_ctx.language_code
-                        ),
-                        t_lang(
-                            handler_ctx.localization,
-                            "error-renaming-recipe-help",
-                            handler_ctx.language_code
-                        )
-                    );
-                    keep.push(bot.send_message(msg.chat.id, message).await?.id);
+                        text("error-renaming-recipe"),
+                        text("error-renaming-recipe-help")
+                    ))
                 }
+            };
+            let mut keep = Vec::new();
+            if let Some(failure) = failure {
+                keep.push(bot.send_message(msg.chat.id, failure).await?.id);
             }
             // The list on the page of the recipe, where its new name puts it
             crate::bot::home::send_home_keeping_at(
@@ -198,4 +179,20 @@ async fn show_renamed(
             .await?;
     }
     Ok(())
+}
+
+/// Renames the recipe in the database for the sender of the message, its owner; a message
+/// without a sender is handled like a missing recipe.
+async fn rename_for_sender(
+    pool: &PgPool,
+    msg: &Message,
+    recipe_id: i64,
+    name: &str,
+) -> anyhow::Result<Option<String>> {
+    match msg.from.as_ref() {
+        Some(user) => {
+            crate::db::rename_recipe(pool, crate::bot::telegram_id(user.id), recipe_id, name).await
+        }
+        None => Ok(None),
+    }
 }

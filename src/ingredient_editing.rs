@@ -55,6 +55,14 @@ pub fn apply_edit(
     }
 }
 
+/// A text typed while an ingredient's menu is open (instead of choosing 🔢, 🏷️ or ✏️): its new
+/// quantity ("4", "1/2 cuillère à soupe"), else its whole new line; `None` when it is neither.
+pub fn menu_answer(current: &MeasurementMatch, input: &str) -> Option<MeasurementMatch> {
+    apply_edit(IngredientField::Quantity, Some(current), input)
+        .or_else(|_| apply_edit(IngredientField::Line, Some(current), input))
+        .ok()
+}
+
 /// Replaces the quantity only (`-`, "aucune"… for none); a corrected quantity needs no further
 /// check, so the ⚠️ flag is cleared. A unit typed after the number ("250 g", "250g", "1/2 cup",
 /// "20 cl" → 200 ml, "2 gousses") replaces the unit too.

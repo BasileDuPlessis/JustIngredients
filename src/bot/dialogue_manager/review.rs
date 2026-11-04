@@ -11,7 +11,7 @@ use tracing::debug;
 use crate::errors::error_logging;
 
 // Import dialogue types
-use crate::dialogue::{IngredientField, RecipeDialogueState};
+use crate::dialogue::RecipeDialogueState;
 
 // Import UI builder functions
 use crate::bot::ui_builder::{create_ingredient_review_keyboard, render_review};
@@ -20,6 +20,9 @@ use crate::bot::ui_builder::{create_ingredient_review_keyboard, render_review};
 use crate::bot::cleanup::send_transient;
 
 use super::*;
+use crate::bot::callbacks::review_callbacks::{
+    cancel_review, confirm_review, move_review_down, ReviewConfirmation,
+};
 
 /// Handle ingredient edit input during dialogue
 pub async fn handle_ingredient_edit_input(
@@ -314,26 +317,24 @@ pub async fn handle_ingredient_review_input(
     match input.as_str() {
         input if is_confirmation_word(input) => {
             // Exactly what ✅ does: quantity check, then save under the known name or ask it
-            crate::bot::callbacks::review_callbacks::confirm_review(
-                crate::bot::callbacks::review_callbacks::ReviewConfirmation {
-                    bot,
-                    localization: handler_ctx.localization,
-                    pool: &pool,
-                    dialogue: &dialogue,
-                    chat_id: msg.chat.id,
-                    owner_id: msg.chat.id.0,
-                    review_message_id: review_message_id.map(teloxide::types::MessageId),
-                    ingredients: &ingredients,
-                    extracted_text: &extracted_text,
-                    known_name: recipe_name_from_caption.as_deref(),
-                    language_code: handler_ctx.language_code,
-                },
-            )
+            confirm_review(ReviewConfirmation {
+                bot,
+                localization: handler_ctx.localization,
+                pool: &pool,
+                dialogue: &dialogue,
+                chat_id: msg.chat.id,
+                owner_id: msg.chat.id.0,
+                review_message_id: review_message_id.map(teloxide::types::MessageId),
+                ingredients: &ingredients,
+                extracted_text: &extracted_text,
+                known_name: recipe_name_from_caption.as_deref(),
+                language_code: handler_ctx.language_code,
+            })
             .await?;
         }
         input if is_cancellation_command(input) => {
             // Exactly what ❌ does: the list loses its buttons, then the home message
-            crate::bot::callbacks::review_callbacks::cancel_review(
+            cancel_review(
                 bot,
                 handler_ctx.localization,
                 &pool,
@@ -345,23 +346,18 @@ pub async fn handle_ingredient_review_input(
             .await?;
         }
         _ => {
-            // An ingredient's menu is open: the answer is its new quantity ("4", "1/2 cuillère
-            // à soupe"), else its whole new line
-            if let Some(index) = open_menu.filter(|index| *index < ingredients.len()) {
-                let current = ingredients.get(index);
-                let edited = crate::ingredient_editing::apply_edit(
-                    IngredientField::Quantity,
-                    current,
-                    review_input,
-                )
-                .or_else(|_| {
-                    crate::ingredient_editing::apply_edit(
-                        IngredientField::Line,
-                        current,
-                        review_input,
-                    )
+            // With an ingredient's menu open, the answer applies to it; else it is not
+            // understood. Either way the list then comes down below the answer with its buttons.
+            let answered = open_menu
+                .and_then(|index| Some((index, ingredients.get(index)?)))
+                .and_then(|(index, current)| {
+                    Some((
+                        index,
+                        crate::ingredient_editing::menu_answer(current, review_input)?,
+                    ))
                 });
-                if let Ok(new_ingredient) = edited {
+            match answered {
+                Some((index, new_ingredient)) => {
                     handle_edit_success(EditSuccessParams {
                         ctx: handler_ctx,
                         msg,
@@ -376,29 +372,21 @@ pub async fn handle_ingredient_review_input(
                         recipe_name_from_caption,
                     })
                     .await?;
-                    // The answer is below the list: the list comes down with its buttons
-                    return crate::bot::callbacks::review_callbacks::move_review_down(
+                }
+                None => {
+                    send_transient(
                         bot,
                         msg.chat.id,
-                        &dialogue,
-                        handler_ctx.localization,
-                        handler_ctx.language_code,
+                        t_lang(
+                            handler_ctx.localization,
+                            "review-not-understood",
+                            handler_ctx.language_code,
+                        ),
                     )
-                    .await;
+                    .await?;
                 }
             }
-            // Not understood: say so, then the list comes down below it with its buttons
-            send_transient(
-                bot,
-                msg.chat.id,
-                t_lang(
-                    handler_ctx.localization,
-                    "review-not-understood",
-                    handler_ctx.language_code,
-                ),
-            )
-            .await?;
-            crate::bot::callbacks::review_callbacks::move_review_down(
+            move_review_down(
                 bot,
                 msg.chat.id,
                 &dialogue,

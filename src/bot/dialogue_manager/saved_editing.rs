@@ -10,7 +10,7 @@ use tracing::debug;
 use crate::errors::error_logging;
 
 // Import dialogue types
-use crate::dialogue::{IngredientField, RecipeDialogue, RecipeDialogueState};
+use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import validation functions
 use crate::validation::parse_ingredient_from_text;
@@ -243,15 +243,12 @@ pub async fn handle_saved_editing_text(
     };
     let language = language_code.as_deref().or(message_language);
     let edited = open_menu
-        .filter(|index| *index < current_matches.len())
-        .and_then(|index| {
-            let current = current_matches.get(index);
-            crate::ingredient_editing::apply_edit(IngredientField::Quantity, current, text)
-                .or_else(|_| {
-                    crate::ingredient_editing::apply_edit(IngredientField::Line, current, text)
-                })
-                .ok()
-                .map(|ingredient| (index, ingredient))
+        .and_then(|index| Some((index, current_matches.get(index)?)))
+        .and_then(|(index, current)| {
+            Some((
+                index,
+                crate::ingredient_editing::menu_answer(current, text)?,
+            ))
         });
     match edited {
         Some((index, ingredient)) => current_matches[index] = ingredient,

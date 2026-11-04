@@ -141,34 +141,7 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
     }
 
     let Some(name) = c.known_name else {
-        // No caption nor title: ask for the name
-        debug!(user_id = %c.owner_id, "No caption or title, asking for the recipe name");
-        remove_review_keyboard(&c).await;
-        let recipe_name_prompt = format!(
-            "🏷️ {}\n\n{}",
-            t_lang(c.localization, "recipe-name-prompt", c.language_code),
-            t_lang(c.localization, "recipe-name-prompt-hint", c.language_code)
-        );
-        // Deleted with the review's messages; its only exit "❌ Annuler" drops the creation
-        let prompt_msg = c
-            .bot
-            .send_message(c.chat_id, recipe_name_prompt)
-            .reply_markup(crate::bot::ui_builder::cancel_action_keyboard(
-                c.language_code,
-                c.localization,
-            ))
-            .await?;
-        cleanup::track(c.chat_id, prompt_msg.id).await;
-        c.dialogue
-            .update(RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
-                ingredients: c.ingredients.to_vec(),
-                language_code: c.language_code.map(str::to_string),
-                extracted_text: c.extracted_text.to_string(),
-                recipe_name_from_caption: None,
-                message_id: Some(prompt_msg.id.0 as i32),
-            })
-            .await?;
-        return Ok(());
+        return ask_recipe_name(&c).await;
     };
 
     debug!(user_id = %c.owner_id, "Recipe name from the caption or the title, saving at once");
@@ -217,6 +190,39 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
         c.language_code,
     )
     .await;
+    Ok(())
+}
+
+/// ✅ without a caption nor a title: the review's buttons go and the name is asked, with the
+/// single exit ❌ (the creation is dropped).
+async fn ask_recipe_name(c: &ReviewConfirmation<'_>) -> Result<()> {
+    // No caption nor title: ask for the name
+    debug!(user_id = %c.owner_id, "No caption or title, asking for the recipe name");
+    remove_review_keyboard(c).await;
+    let recipe_name_prompt = format!(
+        "🏷️ {}\n\n{}",
+        t_lang(c.localization, "recipe-name-prompt", c.language_code),
+        t_lang(c.localization, "recipe-name-prompt-hint", c.language_code)
+    );
+    // Deleted with the review's messages; its only exit "❌ Annuler" drops the creation
+    let prompt_msg = c
+        .bot
+        .send_message(c.chat_id, recipe_name_prompt)
+        .reply_markup(crate::bot::ui_builder::cancel_action_keyboard(
+            c.language_code,
+            c.localization,
+        ))
+        .await?;
+    cleanup::track(c.chat_id, prompt_msg.id).await;
+    c.dialogue
+        .update(RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
+            ingredients: c.ingredients.to_vec(),
+            language_code: c.language_code.map(str::to_string),
+            extracted_text: c.extracted_text.to_string(),
+            recipe_name_from_caption: None,
+            message_id: Some(prompt_msg.id.0 as i32),
+        })
+        .await?;
     Ok(())
 }
 
