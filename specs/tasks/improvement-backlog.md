@@ -784,8 +784,10 @@ they can be pulled into 1-hour micro-tasks without another review.
   so the review starts from its stored state. Also (2026-11-04): ✅ with the caption's name
   saves; ✅ without a name asks it, the typed name saves; ❌ saves nothing; an older list's ✅
   cannot save (fails with the stale check removed); a saved recipe's edit (menu, typed
-  quantity, ✅) writes the quantity; rename; delete after its confirmation. Left: linked
-  recipes (a photo in parts), `/unites`, search, paging.
+  quantity, ✅) writes the quantity; rename; delete after its confirmation; a review in parts
+  saves "Malva pudding" and "Malva pudding (sauce)", linked; `/unites` then a view stores it;
+  `/cherche` finds only the recipe with the word; the ninth recipe is on the next page.
+  14 scenarios. Left: the photo itself (the fake server's files are not images).
 - Priority: P2. Effort: L. Area: Tests.
 - Location: `tests/bot_tests.rs:399-470` (calls `Vec::remove` itself instead of the handler),
   `tests/bot_tests.rs:1002-1030` (checks button text, not `callback_data` length), no test references

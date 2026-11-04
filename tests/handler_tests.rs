@@ -523,3 +523,154 @@ async fn deleting_a_saved_recipe_after_the_confirmation(pool: PgPool) -> Result<
     assert!(recipe_names(&pool).await?.is_empty());
     Ok(())
 }
+
+/// Whether a message sent or edited by the bot has a button with exactly this data.
+fn has_button(responses: &teloxide_tests::Responses, data: &str) -> bool {
+    button_data(responses, data).as_deref() == Some(data)
+}
+
+/// Saves recipes of the owner with no ingredient; returns their ids.
+async fn save_recipes(pool: &PgPool, names: &[&str]) -> Result<Vec<i64>> {
+    let mut ids = Vec::new();
+    for name in names {
+        ids.push(
+            just_ingredients::db::save_recipe(pool, OWNER, Some("fr"), "", name, &[])
+                .await?
+                .recipe_id,
+        );
+    }
+    Ok(ids)
+}
+
+/// A photo in parts (U9): ✅ saves the main recipe and its part, linked to each other.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_review_in_parts_saves_linked_recipes(pool: PgPool) -> Result<()> {
+    use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
+    use just_ingredients::MeasurementMatch;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let list = MockMessageText::new().text("📝 Ingrédients").build();
+    let chat = list.chat.id;
+    let line = |name: &str, section: Option<&str>| MeasurementMatch {
+        quantity: "100".to_string(),
+        measurement: Some("g".to_string()),
+        ingredient_name: name.to_string(),
+        line_number: 0,
+        start_pos: 0,
+        end_pos: 0,
+        requires_quantity_confirmation: false,
+        section: section.map(str::to_string),
+    };
+    RecipeDialogue::new(Arc::clone(&services.dialogues), chat)
+        .update(RecipeDialogueState::ReviewIngredients {
+            recipe_name: "Recipe".to_string(),
+            ingredients: vec![line("farine", None), line("sucre", Some("Pour la sauce"))],
+            language_code: Some("fr".to_string()),
+            message_id: None,
+            extracted_text: String::new(),
+            recipe_name_from_caption: Some("Malva pudding".to_string()),
+            open_menu: None,
+        })
+        .await?;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new().data("confirm").message(list),
+        services.clone(),
+    );
+    bot.dispatch().await;
+
+    // The part is named after its cleaned heading ("Pour la sauce" → "sauce")
+    assert_eq!(
+        recipe_names(&pool).await?,
+        ["Malva pudding", "Malva pudding (sauce)"]
+    );
+    let links: i64 = sqlx::query_scalar("SELECT count(*) FROM recipe_links")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(links, 1, "the two parts are linked");
+    Ok(())
+}
+
+/// `/unites` shows the views; choosing one stores the preference.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn choosing_a_unit_view_stores_it(pool: PgPool) -> Result<()> {
+    use just_ingredients::unit_view::UnitView;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+
+    let mut bot = mock_bot(MockMessageText::new().text("/unites"), services.clone());
+    bot.dispatch().await;
+    let responses = bot.get_responses();
+    let us = button_data(&responses, "unit_view:us:").context("the US view button")?;
+    let chooser = responses
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the chooser")?;
+
+    bot.update(MockCallbackQuery::new().data(us).message(chooser));
+    bot.dispatch().await;
+    assert_eq!(
+        just_ingredients::db::unit_view(&pool, OWNER).await?,
+        UnitView::Us
+    );
+    Ok(())
+}
+
+/// `/cherche` finds the recipe whose name has the word, not the others.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn search_finds_the_recipe_with_the_word(pool: PgPool) -> Result<()> {
+    let services = services(&pool, Vec::new()).await?;
+    let ids = save_recipes(&pool, &["Tarte aux poireaux", "Gratin dauphinois"]).await?;
+
+    let mut bot = mock_bot(
+        MockMessageText::new().text("/cherche poireaux"),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    let responses = bot.get_responses();
+    assert!(has_button(
+        &responses,
+        &format!("recipe_instance:{}", ids[0])
+    ));
+    assert!(!has_button(
+        &responses,
+        &format!("recipe_instance:{}", ids[1])
+    ));
+    Ok(())
+}
+
+/// The recipe list shows 8 recipes a page: the ninth is on the next page.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn the_ninth_recipe_is_on_the_next_page(pool: PgPool) -> Result<()> {
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let names: Vec<String> = (1..=9).map(|n| format!("Recette {n:02}")).collect();
+    let names: Vec<&str> = names.iter().map(String::as_str).collect();
+    let ids = save_recipes(&pool, &names).await?;
+    let ninth = format!("recipe_instance:{}", ids[8]);
+
+    let mut bot = mock_bot(MockMessageText::new().text("/liste"), services.clone());
+    bot.dispatch().await;
+    let responses = bot.get_responses();
+    assert!(has_button(
+        &responses,
+        &format!("recipe_instance:{}", ids[0])
+    ));
+    assert!(!has_button(&responses, &ninth), "not on the first page");
+    let next = button_data(&responses, "page:").context("a page button")?;
+    let list = responses
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the list")?;
+
+    bot.update(MockCallbackQuery::new().data(next).message(list));
+    bot.dispatch().await;
+    assert!(has_button(&bot.get_responses(), &ninth), "on the next page");
+    Ok(())
+}
