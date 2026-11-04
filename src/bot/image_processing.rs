@@ -139,25 +139,11 @@ pub async fn download_and_process_image(
     crate::bot::cleanup::delete_action_messages(bot, chat_id).await;
     crate::bot::cleanup::delete_lists(bot, chat_id).await;
 
-    let bytes = match download_file_bytes(bot, file_id).await {
-        Ok(bytes) => {
-            debug!(user_id = %chat_id, bytes = bytes.len(), "Image downloaded successfully");
-            bytes
-        }
+    let downloaded = download_file_bytes(bot, file_id).await;
+    let bytes = match downloaded {
+        Ok(bytes) => bytes,
         Err(e) => {
-            // Files over the limit are not a download failure: say why they are refused.
-            let message_key = match e.downcast_ref::<ExtractionError>() {
-                Some(too_large @ ExtractionError::ImageTooLarge { .. }) => {
-                    observability::photo(PhotoResult::TooLarge);
-                    extraction_error_key(too_large)
-                }
-                _ => {
-                    observability::photo(PhotoResult::DownloadFailed);
-                    observability::error("telegram", "download_failed");
-                    error_logging::log_network_error(&e, "download_image_file", None, None);
-                    "error-download-failed"
-                }
-            };
+            let message_key = download_failure_key(&e);
             let error_message = bot
                 .send_message(chat_id, t_lang(localization, message_key, language_code))
                 .await?;
@@ -167,10 +153,11 @@ pub async fn download_and_process_image(
         }
     };
 
+    debug!(user_id = %chat_id, bytes = bytes.len(), "Image downloaded successfully");
+
     // Processing message, replaced below by the result. It has no Cancel button: the chat's
     // next update waits for this one, so a press would only act once the review is shown.
-    let processing_message = bot.send_message(chat_id, success_message).await?;
-    let message_id = processing_message.id;
+    let message_id = bot.send_message(chat_id, success_message).await?.id;
 
     let extraction = match ImageInput::prepare(bytes).await {
         Ok(image) => extractor.extract(&image.requested_by(chat_id.0)).await,
@@ -179,16 +166,7 @@ pub async fn download_and_process_image(
     let extraction = match extraction {
         Ok(extraction) => extraction,
         Err(error) => {
-            let result = photo_result(&error);
-            observability::photo(result);
-            if result == PhotoResult::GeminiError {
-                observability::error("gemini", error.kind());
-            }
-            if is_operator_error(&error) {
-                tracing::error!(user_id = %chat_id, backend = extractor.name(), error = %error, "Ingredient extraction misconfigured");
-            } else {
-                warn!(user_id = %chat_id, backend = extractor.name(), error = %error, "Ingredient extraction failed");
-            }
+            record_extraction_failure(&error, chat_id, extractor.name());
             bot.edit_message_text(
                 chat_id,
                 message_id,
@@ -221,23 +199,8 @@ pub async fn download_and_process_image(
 
     if ingredients.is_empty() {
         observability::photo(PhotoResult::NotRecipe);
-        // The transcription is shown as a preformatted block
-        let mut no_ingredients_msg = Html::text("📝 ")
-            + Html::bold(&t_lang(localization, "no-ingredients-found", language_code))
-            + Html::text("\n\n")
-            + Html::text(&t_lang(
-                localization,
-                "no-ingredients-suggestion",
-                language_code,
-            ));
-        if !extracted_text.trim().is_empty() {
-            no_ingredients_msg += Html::text("\n\n")
-                + Html::pre(&crate::bot::ui_builder::fit_lines(
-                    &extracted_text,
-                    crate::bot::ui_builder::MAX_LIST_CHARS,
-                ));
-        }
-        edit_html(bot, chat_id, message_id, no_ingredients_msg).await?;
+        let answer = no_ingredients_message(&extracted_text, language_code, localization);
+        edit_html(bot, chat_id, message_id, answer).await?;
         let keep = [photo_message_id, message_id];
         end_failed_photo(bot, &pool, chat_id, &keep, language_code, localization).await;
         return Ok(extracted_text);
@@ -252,19 +215,8 @@ pub async fn download_and_process_image(
         .reply_markup(keyboard)
         .await?;
 
-    // Recipe name: the caption, else the title read on the page; otherwise "Recipe" and the
-    // name is asked after confirmation.
     let (recipe_name_candidate, recipe_name_from_caption) =
-        match known_recipe_name(caption.as_deref(), title.as_deref()) {
-            Some(name) => {
-                debug!(user_id = %chat_id, "Recipe name from the caption or the page title");
-                (name.clone(), Some(name))
-            }
-            None => {
-                debug!(user_id = %chat_id, "No caption or title, the name will be asked");
-                ("Recipe".to_string(), None)
-            }
-        };
+        review_name(caption.as_deref(), title.as_deref());
 
     // The photo and the list stay while the ingredients are reviewed, then go with the review's
     // messages, also when a command ends the review (a cancel keeps the list as its notice).
@@ -287,6 +239,78 @@ pub async fn download_and_process_image(
 
     debug!(user_id = %chat_id, "Ingredients review interface sent successfully");
     Ok(extracted_text)
+}
+
+/// The answer to a photo whose download failed, its metric and log. A file over the limit is
+/// not a download failure: the answer says why it is refused.
+fn download_failure_key(e: &anyhow::Error) -> &'static str {
+    match e.downcast_ref::<ExtractionError>() {
+        Some(too_large @ ExtractionError::ImageTooLarge { .. }) => {
+            observability::photo(PhotoResult::TooLarge);
+            extraction_error_key(too_large)
+        }
+        _ => {
+            observability::photo(PhotoResult::DownloadFailed);
+            observability::error("telegram", "download_failed");
+            error_logging::log_network_error(e, "download_image_file", None, None);
+            "error-download-failed"
+        }
+    }
+}
+
+/// The metrics and the log of a failed reading: an error when the extraction is misconfigured
+/// (the operator's to fix), a warning otherwise.
+fn record_extraction_failure(error: &ExtractionError, chat_id: ChatId, backend: &str) {
+    let result = photo_result(error);
+    observability::photo(result);
+    if result == PhotoResult::GeminiError {
+        observability::error("gemini", error.kind());
+    }
+    if is_operator_error(error) {
+        tracing::error!(user_id = %chat_id, backend = backend, error = %error, "Ingredient extraction misconfigured");
+    } else {
+        warn!(user_id = %chat_id, backend = backend, error = %error, "Ingredient extraction failed");
+    }
+}
+
+/// The answer to a photo read without ingredients: what to try, then the transcription as a
+/// preformatted block when there is one.
+fn no_ingredients_message(
+    extracted_text: &str,
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Html {
+    let mut message = Html::text("📝 ")
+        + Html::bold(&t_lang(localization, "no-ingredients-found", language_code))
+        + Html::text("\n\n")
+        + Html::text(&t_lang(
+            localization,
+            "no-ingredients-suggestion",
+            language_code,
+        ));
+    if !extracted_text.trim().is_empty() {
+        message += Html::text("\n\n")
+            + Html::pre(&crate::bot::ui_builder::fit_lines(
+                extracted_text,
+                crate::bot::ui_builder::MAX_LIST_CHARS,
+            ));
+    }
+    message
+}
+
+/// The review's recipe name and the name to save it under: the caption, else the title read on
+/// the page; without either, "Recipe" and no name (it is asked after ✅).
+fn review_name(caption: Option<&str>, title: Option<&str>) -> (String, Option<String>) {
+    match known_recipe_name(caption, title) {
+        Some(name) => {
+            debug!("Recipe name from the caption or the page title");
+            (name.clone(), Some(name))
+        }
+        None => {
+            debug!("No caption or title, the name will be asked");
+            ("Recipe".to_string(), None)
+        }
+    }
 }
 
 /// Name a recipe gets without asking: the caption (without links) wins over the title read on
@@ -537,5 +561,27 @@ mod tests {
             "url leaked: {message}"
         );
         assert_ne!(message, "unexpected success");
+    }
+
+    #[test]
+    fn the_review_name_is_the_caption_else_the_title_else_asked() {
+        assert_eq!(
+            review_name(Some("Tarte"), Some("Quiche")),
+            ("Tarte".to_string(), Some("Tarte".to_string()))
+        );
+        assert_eq!(
+            review_name(None, Some("Quiche")),
+            ("Quiche".to_string(), Some("Quiche".to_string()))
+        );
+        assert_eq!(review_name(None, None), ("Recipe".to_string(), None));
+    }
+
+    #[test]
+    fn no_ingredients_shows_the_transcription_when_there_is_one() {
+        let localization = crate::localization::create_localization_manager().expect("locales");
+        let empty = no_ingredients_message("  ", Some("fr"), &localization);
+        assert!(!empty.as_str().contains("<pre>"));
+        let read = no_ingredients_message("Préchauffer le four", Some("fr"), &localization);
+        assert!(read.as_str().contains("<pre>Préchauffer le four</pre>"));
     }
 }

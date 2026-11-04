@@ -891,7 +891,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   tests stay green.
 
 ### IMP-036: Oversized modules and duplicated handlers
-- [ ] Done
+- [x] Done (2026-11-04)
 - Status: Partly done (2026-11-03): `src/db.rs` (2,170 lines) is `src/db/` with seven modules,
   the largest `recipes.rs` (about 640 lines), all re-exported so no caller changed. The routing
   written twice and the recipe views written twice no longer exist (one routing function,
@@ -909,11 +909,17 @@ they can be pulled into 1-hour micro-tasks without another review.
   175-line functions, with a `CardAction` context. Moved code compared with the original.
   The two ingredient delete buttons (162 lines each, near copies) share
   `ingredient_menu::show_list_after_delete` (65 and 70 lines left), with handler tests first.
-  Left: modules over 500 lines of code, `editing_callbacks.rs` (748) and `review_callbacks.rs`
-  (about 690), then 581-624 for `conversion.rs`, `ui_builder.rs`, `recipe_callbacks.rs`,
-  `callback_handler.rs`, `db/recipes.rs`, `message_handler.rs`; functions over 150 lines:
-  `answer_in_action` (270, one arm per state), `handle_recipe_rename_input` (190),
-  `download_and_process_image` (174), `handle_confirm_saved_ingredients_button` (170).
+  2026-11-04, the rest: `editing_callbacks` and `review_callbacks` are directories (`mod.rs`
+  routes, `buttons.rs`, `end.rs`); `answer_in_action` is in `bot/action_input.rs` with one
+  function per state; the routers build their parameters once; shared helpers replace copies
+  (`edit_prompt_text`, `menu_answer`, `show_list_after_delete`); the photo pipeline's answers and
+  failure records are their own functions. `cargo clippy -W clippy::too_many_lines` reports no
+  function in `src/bot` (only `db::migrations::get_migrations`, the SQL of the migrations). Every
+  move was compared with the original or covered by a handler test first (21 scenarios).
+  Modules left over 500 lines of code, each one subject: `conversion.rs` (624, the table),
+  `recipe_callbacks.rs` (604), `ui_builder.rs` (591), `db/recipes.rs` (581),
+  `callback_handler.rs` (581), `unit_view.rs` (530); the 2,170-, 1,416-, 1,002- and 809-line
+  ones are gone.
 - Priority: P3. Effort: L. Area: Code organization.
 - Location: `src/bot/dialogue_manager.rs` (1,658 lines), `src/db.rs` (1,592 lines),
   `src/bot/message_handler.rs:42` (306-line function), `src/bot/callbacks/editing_callbacks.rs:431`
