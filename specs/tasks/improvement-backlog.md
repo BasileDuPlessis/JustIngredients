@@ -891,7 +891,7 @@ they can be pulled into 1-hour micro-tasks without another review.
   tests stay green.
 
 ### IMP-036: Oversized modules and duplicated handlers
-- [ ] Done
+- [x] Done (2026-11-04, see the status below)
 - Status: Partly done (2026-11-03): `src/db.rs` (2,170 lines) is `src/db/` with seven modules,
   the largest `recipes.rs` (about 640 lines), all re-exported so no caller changed. The routing
   written twice and the recipe views written twice no longer exist (one routing function,
@@ -903,8 +903,12 @@ they can be pulled into 1-hour micro-tasks without another review.
   (changes or none) one sequence with `saved_recipe_card` (1,002 → 840 lines). `ui_builder.rs`
   is 591 lines of code (the rest tests). `handle_text_message` (325 lines) is a 56-line router
   over `answer_in_action` (the per-state arms, moved unchanged) and `answer_free_text` (search
-  or photo tip), with handler tests for both before the move. Left: `callback_handler_with_cache`
-  (about 240 lines) and the long functions of `recipe_callbacks.rs`.
+  or photo tip), with handler tests for both before the move. `callback_handler_with_cache`
+  (237 lines) routes to `route_any_state` and `answer_button`; in `recipe_callbacks.rs` the card
+  actions (`ask_new_name`, `ask_delete_confirmation`) and `delete_confirmed` left the two
+  175-line functions, with a `CardAction` context. Moved code compared with the original.
+  No function over 120 lines is left in `src/bot` but `handle_photo`-side
+  `download_and_process_image` (174) and the review's `handle_delete_button` (162).
 - Priority: P3. Effort: L. Area: Code organization.
 - Location: `src/bot/dialogue_manager.rs` (1,658 lines), `src/db.rs` (1,592 lines),
   `src/bot/message_handler.rs:42` (306-line function), `src/bot/callbacks/editing_callbacks.rs:431`
