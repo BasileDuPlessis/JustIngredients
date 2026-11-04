@@ -460,22 +460,22 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
     let current_matches = current_matches_slice
         .context("Current matches slice should be provided for confirm callback")?;
     let pool = pool.context("Database pool should be provided for confirm callback")?;
+    let message = q
+        .message
+        .as_ref()
+        .context("Callback query should have a message")?;
+    let chat_id = message.chat().id;
+    let lang = language_code.as_deref();
 
     // Saving an empty list would delete every ingredient, and the recipe could not be edited
     // again: refuse it, the editing stays open
     if current_matches.is_empty() {
-        if let Some(message) = &q.message {
-            send_transient(
-                ctx.bot,
-                message.chat().id,
-                t_lang(
-                    ctx.localization,
-                    "review-empty-confirm",
-                    language_code.as_deref(),
-                ),
-            )
-            .await?;
-        }
+        send_transient(
+            ctx.bot,
+            chat_id,
+            t_lang(ctx.localization, "review-empty-confirm", lang),
+        )
+        .await?;
         return Ok(());
     }
 
@@ -490,43 +490,24 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
         .await?
         .is_none()
     {
-        if let Some(message) = &q.message {
-            send_transient(
-                ctx.bot,
-                message.chat().id,
-                t_lang(
-                    ctx.localization,
-                    "recipe-not-found",
-                    language_code.as_deref(),
-                ),
-            )
-            .await?;
-            dialogue.exit().await?;
-            send_home(
-                ctx.bot,
-                pool,
-                message.chat().id,
-                ctx.localization,
-                language_code.as_deref(),
-            )
-            .await;
-            return Ok(());
-        }
+        send_transient(
+            ctx.bot,
+            chat_id,
+            t_lang(ctx.localization, "recipe-not-found", lang),
+        )
+        .await?;
         dialogue.exit().await?;
+        send_home(ctx.bot, pool, chat_id, ctx.localization, lang).await;
         return Ok(());
     }
 
-    // Detect changes between original and current ingredients
+    // Updates, additions and deletions in one transaction: never a half-applied edit
     let changes =
         crate::ingredient_editing::detect_ingredient_changes(original_ingredients, current_matches);
-
-    // The history line of the edit, when something changed
-    let mut edited_line: Option<String> = None;
-
-    // Apply changes to database
-    if !changes.to_update.is_empty() || !changes.to_add.is_empty() || !changes.to_delete.is_empty()
-    {
-        // Updates, additions and deletions in one transaction: never a half-applied edit
+    let changed = !changes.to_update.is_empty()
+        || !changes.to_add.is_empty()
+        || !changes.to_delete.is_empty();
+    if changed {
         let updates: Vec<crate::db::IngredientUpdate> = changes
             .to_update
             .iter()
@@ -541,7 +522,7 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             pool,
             telegram_id,
             recipe_id,
-            language_code.as_deref(),
+            lang,
             &updates,
             &additions,
             &changes.to_delete,
@@ -551,294 +532,151 @@ async fn handle_confirm_saved_ingredients_button(params: SavedIngredientsParams<
             error_logging::log_database_error(
                 &e,
                 "apply_ingredient_changes",
-                Some(crate::bot::telegram_id(q.from.id)),
+                Some(telegram_id),
                 Some(&[("recipe_id", &recipe_id.to_string())]),
             );
-            if let Some(message) = &q.message {
-                send_transient(
-                    ctx.bot,
-                    message.chat().id,
-                    t_lang(
-                        ctx.localization,
-                        "error-updating-ingredients",
-                        language_code.as_deref(),
-                    ),
-                )
-                .await?;
-            }
+            send_transient(
+                ctx.bot,
+                chat_id,
+                t_lang(ctx.localization, "error-updating-ingredients", lang),
+            )
+            .await?;
             return Ok(());
         }
         crate::dialogue::end_after_write(dialogue).await;
+    }
 
-        // Fetch updated recipe details and ingredients
-        let recipe = match crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await {
-            Ok(Some(recipe)) => recipe,
-            Ok(None) => {
-                error_logging::log_internal_error(
-                    &anyhow::anyhow!("Recipe not found"),
-                    "handle_confirm_saved_ingredients_button",
-                    "Recipe not found after confirmation",
-                    Some(crate::bot::telegram_id(q.from.id)),
-                );
-                ctx.bot
-                    .send_message(
-                        q.message
-                            .as_ref()
-                            .context("Callback query should have a message")?
-                            .chat()
-                            .id,
-                        t_lang(
-                            ctx.localization,
-                            "recipe-not-found",
-                            language_code.as_deref(),
-                        ),
-                    )
-                    .await?;
-                return Ok(());
-            }
-            Err(e) => {
-                error_logging::log_database_error(
-                    &e,
-                    "read_recipe_with_name",
-                    Some(crate::bot::telegram_id(q.from.id)),
-                    Some(&[("recipe_id", &recipe_id.to_string())]),
-                );
-                ctx.bot
-                    .send_message(
-                        q.message
-                            .as_ref()
-                            .context("Callback query should have a message")?
-                            .chat()
-                            .id,
-                        t_lang(
-                            ctx.localization,
-                            "error-processing-failed",
-                            language_code.as_deref(),
-                        ),
-                    )
-                    .await?;
-                return Ok(());
-            }
-        };
-
-        let updated_ingredients =
-            crate::db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
-        let updated_matches =
-            crate::ingredient_editing::ingredients_to_measurement_matches(&updated_ingredients);
-
-        // Show the updated recipe details
-        let recipe_name = recipe
-            .recipe_name
-            .unwrap_or_else(|| "Unnamed Recipe".to_string());
-        edited_line = Some(t_args_lang(
+    // The recipe as it is saved now; unreadable, the user was told and nothing more is shown
+    let Some(card) = saved_recipe_card(ctx, pool, telegram_id, recipe_id, chat_id, lang).await?
+    else {
+        return Ok(());
+    };
+    // The history line of the edit, when something changed
+    let edited_line = changed.then(|| {
+        t_args_lang(
             ctx.localization,
             "recipe-edited-line",
-            &[("name", recipe_name.as_str())],
-            language_code.as_deref(),
-        ));
-        let recipe_message = render_recipe_summary(
-            &recipe_name,
-            &updated_matches,
-            language_code.as_deref(),
-            ctx.localization,
-        );
+            &[("name", card.name.as_str())],
+            lang,
+        )
+    });
 
-        let keyboard = crate::bot::cards::card_keyboard(
+    // The recorded cards of the recipe get the new ingredients (nothing to update when nothing
+    // changed) and the editing view goes; without one (older cards), the editing view becomes
+    // the card
+    let has_card = if changed {
+        crate::bot::cards::refresh_cards(
+            ctx.bot,
             pool,
+            chat_id,
             telegram_id,
             recipe_id,
-            language_code.as_deref(),
+            lang,
             ctx.localization,
         )
-        .await;
-
-        // The recorded cards of the recipe get the new ingredients and the editing view goes;
-        // without one (older cards), the editing view becomes the card
-        let refreshed = match &q.message {
-            Some(message) => {
-                crate::bot::cards::refresh_cards(
-                    ctx.bot,
-                    pool,
-                    message.chat().id,
-                    telegram_id,
-                    recipe_id,
-                    language_code.as_deref(),
-                    ctx.localization,
-                )
-                .await
-            }
-            None => false,
-        };
-        if !refreshed {
-            // Update the message to show the updated recipe
-            match edit_html(
-                ctx.bot,
-                q.message
-                    .as_ref()
-                    .context("Callback query should have a message")?
-                    .chat()
-                    .id,
-                q.message
-                    .as_ref()
-                    .context("Callback query should have a message")?
-                    .id(),
-                recipe_message,
-            )
-            .reply_markup(keyboard)
-            .await
-            {
-                Ok(_) => (),
-                Err(e) => {
-                    error_logging::log_internal_error(
-                        &e,
-                        "handle_confirm_saved_ingredients_button",
-                        "Failed to update message with recipe details after confirmation",
-                        Some(crate::bot::telegram_id(q.from.id)),
-                    );
-                }
-            }
-            if let Some(message) = &q.message {
-                crate::bot::cleanup::record_active_card(message.chat().id, message.id(), recipe_id)
-                    .await;
-            }
-        }
+        .await
     } else {
-        // No changes made - still show the recipe details
-        let recipe = match crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await {
-            Ok(Some(recipe)) => recipe,
-            Ok(None) => {
-                error_logging::log_internal_error(
-                    &anyhow::anyhow!("Recipe not found"),
-                    "handle_confirm_saved_ingredients_button",
-                    "Recipe not found after confirmation (no changes)",
-                    Some(crate::bot::telegram_id(q.from.id)),
-                );
-                ctx.bot
-                    .send_message(
-                        q.message
-                            .as_ref()
-                            .context("Callback query should have a message")?
-                            .chat()
-                            .id,
-                        t_lang(
-                            ctx.localization,
-                            "recipe-not-found",
-                            language_code.as_deref(),
-                        ),
-                    )
-                    .await?;
-                return Ok(());
-            }
-            Err(e) => {
-                error_logging::log_database_error(
-                    &e,
-                    "read_recipe_with_name",
-                    Some(crate::bot::telegram_id(q.from.id)),
-                    Some(&[("recipe_id", &recipe_id.to_string())]),
-                );
-                ctx.bot
-                    .send_message(
-                        q.message
-                            .as_ref()
-                            .context("Callback query should have a message")?
-                            .chat()
-                            .id,
-                        t_lang(
-                            ctx.localization,
-                            "error-processing-failed",
-                            language_code.as_deref(),
-                        ),
-                    )
-                    .await?;
-                return Ok(());
-            }
-        };
-
-        let ingredients = crate::db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
-        let matches = crate::ingredient_editing::ingredients_to_measurement_matches(&ingredients);
-
-        let recipe_name = recipe
-            .recipe_name
-            .unwrap_or_else(|| "Unnamed Recipe".to_string());
-        let recipe_message = render_recipe_summary(
-            &recipe_name,
-            &matches,
-            language_code.as_deref(),
-            ctx.localization,
-        );
-
-        let keyboard = crate::bot::cards::card_keyboard(
-            pool,
-            telegram_id,
-            recipe_id,
-            language_code.as_deref(),
-            ctx.localization,
-        )
-        .await;
-
-        // Nothing changed: with a recorded card the editing view just goes
-        let has_card = match &q.message {
-            Some(message) => !crate::bot::cleanup::recipe_cards(message.chat().id, recipe_id)
-                .await
-                .is_empty(),
-            None => false,
-        };
-        if !has_card {
-            // Update the message to show the recipe details
-            match edit_html(
-                ctx.bot,
-                q.message
-                    .as_ref()
-                    .context("Callback query should have a message")?
-                    .chat()
-                    .id,
-                q.message
-                    .as_ref()
-                    .context("Callback query should have a message")?
-                    .id(),
-                recipe_message,
-            )
-            .reply_markup(keyboard)
+        !crate::bot::cleanup::recipe_cards(chat_id, recipe_id)
             .await
-            {
-                Ok(_) => (),
-                Err(e) => {
-                    error_logging::log_internal_error(
-                        &e,
-                        "handle_confirm_saved_ingredients_button",
-                        "Failed to update message with recipe details after confirmation (no changes)",
-                        Some(crate::bot::telegram_id(q.from.id)),
-                    );
-                }
-            }
-            if let Some(message) = &q.message {
-                crate::bot::cleanup::record_active_card(message.chat().id, message.id(), recipe_id)
-                    .await;
-            }
+            .is_empty()
+    };
+    if !has_card {
+        if let Err(e) = edit_html(ctx.bot, chat_id, message.id(), card.message)
+            .reply_markup(card.keyboard)
+            .await
+        {
+            error_logging::log_internal_error(
+                &e,
+                "handle_confirm_saved_ingredients_button",
+                "Failed to update message with recipe details after confirmation",
+                Some(telegram_id),
+            );
         }
+        crate::bot::cleanup::record_active_card(chat_id, message.id(), recipe_id).await;
     }
 
     // End the dialogue
     dialogue.exit().await?;
-    if let Some(message) = &q.message {
-        if let Some(line) = edited_line {
-            ctx.bot
-                .send_message(message.chat().id, line)
-                .disable_notification(true)
-                .await?;
-        }
-        crate::bot::home::send_home_at(
-            ctx.bot,
-            pool,
-            message.chat().id,
-            crate::bot::home::ListAt::Recipe(recipe_id),
-            ctx.localization,
-            language_code.as_deref(),
-        )
-        .await;
+    if let Some(line) = edited_line {
+        ctx.bot
+            .send_message(chat_id, line)
+            .disable_notification(true)
+            .await?;
     }
+    crate::bot::home::send_home_at(
+        ctx.bot,
+        pool,
+        chat_id,
+        crate::bot::home::ListAt::Recipe(recipe_id),
+        ctx.localization,
+        lang,
+    )
+    .await;
 
     Ok(())
+}
+
+/// A saved recipe's card: its name, text and buttons.
+struct SavedRecipeCard {
+    name: String,
+    message: crate::bot::html::Html,
+    keyboard: teloxide::types::InlineKeyboardMarkup,
+}
+
+/// The card of the recipe as it is saved now, after an edit; `None` when it cannot be read
+/// (gone, or a database error): the user is then told.
+async fn saved_recipe_card(
+    ctx: &HandlerContext<'_>,
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+    chat_id: ChatId,
+    lang: Option<&str>,
+) -> Result<Option<SavedRecipeCard>> {
+    let recipe = match crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await {
+        Ok(Some(recipe)) => recipe,
+        Ok(None) => {
+            error_logging::log_internal_error(
+                &anyhow::anyhow!("Recipe not found"),
+                "handle_confirm_saved_ingredients_button",
+                "Recipe not found after confirmation",
+                Some(telegram_id),
+            );
+            ctx.bot
+                .send_message(chat_id, t_lang(ctx.localization, "recipe-not-found", lang))
+                .await?;
+            return Ok(None);
+        }
+        Err(e) => {
+            error_logging::log_database_error(
+                &e,
+                "read_recipe_with_name",
+                Some(telegram_id),
+                Some(&[("recipe_id", &recipe_id.to_string())]),
+            );
+            ctx.bot
+                .send_message(
+                    chat_id,
+                    t_lang(ctx.localization, "error-processing-failed", lang),
+                )
+                .await?;
+            return Ok(None);
+        }
+    };
+    let ingredients = crate::db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
+    let matches = crate::ingredient_editing::ingredients_to_measurement_matches(&ingredients);
+    let name = recipe
+        .recipe_name
+        .unwrap_or_else(|| "Unnamed Recipe".to_string());
+    let message = render_recipe_summary(&name, &matches, lang, ctx.localization);
+    let keyboard =
+        crate::bot::cards::card_keyboard(pool, telegram_id, recipe_id, lang, ctx.localization)
+            .await;
+    Ok(Some(SavedRecipeCard {
+        name,
+        message,
+        keyboard,
+    }))
 }
 
 /// Handle cancel button for saved ingredients editing
