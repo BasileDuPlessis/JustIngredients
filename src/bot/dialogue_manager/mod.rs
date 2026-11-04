@@ -34,7 +34,10 @@ pub(crate) use words::*;
 
 /// Check if the error is a "message not modified" Telegram API error
 fn is_message_not_modified_error(error: &teloxide::RequestError) -> bool {
-    error.to_string().contains("message is not modified")
+    matches!(
+        error,
+        teloxide::RequestError::Api(teloxide::ApiError::MessageNotModified)
+    )
 }
 
 /// Parameters for ingredient review input handling
@@ -184,4 +187,19 @@ struct ReturnToSavedIngredientsReviewParams<'a> {
     language_code: Option<&'a str>,
     message_id: Option<i32>,
     user_input_message_id: Option<i32>, // ID of the user's input message for reply functionality
+}
+
+#[cfg(test)]
+mod tests {
+    use teloxide::{ApiError, RequestError};
+
+    #[test]
+    fn only_telegrams_not_modified_answer_counts_as_not_modified() {
+        assert!(super::is_message_not_modified_error(&RequestError::Api(
+            ApiError::MessageNotModified
+        )));
+        assert!(!super::is_message_not_modified_error(&RequestError::Api(
+            ApiError::MessageToEditNotFound
+        )));
+    }
 }

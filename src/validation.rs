@@ -9,7 +9,7 @@
 //! - Quantity ranges
 //! - Basic input constraints
 
-use crate::errors::AppError;
+use crate::errors::{AppError, ValidationError};
 use crate::text_processing::MeasurementMatch;
 use regex::Regex;
 use std::sync::LazyLock;
@@ -60,20 +60,21 @@ const FRACTION_CHARACTERS: [(char, &str); 9] = [
 /// # Examples
 /// ```
 /// use just_ingredients::validation::validate_recipe_name;
+/// use just_ingredients::errors::{AppError, ValidationError};
 ///
 /// assert!(validate_recipe_name("My Recipe").is_ok());
-/// assert_eq!(validate_recipe_name("").unwrap_err(), just_ingredients::errors::AppError::Validation("empty".to_string()));
-/// assert_eq!(validate_recipe_name(&"a".repeat(256)).unwrap_err(), just_ingredients::errors::AppError::Validation("too_long".to_string()));
+/// assert_eq!(validate_recipe_name("").unwrap_err(), AppError::Validation(ValidationError::EmptyName));
+/// assert_eq!(validate_recipe_name(&"a".repeat(256)).unwrap_err(), AppError::Validation(ValidationError::NameTooLong));
 /// ```
 pub fn validate_recipe_name(name: &str) -> Result<&str, AppError> {
     let trimmed = name.trim();
 
     if trimmed.is_empty() {
-        return Err(AppError::Validation("empty".to_string()));
+        return Err(AppError::Validation(ValidationError::EmptyName));
     }
 
     if trimmed.len() > 255 {
-        return Err(AppError::Validation("too_long".to_string()));
+        return Err(AppError::Validation(ValidationError::NameTooLong));
     }
 
     Ok(trimmed)
@@ -91,18 +92,19 @@ pub fn validate_recipe_name(name: &str) -> Result<&str, AppError> {
 /// # Examples
 /// ```
 /// use just_ingredients::validation::validate_basic_input;
+/// use just_ingredients::errors::{AppError, ValidationError};
 ///
 /// assert!(validate_basic_input("valid input").is_ok());
-/// assert_eq!(validate_basic_input("").unwrap_err(), just_ingredients::errors::AppError::Validation("edit-empty".to_string()));
-/// assert_eq!(validate_basic_input(&"a".repeat(201)).unwrap_err(), just_ingredients::errors::AppError::Validation("edit-too-long".to_string()));
+/// assert_eq!(validate_basic_input("").unwrap_err(), AppError::Validation(ValidationError::EmptyLine));
+/// assert_eq!(validate_basic_input(&"a".repeat(201)).unwrap_err(), AppError::Validation(ValidationError::LineTooLong));
 /// ```
 pub fn validate_basic_input(input: &str) -> Result<(), AppError> {
     if input.is_empty() {
-        return Err(AppError::Validation("edit-empty".to_string()));
+        return Err(AppError::Validation(ValidationError::EmptyLine));
     }
 
     if input.chars().count() > 200 {
-        return Err(AppError::Validation("edit-too-long".to_string()));
+        return Err(AppError::Validation(ValidationError::LineTooLong));
     }
 
     Ok(())
@@ -120,6 +122,7 @@ pub fn validate_basic_input(input: &str) -> Result<(), AppError> {
 /// # Examples
 /// ```
 /// use just_ingredients::validation::validate_quantity_range;
+/// use just_ingredients::errors::{AppError, ValidationError};
 /// use just_ingredients::text_processing::MeasurementMatch;
 ///
 /// let valid_match = MeasurementMatch {
@@ -146,12 +149,12 @@ pub fn validate_basic_input(input: &str) -> Result<(), AppError> {
 ///     section: None,
 /// };
 ///
-/// assert_eq!(validate_quantity_range(&invalid_match).unwrap_err(), just_ingredients::errors::AppError::Validation("edit-invalid-quantity".to_string()));
+/// assert_eq!(validate_quantity_range(&invalid_match).unwrap_err(), AppError::Validation(ValidationError::InvalidQuantity));
 /// ```
 pub fn validate_quantity_range(measurement_match: &MeasurementMatch) -> Result<(), AppError> {
     if let Some(qty) = parse_quantity(&measurement_match.quantity) {
         if qty <= 0.0 || qty > MAX_QUANTITY {
-            return Err(AppError::Validation("edit-invalid-quantity".to_string()));
+            return Err(AppError::Validation(ValidationError::InvalidQuantity));
         }
     }
     Ok(())
@@ -243,11 +246,11 @@ pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, AppEr
     validate_basic_input(trimmed)?;
     // A pasted list would become one name: one ingredient per message
     if trimmed.contains('\n') {
-        return Err(AppError::Validation("edit-one-line".to_string()));
+        return Err(AppError::Validation(ValidationError::SeveralLines));
     }
     let line = spell_out_fractions(trimmed);
     let line = without_bullet(&line);
-    let invalid_quantity = || AppError::Validation("edit-invalid-quantity".to_string());
+    let invalid_quantity = || AppError::Validation(ValidationError::InvalidQuantity);
     if line
         .strip_prefix(['-', '−'])
         .is_some_and(|rest| rest.trim_start().starts_with(|c: char| c.is_ascii_digit()))
@@ -270,12 +273,10 @@ pub fn parse_ingredient_from_text(input: &str) -> Result<MeasurementMatch, AppEr
     let (quantity, unit) = normalize_typed_measurement(quantity, unit);
 
     if name.is_empty() {
-        return Err(AppError::Validation("edit-no-ingredient-name".to_string()));
+        return Err(AppError::Validation(ValidationError::NoIngredientName));
     }
     if name.chars().count() > MAX_INGREDIENT_NAME_CHARS {
-        return Err(AppError::Validation(
-            "edit-ingredient-name-too-long".to_string(),
-        ));
+        return Err(AppError::Validation(ValidationError::IngredientNameTooLong));
     }
     let ingredient = MeasurementMatch {
         quantity,
@@ -502,18 +503,18 @@ mod tests {
         // Empty names
         assert_eq!(
             validate_recipe_name(""),
-            Err(AppError::Validation("empty".to_string()))
+            Err(AppError::Validation(ValidationError::EmptyName))
         );
         assert_eq!(
             validate_recipe_name("   "),
-            Err(AppError::Validation("empty".to_string()))
+            Err(AppError::Validation(ValidationError::EmptyName))
         );
 
         // Too long names
         let long_name = "a".repeat(256);
         assert_eq!(
             validate_recipe_name(&long_name),
-            Err(AppError::Validation("too_long".to_string()))
+            Err(AppError::Validation(ValidationError::NameTooLong))
         );
     }
 
@@ -526,14 +527,14 @@ mod tests {
         // Empty input
         assert_eq!(
             validate_basic_input(""),
-            Err(AppError::Validation("edit-empty".to_string()))
+            Err(AppError::Validation(ValidationError::EmptyLine))
         );
 
         // Too long input
         let long_input = "a".repeat(201);
         assert_eq!(
             validate_basic_input(&long_input),
-            Err(AppError::Validation("edit-too-long".to_string()))
+            Err(AppError::Validation(ValidationError::LineTooLong))
         );
     }
 
@@ -601,15 +602,15 @@ mod tests {
         // Invalid ranges
         assert_eq!(
             validate_quantity_range(&create_match("0")),
-            Err(AppError::Validation("edit-invalid-quantity".to_string()))
+            Err(AppError::Validation(ValidationError::InvalidQuantity))
         );
         assert_eq!(
             validate_quantity_range(&create_match("-1")),
-            Err(AppError::Validation("edit-invalid-quantity".to_string()))
+            Err(AppError::Validation(ValidationError::InvalidQuantity))
         );
         assert_eq!(
             validate_quantity_range(&create_match("10001")),
-            Err(AppError::Validation("edit-invalid-quantity".to_string()))
+            Err(AppError::Validation(ValidationError::InvalidQuantity))
         );
     }
 
@@ -766,7 +767,7 @@ mod tests {
     #[test]
     fn typed_lines_refused_with_the_reason() {
         let refused = |line: &str| match parse_ingredient_from_text(line) {
-            Err(AppError::Validation(key)) => key,
+            Err(AppError::Validation(reason)) => reason.l10n_key(),
             other => panic!("{line:?} gave {other:?}"),
         };
         assert_eq!(refused(""), "edit-empty");

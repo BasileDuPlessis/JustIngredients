@@ -10,8 +10,8 @@ use std::fmt;
 pub enum AppError {
     /// Configuration validation errors
     Config(String),
-    /// Validation errors (recipe names, inputs, etc.)
-    Validation(String),
+    /// A typed recipe name or ingredient line refused, with its reason
+    Validation(ValidationError),
     /// Database operation errors
     Database(String),
     /// Ingredient parser errors (measurement detector setup)
@@ -24,11 +24,65 @@ pub enum AppError {
     Internal(String),
 }
 
+/// Why a typed recipe name or ingredient line is refused (backlog IMP-017). Each reason has the
+/// message the user gets (`l10n_key`); callers match the reason, never a text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
+pub enum ValidationError {
+    #[error("the recipe name is empty")]
+    EmptyName,
+    #[error("the recipe name is too long")]
+    NameTooLong,
+    #[error("the ingredient text is empty")]
+    EmptyLine,
+    #[error("the ingredient line is too long")]
+    LineTooLong,
+    #[error("the ingredient name is too long")]
+    IngredientNameTooLong,
+    #[error("the line has no ingredient name")]
+    NoIngredientName,
+    #[error("the quantity is not readable")]
+    InvalidQuantity,
+    #[error("the answer is not a quantity")]
+    InvalidQuantityAnswer,
+    #[error("several lines were typed")]
+    SeveralLines,
+}
+
+impl ValidationError {
+    /// Every reason, for the check that each message exists in both locales.
+    pub const ALL: [ValidationError; 9] = [
+        Self::EmptyName,
+        Self::NameTooLong,
+        Self::EmptyLine,
+        Self::LineTooLong,
+        Self::IngredientNameTooLong,
+        Self::NoIngredientName,
+        Self::InvalidQuantity,
+        Self::InvalidQuantityAnswer,
+        Self::SeveralLines,
+    ];
+
+    /// The locale key of the message the user gets.
+    pub fn l10n_key(self) -> &'static str {
+        match self {
+            Self::EmptyName => "recipe-name-invalid",
+            Self::NameTooLong => "recipe-name-too-long",
+            Self::EmptyLine => "edit-empty",
+            Self::LineTooLong => "edit-too-long",
+            Self::IngredientNameTooLong => "edit-ingredient-name-too-long",
+            Self::NoIngredientName => "edit-no-ingredient-name",
+            Self::InvalidQuantity => "edit-invalid-quantity",
+            Self::InvalidQuantityAnswer => "edit-invalid-quantity-answer",
+            Self::SeveralLines => "edit-one-line",
+        }
+    }
+}
+
 impl fmt::Display for AppError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             AppError::Config(msg) => write!(f, "[CONFIG] {}", msg),
-            AppError::Validation(msg) => write!(f, "[VALIDATION] {}", msg),
+            AppError::Validation(reason) => write!(f, "[VALIDATION] {reason}"),
             AppError::Database(msg) => write!(f, "[DATABASE] {}", msg),
             AppError::Parser(msg) => write!(f, "[PARSER] {}", msg),
             AppError::FileSystem(msg) => write!(f, "[FILESYSTEM] {}", msg),

@@ -114,7 +114,7 @@ pub async fn handle_recipe_rename_input(
         Err(error) => {
             // Keep the dialogue: the user can type another name
             let key = match &error {
-                AppError::Validation(reason) if reason == "too_long" => "recipe-name-too-long",
+                AppError::Validation(reason) => reason.l10n_key(),
                 _ => "recipe-name-invalid",
             };
             send_transient(

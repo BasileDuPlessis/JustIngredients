@@ -2,7 +2,7 @@
 
 use crate::db::Ingredient;
 use crate::dialogue::IngredientField;
-use crate::errors::AppError;
+use crate::errors::{AppError, ValidationError};
 use crate::text_processing::MeasurementMatch;
 use crate::validation::{
     parse_ingredient_from_text, parse_quantity_answer, parse_quantity_with_unit,
@@ -70,7 +70,7 @@ pub fn with_quantity(
     current: &MeasurementMatch,
     input: &str,
 ) -> Result<MeasurementMatch, AppError> {
-    let invalid = || AppError::Validation("edit-invalid-quantity-answer".to_string());
+    let invalid = || AppError::Validation(ValidationError::InvalidQuantityAnswer);
     let (quantity, unit) = match parse_quantity_answer(input) {
         Some(quantity) => (quantity, current.measurement.clone()),
         None => {
@@ -90,12 +90,10 @@ pub fn with_quantity(
 pub fn with_name(current: &MeasurementMatch, input: &str) -> Result<MeasurementMatch, AppError> {
     let name = input.split_whitespace().collect::<Vec<_>>().join(" ");
     if name.is_empty() {
-        return Err(AppError::Validation("edit-empty".to_string()));
+        return Err(AppError::Validation(ValidationError::EmptyLine));
     }
     if name.chars().count() > MAX_INGREDIENT_NAME_CHARS {
-        return Err(AppError::Validation(
-            "edit-ingredient-name-too-long".to_string(),
-        ));
+        return Err(AppError::Validation(ValidationError::IngredientNameTooLong));
     }
     Ok(MeasurementMatch {
         ingredient_name: name,
@@ -246,8 +244,10 @@ mod tests {
             "2-3 g",
         ] {
             assert!(
-                matches!(with_quantity(&line("2", None, "sel", false), invalid),
-                    Err(AppError::Validation(key)) if key == "edit-invalid-quantity-answer"),
+                matches!(
+                    with_quantity(&line("2", None, "sel", false), invalid),
+                    Err(AppError::Validation(ValidationError::InvalidQuantityAnswer))
+                ),
                 "{invalid}"
             );
         }
@@ -313,12 +313,14 @@ mod tests {
         let edited =
             with_name(&line("200", Some("g"), "farin", true), "  farine   de blé ").expect("valid");
         assert_eq!(edited, line("200", Some("g"), "farine de blé", true));
-        assert!(matches!(with_name(&line("1", None, "x", false), "   "),
-            Err(AppError::Validation(key)) if key == "edit-empty"));
-        assert!(
-            matches!(with_name(&line("1", None, "x", false), &"a".repeat(101)),
-            Err(AppError::Validation(key)) if key == "edit-ingredient-name-too-long")
-        );
+        assert!(matches!(
+            with_name(&line("1", None, "x", false), "   "),
+            Err(AppError::Validation(ValidationError::EmptyLine))
+        ));
+        assert!(matches!(
+            with_name(&line("1", None, "x", false), &"a".repeat(101)),
+            Err(AppError::Validation(ValidationError::IngredientNameTooLong))
+        ));
     }
 
     #[test]

@@ -270,18 +270,21 @@ pub(super) async fn handle_edit_error(
     language_code: Option<&str>,
 ) -> Result<()> {
     // Invalid input, ask user to try again
-    let error_msg = match error {
-        AppError::Validation(msg) => msg,
-        AppError::Parser(_msg) => "error-processing-failed".to_string(),
-        _ => "edit-invalid-input".to_string(),
+    let key = match &error {
+        AppError::Validation(reason) => reason.l10n_key(),
+        AppError::Parser(_) => "error-processing-failed",
+        _ => "edit-invalid-input",
     };
     // "Try again with a valid ingredient format" only fits a whole typed line
-    let error_message = if error_msg == "edit-invalid-quantity-answer" {
-        t_lang(localization, &error_msg, language_code)
+    let error_message = if matches!(
+        error,
+        AppError::Validation(crate::errors::ValidationError::InvalidQuantityAnswer)
+    ) {
+        t_lang(localization, key, language_code)
     } else {
         format!(
             "{}\n\n{}",
-            t_lang(localization, &error_msg, language_code),
+            t_lang(localization, key, language_code),
             t_lang(localization, "edit-try-again", language_code)
         )
     };

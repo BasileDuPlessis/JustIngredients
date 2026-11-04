@@ -504,7 +504,17 @@ they can be pulled into 1-hour micro-tasks without another review.
   `AppConfig::summary()` with `environment=production` on Fly.
 
 ### IMP-017: Error types are strings; validation errors matched by string
-- [ ] Done
+- [x] Done (2026-11-04): `errors::ValidationError`, one variant per reason a typed name or line
+  is refused (empty or too long name, empty or too long line, too long ingredient name, no
+  ingredient name, unreadable quantity, an answer that is not a quantity, several lines), each
+  with `l10n_key`; `AppError::Validation` holds it. The callers (recipe name, rename, edit
+  errors) match the reason or show its key: `rg 'AppError::Validation\("' src` is empty, and
+  `localization_tests::every_validation_reason_has_its_message` checks each key in both locales.
+  "Message is not modified" is teloxide's `ApiError::MessageNotModified`, no longer its text.
+  `log_validation_error` (the byte slice) went with the dead code. Not done, on purpose: a
+  `DbError` enum. Every "not found" is already an `Option` at the call site, and the other
+  database errors are only logged and counted; `AppError::Config` keeps its text (startup
+  messages for the operator).
 - Priority: P2. Effort: L. Area: Error handling.
 - Location: `src/errors.rs:9-59`, `src/validation.rs:43-47` (`"empty"`, `"too_long"`),
   `src/bot/dialogue_manager.rs:280-292` and `src/bot/dialogue_manager.rs:494-511` (string matching),

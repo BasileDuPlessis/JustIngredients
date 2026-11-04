@@ -324,3 +324,26 @@ fn every_key_in_the_locales_is_used_by_the_code() {
         );
     }
 }
+
+/// Every reason a typed name or line is refused has its message in both locales (IMP-017).
+#[test]
+fn every_validation_reason_has_its_message() {
+    use just_ingredients::errors::ValidationError;
+    let defined = regex::Regex::new(r"(?m)^([a-z][a-z0-9-]*)\s*=").expect("valid pattern");
+    for (language, source) in [
+        ("en", include_str!("../locales/en/main.ftl")),
+        ("fr", include_str!("../locales/fr/main.ftl")),
+    ] {
+        let keys: Vec<&str> = defined
+            .captures_iter(source)
+            .filter_map(|c| c.get(1).map(|m| m.as_str()))
+            .collect();
+        for reason in ValidationError::ALL {
+            assert!(
+                keys.contains(&reason.l10n_key()),
+                "{language}: no message {} for {reason:?}",
+                reason.l10n_key()
+            );
+        }
+    }
+}

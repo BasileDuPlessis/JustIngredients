@@ -183,11 +183,7 @@ async fn handle_recipe_name_validation_error(
     language_code: Option<&str>,
 ) -> Result<()> {
     let error_message = match error {
-        AppError::Validation(msg) => match msg.as_str() {
-            "empty" => t_lang(localization, "recipe-name-invalid", language_code),
-            "too_long" => t_lang(localization, "recipe-name-too-long", language_code),
-            _ => t_lang(localization, "recipe-name-invalid", language_code),
-        },
+        AppError::Validation(reason) => t_lang(localization, reason.l10n_key(), language_code),
         _ => t_lang(localization, "recipe-name-invalid", language_code),
     };
 
