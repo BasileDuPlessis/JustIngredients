@@ -68,17 +68,9 @@ pub async fn forget_chat_message(pool: &PgPool, chat_id: i64, message_id: i32) -
     Ok(())
 }
 
-/// Takes the recorded messages of `chat` of the given kinds: they are no longer recorded, and
-/// come back oldest first, each telling whether Telegram still allows deleting it.
-pub async fn take_chat_messages(
-    pool: &PgPool,
-    chat_id: i64,
-    kinds: &[&str],
-) -> Result<Vec<ChatMessage>> {
-    take_chat_messages_except(pool, chat_id, kinds, None).await
-}
-
-/// [`take_chat_messages`], leaving `keep` recorded (a list just turned into a card).
+/// Takes the recorded messages of `chat` of the given kinds, leaving `keep` recorded (a list
+/// just turned into a card): they are no longer recorded, and come back oldest first, each
+/// telling whether Telegram still allows deleting it.
 pub async fn take_chat_messages_except(
     pool: &PgPool,
     chat_id: i64,

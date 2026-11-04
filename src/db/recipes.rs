@@ -52,67 +52,6 @@ pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Re
     .await
 }
 
-/// Read a recipe owned by `telegram_id` from the database by ID
-///
-/// A recipe owned by another user is reported as missing (`Ok(None)`).
-pub async fn read_recipe(
-    pool: &PgPool,
-    telegram_id: i64,
-    recipe_id: i64,
-) -> Result<Option<Recipe>> {
-    debug!(recipe_id = %recipe_id, "Reading recipe");
-
-    let row = sqlx::query_as::<_, Recipe>(
-        "SELECT id, telegram_id, content, recipe_name, created_at FROM recipes WHERE id = $1 AND telegram_id = $2",
-    )
-    .bind(recipe_id)
-    .bind(telegram_id)
-    .fetch_optional(pool)
-    .await
-    .context("Failed to read recipe")?;
-
-    match row {
-        Some(row) => {
-            let recipe = row;
-            debug!(recipe_id = %recipe_id, "Recipe found");
-            Ok(Some(recipe))
-        }
-        None => {
-            debug!(recipe_id = %recipe_id, "No recipe found");
-            Ok(None)
-        }
-    }
-}
-
-/// Update an existing recipe owned by `telegram_id` in the database
-///
-/// Returns `false` when the recipe does not exist or is owned by another user.
-pub async fn update_recipe(
-    pool: &PgPool,
-    telegram_id: i64,
-    recipe_id: i64,
-    new_content: &str,
-) -> Result<bool> {
-    debug!(recipe_id = %recipe_id, "Updating recipe");
-
-    let result = sqlx::query("UPDATE recipes SET content = $1 WHERE id = $2 AND telegram_id = $3")
-        .bind(new_content)
-        .bind(recipe_id)
-        .bind(telegram_id)
-        .execute(pool)
-        .await
-        .context("Failed to update recipe")?;
-
-    let rows_affected = result.rows_affected();
-    if rows_affected > 0 {
-        debug!(recipe_id = %recipe_id, "Recipe updated successfully");
-        Ok(true)
-    } else {
-        debug!("No recipe found with ID: {recipe_id}");
-        Ok(false)
-    }
-}
-
 /// Delete a recipe owned by `telegram_id` from the database
 ///
 /// Returns `false` when the recipe does not exist or is owned by another user;

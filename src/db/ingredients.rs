@@ -74,8 +74,8 @@ pub struct IngredientUpdate<'a> {
 }
 
 /// Applies the edit of a saved recipe of `telegram_id` in one transaction: every update, addition
-/// and deletion, or none of them. Unlike [`update_ingredient`], an update writes the given values,
-/// so a quantity or unit can be removed. Fails without writing when the recipe is not the user's.
+/// and deletion, or none of them. An update writes the given values as they are, so a quantity
+/// or unit can be removed. Fails without writing when the recipe is not the user's.
 pub async fn apply_ingredient_changes(
     pool: &PgPool,
     telegram_id: i64,
@@ -219,117 +219,6 @@ pub async fn create_ingredient(
     }
     .instrument(span)
     .await
-}
-
-/// Read a single ingredient by ID, if it belongs to a recipe owned by `telegram_id`
-///
-/// An ingredient of another user's recipe is reported as missing (`Ok(None)`).
-pub async fn read_ingredient(
-    pool: &PgPool,
-    telegram_id: i64,
-    ingredient_id: i64,
-) -> Result<Option<Ingredient>> {
-    debug!("Reading ingredient with ID: {ingredient_id}");
-
-    let row = sqlx::query_as::<_, Ingredient>(
-        "SELECT i.id, i.user_id, i.recipe_id, i.name, i.quantity::float8 AS quantity, i.unit, i.created_at, i.updated_at FROM ingredients i JOIN recipes r ON r.id = i.recipe_id WHERE i.id = $1 AND r.telegram_id = $2"
-    )
-    .bind(ingredient_id)
-    .bind(telegram_id)
-    .fetch_optional(pool)
-    .await
-    .context("Failed to fetch ingredient")?;
-
-    match row {
-        Some(row) => {
-            let ingredient = row;
-            debug!(ingredient_id = %ingredient_id, "Ingredient found");
-            Ok(Some(ingredient))
-        }
-        None => {
-            debug!("No ingredient found with ID: {ingredient_id}");
-            Ok(None)
-        }
-    }
-}
-
-/// Update an existing ingredient of a recipe owned by `telegram_id`
-///
-/// Returns `false` when the ingredient does not exist or belongs to another user's recipe.
-pub async fn update_ingredient(
-    pool: &PgPool,
-    telegram_id: i64,
-    ingredient_id: i64,
-    name: Option<&str>,
-    quantity: Option<f64>,
-    unit: Option<&str>,
-) -> Result<bool> {
-    debug!("Updating ingredient with ID: {ingredient_id}");
-
-    let result = sqlx::query("UPDATE ingredients SET name = COALESCE($1, name), quantity = COALESCE($2, quantity), unit = COALESCE($3, unit), updated_at = CURRENT_TIMESTAMP WHERE id = $4 AND EXISTS (SELECT 1 FROM recipes r WHERE r.id = ingredients.recipe_id AND r.telegram_id = $5)")
-        .bind(name)
-        .bind(quantity)
-        .bind(unit)
-        .bind(ingredient_id)
-        .bind(telegram_id)
-        .execute(pool)
-        .await
-        .context("Failed to update ingredient")?;
-
-    let rows_affected = result.rows_affected();
-    if rows_affected > 0 {
-        debug!("Ingredient updated successfully with ID: {ingredient_id}");
-        Ok(true)
-    } else {
-        debug!("No ingredient found with ID: {ingredient_id}");
-        Ok(false)
-    }
-}
-
-/// Delete an ingredient of a recipe owned by `telegram_id`
-///
-/// Returns `false` when the ingredient does not exist or belongs to another user's recipe.
-pub async fn delete_ingredient(
-    pool: &PgPool,
-    telegram_id: i64,
-    ingredient_id: i64,
-) -> Result<bool> {
-    debug!("Deleting ingredient with ID: {ingredient_id}");
-
-    let result = sqlx::query("DELETE FROM ingredients WHERE id = $1 AND EXISTS (SELECT 1 FROM recipes r WHERE r.id = ingredients.recipe_id AND r.telegram_id = $2)")
-        .bind(ingredient_id)
-        .bind(telegram_id)
-        .execute(pool)
-        .await
-        .context("Failed to delete ingredient")?;
-
-    let rows_affected = result.rows_affected();
-    if rows_affected > 0 {
-        debug!("Ingredient deleted successfully with ID: {ingredient_id}");
-        Ok(true)
-    } else {
-        debug!("No ingredient found with ID: {ingredient_id}");
-        Ok(false)
-    }
-}
-
-/// List all ingredients for a user
-pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> {
-    debug!("Listing ingredients for user_id: {user_id}");
-
-    let rows = sqlx::query_as::<_, Ingredient>("SELECT id, user_id, recipe_id, name, quantity::float8 AS quantity, unit, created_at, updated_at FROM ingredients WHERE user_id = $1 ORDER BY created_at DESC, id DESC")
-        .bind(user_id)
-        .fetch_all(pool)
-        .await
-        .context("Failed to list ingredients by user")?;
-
-    let ingredients: Vec<Ingredient> = rows;
-
-    debug!(
-        "Found {} ingredients for user_id: {user_id}",
-        ingredients.len()
-    );
-    Ok(ingredients)
 }
 
 /// Get all ingredients for a specific recipe owned by `telegram_id`

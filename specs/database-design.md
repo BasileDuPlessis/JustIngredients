@@ -80,12 +80,9 @@ Note: `recipes.telegram_id` holds the Telegram user id by value (no foreign key 
 // User management
 pub async fn get_or_create_user(pool: &PgPool, telegram_id: i64, language_code: Option<&str>) -> Result<User>
 pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<Option<User>>
-pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>> // not called by the bot
 
 // Recipe CRUD (owner-scoped: rows of another telegram_id behave as missing)
 pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Result<i64>
-pub async fn read_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Option<Recipe>> // not called by the bot
-pub async fn update_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64, new_content: &str) -> Result<bool> // not called by the bot
 pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<bool> // also deletes its ingredients, in one transaction
 pub async fn update_recipe_name(pool: &PgPool, telegram_id: i64, recipe_id: i64, recipe_name: &str) -> Result<bool>
 pub async fn read_recipe_with_name(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Option<Recipe>>
@@ -110,10 +107,6 @@ pub async fn apply_ingredient_changes(pool: &PgPool, telegram_id: i64, recipe_id
 
 // Ingredient CRUD (owner-scoped through the ingredient's recipe, except where noted)
 pub async fn create_ingredient(pool: &PgPool, user_id: i64, recipe_id: Option<i64>, name: &str, quantity: Option<f64>, unit: Option<&str>, raw_text: &str) -> Result<i64> // user_id = users.id; callers check recipe ownership
-pub async fn read_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64) -> Result<Option<Ingredient>> // not called by the bot
-pub async fn update_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64, name: Option<&str>, quantity: Option<f64>, unit: Option<&str>) -> Result<bool>
-pub async fn delete_ingredient(pool: &PgPool, telegram_id: i64, ingredient_id: i64) -> Result<bool>
-pub async fn list_ingredients_by_user(pool: &PgPool, user_id: i64) -> Result<Vec<Ingredient>> // by users.id, not called by the bot
 pub async fn get_recipe_ingredients(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<Vec<Ingredient>> // ORDER BY created_at, id: a recipe saved in one transaction gives all its ingredients the same created_at
 
 // No cache: the bot reads users, recipes and ingredients from the database each time (the
@@ -247,7 +240,7 @@ CREATE TABLE chat_messages (
 );
 CREATE INDEX chat_messages_chat_kind_idx ON chat_messages (chat_id, kind);
 ```
-`record_chat_message` (upsert), `forget_chat_message`, `take_chat_messages` (delete and return,
+`record_chat_message` (upsert), `forget_chat_message`, `take_chat_messages_except` (delete and return,
 with whether the message is under 48 hours old, the limit for Telegram deletions).
 
 ### Dialogues Table (migration 8)

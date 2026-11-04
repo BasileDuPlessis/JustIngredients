@@ -860,14 +860,18 @@ they can be pulled into 1-hour micro-tasks without another review.
   MSRV job is green.
 
 ### IMP-035: Dead code (unused caches, DB functions, handlers, helpers)
-- [ ] Done
+- [x] Done (2026-11-04, see the status below)
 - Status: Partly done (2026-11-03): `src/cache.rs` deleted (`CacheManager`, `MemoryCache`,
   `DbQueryCache`, about 670 lines: nothing read it, `MessageServices.cache` was ignored), with
   the three `*_cached` user functions of `db.rs` and the uncalled `message_handler` (only
-  `message_handler_with_cache` is routed). Left: `read_recipe`, `update_recipe`,
-  `read_ingredient`, `update_ingredient`, `delete_ingredient`, `list_ingredients_by_user` and
-  `take_chat_messages` are used only by `db_tests`, among them the owner-check tests (IMP-002):
-  to remove when those tests move to the functions the bot calls.
+  `message_handler_with_cache` is routed). 2026-11-04: `read_recipe`, `update_recipe`,
+  `read_ingredient`, `update_ingredient`, `delete_ingredient`, `list_ingredients_by_user`,
+  `take_chat_messages` and `get_user_by_id` deleted; their tests, the owner checks of IMP-002
+  among them, now test what the bot calls (`read_recipe_with_name`, `rename_recipe`,
+  `delete_recipe`, `apply_ingredient_changes`, `get_recipe_ingredients`): `rename_recipe` and
+  `apply_ingredient_changes` had no owner test. Kept as test fixtures (the bot saves with
+  `save_recipe`): `create_recipe`, `create_ingredient`, `get_or_create_user`,
+  `update_recipe_name`.
 - Priority: P3. Effort: M. Area: Code organization.
 - Related: LLM migration (Task 3.4 plans to reuse `OcrResultCache`. It is unbounded and never purged
   (IMP-010), so use a bounded cache instead.)

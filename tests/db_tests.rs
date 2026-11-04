@@ -26,11 +26,7 @@ async fn test_user_operations_impl(pool: &PgPool) -> Result<()> {
 
     // Test get_user_by_telegram_id
     let found_user = get_user_by_telegram_id(pool, 12345).await?;
-    assert_eq!(found_user, Some(user.clone()));
-
-    // Test get_user_by_id
-    let found_user_by_id = get_user_by_id(pool, user.id).await?;
-    assert_eq!(found_user_by_id, Some(user));
+    assert_eq!(found_user, Some(user));
 
     Ok(())
 }
@@ -46,26 +42,16 @@ async fn test_recipe_operations_impl(pool: &PgPool) -> Result<()> {
     let recipe_id = create_recipe(pool, 12345, "Test OCR content").await?;
     assert!(recipe_id > 0);
 
-    // Read recipe
-    let recipe = read_recipe(pool, 12345, recipe_id).await?;
-    assert!(recipe.is_some());
-    let recipe = recipe.unwrap();
+    let recipe = read_recipe_with_name(pool, 12345, recipe_id)
+        .await?
+        .expect("the recipe just created");
     assert_eq!(recipe.telegram_id, 12345);
     assert_eq!(recipe.content, "Test OCR content");
 
-    // Update recipe
-    let updated = update_recipe(pool, 12345, recipe_id, "Updated content").await?;
-    assert!(updated);
-
-    let updated_recipe = read_recipe(pool, 12345, recipe_id).await?;
-    assert_eq!(updated_recipe.unwrap().content, "Updated content");
-
-    // Delete recipe
-    let deleted = delete_recipe(pool, 12345, recipe_id).await?;
-    assert!(deleted);
-
-    let not_found = read_recipe(pool, 12345, recipe_id).await?;
-    assert!(not_found.is_none());
+    assert!(delete_recipe(pool, 12345, recipe_id).await?);
+    assert!(read_recipe_with_name(pool, 12345, recipe_id)
+        .await?
+        .is_none());
 
     Ok(())
 }
@@ -78,60 +64,52 @@ async fn test_ingredient_operations(pool: PgPool) -> Result<()> {
 }
 
 async fn test_ingredient_operations_impl(pool: &PgPool) -> Result<()> {
-    let user = get_or_create_user(pool, 12345, None).await?;
+    let (recipe_id, ingredient_id) = create_recipe_with_ingredient(pool, 12345, "Cake").await?;
 
-    // Create recipe
-    let recipe_id = create_recipe(pool, 12345, "flour 2 cups").await?;
+    let ingredients = get_recipe_ingredients(pool, 12345, recipe_id).await?;
+    assert_eq!(ingredients.len(), 1);
+    assert_eq!(ingredients[0].id, ingredient_id);
+    assert_eq!(ingredients[0].recipe_id, Some(recipe_id));
+    assert_eq!(ingredients[0].name, "flour");
+    assert_eq!(ingredients[0].quantity, Some(2.0));
+    assert_eq!(ingredients[0].unit.as_deref(), Some("cups"));
 
-    // Create ingredient
-    let ingredient_id = create_ingredient(
-        pool,
-        user.id,
-        Some(recipe_id),
-        "flour",
-        Some(2.0),
-        Some("cups"),
-        "flour 2 cups",
-    )
-    .await?;
-    assert!(ingredient_id > 0);
-
-    // Read ingredient
-    let ingredient = read_ingredient(pool, 12345, ingredient_id).await?;
-    assert!(ingredient.is_some());
-    let ingredient = ingredient.unwrap();
-    assert_eq!(ingredient.user_id, user.id);
-    assert_eq!(ingredient.recipe_id, Some(recipe_id));
-    assert_eq!(ingredient.name, "flour");
-    assert_eq!(ingredient.quantity, Some(2.0));
-    assert_eq!(ingredient.unit, Some("cups".to_string()));
-
-    // Update ingredient
-    let updated = update_ingredient(
+    // The edit of a saved recipe: one update, then one deletion
+    let bread_flour = NewIngredient {
+        name: "bread flour",
+        quantity: Some(3.0),
+        unit: Some("cups"),
+    };
+    apply_ingredient_changes(
         pool,
         12345,
-        ingredient_id,
-        Some("bread flour"),
-        Some(3.0),
-        Some("cups"),
+        recipe_id,
+        Some("en"),
+        &[IngredientUpdate {
+            id: ingredient_id,
+            ingredient: bread_flour,
+        }],
+        &[],
+        &[],
     )
     .await?;
-    assert!(updated);
-
-    let updated_ingredient = read_ingredient(pool, 12345, ingredient_id).await?;
-    assert_eq!(updated_ingredient.unwrap().name, "bread flour");
-
-    // List ingredients by user
-    let ingredients = list_ingredients_by_user(pool, user.id).await?;
-    assert_eq!(ingredients.len(), 1);
+    let ingredients = get_recipe_ingredients(pool, 12345, recipe_id).await?;
     assert_eq!(ingredients[0].name, "bread flour");
+    assert_eq!(ingredients[0].quantity, Some(3.0));
 
-    // Delete ingredient
-    let deleted = delete_ingredient(pool, 12345, ingredient_id).await?;
-    assert!(deleted);
-
-    let not_found = read_ingredient(pool, 12345, ingredient_id).await?;
-    assert!(not_found.is_none());
+    apply_ingredient_changes(
+        pool,
+        12345,
+        recipe_id,
+        Some("en"),
+        &[],
+        &[],
+        &[ingredient_id],
+    )
+    .await?;
+    assert!(get_recipe_ingredients(pool, 12345, recipe_id)
+        .await?
+        .is_empty());
 
     Ok(())
 }
@@ -446,7 +424,6 @@ async fn test_recipe_reads_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()>
     create_recipe_with_ingredient(pool, OTHER_B, "Other Cake").await?;
 
     // User B: A's recipe is not found
-    assert!(read_recipe(pool, OTHER_B, recipe_id).await?.is_none());
     assert!(read_recipe_with_name(pool, OTHER_B, recipe_id)
         .await?
         .is_none());
@@ -455,10 +432,6 @@ async fn test_recipe_reads_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()>
         .is_empty());
 
     // User A: still sees the recipe and its ingredients
-    let recipe = read_recipe(pool, OWNER_A, recipe_id)
-        .await?
-        .expect("owner should read own recipe");
-    assert_eq!(recipe.telegram_id, OWNER_A);
     let recipe = read_recipe_with_name(pool, OWNER_A, recipe_id)
         .await?
         .expect("owner should read own recipe with name");
@@ -484,16 +457,17 @@ async fn test_recipe_writes_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()
     let (recipe_id, _) = create_recipe_with_ingredient(pool, OWNER_A, "Secret Cake").await?;
     get_or_create_user(pool, OTHER_B, Some("en")).await?;
 
-    // User B: every write reports "not found" and changes nothing
-    assert!(!update_recipe_name(pool, OTHER_B, recipe_id, "Stolen").await?);
-    assert!(!update_recipe(pool, OTHER_B, recipe_id, "stolen content").await?);
+    // User B: the rename and the delete the bot does report "not found" and change nothing
+    assert_eq!(
+        rename_recipe(pool, OTHER_B, recipe_id, "Stolen").await?,
+        None
+    );
     assert!(!delete_recipe(pool, OTHER_B, recipe_id).await?);
 
     let recipe = read_recipe_with_name(pool, OWNER_A, recipe_id)
         .await?
         .expect("B must not delete A's recipe");
     assert_eq!(recipe.recipe_name.as_deref(), Some("Secret Cake"));
-    assert_eq!(recipe.content.as_str(), "flour 2 cups");
     assert_eq!(
         get_recipe_ingredients(pool, OWNER_A, recipe_id)
             .await?
@@ -502,17 +476,20 @@ async fn test_recipe_writes_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()
         "B's delete attempt must not remove A's ingredients"
     );
 
-    // User A: can rename, update and delete
-    assert!(update_recipe_name(pool, OWNER_A, recipe_id, "Renamed Cake").await?);
-    assert!(update_recipe(pool, OWNER_A, recipe_id, "sugar 1 cup").await?);
+    // User A: can rename and delete
+    assert_eq!(
+        rename_recipe(pool, OWNER_A, recipe_id, "Renamed Cake").await?,
+        Some("Renamed Cake".to_string())
+    );
     let recipe = read_recipe_with_name(pool, OWNER_A, recipe_id)
         .await?
         .expect("owner should read own recipe");
     assert_eq!(recipe.recipe_name.as_deref(), Some("Renamed Cake"));
-    assert_eq!(recipe.content.as_str(), "sugar 1 cup");
 
     assert!(delete_recipe(pool, OWNER_A, recipe_id).await?);
-    assert!(read_recipe(pool, OWNER_A, recipe_id).await?.is_none());
+    assert!(read_recipe_with_name(pool, OWNER_A, recipe_id)
+        .await?
+        .is_none());
     assert!(get_recipe_ingredients(pool, OWNER_A, recipe_id)
         .await?
         .is_empty());
@@ -528,55 +505,56 @@ async fn test_ingredient_operations_are_scoped_by_owner(pool: PgPool) -> Result<
 }
 
 async fn test_ingredient_operations_are_scoped_by_owner_impl(pool: &PgPool) -> Result<()> {
-    let (_, ingredient_id) = create_recipe_with_ingredient(pool, OWNER_A, "Secret Cake").await?;
+    let (recipe_id, ingredient_id) =
+        create_recipe_with_ingredient(pool, OWNER_A, "Secret Cake").await?;
     get_or_create_user(pool, OTHER_B, Some("en")).await?;
+    let salt = || NewIngredient {
+        name: "salt",
+        quantity: Some(9.0),
+        unit: Some("kg"),
+    };
 
-    // User B: A's ingredient is not found and cannot be changed
-    assert!(read_ingredient(pool, OTHER_B, ingredient_id)
-        .await?
-        .is_none());
-    assert!(
-        !update_ingredient(
-            pool,
-            OTHER_B,
-            ingredient_id,
-            Some("salt"),
-            Some(9.0),
-            Some("kg")
-        )
-        .await?
-    );
-    assert!(!delete_ingredient(pool, OTHER_B, ingredient_id).await?);
+    // User B: the edit the bot does (update, addition, deletion) is refused as a whole
+    let stolen = apply_ingredient_changes(
+        pool,
+        OTHER_B,
+        recipe_id,
+        Some("en"),
+        &[IngredientUpdate {
+            id: ingredient_id,
+            ingredient: salt(),
+        }],
+        &[salt()],
+        &[ingredient_id],
+    )
+    .await;
+    assert!(stolen.is_err(), "B cannot edit A's recipe");
+    let ingredients = get_recipe_ingredients(pool, OWNER_A, recipe_id).await?;
+    assert_eq!(ingredients.len(), 1, "nothing added nor deleted");
+    assert_eq!(ingredients[0].name, "flour");
+    assert_eq!(ingredients[0].quantity, Some(2.0));
 
-    let ingredient = read_ingredient(pool, OWNER_A, ingredient_id)
-        .await?
-        .expect("B must not delete A's ingredient");
-    assert_eq!(ingredient.name, "flour");
-    assert_eq!(ingredient.quantity, Some(2.0));
-    assert_eq!(ingredient.unit, Some("cups".to_string()));
-
-    // User A: can update and delete
-    assert!(
-        update_ingredient(
-            pool,
-            OWNER_A,
-            ingredient_id,
-            Some("bread flour"),
-            Some(3.0),
-            None
-        )
-        .await?
-    );
-    let ingredient = read_ingredient(pool, OWNER_A, ingredient_id)
-        .await?
-        .expect("owner should read own ingredient");
-    assert_eq!(ingredient.name, "bread flour");
-    assert_eq!(ingredient.quantity, Some(3.0));
-
-    assert!(delete_ingredient(pool, OWNER_A, ingredient_id).await?);
-    assert!(read_ingredient(pool, OWNER_A, ingredient_id)
-        .await?
-        .is_none());
+    // User A: can edit
+    apply_ingredient_changes(
+        pool,
+        OWNER_A,
+        recipe_id,
+        Some("en"),
+        &[IngredientUpdate {
+            id: ingredient_id,
+            ingredient: NewIngredient {
+                name: "bread flour",
+                quantity: Some(3.0),
+                unit: None,
+            },
+        }],
+        &[],
+        &[],
+    )
+    .await?;
+    let ingredients = get_recipe_ingredients(pool, OWNER_A, recipe_id).await?;
+    assert_eq!(ingredients[0].name, "bread flour");
+    assert_eq!(ingredients[0].quantity, Some(3.0));
 
     Ok(())
 }
@@ -1046,22 +1024,22 @@ async fn chat_messages_are_taken_once_per_chat_and_kind(pool: PgPool) -> Result<
     };
     // A command ends the action: its messages only, the home message stays recorded
     assert_eq!(
-        ids(take_chat_messages(&pool, 42, &["transient"]).await?),
+        ids(take_chat_messages_except(&pool, 42, &["transient"], None).await?),
         vec![5, 6]
     );
     assert!(
-        take_chat_messages(&pool, 42, &["transient"])
+        take_chat_messages_except(&pool, 42, &["transient"], None)
             .await?
             .is_empty(),
         "taken once"
     );
     assert_eq!(
-        ids(take_chat_messages(&pool, 42, &["transient", "home"]).await?),
+        ids(take_chat_messages_except(&pool, 42, &["transient", "home"], None).await?),
         vec![1]
     );
     // Other chats are untouched
     assert_eq!(
-        ids(take_chat_messages(&pool, 7, &["transient"]).await?),
+        ids(take_chat_messages_except(&pool, 7, &["transient"], None).await?),
         vec![9]
     );
 
@@ -1070,11 +1048,11 @@ async fn chat_messages_are_taken_once_per_chat_and_kind(pool: PgPool) -> Result<
     record_chat_message(&pool, 42, 11, "transient", None).await?;
     forget_chat_message(&pool, 42, 10).await?;
     record_chat_message(&pool, 42, 11, "home", None).await?;
-    assert!(take_chat_messages(&pool, 42, &["transient"])
+    assert!(take_chat_messages_except(&pool, 42, &["transient"], None)
         .await?
         .is_empty());
     assert_eq!(
-        ids(take_chat_messages(&pool, 42, &["home"]).await?),
+        ids(take_chat_messages_except(&pool, 42, &["home"], None).await?),
         vec![11]
     );
 
@@ -1127,7 +1105,7 @@ async fn chat_messages_older_than_48_hours_are_not_deletable(pool: PgPool) -> Re
     )
     .execute(&pool)
     .await?;
-    let taken = take_chat_messages(&pool, 42, &["transient"]).await?;
+    let taken = take_chat_messages_except(&pool, 42, &["transient"], None).await?;
     assert_eq!(
         taken,
         vec![
@@ -1181,7 +1159,7 @@ async fn recipe_cards_are_found_per_chat_and_recipe(pool: PgPool) -> Result<()> 
         ids(find_recipe_messages(&pool, 42, &["card"], 8).await?),
         vec![21, 26]
     );
-    assert!(take_chat_messages(&pool, 42, &["transient"])
+    assert!(take_chat_messages_except(&pool, 42, &["transient"], None)
         .await?
         .is_empty());
     Ok(())

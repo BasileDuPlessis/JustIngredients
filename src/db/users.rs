@@ -172,28 +172,3 @@ pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<
         }
     }
 }
-
-/// Get a user by internal database ID
-pub async fn get_user_by_id(pool: &PgPool, user_id: i64) -> Result<Option<User>> {
-    debug!(user_id = %user_id, "Getting user by internal ID");
-
-    let row = sqlx::query_as::<_, User>(
-        "SELECT id, telegram_id, COALESCE(language_code, 'en') AS language_code, created_at, updated_at FROM users WHERE id = $1",
-    )
-    .bind(user_id)
-    .fetch_optional(pool)
-    .await
-    .context("Failed to get user by internal ID")?;
-
-    match row {
-        Some(row) => {
-            let user = row;
-            debug!(user_id = %user.id, "User found by internal ID");
-            Ok(Some(user))
-        }
-        None => {
-            debug!(user_id = %user_id, "No user found with internal ID");
-            Ok(None)
-        }
-    }
-}
