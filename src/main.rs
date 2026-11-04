@@ -18,7 +18,6 @@ use just_ingredients::config::AppConfig;
 use just_ingredients::db;
 use just_ingredients::db_connection::{self, DEFAULT_CONNECT_BACKOFF};
 use just_ingredients::deduplication;
-use just_ingredients::dialogue::RecipeDialogue;
 use just_ingredients::dialogue_storage::PgDialogueStorage;
 use just_ingredients::extraction::gemini::GeminiExtractor;
 use just_ingredients::extraction::guard::GuardedExtractor;
@@ -200,82 +199,16 @@ async fn main() -> Result<()> {
         }
     });
 
-    // Set up the dispatcher with shared connection and dialogue support
-    let handler = dptree::entry()
-        // Recipes belong to one person: groups and channels only get a "private chats" answer
-        .branch(
-            Update::filter_message()
-                .filter(|msg: Message| !msg.chat.is_private())
-                .endpoint({
-                    let localization = Arc::clone(&localization_manager);
-                    move |bot: Bot, msg: Message| {
-                        let localization = Arc::clone(&localization);
-                        async move {
-                            bot::command_handlers::handle_group_message(&bot, &msg, &localization)
-                                .await
-                        }
-                    }
-                }),
-        )
-        .branch(
-            Update::filter_callback_query()
-                .filter(|q: CallbackQuery| {
-                    q.message.as_ref().is_some_and(|m| !m.chat().is_private())
-                })
-                .endpoint({
-                    let localization = Arc::clone(&localization_manager);
-                    move |bot: Bot, q: CallbackQuery| {
-                        let localization = Arc::clone(&localization);
-                        async move {
-                            let text = localization::t_lang(
-                                &localization,
-                                "private-chat-only",
-                                q.from.language_code.as_deref(),
-                            );
-                            bot.answer_callback_query(q.id).text(text).await?;
-                            anyhow::Ok(())
-                        }
-                    }
-                }),
-        )
-        .branch(Update::filter_message().endpoint({
-            let storage = dialogue_storage.clone();
-            let services = bot::MessageServices {
-                pool: Arc::clone(&shared_pool),
-                localization: Arc::clone(&localization_manager),
-                deduplicator: Some(Arc::clone(&deduplicator)),
-                extractor: Arc::clone(&extractor),
-            };
-            move |bot: Bot, msg: Message| {
-                let dialogue = RecipeDialogue::new(storage.clone(), msg.chat.id);
-                let services = services.clone();
-                async move { bot::message_handler_with_cache(bot, msg, dialogue, services).await }
-            }
-        }))
-        .branch(Update::filter_callback_query().endpoint({
-            let pool = Arc::clone(&shared_pool);
-            let storage = dialogue_storage.clone();
-            let localization = Arc::clone(&localization_manager);
-            move |bot: Bot, q: CallbackQuery| {
-                let pool = Arc::clone(&pool);
-                let storage = storage.clone();
-                let localization = Arc::clone(&localization);
-                // Use the chat ID from the original message that contained the inline keyboard
-                let chat_id = match &q.message {
-                    Some(msg) => match msg {
-                        teloxide::types::MaybeInaccessibleMessage::Regular(msg) => msg.chat.id,
-                        teloxide::types::MaybeInaccessibleMessage::Inaccessible(_) => {
-                            ChatId::from(q.from.id)
-                        }
-                    },
-                    None => ChatId::from(q.from.id),
-                };
-                let dialogue = RecipeDialogue::new(storage, chat_id);
-                async move {
-                    bot::callback_handler_with_cache(bot, q, pool, dialogue, localization).await
-                }
-            }
-        }));
+    // The handler tree, built in the library so that tests build the same one
+    let handler = bot::dispatch::handler_tree(bot::dispatch::BotServices {
+        messages: bot::MessageServices {
+            pool: Arc::clone(&shared_pool),
+            localization: Arc::clone(&localization_manager),
+            deduplicator: Some(Arc::clone(&deduplicator)),
+            extractor: Arc::clone(&extractor),
+        },
+        dialogues: Arc::clone(&dialogue_storage),
+    });
 
     let listener = teloxide::update_listeners::polling_default(bot.clone()).await;
     let dispatched = Dispatcher::builder(bot, handler)

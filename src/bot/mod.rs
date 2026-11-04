@@ -16,6 +16,7 @@ pub mod cleanup;
 pub mod command_handlers;
 pub mod commands;
 pub mod dialogue_manager;
+pub mod dispatch;
 pub mod home;
 pub mod html;
 pub mod image_processing;
