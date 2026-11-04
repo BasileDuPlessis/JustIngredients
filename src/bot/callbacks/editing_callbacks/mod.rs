@@ -43,6 +43,25 @@ pub async fn handle_editing_saved_ingredients_callbacks(
     {
         if q.message.is_some() {
             let action = parse_ingredient_action(data);
+            // What every line button gets; each one adds the ingredients it reads or changes
+            let ctx = HandlerContext {
+                bot,
+                localization,
+                language_code: language_code.as_deref(),
+            };
+            let params = || SavedIngredientsParams {
+                ctx: &ctx,
+                q,
+                data: Some(data),
+                current_matches: None,
+                current_matches_slice: None,
+                recipe_id,
+                original_ingredients: &original_ingredients,
+                language_code: &language_code,
+                message_id,
+                dialogue,
+                pool: None,
+            };
             if let Some(action @ (IngredientAction::Menu(_) | IngredientAction::Back)) = action {
                 show_ingredient_keyboard(
                     bot,
@@ -70,59 +89,22 @@ pub async fn handle_editing_saved_ingredients_callbacks(
                     .await?;
             } else if let Some(IngredientAction::Edit(..)) = action {
                 handle_edit_saved_ingredient_button(SavedIngredientsParams {
-                    ctx: &HandlerContext {
-                        bot,
-                        localization,
-                        language_code: language_code.as_deref(),
-                    },
-                    q,
-                    data: Some(data),
-                    current_matches: None,
                     current_matches_slice: Some(&current_matches),
-                    recipe_id,
-                    original_ingredients: &original_ingredients,
-                    language_code: &language_code,
-                    message_id,
-                    dialogue,
-                    pool: None,
+                    ..params()
                 })
                 .await?;
             } else if data.starts_with("delete_") {
                 handle_delete_saved_ingredient_button(SavedIngredientsParams {
-                    ctx: &HandlerContext {
-                        bot,
-                        localization,
-                        language_code: language_code.as_deref(),
-                    },
-                    q,
-                    data: Some(data),
                     current_matches: Some(&mut current_matches),
-                    current_matches_slice: None,
-                    recipe_id,
-                    original_ingredients: &original_ingredients,
-                    language_code: &language_code,
-                    message_id,
-                    dialogue,
-                    pool: None,
+                    ..params()
                 })
                 .await?;
             } else if data == "confirm" {
                 handle_confirm_saved_ingredients_button(SavedIngredientsParams {
-                    ctx: &HandlerContext {
-                        bot,
-                        localization,
-                        language_code: language_code.as_deref(),
-                    },
-                    q,
                     data: None,
-                    current_matches: None,
                     current_matches_slice: Some(&current_matches),
-                    recipe_id,
-                    original_ingredients: &original_ingredients,
-                    language_code: &language_code,
-                    message_id,
-                    dialogue,
                     pool: Some(&pool),
+                    ..params()
                 })
                 .await?;
             } else if data == "add_ingredient" || data == "add_more" {

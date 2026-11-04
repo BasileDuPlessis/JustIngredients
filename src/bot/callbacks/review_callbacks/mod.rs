@@ -50,6 +50,26 @@ pub async fn handle_review_ingredients_callbacks(
     {
         if q.message.is_some() {
             let action = parse_ingredient_action(data);
+            // What every line button gets; each one adds the ingredients it reads or changes
+            let ctx = HandlerContext {
+                bot,
+                localization,
+                language_code: dialogue_lang_code.as_deref(),
+            };
+            let params = || ReviewIngredientsParams {
+                ctx: &ctx,
+                q,
+                data: Some(data),
+                ingredients: None,
+                ingredients_slice: None,
+                recipe_name: &recipe_name,
+                dialogue_lang_code: &dialogue_lang_code,
+                message_id,
+                extracted_text: &extracted_text,
+                recipe_name_from_caption: Some(&recipe_name_from_caption),
+                dialogue,
+                pool: None,
+            };
             if let Some(action @ (IngredientAction::Menu(_) | IngredientAction::Back)) = action {
                 show_ingredient_keyboard(
                     bot,
@@ -78,82 +98,29 @@ pub async fn handle_review_ingredients_callbacks(
                     .await?;
             } else if let Some(IngredientAction::Edit(..)) = action {
                 handle_edit_button(ReviewIngredientsParams {
-                    ctx: &HandlerContext {
-                        bot,
-                        localization,
-                        language_code: dialogue_lang_code.as_deref(),
-                    },
-                    q,
-                    data: Some(data),
-                    ingredients: None,
                     ingredients_slice: Some(&ingredients),
-                    recipe_name: &recipe_name,
-                    dialogue_lang_code: &dialogue_lang_code,
-                    message_id,
-                    extracted_text: &extracted_text,
-                    recipe_name_from_caption: Some(&recipe_name_from_caption),
-                    dialogue,
-                    pool: None,
+                    ..params()
                 })
                 .await?;
             } else if data.starts_with("delete_") {
                 handle_delete_button(ReviewIngredientsParams {
-                    ctx: &HandlerContext {
-                        bot,
-                        localization,
-                        language_code: dialogue_lang_code.as_deref(),
-                    },
-                    q,
-                    data: Some(data),
                     ingredients: Some(&mut ingredients),
-                    ingredients_slice: None,
-                    recipe_name: &recipe_name,
-                    dialogue_lang_code: &dialogue_lang_code,
-                    message_id,
-                    extracted_text: &extracted_text,
-                    recipe_name_from_caption: Some(&recipe_name_from_caption),
-                    dialogue,
-                    pool: None,
+                    ..params()
                 })
                 .await?;
             } else if data == "confirm" {
                 handle_confirm_button(ReviewIngredientsParams {
-                    ctx: &HandlerContext {
-                        bot,
-                        localization,
-                        language_code: dialogue_lang_code.as_deref(),
-                    },
-                    q,
                     data: None,
-                    ingredients: None,
                     ingredients_slice: Some(&ingredients),
-                    recipe_name: &recipe_name,
-                    dialogue_lang_code: &dialogue_lang_code,
-                    message_id,
-                    extracted_text: &extracted_text,
-                    recipe_name_from_caption: Some(&recipe_name_from_caption),
-                    dialogue,
                     pool: Some(&pool),
+                    ..params()
                 })
                 .await?;
             } else if data == "add_ingredient" || data == "add_more" {
                 handle_add_button(ReviewIngredientsParams {
-                    ctx: &HandlerContext {
-                        bot,
-                        localization,
-                        language_code: dialogue_lang_code.as_deref(),
-                    },
-                    q,
                     data: None,
-                    ingredients: None,
                     ingredients_slice: Some(&ingredients),
-                    recipe_name: &recipe_name,
-                    dialogue_lang_code: &dialogue_lang_code,
-                    message_id,
-                    extracted_text: &extracted_text,
-                    recipe_name_from_caption: Some(&recipe_name_from_caption),
-                    dialogue,
-                    pool: None,
+                    ..params()
                 })
                 .await?;
             } else if data == "cancel_review" {

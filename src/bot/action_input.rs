@@ -36,6 +36,13 @@ pub(super) async fn answer_in_action(
     let Some(text) = msg.text() else {
         return Ok(false);
     };
+    // The same for every action; each arm passes it on
+    let dialogue_ctx = DialogueContext {
+        bot,
+        msg,
+        dialogue,
+        localization,
+    };
     match dialogue_state {
         Some(RecipeDialogueState::WaitingForRecipeNameAfterConfirm {
             ingredients,
@@ -49,12 +56,7 @@ pub(super) async fn answer_in_action(
 
             // Handle recipe name input after ingredient confirmation
             return handle_recipe_name_after_confirm_input(
-                DialogueContext {
-                    bot,
-                    msg,
-                    dialogue,
-                    localization,
-                },
+                dialogue_ctx,
                 RecipeNameAfterConfirmInputParams {
                     pool,
                     recipe_name_input: text,
@@ -85,12 +87,7 @@ pub(super) async fn answer_in_action(
 
             // Handle ingredient review commands
             return handle_ingredient_review_input(
-                DialogueContext {
-                    bot,
-                    msg,
-                    dialogue,
-                    localization,
-                },
+                dialogue_ctx,
                 IngredientReviewInputParams {
                     pool,
                     review_input: text,
@@ -126,12 +123,7 @@ pub(super) async fn answer_in_action(
 
             // Handle ingredient edit input
             return handle_ingredient_edit_input(
-                DialogueContext {
-                    bot,
-                    msg,
-                    dialogue,
-                    localization,
-                },
+                dialogue_ctx,
                 IngredientEditInputParams {
                     edit_input: text,
                     recipe_name,
@@ -162,12 +154,7 @@ pub(super) async fn answer_in_action(
 
             // Handle recipe rename input
             return handle_recipe_rename_input(
-                DialogueContext {
-                    bot,
-                    msg,
-                    dialogue,
-                    localization,
-                },
+                dialogue_ctx,
                 RecipeRenameInputParams {
                     pool: &pool,
                     new_name_input: text,
@@ -195,12 +182,7 @@ pub(super) async fn answer_in_action(
 
             // Handle adding new ingredient input for saved recipes
             return handle_add_ingredient_input(
-                DialogueContext {
-                    bot,
-                    msg,
-                    dialogue,
-                    localization,
-                },
+                dialogue_ctx,
                 AddIngredientInputParams {
                     pool: &pool,
                     add_input: text,
@@ -233,12 +215,7 @@ pub(super) async fn answer_in_action(
 
             // Handle editing individual ingredient input for saved recipes
             return handle_saved_ingredient_edit_input(
-                DialogueContext {
-                    bot,
-                    msg,
-                    dialogue,
-                    localization,
-                },
+                dialogue_ctx,
                 SavedIngredientEditInputParams {
                     pool: &pool,
                     edit_input: text,
@@ -270,7 +247,7 @@ pub(super) async fn answer_in_action(
                 bot,
                 localization,
                 &pool,
-                &dialogue,
+                &dialogue_ctx.dialogue,
                 msg.chat.id,
                 msg.chat.id.0,
                 effective_language_code,
@@ -283,7 +260,7 @@ pub(super) async fn answer_in_action(
             return super::dialogue_manager::handle_saved_editing_text(
                 bot,
                 msg,
-                &dialogue,
+                &dialogue_ctx.dialogue,
                 localization,
                 language_code,
                 text,
