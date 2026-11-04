@@ -61,7 +61,8 @@ src/bot/
 ├── command_handlers.rs     # Welcome, help, recipe list, search command, unsupported messages
 ├── media_handlers.rs       # Photo and image document messages
 ├── image_processing.rs     # Download, extraction call, review message, error keys
-├── dialogue_manager.rs     # Text input of each dialogue state, save to database
+├── dialogue_manager/       # Text input of each dialogue state, save to database: review.rs,
+│                           # recipe_name.rs (and the save), rename.rs, saved_editing.rs, words.rs
 ├── home.rs                 # End of an action: cleanup, recipe list sent again last
 ├── html.rs                 # Html type (escaped text, <b>, <pre>), send_html / edit_html
 ├── ui_builder.rs           # Review list and keyboards, recipe list and card keyboards
