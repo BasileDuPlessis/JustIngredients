@@ -4,7 +4,6 @@
 //! ReviewIngredients dialogue state. This includes editing, deleting, confirming,
 //! and canceling ingredient reviews.
 
-use crate::bot::html::edit_html;
 use anyhow::{Context, Result};
 use sqlx::postgres::PgPool;
 use std::sync::Arc;
@@ -333,114 +332,17 @@ async fn handle_delete_button(params: ReviewIngredientsParams<'_>) -> Result<()>
 
         ingredients.remove(index);
 
-        // Check if all ingredients were deleted
-        if ingredients.is_empty() {
-            // All ingredients deleted - inform user and provide options
-            let empty_message = format!(
-                "🗑️ {}\n\n{}\n\n{}",
-                t_lang(
-                    ctx.localization,
-                    "review-title",
-                    dialogue_lang_code.as_deref()
-                ),
-                t_lang(
-                    ctx.localization,
-                    "review-no-ingredients",
-                    dialogue_lang_code.as_deref()
-                ),
-                t_lang(
-                    ctx.localization,
-                    "review-no-ingredients-help",
-                    dialogue_lang_code.as_deref()
-                )
-            );
-
-            // ➕ above the single exit ❌ (U6.2)
-            let keyboard = vec![
-                vec![teloxide::types::InlineKeyboardButton::callback(
-                    t_lang(
-                        ctx.localization,
-                        "review-add-more",
-                        dialogue_lang_code.as_deref(),
-                    ),
-                    "add_more",
-                )],
-                vec![teloxide::types::InlineKeyboardButton::callback(
-                    format!(
-                        "❌ {}",
-                        t_lang(ctx.localization, "cancel", dialogue_lang_code.as_deref())
-                    ),
-                    "cancel_review",
-                )],
-            ];
-
-            // Edit the original message
-            match ctx
-                .bot
-                .edit_message_text(
-                    q.message
-                        .as_ref()
-                        .context("Callback query should have a message")?
-                        .chat()
-                        .id,
-                    q.message
-                        .as_ref()
-                        .context("Callback query should have a message")?
-                        .id(),
-                    empty_message,
-                )
-                .reply_markup(teloxide::types::InlineKeyboardMarkup::new(keyboard))
-                .await
-            {
-                Ok(_) => (),
-                Err(e) => {
-                    error_logging::log_internal_error(
-                        &e,
-                        "callback_handler",
-                        "Failed to edit message for empty ingredients",
-                        Some(crate::bot::telegram_id(q.from.id)),
-                    );
-                }
-            }
-        } else {
-            // Update the message with remaining ingredients
-            let review_message =
-                render_review(ingredients, dialogue_lang_code.as_deref(), ctx.localization);
-
-            let keyboard = create_ingredient_review_keyboard(
-                ingredients,
-                dialogue_lang_code.as_deref(),
-                ctx.localization,
-            );
-
-            // Edit the original message
-            match edit_html(
-                ctx.bot,
-                q.message
-                    .as_ref()
-                    .context("Callback query should have a message")?
-                    .chat()
-                    .id,
-                q.message
-                    .as_ref()
-                    .context("Callback query should have a message")?
-                    .id(),
-                review_message,
-            )
-            .reply_markup(keyboard)
-            .await
-            {
-                Ok(_) => (),
-                Err(e) => {
-                    error_logging::log_internal_error(
-                        &e,
-                        "callback_handler",
-                        "Failed to edit message after ingredient deletion",
-                        Some(crate::bot::telegram_id(q.from.id)),
-                    );
-                }
-            }
-        }
+        // The list shows what is left, or that nothing is left
+        crate::bot::callbacks::ingredient_menu::show_list_after_delete(
+            ctx.bot,
+            q,
+            ingredients,
+            render_review(ingredients, dialogue_lang_code.as_deref(), ctx.localization),
+            "add_more",
+            dialogue_lang_code.as_deref(),
+            ctx.localization,
+        )
+        .await?;
 
         // Update dialogue state with modified ingredients
         match dialogue

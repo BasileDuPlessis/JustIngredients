@@ -907,12 +907,13 @@ they can be pulled into 1-hour micro-tasks without another review.
   (237 lines) routes to `route_any_state` and `answer_button`; in `recipe_callbacks.rs` the card
   actions (`ask_new_name`, `ask_delete_confirmation`) and `delete_confirmed` left the two
   175-line functions, with a `CardAction` context. Moved code compared with the original.
-  Left: modules over 500 lines of code, `editing_callbacks.rs` (840) and `review_callbacks.rs`
-  (781), then 581-624 for `conversion.rs`, `ui_builder.rs`, `recipe_callbacks.rs`,
+  The two ingredient delete buttons (162 lines each, near copies) share
+  `ingredient_menu::show_list_after_delete` (65 and 70 lines left), with handler tests first.
+  Left: modules over 500 lines of code, `editing_callbacks.rs` (748) and `review_callbacks.rs`
+  (about 690), then 581-624 for `conversion.rs`, `ui_builder.rs`, `recipe_callbacks.rs`,
   `callback_handler.rs`, `db/recipes.rs`, `message_handler.rs`; functions over 150 lines:
   `answer_in_action` (270, one arm per state), `handle_recipe_rename_input` (190),
-  `download_and_process_image` (174), `handle_confirm_saved_ingredients_button` (170), the two
-  ingredient delete buttons (162 each).
+  `download_and_process_image` (174), `handle_confirm_saved_ingredients_button` (170).
 - Priority: P3. Effort: L. Area: Code organization.
 - Location: `src/bot/dialogue_manager.rs` (1,658 lines), `src/db.rs` (1,592 lines),
   `src/bot/message_handler.rs:42` (306-line function), `src/bot/callbacks/editing_callbacks.rs:431`

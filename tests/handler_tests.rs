@@ -720,3 +720,101 @@ async fn a_pasted_recipe_gets_the_photo_tip(pool: PgPool) -> Result<()> {
     );
     Ok(())
 }
+
+/// 🗑️ on a review's line removes it; removing the last one says the list is empty, with ➕.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn deleting_review_lines_down_to_none(pool: PgPool) -> Result<()> {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let list = MockMessageText::new().text("📝 Ingrédients").build();
+    let chat = list.chat.id;
+    seed_review(&services, chat).await?;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new()
+            .data("delete_0")
+            .message(list.clone()),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    let RecipeDialogueState::ReviewIngredients { ingredients, .. } =
+        stored_review(&services, chat).await?
+    else {
+        anyhow::bail!("not in the review any more");
+    };
+    assert_eq!(ingredients.len(), 1);
+    assert_eq!(
+        ingredients[0].ingredient_name,
+        "persil ou de coriandre ciselée"
+    );
+
+    bot.update(MockCallbackQuery::new().data("delete_0").message(list));
+    bot.dispatch().await;
+    let RecipeDialogueState::ReviewIngredients { ingredients, .. } =
+        stored_review(&services, chat).await?
+    else {
+        anyhow::bail!("not in the review any more");
+    };
+    assert!(ingredients.is_empty());
+    assert!(
+        has_button(&bot.get_responses(), "add_more"),
+        "the empty list offers ➕"
+    );
+    Ok(())
+}
+
+/// 🗑️ on a saved recipe's ingredient, then ✅, deletes it from the recipe.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn deleting_an_ingredient_of_a_saved_recipe(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::{get_recipe_ingredients, save_recipe, NewIngredient};
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let ingredient = |name| NewIngredient {
+        name,
+        quantity: Some(1.0),
+        unit: None,
+    };
+    let saved = save_recipe(
+        &pool,
+        OWNER,
+        Some("fr"),
+        "",
+        "Gratin",
+        &[ingredient("lait"), ingredient("beurre")],
+    )
+    .await?;
+    let card = MockMessageText::new().text("Gratin").build();
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new()
+            .data(format!(
+                "recipe_action:edit_ingredients:{}",
+                saved.recipe_id
+            ))
+            .message(card),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    let view = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the editing view")?;
+    bot.update(
+        MockCallbackQuery::new()
+            .data("delete_0")
+            .message(view.clone()),
+    );
+    bot.dispatch().await;
+    bot.update(MockCallbackQuery::new().data("confirm").message(view));
+    bot.dispatch().await;
+
+    let left = get_recipe_ingredients(&pool, OWNER, saved.recipe_id).await?;
+    assert_eq!(left.len(), 1);
+    assert_eq!(left[0].name, "beurre");
+    Ok(())
+}
