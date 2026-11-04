@@ -52,6 +52,9 @@ cargo test
   them, so clippy fails (`scripts/check-unwraps.sh` also checks `.unwrap()`).
 - Database tests are ignored by default; run them against a throwaway database:
   `DATABASE_URL=postgres://.../ji_test cargo test --test db_tests -- --include-ignored`.
+- Handler tests (`tests/handler_tests.rs`) send updates through the real handler tree
+  (`bot::dispatch::handler_tree`) with a fake Telegram server (`teloxide_tests`) and a fake
+  extractor; same throwaway database: `cargo test --test handler_tests -- --include-ignored`.
 - Benchmarks (`tests/performance_tests.rs`) are ignored by default: `-- --ignored`.
 - Plans and progress: [`specs/tasks/`](specs/tasks/); code-quality items:
   [improvement backlog](specs/tasks/improvement-backlog.md).

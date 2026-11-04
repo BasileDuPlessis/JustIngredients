@@ -55,6 +55,12 @@ jobs:
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
+    # Updates through the real handler tree, with a fake Telegram server (teloxide_tests)
+    - name: Run handler tests
+      run: cargo test --test handler_tests -- --include-ignored
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
   lint:
     runs-on: ubuntu-26.04
     timeout-minutes: 20

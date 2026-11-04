@@ -10,7 +10,7 @@
 //! to delete messages older than 48 hours: those are just forgotten. A failing database never
 //! fails the action: the messages are then left in the chat.
 
-use std::sync::{Arc, OnceLock};
+use std::sync::{Arc, PoisonError, RwLock};
 
 use sqlx::postgres::PgPool;
 use teloxide::prelude::*;
@@ -34,20 +34,24 @@ const OLD_LIST_LINE: &str = "📚 ⬇️";
 /// `deleteMessages` accepts at most 100 ids per call.
 const DELETE_BATCH: usize = 100;
 
-static POOL: OnceLock<Arc<PgPool>> = OnceLock::new();
+static POOL: RwLock<Option<Arc<PgPool>>> = RwLock::new(None);
 
-/// Gives the cleanup its database, once at startup. Until then (tests) nothing is recorded.
+/// Gives the cleanup its database: once at startup, and by each handler test its own
+/// database. Until then nothing is recorded.
 pub fn init(pool: Arc<PgPool>) {
-    let _ = POOL.set(pool);
+    *POOL.write().unwrap_or_else(PoisonError::into_inner) = Some(pool);
 }
 
-fn pool() -> Option<&'static PgPool> {
-    POOL.get().map(|pool| pool.as_ref())
+fn pool() -> Option<Arc<PgPool>> {
+    POOL.read()
+        .unwrap_or_else(PoisonError::into_inner)
+        .as_ref()
+        .map(Arc::clone)
 }
 
 async fn record(chat: ChatId, id: MessageId, kind: &str) {
     let Some(pool) = pool() else { return };
-    if let Err(e) = crate::db::record_chat_message(pool, chat.0, id.0, kind, None).await {
+    if let Err(e) = crate::db::record_chat_message(&pool, chat.0, id.0, kind, None).await {
         debug!(error = %e, "Could not record a message of the action");
     }
 }
@@ -64,7 +68,7 @@ async fn take_except(
     let Some(pool) = pool() else {
         return Vec::new();
     };
-    crate::db::take_chat_messages_except(pool, chat.0, kinds, keep.map(|id| id.0))
+    crate::db::take_chat_messages_except(&pool, chat.0, kinds, keep.map(|id| id.0))
         .await
         .unwrap_or_else(|e| {
             debug!(error = %e, "Could not read the messages of the action");
@@ -110,7 +114,7 @@ pub async fn track(chat: ChatId, id: MessageId) {
 /// Keeps a recorded message: it is no longer deleted when the action ends.
 pub async fn untrack(chat: ChatId, id: MessageId) {
     let Some(pool) = pool() else { return };
-    if let Err(e) = crate::db::forget_chat_message(pool, chat.0, id.0).await {
+    if let Err(e) = crate::db::forget_chat_message(&pool, chat.0, id.0).await {
         debug!(error = %e, "Could not forget a message of the action");
     }
 }
@@ -153,7 +157,7 @@ async fn delete(bot: &Bot, chat: ChatId, ids: Vec<MessageId>) {
 
 async fn record_card_as(chat: ChatId, id: MessageId, recipe_id: i64, kind: &str) {
     let Some(pool) = pool() else { return };
-    if let Err(e) = crate::db::record_chat_message(pool, chat.0, id.0, kind, Some(recipe_id)).await
+    if let Err(e) = crate::db::record_chat_message(&pool, chat.0, id.0, kind, Some(recipe_id)).await
     {
         debug!(error = %e, "Could not record a recipe card");
     }
@@ -164,7 +168,7 @@ async fn record_card_as(chat: ChatId, id: MessageId, recipe_id: i64, kind: &str)
 pub async fn is_list(chat: ChatId, id: MessageId) -> bool {
     let Some(pool) = pool() else { return false };
     matches!(
-        crate::db::chat_message_kind(pool, chat.0, id.0).await,
+        crate::db::chat_message_kind(&pool, chat.0, id.0).await,
         Ok(Some(kind)) if kind == LIST || kind == HOME
     )
 }
@@ -173,7 +177,7 @@ pub async fn is_list(chat: ChatId, id: MessageId) -> bool {
 pub async fn is_active_card(chat: ChatId, id: MessageId) -> bool {
     let Some(pool) = pool() else { return false };
     matches!(
-        crate::db::chat_message_kind(pool, chat.0, id.0).await,
+        crate::db::chat_message_kind(&pool, chat.0, id.0).await,
         Ok(Some(kind)) if kind == ACTIVE_CARD
     )
 }
@@ -182,7 +186,7 @@ pub async fn is_active_card(chat: ChatId, id: MessageId) -> bool {
 pub async fn is_card(chat: ChatId, id: MessageId) -> bool {
     let Some(pool) = pool() else { return false };
     matches!(
-        crate::db::chat_message_kind(pool, chat.0, id.0).await,
+        crate::db::chat_message_kind(&pool, chat.0, id.0).await,
         Ok(Some(kind)) if kind == CARD || kind == ACTIVE_CARD
     )
 }
@@ -201,7 +205,7 @@ pub async fn list_became_card(bot: &Bot, chat: ChatId, id: MessageId, recipe_id:
 pub async fn recipe_at_bottom(chat: ChatId) -> Option<i64> {
     let pool = pool()?;
     for kind in [ACTIVE_CARD, TRANSIENT] {
-        match crate::db::latest_recipe_message(pool, chat.0, kind).await {
+        match crate::db::latest_recipe_message(&pool, chat.0, kind).await {
             Ok(Some(recipe)) => return Some(recipe),
             Ok(None) => {}
             Err(e) => debug!(error = %e, "Could not read the recipe at the bottom"),
@@ -213,7 +217,8 @@ pub async fn recipe_at_bottom(chat: ChatId) -> Option<i64> {
 /// Records the unit chooser of the current action, with the recipe it brings back.
 pub async fn track_chooser(chat: ChatId, id: MessageId, recipe_id: Option<i64>) {
     let Some(pool) = pool() else { return };
-    if let Err(e) = crate::db::record_chat_message(pool, chat.0, id.0, TRANSIENT, recipe_id).await {
+    if let Err(e) = crate::db::record_chat_message(&pool, chat.0, id.0, TRANSIENT, recipe_id).await
+    {
         debug!(error = %e, "Could not record the unit chooser");
     }
 }
@@ -273,7 +278,7 @@ pub async fn recipe_cards(chat: ChatId, recipe_id: i64) -> Vec<RecipeCard> {
     let Some(pool) = pool() else {
         return Vec::new();
     };
-    match crate::db::find_recipe_messages(pool, chat.0, &[CARD, ACTIVE_CARD], recipe_id).await {
+    match crate::db::find_recipe_messages(&pool, chat.0, &[CARD, ACTIVE_CARD], recipe_id).await {
         Ok(cards) => cards
             .into_iter()
             .map(|card| RecipeCard {
@@ -313,7 +318,7 @@ pub async fn remove_recipe_cards(bot: &Bot, chat: ChatId, recipe_id: i64, keep: 
 pub async fn remove_legacy_message(bot: &Bot, chat: ChatId, id: MessageId) {
     let Some(pool) = pool() else { return };
     if !matches!(
-        crate::db::is_chat_message_recorded(pool, chat.0, id.0).await,
+        crate::db::is_chat_message_recorded(&pool, chat.0, id.0).await,
         Ok(false)
     ) {
         return;
@@ -328,7 +333,7 @@ pub async fn remove_legacy_message(bot: &Bot, chat: ChatId, id: MessageId) {
 /// Whether a message is recorded; `None` when the database cannot tell.
 pub async fn is_recorded(chat: ChatId, id: MessageId) -> Option<bool> {
     let pool = pool()?;
-    crate::db::is_chat_message_recorded(pool, chat.0, id.0)
+    crate::db::is_chat_message_recorded(&pool, chat.0, id.0)
         .await
         .ok()
 }
@@ -346,7 +351,7 @@ pub async fn adopt_card(chat: ChatId, id: MessageId, recipe_id: i64) {
 pub async fn adopt_legacy_list(chat: ChatId, id: MessageId) {
     let Some(pool) = pool() else { return };
     if matches!(
-        crate::db::is_chat_message_recorded(pool, chat.0, id.0).await,
+        crate::db::is_chat_message_recorded(&pool, chat.0, id.0).await,
         Ok(false)
     ) {
         record(chat, id, LIST).await;

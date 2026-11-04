@@ -8,7 +8,11 @@ all-features = true
 # Vulnerabilities always fail. Unmaintained crates fail only when they are direct
 # dependencies; transitive ones (paste, proc-macro-error2) are tracked upstream.
 unmaintained = "workspace"
-ignore = []
+ignore = [
+    # h2 0.3 comes only through actix-http, the fake Telegram server of teloxide_tests, a
+    # dev-dependency run by the handler tests on localhost; the bot itself uses h2 0.4 (fixed).
+    { id = "RUSTSEC-2026-0258", reason = "dev-only: the tests' fake Telegram server on localhost" },
+]
 
 [sources]
 unknown-registry = "deny"
