@@ -92,6 +92,18 @@ async fn start_answers_the_welcome(pool: PgPool) -> Result<()> {
 
 /// A review stored as after a photo with two quantities to check, as on 2026-11-03.
 async fn seed_review(services: &BotServices, chat: teloxide::types::ChatId) -> Result<()> {
+    seed_review_with(services, chat, true, None, None).await
+}
+
+/// A review stored as after a photo: `flagged` lines to check, the caption's name, the id of
+/// the list message.
+async fn seed_review_with(
+    services: &BotServices,
+    chat: teloxide::types::ChatId,
+    flagged: bool,
+    caption: Option<&str>,
+    message_id: Option<i32>,
+) -> Result<()> {
     use just_ingredients::dialogue::{RecipeDialogue, RecipeDialogueState};
     use just_ingredients::MeasurementMatch;
     let line = |quantity: &str, unit: Option<&str>, name: &str| MeasurementMatch {
@@ -101,7 +113,7 @@ async fn seed_review(services: &BotServices, chat: teloxide::types::ChatId) -> R
         line_number: 0,
         start_pos: 0,
         end_pos: 0,
-        requires_quantity_confirmation: true,
+        requires_quantity_confirmation: flagged,
         section: None,
     };
     RecipeDialogue::new(Arc::clone(&services.dialogues), chat)
@@ -112,9 +124,9 @@ async fn seed_review(services: &BotServices, chat: teloxide::types::ChatId) -> R
                 line("1", Some("tbsp"), "persil ou de coriandre ciselée"),
             ],
             language_code: Some("fr".to_string()),
-            message_id: None,
+            message_id,
             extracted_text: String::new(),
-            recipe_name_from_caption: None,
+            recipe_name_from_caption: caption.map(str::to_string),
             open_menu: None,
         })
         .await?;
@@ -235,5 +247,279 @@ async fn a_text_not_understood_brings_the_list_down(pool: PgPool) -> Result<()> 
     let list = sent.last().context("the list")?;
     assert!(sent.len() > answer + 1, "the list comes after the answer");
     assert!(has_review_buttons(list));
+    Ok(())
+}
+
+/// The user of every mock update.
+const OWNER: i64 = teloxide_tests::MockUser::ID as i64;
+
+/// The running action of `chat`, if any.
+async fn action(
+    services: &BotServices,
+    chat: teloxide::types::ChatId,
+) -> Result<Option<just_ingredients::dialogue::RecipeDialogueState>> {
+    Ok(
+        just_ingredients::dialogue::RecipeDialogue::new(Arc::clone(&services.dialogues), chat)
+            .get()
+            .await?,
+    )
+}
+
+/// The names of the owner's saved recipes, in creation order.
+async fn recipe_names(pool: &PgPool) -> Result<Vec<String>> {
+    let names: Vec<Option<String>> =
+        sqlx::query_scalar("SELECT recipe_name FROM recipes WHERE telegram_id = $1 ORDER BY id")
+            .bind(OWNER)
+            .fetch_all(pool)
+            .await?;
+    Ok(names.into_iter().flatten().collect())
+}
+
+/// The callback data of a button sent by the bot whose data starts with `prefix`.
+fn button_data(responses: &teloxide_tests::Responses, prefix: &str) -> Option<String> {
+    let sent = responses.sent_messages.iter();
+    let edited = responses
+        .edited_messages_reply_markup
+        .iter()
+        .map(|edit| &edit.message)
+        .chain(
+            responses
+                .edited_messages_text
+                .iter()
+                .map(|edit| &edit.message),
+        );
+    sent.chain(edited)
+        .filter_map(|message| message.reply_markup())
+        .flat_map(|keyboard| keyboard.inline_keyboard.iter().flatten())
+        .find_map(|button| match &button.kind {
+            teloxide::types::InlineKeyboardButtonKind::CallbackData(data)
+                if data.starts_with(prefix) =>
+            {
+                Some(data.clone())
+            }
+            _ => None,
+        })
+}
+
+/// ✅ on a review with the caption's name saves the recipe under that name and ends the action.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn confirm_with_a_caption_name_saves_the_recipe(pool: PgPool) -> Result<()> {
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let list = MockMessageText::new().text("📝 Ingrédients").build();
+    let chat = list.chat.id;
+    seed_review_with(&services, chat, false, Some("Tarte aux poireaux"), None).await?;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new().data("confirm").message(list),
+        services.clone(),
+    );
+    bot.dispatch().await;
+
+    assert_eq!(recipe_names(&pool).await?, ["Tarte aux poireaux"]);
+    assert!(action(&services, chat).await?.is_none(), "the review ended");
+    Ok(())
+}
+
+/// ✅ without a name asks it; the typed name saves the recipe.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn confirm_without_a_name_asks_it_then_saves(pool: PgPool) -> Result<()> {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let list = MockMessageText::new().text("📝 Ingrédients").build();
+    let chat = list.chat.id;
+    seed_review_with(&services, chat, false, None, None).await?;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new().data("confirm").message(list),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    assert!(matches!(
+        action(&services, chat).await?,
+        Some(RecipeDialogueState::WaitingForRecipeNameAfterConfirm { .. })
+    ));
+    assert!(recipe_names(&pool).await?.is_empty(), "nothing saved yet");
+
+    bot.update(MockMessageText::new().text("Gratin"));
+    bot.dispatch().await;
+    assert_eq!(recipe_names(&pool).await?, ["Gratin"]);
+    assert!(action(&services, chat).await?.is_none());
+    Ok(())
+}
+
+/// ❌ on a review saves nothing and ends the action.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn cancel_review_saves_nothing(pool: PgPool) -> Result<()> {
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let list = MockMessageText::new().text("📝 Ingrédients").build();
+    let chat = list.chat.id;
+    seed_review_with(&services, chat, false, Some("Tarte"), None).await?;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new().data("cancel_review").message(list),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    assert!(recipe_names(&pool).await?.is_empty());
+    assert!(action(&services, chat).await?.is_none());
+    Ok(())
+}
+
+/// The ✅ of a list older than the running review's cannot save it: the button says it is no
+/// longer active.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn an_older_list_cannot_save(pool: PgPool) -> Result<()> {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let older = MockMessageText::new().text("📝 Ingrédients").build();
+    let chat = older.chat.id;
+    // The running review's list is a later message than the one pressed
+    seed_review_with(&services, chat, false, Some("Tarte"), Some(older.id.0 + 10)).await?;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new().data("confirm").message(older),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    assert!(recipe_names(&pool).await?.is_empty(), "nothing saved");
+    assert!(matches!(
+        action(&services, chat).await?,
+        Some(RecipeDialogueState::ReviewIngredients { .. })
+    ));
+    let responses = bot.get_responses();
+    let answer = responses
+        .answered_callback_queries
+        .last()
+        .context("the button is answered")?;
+    assert!(answer.text.is_some(), "with the no-longer-active text");
+    Ok(())
+}
+
+/// A saved recipe edited from its card: its menu, a typed quantity, then ✅ writes it.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn editing_a_saved_recipe_writes_the_typed_quantity(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::{get_recipe_ingredients, save_recipe, NewIngredient};
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let saved = save_recipe(
+        &pool,
+        OWNER,
+        Some("fr"),
+        "",
+        "Gratin",
+        &[NewIngredient {
+            name: "lait",
+            quantity: Some(500.0),
+            unit: Some("ml"),
+        }],
+    )
+    .await?;
+    let card = MockMessageText::new().text("Gratin").build();
+    let chat = card.chat.id;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new()
+            .data(format!(
+                "recipe_action:edit_ingredients:{}",
+                saved.recipe_id
+            ))
+            .message(card),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    let view = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the editing view")?;
+    assert!(matches!(
+        action(&services, chat).await?,
+        Some(RecipeDialogueState::EditingSavedIngredients { .. })
+    ));
+
+    bot.update(MockCallbackQuery::new().data("item_0").message(view));
+    bot.dispatch().await;
+    bot.update(MockMessageText::new().text("250 ml"));
+    bot.dispatch().await;
+    let view = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the editing view, at the bottom")?;
+
+    bot.update(MockCallbackQuery::new().data("confirm").message(view));
+    bot.dispatch().await;
+    let ingredients = get_recipe_ingredients(&pool, OWNER, saved.recipe_id).await?;
+    assert_eq!(ingredients.len(), 1);
+    assert_eq!(ingredients[0].quantity, Some(250.0));
+    assert!(action(&services, chat).await?.is_none(), "the edit ended");
+    Ok(())
+}
+
+/// A saved recipe renamed from its card.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn renaming_a_saved_recipe(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::save_recipe;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let saved = save_recipe(&pool, OWNER, Some("fr"), "", "Gratin", &[]).await?;
+    let card = MockMessageText::new().text("Gratin").build();
+    let chat = card.chat.id;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new()
+            .data(format!("recipe_action:rename:{}", saved.recipe_id))
+            .message(card),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    bot.update(MockMessageText::new().text("Gratin dauphinois"));
+    bot.dispatch().await;
+    assert_eq!(recipe_names(&pool).await?, ["Gratin dauphinois"]);
+    assert!(action(&services, chat).await?.is_none());
+    Ok(())
+}
+
+/// A saved recipe deleted from its card, after the confirmation.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn deleting_a_saved_recipe_after_the_confirmation(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::save_recipe;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let saved = save_recipe(&pool, OWNER, Some("fr"), "", "Gratin", &[]).await?;
+    let card = MockMessageText::new().text("Gratin").build();
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new()
+            .data(format!("recipe_action:delete:{}", saved.recipe_id))
+            .message(card.clone()),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    assert_eq!(
+        recipe_names(&pool).await?,
+        ["Gratin"],
+        "not before the confirmation"
+    );
+    let confirm = button_data(&bot.get_responses(), "confirm_delete_recipe:")
+        .context("the confirmation button")?;
+
+    bot.update(MockCallbackQuery::new().data(confirm).message(card));
+    bot.dispatch().await;
+    assert!(recipe_names(&pool).await?.is_empty());
     Ok(())
 }
