@@ -855,3 +855,99 @@ async fn a_too_long_new_name_is_refused(pool: PgPool) -> Result<()> {
         .any(|message| message.text() == Some(too_long.as_str())));
     Ok(())
 }
+
+/// 🔢 on a review line opens its prompt; the typed quantity fixes that line.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn the_quantity_prompt_of_a_review_line(pool: PgPool) -> Result<()> {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let list = MockMessageText::new().text("📝 Ingrédients").build();
+    let chat = list.chat.id;
+    seed_review(&services, chat).await?;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new().data("qty_0").message(list),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    assert!(matches!(
+        action(&services, chat).await?,
+        Some(RecipeDialogueState::EditingIngredient {
+            editing_index: 0,
+            ..
+        })
+    ));
+
+    bot.update(MockMessageText::new().text("4"));
+    bot.dispatch().await;
+    let RecipeDialogueState::ReviewIngredients { ingredients, .. } =
+        stored_review(&services, chat).await?
+    else {
+        anyhow::bail!("back in the review");
+    };
+    assert_eq!(ingredients[0].quantity, "4");
+    assert!(!ingredients[0].requires_quantity_confirmation);
+    Ok(())
+}
+
+/// 🔢 on a saved recipe's line opens its prompt; the typed quantity, then ✅, writes it.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn the_quantity_prompt_of_a_saved_line(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::{get_recipe_ingredients, save_recipe, NewIngredient};
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let saved = save_recipe(
+        &pool,
+        OWNER,
+        Some("fr"),
+        "",
+        "Gratin",
+        &[NewIngredient {
+            name: "lait",
+            quantity: Some(500.0),
+            unit: Some("ml"),
+        }],
+    )
+    .await?;
+    let card = MockMessageText::new().text("Gratin").build();
+    let chat = card.chat.id;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new()
+            .data(format!(
+                "recipe_action:edit_ingredients:{}",
+                saved.recipe_id
+            ))
+            .message(card),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    let view = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the editing view")?;
+    bot.update(MockCallbackQuery::new().data("qty_0").message(view.clone()));
+    bot.dispatch().await;
+    assert!(matches!(
+        action(&services, chat).await?,
+        Some(RecipeDialogueState::EditingSavedIngredient {
+            editing_index: 0,
+            ..
+        })
+    ));
+
+    bot.update(MockMessageText::new().text("300"));
+    bot.dispatch().await;
+    bot.update(MockCallbackQuery::new().data("confirm").message(view));
+    bot.dispatch().await;
+    let ingredients = get_recipe_ingredients(&pool, OWNER, saved.recipe_id).await?;
+    assert_eq!(ingredients[0].quantity, Some(300.0));
+    assert_eq!(ingredients[0].unit.as_deref(), Some("ml"), "the unit stays");
+    Ok(())
+}

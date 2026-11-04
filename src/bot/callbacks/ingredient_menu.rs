@@ -112,3 +112,24 @@ pub async fn show_list_after_delete(
     }
     Ok(())
 }
+
+/// The prompt of a line's edit (review or saved recipe): the title, the line as listed ("sel"
+/// without quantity), and what to type for `field`.
+pub fn edit_prompt_text(
+    ingredient: &MeasurementMatch,
+    field: crate::dialogue::IngredientField,
+    language_code: Option<&str>,
+    localization: &Arc<LocalizationManager>,
+) -> String {
+    format!(
+        "✏️ {}\n\n{}: {}\n\n{}",
+        t_lang(localization, "edit-ingredient-title", language_code),
+        t_lang(localization, "edit-ingredient-current", language_code),
+        crate::bot::ui_builder::ingredient_line(ingredient, &ingredient.ingredient_name),
+        t_lang(
+            localization,
+            crate::bot::ui_builder::edit_instruction_key(field),
+            language_code
+        )
+    )
+}

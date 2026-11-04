@@ -12,9 +12,7 @@ use crate::localization::t_lang;
 use crate::dialogue::{IngredientField, RecipeDialogueState};
 
 // Import UI components for the focused editing interface
-use crate::bot::ui_builder::{
-    edit_instruction_key, parse_ingredient_action, render_review, IngredientAction,
-};
+use crate::bot::ui_builder::{parse_ingredient_action, render_review, IngredientAction};
 use crate::bot::ui_components::create_ingredient_editing_keyboard;
 
 // Import callback types module
@@ -39,14 +37,11 @@ pub(super) async fn handle_edit_button(params: ReviewIngredientsParams<'_>) -> R
     };
     crate::observability::action(crate::observability::Action::IngredientEdited);
 
-    let lang = params.dialogue_lang_code.as_deref();
-    let prompt = format!(
-        "✏️ {}\n\n{}: {}\n\n{}",
-        t_lang(params.ctx.localization, "edit-ingredient-title", lang),
-        t_lang(params.ctx.localization, "edit-ingredient-current", lang),
-        // Same rendering as the review list ("sel" without quantity, not "**  sel**")
-        crate::bot::ui_builder::ingredient_line(ingredient, &ingredient.ingredient_name),
-        t_lang(params.ctx.localization, edit_instruction_key(field), lang)
+    let prompt = crate::bot::callbacks::ingredient_menu::edit_prompt_text(
+        ingredient,
+        field,
+        params.dialogue_lang_code.as_deref(),
+        params.ctx.localization,
     );
     open_line_prompt(params, index, field, prompt).await
 }

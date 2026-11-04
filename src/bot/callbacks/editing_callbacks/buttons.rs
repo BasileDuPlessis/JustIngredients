@@ -15,7 +15,7 @@ use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
 
 // Import HandlerContext
 use crate::bot::cleanup::send_transient;
-use crate::bot::ui_builder::{edit_instruction_key, parse_ingredient_action, IngredientAction};
+use crate::bot::ui_builder::{parse_ingredient_action, IngredientAction};
 
 // Import callback types module
 use crate::bot::callbacks::callback_types::SavedIngredientsParams;
@@ -47,32 +47,21 @@ pub(super) async fn handle_edit_saved_ingredient_button(
 
     let current_matches = current_matches_slice
         .context("Current matches slice should be provided for edit callback")?;
+    let message = q
+        .message
+        .as_ref()
+        .context("Callback query should have a message")?;
     let Some(IngredientAction::Edit(field, index)) = data.and_then(parse_ingredient_action) else {
         return Ok(());
     };
     if index < current_matches.len() {
         crate::observability::action(crate::observability::Action::IngredientEdited);
 
-        let ingredient = &current_matches[index];
-        let edit_prompt = format!(
-            "✏️ {}\n\n{}: {}\n\n{}",
-            t_lang(
-                ctx.localization,
-                "edit-ingredient-title",
-                language_code.as_deref()
-            ),
-            t_lang(
-                ctx.localization,
-                "edit-ingredient-current",
-                language_code.as_deref()
-            ),
-            // Same rendering as the list ("sel" without quantity, not "  sel")
-            crate::bot::ui_builder::ingredient_line(ingredient, &ingredient.ingredient_name),
-            t_lang(
-                ctx.localization,
-                edit_instruction_key(field),
-                language_code.as_deref()
-            )
+        let edit_prompt = crate::bot::callbacks::ingredient_menu::edit_prompt_text(
+            &current_matches[index],
+            field,
+            language_code.as_deref(),
+            ctx.localization,
         );
 
         let keyboard = crate::bot::ui_components::create_ingredient_editing_keyboard(
@@ -83,18 +72,7 @@ pub(super) async fn handle_edit_saved_ingredient_button(
         // Replace the current recipe display with the focused editing prompt
         match ctx
             .bot
-            .edit_message_text(
-                q.message
-                    .as_ref()
-                    .context("Callback query should have a message")?
-                    .chat()
-                    .id,
-                q.message
-                    .as_ref()
-                    .context("Callback query should have a message")?
-                    .id(),
-                edit_prompt.clone(),
-            )
+            .edit_message_text(message.chat().id, message.id(), edit_prompt.clone())
             .reply_markup(keyboard.clone())
             .await
         {
@@ -108,14 +86,7 @@ pub(super) async fn handle_edit_saved_ingredient_button(
                 );
                 // Fallback: send new message if editing fails
                 ctx.bot
-                    .send_message(
-                        q.message
-                            .as_ref()
-                            .context("Callback query should have a message")?
-                            .chat()
-                            .id,
-                        edit_prompt,
-                    )
+                    .send_message(message.chat().id, edit_prompt)
                     .reply_markup(keyboard)
                     .await?;
             }
@@ -131,13 +102,7 @@ pub(super) async fn handle_edit_saved_ingredient_button(
                 field,
                 language_code: language_code.clone(),
                 message_id,
-                original_message_id: Some(
-                    q.message
-                        .as_ref()
-                        .context("Callback query should have a message")?
-                        .id()
-                        .0,
-                ),
+                original_message_id: Some(message.id().0),
             })
             .await?;
     }

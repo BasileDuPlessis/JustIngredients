@@ -397,41 +397,7 @@ async fn delete_confirmed(
             crate::observability::action(crate::observability::Action::Delete);
             // Gone: the page of its neighbours
             list_at = crate::bot::home::ListAt::Gone(name.clone().unwrap_or_default());
-            // The card becomes the history line "🗑️ « X » supprimée", without buttons
-            let line = t_args_lang(
-                localization,
-                "recipe-deleted-line",
-                &[("name", name.as_deref().unwrap_or(""))],
-                language_code.as_deref(),
-            );
-            let edited = match card {
-                Some(card) => bot
-                    .edit_message_text(chat_id, card, line.clone())
-                    .reply_markup(InlineKeyboardMarkup::default())
-                    .await
-                    .is_ok(),
-                None => false,
-            };
-            if !edited {
-                bot.send_message(chat_id, line)
-                    .disable_notification(true)
-                    .await?;
-            }
-            // The line is history, not a card; any other card of the recipe goes
-            crate::bot::cleanup::remove_recipe_cards(bot, chat_id, recipe_id, card).await;
-            crate::bot::cards::refresh_linked_cards(
-                bot,
-                pool,
-                chat_id,
-                telegram_id,
-                &linked,
-                language_code.as_deref(),
-                localization,
-            )
-            .await;
-            if let Some(card) = card {
-                crate::bot::cleanup::untrack(chat_id, card).await;
-            }
+            show_deleted(action, name.as_deref(), card, &linked).await?;
         }
         Ok(false) => {
             // Already gone: its card goes too, the message stays until the next action
@@ -467,6 +433,61 @@ async fn delete_confirmed(
         }
     }
     Ok((keep, list_at))
+}
+
+/// A recipe deleted: its card becomes the history line "🗑️ « X » supprimée" (or the line is
+/// sent when the card cannot be edited), its other cards go and its linked cards are refreshed.
+async fn show_deleted(
+    action: &CardAction<'_>,
+    name: Option<&str>,
+    card: Option<teloxide::types::MessageId>,
+    linked: &[i64],
+) -> Result<()> {
+    let CardAction {
+        bot,
+        chat_id,
+        pool,
+        telegram_id,
+        recipe_id,
+        language_code,
+        localization,
+    } = *action;
+    // The card becomes the history line "🗑️ « X » supprimée", without buttons
+    let line = t_args_lang(
+        localization,
+        "recipe-deleted-line",
+        &[("name", name.unwrap_or(""))],
+        language_code.as_deref(),
+    );
+    let edited = match card {
+        Some(card) => bot
+            .edit_message_text(chat_id, card, line.clone())
+            .reply_markup(InlineKeyboardMarkup::default())
+            .await
+            .is_ok(),
+        None => false,
+    };
+    if !edited {
+        bot.send_message(chat_id, line)
+            .disable_notification(true)
+            .await?;
+    }
+    // The line is history, not a card; any other card of the recipe goes
+    crate::bot::cleanup::remove_recipe_cards(bot, chat_id, recipe_id, card).await;
+    crate::bot::cards::refresh_linked_cards(
+        bot,
+        pool,
+        chat_id,
+        telegram_id,
+        linked,
+        language_code.as_deref(),
+        localization,
+    )
+    .await;
+    if let Some(card) = card {
+        crate::bot::cleanup::untrack(chat_id, card).await;
+    }
+    Ok(())
 }
 
 /// Handle edit ingredients callback for saved recipes
