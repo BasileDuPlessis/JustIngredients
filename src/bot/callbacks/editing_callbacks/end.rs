@@ -95,39 +95,7 @@ pub(super) async fn handle_confirm_saved_ingredients_button(
         || !changes.to_add.is_empty()
         || !changes.to_delete.is_empty();
     if changed {
-        let updates: Vec<crate::db::IngredientUpdate> = changes
-            .to_update
-            .iter()
-            .map(|(id, m)| crate::db::IngredientUpdate {
-                id: *id,
-                ingredient: to_new_ingredient(m),
-            })
-            .collect();
-        let additions: Vec<crate::db::NewIngredient> =
-            changes.to_add.iter().map(to_new_ingredient).collect();
-        if let Err(e) = crate::db::apply_ingredient_changes(
-            pool,
-            telegram_id,
-            recipe_id,
-            lang,
-            &updates,
-            &additions,
-            &changes.to_delete,
-        )
-        .await
-        {
-            error_logging::log_database_error(
-                &e,
-                "apply_ingredient_changes",
-                Some(telegram_id),
-                Some(&[("recipe_id", &recipe_id.to_string())]),
-            );
-            send_transient(
-                ctx.bot,
-                chat_id,
-                t_lang(ctx.localization, "error-updating-ingredients", lang),
-            )
-            .await?;
+        if !write_changes(ctx, pool, telegram_id, recipe_id, chat_id, lang, &changes).await? {
             return Ok(());
         }
         crate::dialogue::end_after_write(dialogue).await;
@@ -148,9 +116,92 @@ pub(super) async fn handle_confirm_saved_ingredients_button(
         )
     });
 
-    // The recorded cards of the recipe get the new ingredients (nothing to update when nothing
-    // changed) and the editing view goes; without one (older cards), the editing view becomes
-    // the card
+    show_card_after_edit(ctx, pool, message, telegram_id, recipe_id, changed, card).await;
+
+    // End the dialogue
+    dialogue.exit().await?;
+    if let Some(line) = edited_line {
+        ctx.bot
+            .send_message(chat_id, line)
+            .disable_notification(true)
+            .await?;
+    }
+    crate::bot::home::send_home_at(
+        ctx.bot,
+        pool,
+        chat_id,
+        crate::bot::home::ListAt::Recipe(recipe_id),
+        ctx.localization,
+        lang,
+    )
+    .await;
+
+    Ok(())
+}
+
+/// Writes a saved recipe's edit in one transaction: updates, additions and deletions, never a
+/// half-applied edit. `false` when it failed: the user was told, and the edit stays open.
+async fn write_changes(
+    ctx: &HandlerContext<'_>,
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+    chat_id: ChatId,
+    lang: Option<&str>,
+    changes: &crate::ingredient_editing::IngredientChanges,
+) -> Result<bool> {
+    let updates: Vec<crate::db::IngredientUpdate> = changes
+        .to_update
+        .iter()
+        .map(|(id, m)| crate::db::IngredientUpdate {
+            id: *id,
+            ingredient: to_new_ingredient(m),
+        })
+        .collect();
+    let additions: Vec<crate::db::NewIngredient> =
+        changes.to_add.iter().map(to_new_ingredient).collect();
+    if let Err(e) = crate::db::apply_ingredient_changes(
+        pool,
+        telegram_id,
+        recipe_id,
+        lang,
+        &updates,
+        &additions,
+        &changes.to_delete,
+    )
+    .await
+    {
+        error_logging::log_database_error(
+            &e,
+            "apply_ingredient_changes",
+            Some(telegram_id),
+            Some(&[("recipe_id", &recipe_id.to_string())]),
+        );
+        send_transient(
+            ctx.bot,
+            chat_id,
+            t_lang(ctx.localization, "error-updating-ingredients", lang),
+        )
+        .await?;
+        return Ok(false);
+    }
+    Ok(true)
+}
+
+/// The edited recipe's card: its recorded cards get the new ingredients (nothing to update
+/// when nothing changed) and the editing view goes; without a recorded card (older cards), the
+/// editing view becomes the card.
+async fn show_card_after_edit(
+    ctx: &HandlerContext<'_>,
+    pool: &PgPool,
+    message: &teloxide::types::MaybeInaccessibleMessage,
+    telegram_id: i64,
+    recipe_id: i64,
+    changed: bool,
+    card: SavedRecipeCard,
+) {
+    let chat_id = message.chat().id;
+    let lang = ctx.language_code;
     let has_card = if changed {
         crate::bot::cards::refresh_cards(
             ctx.bot,
@@ -181,26 +232,6 @@ pub(super) async fn handle_confirm_saved_ingredients_button(
         }
         crate::bot::cleanup::record_active_card(chat_id, message.id(), recipe_id).await;
     }
-
-    // End the dialogue
-    dialogue.exit().await?;
-    if let Some(line) = edited_line {
-        ctx.bot
-            .send_message(chat_id, line)
-            .disable_notification(true)
-            .await?;
-    }
-    crate::bot::home::send_home_at(
-        ctx.bot,
-        pool,
-        chat_id,
-        crate::bot::home::ListAt::Recipe(recipe_id),
-        ctx.localization,
-        lang,
-    )
-    .await;
-
-    Ok(())
 }
 
 /// A saved recipe's card: its name, text and buttons.
