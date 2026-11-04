@@ -106,157 +106,10 @@ pub async fn callback_handler_with_cache(
             _ => Ok(()), // No state-specific handling needed
         };
 
-        // Handle general callbacks that work in any state. Recipe reads are not cached: they must
-        // show a rename or an edit at once, and the database answers in a few milliseconds.
-        let prefix_result: Result<()> = async {
-            if let Some(msg) = &q.message {
-                if data.starts_with("recipe_instance:") {
-                    handle_recipe_selection_by_id(
-                        &bot,
-                        msg,
-                        data,
-                        pool.clone(),
-                        &q.from,
-                        &localization,
-                    )
-                    .await?;
-                } else if data.starts_with("recipe_action:") {
-                    recipe_callbacks::handle_recipe_action(
-                        &bot,
-                        msg,
-                        data,
-                        pool.clone(),
-                        &dialogue,
-                        &q.from,
-                        &localization,
-                    )
-                    .await?;
-                } else if data == "cancel_action" {
-                    workflow_callbacks::handle_cancel_action(
-                        &bot,
-                        msg,
-                        pool.clone(),
-                        &dialogue,
-                        &q.from.language_code,
-                        &localization,
-                    )
-                    .await?;
-                } else if data == "show_list" || data == "back_to_recipes" {
-                    workflow_callbacks::handle_show_list(
-                        &bot,
-                        msg,
-                        pool.clone(),
-                        &dialogue,
-                        &q.from.language_code,
-                        &localization,
-                    )
-                    .await?;
-                } else if data.starts_with("confirm_delete_recipe")
-                    || data.starts_with("cancel_delete_recipe")
-                {
-                    recipe_callbacks::handle_delete_recipe_confirmation(
-                        &bot,
-                        msg,
-                        data,
-                        pool.clone(),
-                        &q.from,
-                        &localization,
-                        &dialogue,
-                    )
-                    .await?;
-                } else if let Some(linked) =
-                    data.strip_prefix(crate::bot::ui_builder::RECIPE_LINK_PREFIX)
-                {
-                    // A linked recipe opened from the card at the bottom: that card goes into
-                    // the history and the linked one takes its place (U9). A second tap reaches
-                    // a card already in the history: nothing more to do.
-                    if let (Ok(recipe_id), MaybeInaccessibleMessage::Regular(message)) =
-                        (linked.parse::<i64>(), msg)
-                    {
-                        if crate::bot::cleanup::is_active_card(message.chat.id, message.id).await {
-                            crate::observability::action(
-                                crate::observability::Action::LinkedOpened,
-                            );
-                            crate::bot::cards::show_card(
-                                &bot,
-                                &pool,
-                                message.chat.id,
-                                None,
-                                recipe_id,
-                                q.from.language_code.as_deref(),
-                                &localization,
-                            )
-                            .await?;
-                        }
-                    }
-                } else if crate::bot::unit_choice::is_choice(data) {
-                    crate::bot::unit_choice::handle_choice(
-                        &bot,
-                        msg,
-                        data,
-                        &pool,
-                        q.from.language_code.as_deref(),
-                        &localization,
-                    )
-                    .await?;
-                } else if data.starts_with("page:") {
-                    workflow_callbacks::handle_recipes_pagination(
-                        &bot,
-                        msg,
-                        data,
-                        pool,
-                        &q.from.language_code,
-                        &localization,
-                    )
-                    .await?;
-                } else if data.starts_with("workflow_") {
-                    workflow_callbacks::handle_workflow_button(
-                        &bot,
-                        &q,
-                        data,
-                        &pool,
-                        &dialogue,
-                        &localization,
-                    )
-                    .await?;
-                }
-            }
-            Ok(())
-        }
-        .await;
+        // Then the buttons that work in any state
+        let prefix_result = route_any_state(&bot, &q, data, &pool, &dialogue, &localization).await;
 
-        // Always answer, even when a handler failed (otherwise the button keeps spinning). A review
-        // or edit button with no dialogue left (a newer action, over 48 hours, or a state an older
-        // version wrote) did nothing: say so and remove the inactive keyboard.
-        let mut answer = bot.answer_callback_query(q.id.clone());
-        if stale {
-            answer = answer.text(t_lang(
-                &localization,
-                "button-expired",
-                q.from.language_code.as_deref(),
-            ));
-            if let Some(message) = &q.message {
-                // With no action running (e.g. an expired one) this message may be the bottom
-                // one: it keeps a way out, "📚 Liste des recettes". During an action it is an
-                // older list in the history: it just loses its buttons.
-                let request = bot.edit_message_reply_markup(message.chat().id, message.id());
-                let _ = if running_action {
-                    request.await
-                } else {
-                    request
-                        .reply_markup(teloxide::types::InlineKeyboardMarkup::new(vec![vec![
-                            crate::bot::ui_builder::recipes_list_button(
-                                q.from.language_code.as_deref(),
-                                &localization,
-                            ),
-                        ]]))
-                        .await
-                };
-            }
-        }
-        if let Err(error) = answer.await {
-            debug!(error = %error, "Could not answer the callback query");
-        }
+        answer_button(&bot, &q, stale, running_action, &localization).await;
 
         let duration = start_time.elapsed();
         crate::observability::update_handled("callback", duration);
@@ -268,6 +121,156 @@ pub async fn callback_handler_with_cache(
     }
     .instrument(span)
     .await
+}
+
+/// The buttons that work in any state: a recipe opened, its actions, the list, a delete
+/// confirmation, a linked recipe, a unit view, a page of the list, the home buttons. Recipe
+/// reads are not cached: they must show a rename or an edit at once, and the database answers
+/// in a few milliseconds.
+async fn route_any_state(
+    bot: &Bot,
+    q: &teloxide::types::CallbackQuery,
+    data: &str,
+    pool: &Arc<PgPool>,
+    dialogue: &RecipeDialogue,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    let Some(msg) = &q.message else {
+        return Ok(());
+    };
+    if data.starts_with("recipe_instance:") {
+        handle_recipe_selection_by_id(bot, msg, data, Arc::clone(pool), &q.from, localization)
+            .await?;
+    } else if data.starts_with("recipe_action:") {
+        recipe_callbacks::handle_recipe_action(
+            bot,
+            msg,
+            data,
+            Arc::clone(pool),
+            dialogue,
+            &q.from,
+            localization,
+        )
+        .await?;
+    } else if data == "cancel_action" {
+        workflow_callbacks::handle_cancel_action(
+            bot,
+            msg,
+            Arc::clone(pool),
+            dialogue,
+            &q.from.language_code,
+            localization,
+        )
+        .await?;
+    } else if data == "show_list" || data == "back_to_recipes" {
+        workflow_callbacks::handle_show_list(
+            bot,
+            msg,
+            Arc::clone(pool),
+            dialogue,
+            &q.from.language_code,
+            localization,
+        )
+        .await?;
+    } else if data.starts_with("confirm_delete_recipe") || data.starts_with("cancel_delete_recipe")
+    {
+        recipe_callbacks::handle_delete_recipe_confirmation(
+            bot,
+            msg,
+            data,
+            Arc::clone(pool),
+            &q.from,
+            localization,
+            dialogue,
+        )
+        .await?;
+    } else if let Some(linked) = data.strip_prefix(crate::bot::ui_builder::RECIPE_LINK_PREFIX) {
+        // A linked recipe opened from the card at the bottom: that card goes into
+        // the history and the linked one takes its place (U9). A second tap reaches
+        // a card already in the history: nothing more to do.
+        if let (Ok(recipe_id), MaybeInaccessibleMessage::Regular(message)) =
+            (linked.parse::<i64>(), msg)
+        {
+            if crate::bot::cleanup::is_active_card(message.chat.id, message.id).await {
+                crate::observability::action(crate::observability::Action::LinkedOpened);
+                crate::bot::cards::show_card(
+                    bot,
+                    pool,
+                    message.chat.id,
+                    None,
+                    recipe_id,
+                    q.from.language_code.as_deref(),
+                    localization,
+                )
+                .await?;
+            }
+        }
+    } else if crate::bot::unit_choice::is_choice(data) {
+        crate::bot::unit_choice::handle_choice(
+            bot,
+            msg,
+            data,
+            pool,
+            q.from.language_code.as_deref(),
+            localization,
+        )
+        .await?;
+    } else if data.starts_with("page:") {
+        workflow_callbacks::handle_recipes_pagination(
+            bot,
+            msg,
+            data,
+            Arc::clone(pool),
+            &q.from.language_code,
+            localization,
+        )
+        .await?;
+    } else if data.starts_with("workflow_") {
+        workflow_callbacks::handle_workflow_button(bot, q, data, pool, dialogue, localization)
+            .await?;
+    }
+    Ok(())
+}
+
+/// Always answer, even when a handler failed (otherwise the button keeps spinning). A review
+/// or edit button with no dialogue left (a newer action, over 48 hours, or a state an older
+/// version wrote) did nothing: say so and remove the inactive keyboard.
+async fn answer_button(
+    bot: &Bot,
+    q: &teloxide::types::CallbackQuery,
+    stale: bool,
+    running_action: bool,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) {
+    let mut answer = bot.answer_callback_query(q.id.clone());
+    if stale {
+        answer = answer.text(t_lang(
+            localization,
+            "button-expired",
+            q.from.language_code.as_deref(),
+        ));
+        if let Some(message) = &q.message {
+            // With no action running (e.g. an expired one) this message may be the bottom
+            // one: it keeps a way out, "📚 Liste des recettes". During an action it is an
+            // older list in the history: it just loses its buttons.
+            let request = bot.edit_message_reply_markup(message.chat().id, message.id());
+            let _ = if running_action {
+                request.await
+            } else {
+                request
+                    .reply_markup(teloxide::types::InlineKeyboardMarkup::new(vec![vec![
+                        crate::bot::ui_builder::recipes_list_button(
+                            q.from.language_code.as_deref(),
+                            localization,
+                        ),
+                    ]]))
+                    .await
+            };
+        }
+    }
+    if let Err(error) = answer.await {
+        debug!(error = %error, "Could not answer the callback query");
+    }
 }
 
 /// Whether a button only acts within a review or an ingredient edit.
