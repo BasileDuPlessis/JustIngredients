@@ -1230,6 +1230,86 @@ struct ReturnToSavedIngredientsReviewParams<'a> {
 }
 
 /// Helper function to return to saved ingredients review state
+/// A text typed while a saved recipe's ingredients are edited (not a cancel word): with an
+/// ingredient's menu open, it is that ingredient's new quantity, or else its whole new line;
+/// anything else gets `editing-not-understood`. Either way the editing view comes down below
+/// the answer with its buttons, and the one above goes (user report of 2026-11-03, as for the
+/// review).
+pub async fn handle_saved_editing_text(
+    bot: &Bot,
+    msg: &Message,
+    dialogue: &RecipeDialogue,
+    localization: &Arc<crate::localization::LocalizationManager>,
+    message_language: Option<&str>,
+    text: &str,
+) -> Result<()> {
+    let Some(RecipeDialogueState::EditingSavedIngredients {
+        recipe_id,
+        original_ingredients,
+        mut current_matches,
+        language_code,
+        message_id,
+        open_menu,
+    }) = dialogue.get().await?
+    else {
+        return Ok(());
+    };
+    let language = language_code.as_deref().or(message_language);
+    let edited = open_menu
+        .filter(|index| *index < current_matches.len())
+        .and_then(|index| {
+            let current = current_matches.get(index);
+            crate::ingredient_editing::apply_edit(IngredientField::Quantity, current, text)
+                .or_else(|_| {
+                    crate::ingredient_editing::apply_edit(IngredientField::Line, current, text)
+                })
+                .ok()
+                .map(|ingredient| (index, ingredient))
+        });
+    match edited {
+        Some((index, ingredient)) => current_matches[index] = ingredient,
+        None => {
+            send_transient(
+                bot,
+                msg.chat.id,
+                t_lang(localization, "editing-not-understood", language),
+            )
+            .await?;
+        }
+    }
+    let view = send_html(
+        bot,
+        msg.chat.id,
+        render_saved_editing(None, &current_matches, language, localization),
+    )
+    .reply_markup(create_ingredient_review_keyboard(
+        &current_matches,
+        language,
+        localization,
+    ))
+    .await?;
+    // Like the view it replaces: it goes when the edit ends (the recipe's card is updated)
+    cleanup::track(msg.chat.id, view.id).await;
+    if let Some(above) = message_id.map(teloxide::types::MessageId) {
+        if bot.delete_message(msg.chat.id, above).await.is_ok() {
+            cleanup::untrack(msg.chat.id, above).await;
+        } else if let Err(error) = bot.edit_message_reply_markup(msg.chat.id, above).await {
+            debug!(error = %error, "Could not remove the buttons of the editing view above");
+        }
+    }
+    dialogue
+        .update(RecipeDialogueState::EditingSavedIngredients {
+            recipe_id,
+            original_ingredients,
+            current_matches,
+            language_code,
+            message_id: Some(view.id.0),
+            open_menu: None,
+        })
+        .await?;
+    Ok(())
+}
+
 async fn return_to_saved_ingredients_review(
     params: ReturnToSavedIngredientsReviewParams<'_>,
 ) -> Result<()> {
@@ -1295,6 +1375,7 @@ async fn return_to_saved_ingredients_review(
             current_matches: current_matches.to_vec(),
             language_code: language_code.map(|s| s.to_string()),
             message_id,
+            open_menu: None,
         })
         .await?;
 

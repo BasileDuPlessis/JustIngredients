@@ -45,6 +45,7 @@ pub async fn handle_editing_saved_ingredients_callbacks(
         mut current_matches,
         language_code,
         message_id,
+        open_menu: _,
     }) = dialogue_state
     {
         if q.message.is_some() {
@@ -59,6 +60,21 @@ pub async fn handle_editing_saved_ingredients_callbacks(
                     localization,
                 )
                 .await?;
+                // A typed answer applies to the ingredient whose menu is open
+                let open_menu = match action {
+                    IngredientAction::Menu(index) if index < current_matches.len() => Some(index),
+                    _ => None,
+                };
+                dialogue
+                    .update(RecipeDialogueState::EditingSavedIngredients {
+                        recipe_id,
+                        original_ingredients,
+                        current_matches,
+                        language_code,
+                        message_id,
+                        open_menu,
+                    })
+                    .await?;
             } else if let Some(IngredientAction::Edit(..)) = action {
                 handle_edit_saved_ingredient_button(SavedIngredientsParams {
                     ctx: &HandlerContext {
@@ -409,6 +425,7 @@ async fn handle_delete_saved_ingredient_button(params: SavedIngredientsParams<'_
                 current_matches: current_matches.clone(),
                 language_code: language_code.clone(),
                 message_id,
+                open_menu: None,
             })
             .await
         {

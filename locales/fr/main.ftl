@@ -156,7 +156,7 @@ error-renaming-recipe-help = Une erreur s'est produite lors du renommage de la r
 # Messages d'édition d'ingrédients
 editing-recipe = Modification de la recette
 editing-instructions = Touchez un ingrédient pour changer sa quantité, son nom ou le supprimer, ➕ pour en ajouter un, puis enregistrez avec ✅.
-use-buttons-instruction = Utilisez les boutons sous la liste d'ingrédients pour modifier la recette.
+editing-not-understood = 🤔 Je n'ai pas compris ce message. Pour corriger un ingrédient, touchez-le dans la liste ci-dessous, puis « 🔢 Quantité », « 🏷️ Nom » ou « ✏️ Toute la ligne ». ✅ enregistre les modifications, ❌ les annule.
 no-ingredients-to-edit = Aucun ingrédient à modifier
 no-ingredients-to-edit-help = Cette recette n'a pas d'ingrédients à modifier. Essayez d'ajouter des ingrédients d'abord.
 error-updating-ingredients = Échec de la mise à jour des ingrédients

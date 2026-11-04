@@ -517,6 +517,7 @@ async fn handle_editing_saved_ingredient_callbacks(
                         current_matches,
                         language_code,
                         message_id: original_message_id, // Use original message ID for the restored display
+                        open_menu: None,
                     })
                     .await?;
             }

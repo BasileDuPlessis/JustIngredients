@@ -807,6 +807,7 @@ fn test_saved_recipe_editing_workflow() {
         current_matches: current_matches.clone(),
         language_code: Some("en".to_string()),
         message_id: Some(2000), // Original recipe display message ID
+        open_menu: None,
     };
 
     // Verify initial state
@@ -886,6 +887,7 @@ fn test_saved_recipe_editing_workflow() {
         current_matches: updated_matches,
         language_code: Some("en".to_string()),
         message_id: Some(2000), // Back to original message ID for replacement
+        open_menu: None,
     };
 
     // Verify the eggs ingredient was updated
@@ -911,6 +913,7 @@ fn test_saved_recipe_editing_workflow() {
         current_matches, // Original matches restored
         language_code: Some("en".to_string()),
         message_id: Some(2000), // Original message ID restored
+        open_menu: None,
     };
 
     // Verify cancel restored original matches
@@ -1054,6 +1057,7 @@ fn test_message_editing_edge_cases() {
         current_matches,
         language_code: Some("en".to_string()),
         message_id: Some(4000), // Latest message ID after multiple edits
+        open_menu: None,
     };
 
     // Verify complex state maintains proper structure

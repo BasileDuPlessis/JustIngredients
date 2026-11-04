@@ -920,6 +920,7 @@ mod tests {
             current_matches,
             language_code: Some("en".to_string()),
             message_id: Some(12345),
+            open_menu: None,
         };
 
         // Verify the dialogue state is correctly structured
@@ -930,6 +931,7 @@ mod tests {
                 current_matches: state_current,
                 language_code: state_lang,
                 message_id: state_msg_id,
+                open_menu: _,
             } => {
                 assert_eq!(*state_recipe_id, recipe_id);
                 assert_eq!(state_original.len(), 2);

@@ -498,6 +498,7 @@ async fn handle_edit_ingredients_callback(
             current_matches,
             language_code: language_code.clone(),
             message_id: Some(sent_message.id.0 as i32),
+            open_menu: None,
         })
         .await?;
 

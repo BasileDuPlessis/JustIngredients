@@ -263,7 +263,7 @@ Before sending the list, `send_home` deletes what the action left behind (`bot::
 - the messages recorded during the action: every text the user typed in a dialogue state
   (recorded in `handle_text_message`) and the bot prompts sent with `cleanup::send_transient`:
   quantity questions and the "check the quantities" warning, "try again" answers (name, edit,
-  quantity), `review-not-understood`, `use-buttons-instruction`, the rename and add-ingredient prompts,
+  quantity), `review-not-understood`, `editing-not-understood`, the rename and add-ingredient prompts,
   and the name prompt when the name is cancelled;
 - the user's photo or image document, recorded once its review starts: it stays while the
   ingredients are reviewed and goes when the review ends (saved, cancelled or interrupted by a
@@ -332,7 +332,10 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   before U5.4) gets the editing view turned into its card instead,
   ❌ `cancel_review` (or a typed cancel word, both `editing_callbacks::cancel_saved_editing`)
   drops them and shows the card again; ✅ on an emptied list gets `review-empty-confirm`. Other
-  typed text outside the prompts answers `use-buttons-instruction`.
+  typed text outside the prompts: with an ingredient's menu open (`EditingSavedIngredients.open_menu`),
+  that ingredient's new quantity or else its whole new line; anything else answers
+  `editing-not-understood`; either way the editing view comes down below the answer with its
+  buttons and the one above goes (`dialogue_manager::handle_saved_editing_text`).
 - **Delete**: confirmation with `confirm_delete_recipe:<id>:<card message id>` and
   `cancel_delete_recipe:<id>:<card message id>`; confirming deletes the recipe, its ingredients
   and the confirmation, turns the card into `recipe-deleted-line` (no buttons, no longer a

@@ -157,7 +157,7 @@ error-renaming-recipe-help = An error occurred while renaming the recipe. Please
 # Ingredient editing messages
 editing-recipe = Editing recipe
 editing-instructions = Tap an ingredient to change its quantity or name, or to delete it, ➕ to add one, then save with ✅.
-use-buttons-instruction = Please use the buttons under the ingredient list to edit the recipe.
+editing-not-understood = 🤔 I did not understand this message. To fix an ingredient, tap it in the list below, then “🔢 Quantity”, “🏷️ Name” or “✏️ Whole line”. ✅ saves the changes, ❌ cancels them.
 no-ingredients-to-edit = No ingredients to edit
 no-ingredients-to-edit-help = This recipe has no ingredients to edit. Try adding some ingredients first.
 error-updating-ingredients = Failed to update ingredients

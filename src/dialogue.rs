@@ -74,6 +74,9 @@ pub enum RecipeDialogueState {
         current_matches: Vec<MeasurementMatch>, // Working copy for editing
         language_code: Option<String>,
         message_id: Option<i32>,
+        /// The ingredient whose menu is open on the editing view: a typed answer applies to it.
+        #[serde(default)]
+        open_menu: Option<usize>,
     },
     EditingSavedIngredient {
         recipe_id: i64,

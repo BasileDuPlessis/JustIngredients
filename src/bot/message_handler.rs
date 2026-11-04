@@ -316,19 +316,16 @@ async fn handle_text_message(
                 .await;
             }
             Some(RecipeDialogueState::EditingSavedIngredients { .. }) => {
-                // Other text: users should use the buttons in this state
-                let effective_language_code = language_code; // No dialogue language code available
-                cleanup::send_transient(
+                // Other text: an answer to the open ingredient menu, or not understood
+                return super::dialogue_manager::handle_saved_editing_text(
                     bot,
-                    msg.chat.id,
-                    t_lang(
-                        localization,
-                        "use-buttons-instruction",
-                        effective_language_code,
-                    ),
+                    msg,
+                    &dialogue,
+                    localization,
+                    language_code,
+                    text,
                 )
-                .await?;
-                return Ok(());
+                .await;
             }
             Some(RecipeDialogueState::Start) | None => {
                 // Continue with normal command handling
