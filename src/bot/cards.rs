@@ -60,6 +60,23 @@ async fn render(
     )))
 }
 
+/// The card of a recipe of `telegram_id` as it would be sent (Telegram HTML); `None` when the
+/// recipe is gone or another user's. The golden tests of the card read it: its result must not
+/// change when the way the card is built does (`specs/tasks/engine-api.md`).
+pub async fn card_html(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+    language_code: Option<&str>,
+    localization: &Arc<LocalizationManager>,
+) -> Result<Option<String>> {
+    Ok(
+        render(pool, telegram_id, recipe_id, language_code, localization)
+            .await?
+            .map(|card| card.as_str().to_string()),
+    )
+}
+
 /// The recipes linked to a card's recipe (U9); none when they cannot be read.
 async fn linked_recipes(
     pool: &PgPool,

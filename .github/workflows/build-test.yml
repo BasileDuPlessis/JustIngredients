@@ -61,6 +61,12 @@ jobs:
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
+    # The exact text of recipe cards, frozen in tests/golden/cards/ (engine refactor guard)
+    - name: Run card golden tests
+      run: cargo test --test card_golden_tests -- --include-ignored
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
   lint:
     runs-on: ubuntu-26.04
     timeout-minutes: 20
