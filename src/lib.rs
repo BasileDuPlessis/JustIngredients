@@ -25,6 +25,7 @@ pub mod db_connection;
 pub mod deduplication;
 pub mod dialogue;
 pub mod dialogue_storage;
+pub mod engine;
 pub mod errors;
 pub mod extraction;
 pub mod ingredient_editing;

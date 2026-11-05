@@ -275,6 +275,7 @@ pub fn render_search_results(
             id: recipe.id,
             name: recipe.name.clone(),
             created_at: recipe.created_at,
+            note: None,
         })
         .collect();
     let labels = recipe_button_labels(&shown, language_code, localization);
@@ -362,6 +363,7 @@ mod tests {
                 .with_ymd_and_hms(2026, 10, day, hour, 36, 0)
                 .single()
                 .unwrap_or_default(),
+            note: None,
         }
     }
 

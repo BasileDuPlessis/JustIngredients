@@ -521,38 +521,29 @@ pub fn format_recipe_date(
     }
 }
 
-/// The name and note a recipe card shows above its ingredients.
-#[derive(Debug, Clone, Copy)]
-pub struct CardTitle<'a> {
-    pub name: &'a str,
-    /// The recipe's note, already cleaned (`validation::validate_recipe_note`).
-    pub note: Option<&'a str>,
-}
-
 /// Telegram refuses messages over 4096 characters; a card keeps below this.
 const CARD_CHARS: usize = 4000;
 
 /// Room kept for the unit-view footer, whose text is known only after the list is built.
 const FOOTER_RESERVE: usize = 200;
 
-/// The recipe card (HTML): bold name, the note on a line of its own, the saved ingredients with
-/// their measures in the user's unit view, then "⚖️ Vue …, valeurs arrondies" when the view
-/// converted one (UX plan U8), and the linked recipes. The ingredient list takes what the rest
-/// leaves of Telegram's 4096 characters, so a long note never makes the card fail to show.
+/// The recipe card (HTML) of the engine's view of a recipe: bold name, the memo on a line of its
+/// own, the ingredients with their measures as the view shows them, then "⚖️ Vue …, valeurs
+/// arrondies" when the view converted one (UX plan U8), and the linked recipes. The ingredient
+/// list takes what the rest leaves of Telegram's 4096 characters, so a long memo never makes the
+/// card fail to show. The measures are already in the user's language (`engine::Lang`).
 pub fn render_recipe_card(
-    title: CardTitle<'_>,
-    ingredients: &[crate::db::Ingredient],
-    linked: &[crate::db::RecipeSummary],
-    view: crate::unit_view::UnitView,
-    english_recipe: bool,
+    recipe: &crate::engine::recipes::RecipeView,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Html {
-    let linked_line = (!linked.is_empty()).then(|| {
-        let names: Vec<&str> = linked
+    let name = recipe.name.as_deref().unwrap_or("Unnamed Recipe");
+    let linked_line = (!recipe.linked.is_empty()).then(|| {
+        let names: Vec<&str> = recipe
+            .linked
             .iter()
             .take(MAX_LINKED_SHOWN)
-            .map(|recipe| recipe.name.as_str())
+            .map(|linked| linked.name.as_str())
             .collect();
         // Within Telegram's 4096 characters, after a list of up to 3500
         let names = truncate_text(&names.join(", "), 400);
@@ -563,28 +554,29 @@ pub fn render_recipe_card(
             language_code,
         )
     });
-    let note_chars = title.note.map_or(0, |note| 4 + note.chars().count());
+    let note_chars = recipe
+        .note
+        .as_ref()
+        .map_or(0, |note| 4 + note.chars().count());
     let linked_chars = linked_line
         .as_ref()
         .map_or(0, |line| 2 + line.chars().count());
-    let rest = 3 + title.name.chars().count() + 2 + note_chars + linked_chars + FOOTER_RESERVE;
+    let rest = 3 + name.chars().count() + 2 + note_chars + linked_chars + FOOTER_RESERVE;
     let list_budget = CARD_CHARS.saturating_sub(rest).clamp(500, MAX_LIST_CHARS);
 
-    let (list, converted) = format_database_ingredients_list(
-        ingredients,
-        view,
-        english_recipe,
+    let (list, converted) = format_shown_ingredients(
+        &recipe.ingredients,
         language_code,
         localization,
         list_budget,
     );
     // No creation date: the user asked for the card to show the recipe only (2026-10-30)
-    let mut card = Html::text("📖 ") + Html::bold(title.name);
-    if let Some(note) = title.note {
+    let mut card = Html::text("📖 ") + Html::bold(name);
+    if let Some(note) = &recipe.note {
         card += Html::text("\n📌 ") + Html::text(note);
     }
     card += Html::text("\n\n") + Html::text(&list);
-    let footer = match view {
+    let footer = match recipe.unit_view {
         crate::unit_view::UnitView::Recipe => None,
         crate::unit_view::UnitView::Weight => Some("unit-view-footer-weight"),
         crate::unit_view::UnitView::French => Some("unit-view-footer-french"),
@@ -620,13 +612,11 @@ pub fn render_recipe_summary(
         ))
 }
 
-/// The saved ingredients of a card, one "• 180 g farine" line each, measures in `view` (unit
-/// names of an English recipe in English in the "as in the recipe" view); and whether the view
-/// converted one. Lines that do not fit in `max_chars` characters are cut ("…").
-pub fn format_database_ingredients_list(
-    ingredients: &[crate::db::Ingredient],
-    view: crate::unit_view::UnitView,
-    english_recipe: bool,
+/// The ingredients of a card, one "• 180 g farine" line each, their measures as the engine
+/// shows them; and whether the view converted one. Lines that do not fit in `max_chars`
+/// characters are cut ("…").
+pub fn format_shown_ingredients(
+    ingredients: &[crate::engine::recipes::ShownIngredient],
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
     max_chars: usize,
@@ -637,24 +627,16 @@ pub fn format_database_ingredients_list(
             false,
         );
     }
-    let french = crate::localization::detect_language(localization, language_code) == "fr";
-    let mut converted = false;
+    let converted = ingredients
+        .iter()
+        .any(|ingredient| ingredient.shown.converted);
     let lines: Vec<String> = ingredients
         .iter()
         .map(|ingredient| {
-            let measure = crate::unit_view::show_measure(
-                ingredient.quantity,
-                ingredient.unit.as_deref(),
-                &ingredient.name,
-                view,
-                french,
-                english_recipe,
-            );
-            converted |= measure.converted;
-            if measure.text.is_empty() {
+            if ingredient.shown.text.is_empty() {
                 format!("• {}", ingredient.name)
             } else {
-                format!("• {} {}", measure.text, ingredient.name)
+                format!("• {} {}", ingredient.shown.text, ingredient.name)
             }
         })
         .collect();
@@ -753,6 +735,39 @@ mod tests {
         );
     }
 
+    /// A card built as the engine builds it, for a recipe written in French.
+    fn card_of(
+        name: &str,
+        note: Option<&str>,
+        ingredients: &[crate::db::Ingredient],
+        linked: &[(i64, &str)],
+        view: crate::unit_view::UnitView,
+        language_code: Option<&str>,
+        localization: &Arc<crate::localization::LocalizationManager>,
+    ) -> Html {
+        let linked: Vec<crate::engine::recipes::RecipeEntry> = linked
+            .iter()
+            .map(|(id, name)| crate::engine::recipes::RecipeEntry {
+                id: *id,
+                name: (*name).to_string(),
+                note: None,
+            })
+            .collect();
+        let recipe = crate::engine::recipes::build_view(
+            crate::engine::recipes::ReadRecipe {
+                id: 1,
+                name: Some(name),
+                note,
+                ingredients,
+                linked: &linked,
+                english_recipe: false,
+            },
+            view,
+            crate::engine::Lang::from_code(language_code),
+        );
+        render_recipe_card(&recipe, language_code, localization)
+    }
+
     #[test]
     fn a_card_lists_its_linked_recipes_and_opens_them() {
         let localization =
@@ -762,16 +777,14 @@ mod tests {
             id: 12,
             name: "Malva pudding (sauce)".to_string(),
             created_at,
+            note: None,
         };
-        let card = render_recipe_card(
-            CardTitle {
-                name: "Malva pudding",
-                note: None,
-            },
+        let card = card_of(
+            "Malva pudding",
+            None,
             &[],
-            std::slice::from_ref(&sauce),
+            &[(12, "Malva pudding (sauce)")],
             crate::unit_view::UnitView::French,
-            false,
             Some("fr"),
             &localization,
         );
@@ -869,15 +882,12 @@ mod tests {
             created_at,
             updated_at: created_at,
         };
-        let card = render_recipe_card(
-            CardTitle {
-                name: "Tarte <b>",
-                note: None,
-            },
+        let card = card_of(
+            "Tarte <b>",
+            None,
             std::slice::from_ref(&ingredient),
             &[],
             crate::unit_view::UnitView::French,
-            false,
             Some("fr"),
             &localization,
         );
@@ -885,15 +895,12 @@ mod tests {
             card.as_str(),
             "📖 <b>Tarte &lt;b&gt;</b>\n\n• 20 cl lait &lt;entier&gt; &amp; sucre\n\n⚖️ Vue unités françaises (g, cl), valeurs arrondies"
         );
-        let as_saved = render_recipe_card(
-            CardTitle {
-                name: "Tarte",
-                note: None,
-            },
+        let as_saved = card_of(
+            "Tarte",
+            None,
             &[ingredient],
             &[],
             crate::unit_view::UnitView::Recipe,
-            false,
             Some("fr"),
             &localization,
         );
@@ -904,15 +911,12 @@ mod tests {
             "a unit saved as dl reads as ml, no footer: {}",
             as_saved.as_str()
         );
-        let empty = render_recipe_card(
-            CardTitle {
-                name: "Vide",
-                note: None,
-            },
+        let empty = card_of(
+            "Vide",
+            None,
             &[],
             &[],
             crate::unit_view::UnitView::French,
-            false,
             Some("en"),
             &localization,
         );
@@ -941,15 +945,12 @@ mod tests {
     fn the_note_shows_under_the_name_and_is_escaped() {
         let localization =
             crate::localization::create_localization_manager().expect("localization");
-        let card = render_recipe_card(
-            CardTitle {
-                name: "Tarte",
-                note: Some("Four 180 °C <b>25</b> & https://exemple.fr/a?b=1&c=2"),
-            },
+        let card = card_of(
+            "Tarte",
+            Some("Four 180 °C <b>25</b> & https://exemple.fr/a?b=1&c=2"),
             &[saved_ingredient("lait")],
             &[],
             crate::unit_view::UnitView::Recipe,
-            false,
             Some("fr"),
             &localization,
         );
@@ -970,25 +971,21 @@ mod tests {
                 ))
             })
             .collect();
-        let at = chrono::Utc::now();
-        let linked: Vec<crate::db::RecipeSummary> = (0..12)
-            .map(|i| crate::db::RecipeSummary {
-                id: i,
-                name: format!("{i} {}", "é".repeat(100)),
-                created_at: at,
-            })
+        let names: Vec<(i64, String)> = (0..12_i64)
+            .map(|i| (i, format!("{i} {}", "é".repeat(100))))
+            .collect();
+        let linked: Vec<(i64, &str)> = names
+            .iter()
+            .map(|(id, name)| (*id, name.as_str()))
             .collect();
         let note = "é".repeat(crate::validation::MAX_NOTE_CHARS);
         let name = "N".repeat(crate::validation::MAX_RECIPE_NAME_CHARS);
-        let card = render_recipe_card(
-            CardTitle {
-                name: &name,
-                note: Some(&note),
-            },
+        let card = card_of(
+            &name,
+            Some(&note),
             &ingredients,
             &linked,
             crate::unit_view::UnitView::French,
-            false,
             Some("fr"),
             &localization,
         );

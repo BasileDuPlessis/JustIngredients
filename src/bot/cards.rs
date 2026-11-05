@@ -13,13 +13,13 @@ use crate::localization::{LocalizationManager, t_lang};
 
 use super::cleanup;
 use super::html::{Html, edit_html, send_html};
-use super::ui_builder::{CardTitle, create_recipe_details_keyboard, render_recipe_card};
+use super::ui_builder::{create_recipe_details_keyboard, render_recipe_card};
 
 /// Cards of a recipe updated after a rename or an edit, the most recent first.
 const MAX_CARDS_REFRESHED: usize = 20;
 
-/// The card of a recipe of `telegram_id` as read now, or `None` when it is gone or another
-/// user's.
+/// The card of a recipe of `telegram_id` as the engine reads it now, or `None` when it is gone
+/// or another user's.
 async fn render(
     pool: &PgPool,
     telegram_id: i64,
@@ -27,37 +27,18 @@ async fn render(
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> Result<Option<Html>> {
-    let Some(recipe) = crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await? else {
-        return Ok(None);
-    };
-    let ingredients = crate::db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
-    // Measures in the user's unit view (U8); the default when it cannot be read
-    let view = crate::db::unit_view(pool, telegram_id)
-        .await
-        .unwrap_or_else(|e| {
-            debug!(error = %e, "Could not read the unit view");
-            crate::unit_view::UnitView::default()
-        });
-    // "As in the recipe" names units in the recipe's language
-    let english_recipe = crate::unit_view::recipe_is_english(
-        &recipe.content,
-        ingredients
-            .iter()
-            .map(|ingredient| ingredient.name.as_str()),
-    );
-    let linked = linked_recipes(pool, telegram_id, recipe_id).await;
-    Ok(Some(render_recipe_card(
-        CardTitle {
-            name: recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe"),
-            note: recipe.note.as_deref(),
-        },
-        &ingredients,
-        &linked,
-        view,
-        english_recipe,
-        language_code,
-        localization,
-    )))
+    let owner = crate::engine::Owner::telegram(telegram_id);
+    let lang = crate::engine::Lang::from_code(language_code);
+    // The user's own unit view (U8)
+    match crate::engine::recipes::recipe(pool, owner, recipe_id, None, lang).await {
+        Ok(recipe) => Ok(Some(render_recipe_card(
+            &recipe,
+            language_code,
+            localization,
+        ))),
+        Err(crate::engine::EngineError::NotFound) => Ok(None),
+        Err(error) => Err(error.into()),
+    }
 }
 
 /// The card of a recipe of `telegram_id` as it would be sent (Telegram HTML); `None` when the

@@ -54,7 +54,8 @@ pub async fn set_unit_view(
 // --- Usage history (plan O3, `specs/tasks/observability.md`) ---
 
 /// Records a visit of `telegram_id` now: `users.last_seen_at` (the user is created when needed),
-/// and one more active user for the day, Paris time, at the user's first visit of the day.
+/// the language Telegram gives for them (kept when it gives none: the engine composes texts in
+/// it), and one more active user for the day, Paris time, at the user's first visit of the day.
 pub async fn record_user_seen(
     pool: &PgPool,
     telegram_id: i64,
@@ -64,8 +65,10 @@ pub async fn record_user_seen(
     sqlx::query(
         "WITH previous AS (SELECT last_seen_at FROM users WHERE telegram_id = $1), \
          seen AS ( \
-             INSERT INTO users (telegram_id, language_code, last_seen_at) VALUES ($1, $2, now()) \
-             ON CONFLICT (telegram_id) DO UPDATE SET last_seen_at = now() \
+             INSERT INTO users (telegram_id, language_code, last_seen_at) \
+             VALUES ($1, COALESCE($2, 'en'), now()) \
+             ON CONFLICT (telegram_id) DO UPDATE \
+             SET last_seen_at = now(), language_code = COALESCE($2, users.language_code) \
              RETURNING 1 \
          ) \
          INSERT INTO usage_days (day, active_users) \
@@ -76,7 +79,7 @@ pub async fn record_user_seen(
          ON CONFLICT (day) DO UPDATE SET active_users = usage_days.active_users + 1",
     )
     .bind(telegram_id)
-    .bind(language_code.unwrap_or("en"))
+    .bind(language_code)
     .execute(pool)
     .await
     .context("Failed to record the user's visit")?;

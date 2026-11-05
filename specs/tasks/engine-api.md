@@ -1,6 +1,6 @@
 # JustIngredients Engine: one engine, several doors (study)
 
-Status: study revised after an independent review (2026-11-05); nothing implemented. Asked by the
+Status: tranche 1 in progress. Done (2026-11-05): task 1 (safety net) and task 2 (engine read side). Study revised after an independent review. Asked by the
 owner: "something ambitious, a big architecture change, API, events… the engine should not be
 only on Telegram but reachable from other tools". The owner chose **AI assistants through MCP
 first** and validated the four decisions of the first version: tranches in order, tokens created
@@ -255,10 +255,18 @@ issuer.
 
 ## 15. Tranche 1 tasks (about one week)
 
-1. Safety net first: card golden tests; health behaviour tests. (S)
-2. `src/engine/` read side: `Owner`, `EngineError`, wire types, `list`, `search`, `recipe`,
+1. ✅ Safety net first: card golden tests; health behaviour tests. (S) Done: `tests/health_tests.rs`
+   (5 tests against today's server), `tests/card_golden_tests.rs` (16 cards in
+   `tests/golden/cards/`, read through `cards::card_html`; `JI_UPDATE_GOLDEN=1` writes them).
+2. ✅ `src/engine/` read side: `Owner`, `EngineError`, wire types, `list`, `search`, `recipe`,
    `convert`; the card rendered from `RecipeView` (golden tests unchanged); `record_user_seen`
-   updates the language; the import allowlist test. (M)
+   updates the language; the import allowlist test. (M) Done: `src/engine/{mod,recipes}.rs`;
+   `Owner` is opaque (a Telegram id inside); `Lang` from Telegram's code, as `detect_language`;
+   `EngineError` has `NotFound`, `Invalid`, `Internal` (`Conflict` and `Forbidden` come with the
+   writes that need them); `RecipeView`, `RecipeEntry`, `ShownIngredient`, `Shown` serialize with
+   the memo as `memo` and the unit view by name; the 16 golden cards unchanged after the card
+   moved to the engine; `tests/architecture_tests.rs` (allowlist, mutation-checked);
+   `tests/engine_tests.rs` (two users: list, search, recipe in a view, not found, language).
 3. Migration 11 `api_tokens`; `engine::tokens`; `API_BETA_USERS`; `/cle` with the list and
    revoke buttons; the `secret` message kind and its sweeper. (M)
 4. axum router on 8080 with the health routes unchanged; the limits of section 7. (M)

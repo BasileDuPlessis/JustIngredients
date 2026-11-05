@@ -11,8 +11,9 @@
 use crate::conversion::{Amount, CUP_ML, Ingredient, find_ingredient, unit_amount};
 use crate::units::{CanonicalUnit, canonicalize_unit, normalize_measurement};
 
-/// How a user's recipe cards show measures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+/// How a user's recipe cards show measures. Serialized as [`UnitView::as_str`] names it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
 pub enum UnitView {
     /// As read or typed, unit names in the user's language.
     Recipe,

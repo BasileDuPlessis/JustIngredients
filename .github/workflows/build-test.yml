@@ -61,6 +61,12 @@ jobs:
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
+    # The engine's reads on a real database, two users (specs/tasks/engine-api.md)
+    - name: Run engine tests
+      run: cargo test --test engine_tests -- --include-ignored
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
     # The exact text of recipe cards, frozen in tests/golden/cards/ (engine refactor guard)
     - name: Run card golden tests
       run: cargo test --test card_golden_tests -- --include-ignored

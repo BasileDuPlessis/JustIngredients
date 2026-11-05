@@ -491,12 +491,15 @@ pub async fn has_duplicate_recipes(
     .await
 }
 
-/// A saved recipe as shown in lists: id, name and creation date.
+/// A saved recipe as shown in lists: id, name and creation date; its memo where the query reads
+/// it (`alphabetical_recipes`), else `None`.
 #[derive(Debug, Clone, PartialEq, sqlx::FromRow)]
 pub struct RecipeSummary {
     pub id: i64,
     pub name: String,
     pub created_at: DateTime<Utc>,
+    #[sqlx(default)]
+    pub note: Option<String>,
 }
 
 /// The user's named recipes with their ingredient names, newest first, for the search
@@ -563,10 +566,10 @@ pub async fn get_user_recipes_alphabetical(
     Ok((page, total))
 }
 
-/// Every named recipe of `telegram_id`, in the order of the recipe list.
-async fn alphabetical_recipes(pool: &PgPool, telegram_id: i64) -> Result<Vec<RecipeSummary>> {
+/// Every named recipe of `telegram_id` with its memo, in the order of the recipe list.
+pub async fn alphabetical_recipes(pool: &PgPool, telegram_id: i64) -> Result<Vec<RecipeSummary>> {
     let rows = sqlx::query_as::<_, RecipeSummary>(
-        "SELECT id, recipe_name AS name, created_at FROM recipes \
+        "SELECT id, recipe_name AS name, created_at, note FROM recipes \
          WHERE telegram_id = $1 AND recipe_name IS NOT NULL",
     )
     .bind(telegram_id)
