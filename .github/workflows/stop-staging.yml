@@ -14,6 +14,8 @@ on:
 
 permissions:
   contents: read
+  # Reads the last staging deployment (the nightly run skips a test in progress)
+  actions: read
 
 # The group of the staging deployments: never stopped in the middle of one
 concurrency:
@@ -35,10 +37,28 @@ jobs:
       FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
       FLY_DB_TOKEN: ${{ secrets.FLY_STAGING_DB_TOKEN }}
     steps:
+    - name: Skip the nightly stop during a test
+      # GitHub can start a scheduled run hours late: on 2026-11-05 the 02:00 run started at
+      # 08:51 and stopped a staging deployed 12 minutes earlier, during the user's test. The
+      # nightly stop leaves a staging deployed less than 3 hours ago; the next night stops it.
+      id: recent
+      if: github.event_name == 'schedule'
+      env:
+        GH_TOKEN: ${{ github.token }}
+      run: |
+        last=$(gh run list --repo "$GITHUB_REPOSITORY" --workflow "Deploy to Staging" \
+          --status success --limit 1 --json updatedAt --jq '.[0].updatedAt // empty')
+        if [ -n "$last" ] && [ $(( $(date -u +%s) - $(date -u -d "$last" +%s) )) -lt 10800 ]; then
+          echo "::notice::Staging was deployed at $last, less than 3 hours ago: left running"
+          echo "skip=true" >> "$GITHUB_OUTPUT"
+        fi
+
     - name: Setup flyctl
+      if: steps.recent.outputs.skip != 'true'
       uses: superfly/flyctl-actions/setup-flyctl@ed8efb33836e8b2096c7fd3ba1c8afe303ebbff1 # 1.6
 
     - name: Stop the staging bot
+      if: steps.recent.outputs.skip != 'true'
       # `machine stop` returns once the signal is sent: wait until the bot has stopped, so that
       # its last writes (usage, the dialogue heartbeat) find the database still running
       run: |
@@ -49,7 +69,7 @@ jobs:
         done
 
     - name: Stop the staging database
-      if: env.FLY_DB_TOKEN != ''
+      if: steps.recent.outputs.skip != 'true' && env.FLY_DB_TOKEN != ''
       run: |
         for id in $(FLY_API_TOKEN="$FLY_DB_TOKEN" flyctl machine list --app "$STAGING_DB_APP" --quiet); do
           FLY_API_TOKEN="$FLY_DB_TOKEN" flyctl machine stop "$id" --app "$STAGING_DB_APP"
