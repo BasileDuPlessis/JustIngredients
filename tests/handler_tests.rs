@@ -54,9 +54,20 @@ impl IngredientExtractor for FakeExtractor {
 }
 
 /// The services of the bot on the test's database (its schema created).
+///
+/// The bot gets a pool of its own that keeps no connection after use. `MockBot::dispatch` runs
+/// the handlers in a runtime it creates and drops each time: a connection opened there and kept
+/// idle belongs to a runtime that is gone, and the next query on it failed now and then ("A
+/// Tokio 1.x context was found, but it is being shutdown", 2 runs in 25 on 2026-11-05). The
+/// test's own `pool` is then only used by the test, in its runtime.
 async fn services(pool: &PgPool, ingredients: Vec<ExtractedIngredient>) -> Result<BotServices> {
     just_ingredients::db::init_database_schema(pool).await?;
-    let pool = Arc::new(pool.clone());
+    let pool = Arc::new(
+        sqlx::postgres::PgPoolOptions::new()
+            .max_connections(5)
+            .after_release(|_connection, _meta| Box::pin(async { Ok(false) }))
+            .connect_lazy_with((*pool.connect_options()).clone()),
+    );
     Ok(BotServices {
         messages: MessageServices {
             pool: Arc::clone(&pool),
