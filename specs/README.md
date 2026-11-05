@@ -16,6 +16,7 @@ specs/
     ├── ux-improvements.md                # UX plan (phases U0–U9), its review log
     ├── ux-thread-wireframes.md           # Design of phase U6 (one active message)
     ├── measure-conversion.md             # Design of phase U8 (unit views, conversion table)
+    ├── recipe-notes.md                   # Study and design of the recipe note (short free text per recipe)
     ├── linked-recipes.md                 # Design of phase U9 (linked recipes)
     ├── ingredient-sections.md            # Abandoned design, replaced by linked-recipes.md
     ├── observability.md                  # Plan O (Fly metrics, dashboards, alerts)

@@ -136,6 +136,20 @@ back-to-recipes = Retour aux recettes
 rename-recipe-title = Renommer la recette
 rename-recipe-instructions = Entrez le nouveau nom pour cette recette :
 current-recipe-name = Nom actuel
+
+# Note d'une recette : une info courte et libre (four, cuisson, lien de la source…)
+edit-recipe-note = Note
+note-prompt-create = Une info à noter pour « {$name} » ?
+note-prompt-edit = Note de « {$name} »
+note-prompt-hint = Par exemple : four 180 °C, 25 min, ou le lien de la recette. Une seule ligne, 200 caractères au maximum. Écrivez-la ci-dessous.
+note-current = Note actuelle : {$note}
+note-none-yet = Pas encore de note.
+note-skip-button = Passer
+note-clear-button = Effacer la note
+note-empty = La note est vide. Écrivez quelques mots, ou utilisez le bouton ci-dessous.
+note-too-long = La note est trop longue (200 caractères au maximum). Raccourcissez-la.
+note-saved-line = 🗒️ Note enregistrée pour « {$name} »
+note-cleared-line = 🗒️ Note effacée pour « {$name} »
 delete-recipe-title = Supprimer la recette
 delete-recipe-confirmation = Êtes-vous sûr de vouloir supprimer cette recette ? Cette action ne peut pas être annulée.
 delete-confirm-button = 🗑️ Oui, supprimer

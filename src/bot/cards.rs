@@ -13,7 +13,7 @@ use crate::localization::{LocalizationManager, t_lang};
 
 use super::cleanup;
 use super::html::{Html, edit_html, send_html};
-use super::ui_builder::{create_recipe_details_keyboard, render_recipe_card};
+use super::ui_builder::{CardTitle, create_recipe_details_keyboard, render_recipe_card};
 
 /// Cards of a recipe updated after a rename or an edit, the most recent first.
 const MAX_CARDS_REFRESHED: usize = 20;
@@ -47,7 +47,10 @@ async fn render(
     );
     let linked = linked_recipes(pool, telegram_id, recipe_id).await;
     Ok(Some(render_recipe_card(
-        recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe"),
+        CardTitle {
+            name: recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe"),
+            note: recipe.note.as_deref(),
+        },
         &ingredients,
         &linked,
         view,

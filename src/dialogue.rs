@@ -68,6 +68,15 @@ pub enum RecipeDialogueState {
         current_name: String,
         language_code: Option<String>,
     },
+    /// The note of a saved recipe: asked right after its creation (`creation`, with "Passer"), or
+    /// from its card (with "Annuler" and "Effacer"). The typed answer is the note.
+    EditingRecipeNote {
+        recipe_id: i64,
+        /// The recipe's name, for the prompt and the line that follows the answer
+        recipe_name: String,
+        creation: bool,
+        language_code: Option<String>,
+    },
     EditingSavedIngredients {
         recipe_id: i64,
         original_ingredients: Vec<Ingredient>, // Keep original for comparison

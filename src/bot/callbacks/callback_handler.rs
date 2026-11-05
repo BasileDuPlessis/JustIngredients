@@ -152,6 +152,17 @@ async fn route_any_state(
             localization,
         )
         .await?;
+    } else if let Some(recipe_id) = data.strip_prefix(crate::bot::ui_builder::CLEAR_NOTE_PREFIX) {
+        recipe_callbacks::handle_clear_note(
+            bot,
+            msg,
+            recipe_id.parse().unwrap_or(0),
+            Arc::clone(pool),
+            dialogue,
+            &q.from,
+            localization,
+        )
+        .await?;
     } else if data == "cancel_action" {
         workflow_callbacks::handle_cancel_action(
             bot,

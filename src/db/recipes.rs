@@ -16,6 +16,9 @@ pub struct Recipe {
     pub content: String,
     pub recipe_name: Option<String>,
     pub created_at: DateTime<Utc>,
+    /// The short free text kept with the recipe (migration 10), cleaned and at most
+    /// [`crate::validation::MAX_NOTE_CHARS`] characters.
+    pub note: Option<String>,
 }
 
 /// Create a new recipe in the database
@@ -227,6 +230,29 @@ pub async fn rename_recipe(
     Ok(renamed.then_some(name))
 }
 
+/// Sets (`Some`) or clears (`None`) the note of a recipe of `telegram_id`. `false` when the
+/// recipe is gone or is another user's: nothing is written. The text must come out of
+/// [`crate::validation::validate_recipe_note`].
+pub async fn set_recipe_note(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+    note: Option<&str>,
+) -> Result<bool> {
+    let start = std::time::Instant::now();
+    let updated = sqlx::query("UPDATE recipes SET note = $1 WHERE id = $2 AND telegram_id = $3")
+        .bind(note)
+        .bind(recipe_id)
+        .bind(telegram_id)
+        .execute(pool)
+        .await
+        .context("Failed to write the recipe note")?
+        .rows_affected()
+        > 0;
+    crate::observability::db_query("set_recipe_note", start.elapsed());
+    Ok(updated)
+}
+
 /// Saves a new recipe of `telegram_id` with its name and ingredients in one transaction: either
 /// everything is written or nothing is, so a failing ingredient leaves no partial recipe. The
 /// owner's `users` row is created on first use with `ON CONFLICT`, which is safe when two first
@@ -415,7 +441,7 @@ pub async fn read_recipe_with_name(
     debug!(recipe_id = %recipe_id, "Reading recipe with recipe name");
 
     let row = sqlx::query_as::<_, Recipe>(
-        "SELECT id, telegram_id, content, recipe_name, created_at FROM recipes WHERE id = $1 AND telegram_id = $2",
+        "SELECT id, telegram_id, content, recipe_name, created_at, note FROM recipes WHERE id = $1 AND telegram_id = $2",
     )
     .bind(recipe_id)
     .bind(telegram_id)

@@ -222,6 +222,46 @@ pub fn cancel_action_keyboard(
     )]])
 }
 
+/// The buttons under a note question. Right after a creation: "⏭️ Passer" alone (the recipe is
+/// saved already; it uses the cancel button's data, which ends the action). From a card: "🗑
+/// Effacer la note" when there is one, above "❌ Annuler" (back to the card).
+pub fn note_keyboard(
+    recipe_id: i64,
+    creation: bool,
+    has_note: bool,
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> InlineKeyboardMarkup {
+    if creation {
+        return InlineKeyboardMarkup::new(vec![vec![InlineKeyboardButton::callback(
+            format!(
+                "⏭️ {}",
+                t_lang(localization, "note-skip-button", language_code)
+            ),
+            "cancel_action",
+        )]]);
+    }
+    let mut rows = Vec::new();
+    if has_note {
+        rows.push(vec![InlineKeyboardButton::callback(
+            format!(
+                "🗑️ {}",
+                t_lang(localization, "note-clear-button", language_code)
+            ),
+            format!("{CLEAR_NOTE_PREFIX}{recipe_id}"),
+        )]);
+    }
+    rows.push(vec![InlineKeyboardButton::callback(
+        format!("❌ {}", t_lang(localization, "cancel", language_code)),
+        "cancel_action",
+    )]);
+    InlineKeyboardMarkup::new(rows)
+}
+
+/// Callback data of "🗑️ Effacer la note" starts with this, then the recipe's id: a button of an
+/// older question cannot clear the note of the recipe being asked about now.
+pub const CLEAR_NOTE_PREFIX: &str = "clear_recipe_note:";
+
 /// Create inline keyboard for ingredient review
 pub fn create_ingredient_review_keyboard(
     ingredients: &[MeasurementMatch],
@@ -390,13 +430,22 @@ pub fn create_recipe_details_keyboard(
                 language_code,
             ),
         ],
-        vec![create_localized_button_with_emoji(
-            localization,
-            "🗑️",
-            "delete-recipe",
-            format!("recipe_action:delete:{}", recipe_id),
-            language_code,
-        )],
+        vec![
+            create_localized_button_with_emoji(
+                localization,
+                "🗒️",
+                "edit-recipe-note",
+                format!("recipe_action:note:{}", recipe_id),
+                language_code,
+            ),
+            create_localized_button_with_emoji(
+                localization,
+                "🗑️",
+                "delete-recipe",
+                format!("recipe_action:delete:{}", recipe_id),
+                language_code,
+            ),
+        ],
     ];
     buttons.extend(linked.iter().take(MAX_LINKED_SHOWN).map(|recipe| {
         vec![InlineKeyboardButton::callback(
@@ -475,11 +524,26 @@ pub fn format_recipe_date(
     }
 }
 
-/// The recipe card (HTML): bold name, creation date and the saved ingredients with their
-/// measures in the user's unit view, then "⚖️ Vue …, valeurs arrondies" when the view converted
-/// one (UX plan U8).
+/// The name and note a recipe card shows above its ingredients.
+#[derive(Debug, Clone, Copy)]
+pub struct CardTitle<'a> {
+    pub name: &'a str,
+    /// The recipe's note, already cleaned (`validation::validate_recipe_note`).
+    pub note: Option<&'a str>,
+}
+
+/// Telegram refuses messages over 4096 characters; a card keeps below this.
+const CARD_CHARS: usize = 4000;
+
+/// Room kept for the unit-view footer, whose text is known only after the list is built.
+const FOOTER_RESERVE: usize = 200;
+
+/// The recipe card (HTML): bold name, the note on a line of its own, the saved ingredients with
+/// their measures in the user's unit view, then "⚖️ Vue …, valeurs arrondies" when the view
+/// converted one (UX plan U8), and the linked recipes. The ingredient list takes what the rest
+/// leaves of Telegram's 4096 characters, so a long note never makes the card fail to show.
 pub fn render_recipe_card(
-    recipe_name: &str,
+    title: CardTitle<'_>,
     ingredients: &[crate::db::Ingredient],
     linked: &[crate::db::RecipeSummary],
     view: crate::unit_view::UnitView,
@@ -487,16 +551,42 @@ pub fn render_recipe_card(
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> Html {
+    let linked_line = (!linked.is_empty()).then(|| {
+        let names: Vec<&str> = linked
+            .iter()
+            .take(MAX_LINKED_SHOWN)
+            .map(|recipe| recipe.name.as_str())
+            .collect();
+        // Within Telegram's 4096 characters, after a list of up to 3500
+        let names = truncate_text(&names.join(", "), 400);
+        t_args_lang(
+            localization,
+            "card-linked-recipes",
+            &[("names", &names)],
+            language_code,
+        )
+    });
+    let note_chars = title.note.map_or(0, |note| 4 + note.chars().count());
+    let linked_chars = linked_line
+        .as_ref()
+        .map_or(0, |line| 2 + line.chars().count());
+    let rest = 3 + title.name.chars().count() + 2 + note_chars + linked_chars + FOOTER_RESERVE;
+    let list_budget = CARD_CHARS.saturating_sub(rest).clamp(500, MAX_LIST_CHARS);
+
     let (list, converted) = format_database_ingredients_list(
         ingredients,
         view,
         english_recipe,
         language_code,
         localization,
+        list_budget,
     );
     // No creation date: the user asked for the card to show the recipe only (2026-10-30)
-    let mut card =
-        Html::text("📖 ") + Html::bold(recipe_name) + Html::text("\n\n") + Html::text(&list);
+    let mut card = Html::text("📖 ") + Html::bold(title.name);
+    if let Some(note) = title.note {
+        card += Html::text("\n🗒️ ") + Html::text(note);
+    }
+    card += Html::text("\n\n") + Html::text(&list);
     let footer = match view {
         crate::unit_view::UnitView::Recipe => None,
         crate::unit_view::UnitView::Weight => Some("unit-view-footer-weight"),
@@ -509,23 +599,8 @@ pub fn render_recipe_card(
             t_lang(localization, footer, language_code)
         ));
     }
-    if !linked.is_empty() {
-        let names: Vec<&str> = linked
-            .iter()
-            .take(MAX_LINKED_SHOWN)
-            .map(|recipe| recipe.name.as_str())
-            .collect();
-        // Within Telegram's 4096 characters, after a list of up to 3500
-        let names = truncate_text(&names.join(", "), 400);
-        card += Html::text(&format!(
-            "\n\n{}",
-            t_args_lang(
-                localization,
-                "card-linked-recipes",
-                &[("names", &names)],
-                language_code,
-            )
-        ));
+    if let Some(line) = linked_line {
+        card += Html::text(&format!("\n\n{line}"));
     }
     card
 }
@@ -550,13 +625,14 @@ pub fn render_recipe_summary(
 
 /// The saved ingredients of a card, one "• 180 g farine" line each, measures in `view` (unit
 /// names of an English recipe in English in the "as in the recipe" view); and whether the view
-/// converted one.
+/// converted one. Lines that do not fit in `max_chars` characters are cut ("…").
 pub fn format_database_ingredients_list(
     ingredients: &[crate::db::Ingredient],
     view: crate::unit_view::UnitView,
     english_recipe: bool,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
+    max_chars: usize,
 ) -> (String, bool) {
     if ingredients.is_empty() {
         return (
@@ -585,7 +661,7 @@ pub fn format_database_ingredients_list(
             }
         })
         .collect();
-    (fit_lines(&lines.join("\n"), MAX_LIST_CHARS), converted)
+    (fit_lines(&lines.join("\n"), max_chars), converted)
 }
 
 #[cfg(test)]
@@ -593,7 +669,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_recipe_card_offers_rename_edit_delete_and_the_list() {
+    fn the_recipe_card_offers_rename_edit_note_delete_and_the_list() {
         let localization =
             crate::localization::create_localization_manager().expect("localization");
         let keyboard = create_recipe_details_keyboard(7, &[], Some("fr"), &localization);
@@ -615,7 +691,7 @@ mod tests {
             data,
             vec![
                 vec!["recipe_action:rename:7", "recipe_action:edit_ingredients:7"],
-                vec!["recipe_action:delete:7"],
+                vec!["recipe_action:note:7", "recipe_action:delete:7"],
                 vec!["show_list"],
             ]
         );
@@ -691,7 +767,10 @@ mod tests {
             created_at,
         };
         let card = render_recipe_card(
-            "Malva pudding",
+            CardTitle {
+                name: "Malva pudding",
+                note: None,
+            },
             &[],
             std::slice::from_ref(&sauce),
             crate::unit_view::UnitView::French,
@@ -794,7 +873,10 @@ mod tests {
             updated_at: created_at,
         };
         let card = render_recipe_card(
-            "Tarte <b>",
+            CardTitle {
+                name: "Tarte <b>",
+                note: None,
+            },
             std::slice::from_ref(&ingredient),
             &[],
             crate::unit_view::UnitView::French,
@@ -807,7 +889,10 @@ mod tests {
             "📖 <b>Tarte &lt;b&gt;</b>\n\n• 20 cl lait &lt;entier&gt; &amp; sucre\n\n⚖️ Vue unités françaises (g, cl), valeurs arrondies"
         );
         let as_saved = render_recipe_card(
-            "Tarte",
+            CardTitle {
+                name: "Tarte",
+                note: None,
+            },
             &[ingredient],
             &[],
             crate::unit_view::UnitView::Recipe,
@@ -823,7 +908,10 @@ mod tests {
             as_saved.as_str()
         );
         let empty = render_recipe_card(
-            "Vide",
+            CardTitle {
+                name: "Vide",
+                note: None,
+            },
             &[],
             &[],
             crate::unit_view::UnitView::French,
@@ -836,6 +924,81 @@ mod tests {
             "{}",
             empty.as_str()
         );
+    }
+
+    fn saved_ingredient(name: &str) -> crate::db::Ingredient {
+        let at = chrono::Utc::now();
+        crate::db::Ingredient {
+            id: 1,
+            user_id: 1,
+            recipe_id: Some(1),
+            name: name.to_string(),
+            quantity: Some(2.0),
+            unit: Some("dl".to_string()),
+            created_at: at,
+            updated_at: at,
+        }
+    }
+
+    #[test]
+    fn the_note_shows_under_the_name_and_is_escaped() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let card = render_recipe_card(
+            CardTitle {
+                name: "Tarte",
+                note: Some("Four 180 °C <b>25</b> & https://exemple.fr/a?b=1&c=2"),
+            },
+            &[saved_ingredient("lait")],
+            &[],
+            crate::unit_view::UnitView::Recipe,
+            false,
+            Some("fr"),
+            &localization,
+        );
+        assert_eq!(
+            card.as_str(),
+            "📖 <b>Tarte</b>\n🗒️ Four 180 °C &lt;b&gt;25&lt;/b&gt; &amp; https://exemple.fr/a?b=1&amp;c=2\n\n• 200 ml lait"
+        );
+    }
+
+    #[test]
+    fn a_card_with_the_longest_note_and_a_long_list_fits_in_one_message() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let ingredients: Vec<crate::db::Ingredient> = (0..300)
+            .map(|i| {
+                saved_ingredient(&format!(
+                    "ingrédient numéro {i} avec un nom assez long & précis"
+                ))
+            })
+            .collect();
+        let at = chrono::Utc::now();
+        let linked: Vec<crate::db::RecipeSummary> = (0..12)
+            .map(|i| crate::db::RecipeSummary {
+                id: i,
+                name: format!("{i} {}", "é".repeat(100)),
+                created_at: at,
+            })
+            .collect();
+        let note = "é".repeat(crate::validation::MAX_NOTE_CHARS);
+        let name = "N".repeat(crate::validation::MAX_RECIPE_NAME_CHARS);
+        let card = render_recipe_card(
+            CardTitle {
+                name: &name,
+                note: Some(&note),
+            },
+            &ingredients,
+            &linked,
+            crate::unit_view::UnitView::French,
+            false,
+            Some("fr"),
+            &localization,
+        );
+        let length = card.as_str().chars().count();
+        assert!(length <= 4096, "{length} characters");
+        assert!(card.as_str().contains('…'), "the list was cut");
+        assert!(card.as_str().contains(&note), "the note is whole");
     }
 
     #[test]

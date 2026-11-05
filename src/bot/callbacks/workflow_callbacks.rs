@@ -36,6 +36,23 @@ pub async fn handle_cancel_action(
         dialogue.exit().await?;
     }
     match state {
+        // A note question right after a creation: "Passer", the recipe is saved already
+        Some(crate::dialogue::RecipeDialogueState::EditingRecipeNote {
+            recipe_id,
+            creation,
+            ..
+        }) => {
+            crate::bot::note::leave(
+                bot,
+                &pool,
+                msg.chat.id,
+                recipe_id,
+                creation,
+                localization,
+                language_code.as_deref(),
+            )
+            .await;
+        }
         Some(crate::dialogue::RecipeDialogueState::RenamingRecipe { recipe_id, .. }) => {
             crate::bot::home::back_to_card(
                 bot,

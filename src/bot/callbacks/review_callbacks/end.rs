@@ -176,16 +176,13 @@ pub async fn confirm_review(c: ReviewConfirmation<'_>) -> Result<()> {
     // The stored names: "Tarte (2)" when the user already has a "Tarte"
     crate::bot::home::send_created_lines(c.bot, c.chat_id, &saved, c.localization, c.language_code)
         .await;
-    let list_at = saved
-        .first()
-        .map_or(crate::bot::home::ListAt::Start, |main| {
-            crate::bot::home::ListAt::Recipe(main.recipe_id)
-        });
-    crate::bot::home::send_home_at(
+    // The recipe is saved: its note is asked next (the list comes back after the answer)
+    crate::bot::note::ask_after_save(
         c.bot,
         c.pool,
         c.chat_id,
-        list_at,
+        c.dialogue,
+        &saved,
         c.localization,
         c.language_code,
     )

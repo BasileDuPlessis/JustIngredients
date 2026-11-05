@@ -624,10 +624,16 @@ async fn test_migration_system(pool: PgPool) -> Result<()> {
 
 async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
     // Every migration applied and recorded by sqlx
-    assert_eq!(migrations::current_version(pool).await?, 9);
+    assert_eq!(migrations::current_version(pool).await?, 10);
     validate_database_schema(pool).await?;
 
     // Reverted with the down scripts, one version at a time, then all
+    migrations::undo_to(pool, 9).await?;
+    assert_eq!(migrations::current_version(pool).await?, 9);
+    assert!(
+        validate_database_schema(pool).await.is_err(),
+        "recipes.note is required"
+    );
     migrations::undo_to(pool, 7).await?;
     assert_eq!(migrations::current_version(pool).await?, 7);
     assert!(
@@ -658,7 +664,7 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
 
     // And applied again from nothing
     init_database_schema(pool).await?;
-    assert_eq!(migrations::current_version(pool).await?, 9);
+    assert_eq!(migrations::current_version(pool).await?, 10);
     validate_database_schema(pool).await?;
 
     Ok(())
@@ -1667,7 +1673,7 @@ async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
             .await?;
     assert_eq!(
         rows.iter().map(|(v, _)| *v).collect::<Vec<_>>(),
-        (1..=9).collect::<Vec<_>>()
+        (1..=10).collect::<Vec<_>>()
     );
     assert!(
         rows.iter()
@@ -1675,7 +1681,12 @@ async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
             .all(|(_, time)| *time == 0),
         "adopted, not run"
     );
-    assert!(rows.iter().any(|(v, time)| *v == 9 && *time > 0), "9 ran");
+    assert!(
+        rows.iter()
+            .filter(|(v, _)| *v >= 9)
+            .all(|(_, time)| *time > 0),
+        "9 and 10 ran"
+    );
     validate_database_schema(&pool).await?;
     let legacy: i64 = sqlx::query_scalar("SELECT count(*) FROM schema_migrations")
         .fetch_one(&pool)
@@ -1684,7 +1695,7 @@ async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
 
     // A second start finds everything applied
     init_database_schema(&pool).await?;
-    assert_eq!(migrations::current_version(&pool).await?, 9);
+    assert_eq!(migrations::current_version(&pool).await?, 10);
     Ok(())
 }
 
@@ -1697,7 +1708,7 @@ async fn test_legacy_migrations_then_the_new_ones(pool: PgPool) -> Result<()> {
     make_legacy(&pool, 7).await?;
 
     init_database_schema(&pool).await?;
-    assert_eq!(migrations::current_version(&pool).await?, 9);
+    assert_eq!(migrations::current_version(&pool).await?, 10);
     validate_database_schema(&pool).await?;
     let run: i64 =
         sqlx::query_scalar("SELECT execution_time FROM _sqlx_migrations WHERE version = 8")
@@ -1725,7 +1736,7 @@ async fn test_a_database_ahead_of_the_binary_starts(pool: PgPool) -> Result<()> 
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations")
         .fetch_one(&pool)
         .await?;
-    assert_eq!(count, 10, "nothing applied or removed");
+    assert_eq!(count, 11, "nothing applied or removed");
     Ok(())
 }
 
@@ -1745,7 +1756,7 @@ async fn test_owner_key_migration_adds_missing_users(pool: PgPool) -> Result<()>
     get_or_create_user(&pool, 503, Some("fr")).await?;
 
     init_database_schema(&pool).await?;
-    assert_eq!(migrations::current_version(&pool).await?, 9);
+    assert_eq!(migrations::current_version(&pool).await?, 10);
     let owners: Vec<i64> = sqlx::query_scalar(
         "SELECT telegram_id FROM users WHERE telegram_id IN (501, 502, 503) ORDER BY telegram_id",
     )
@@ -1770,5 +1781,65 @@ async fn test_recipe_needs_its_owner(pool: PgPool) -> Result<()> {
     );
     get_or_create_user(&pool, 9_001, Some("fr")).await?;
     create_recipe(&pool, 9_001, "with its owner").await?;
+    Ok(())
+}
+
+/// A recipe's note (migration 10): written, replaced and cleared by its owner only, read with
+/// the recipe; the database refuses a note over 300 characters (the bot's limit is 200).
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn test_recipe_note(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let (recipe_id, _) = create_recipe_with_ingredient(&pool, OWNER_A, "Gratin").await?;
+    get_or_create_user(&pool, OTHER_B, Some("en")).await?;
+    let note = |owner: i64| {
+        let pool = pool.clone();
+        async move {
+            Ok::<_, anyhow::Error>(
+                read_recipe_with_name(&pool, owner, recipe_id)
+                    .await?
+                    .and_then(|recipe| recipe.note),
+            )
+        }
+    };
+    assert_eq!(note(OWNER_A).await?, None, "no note by default");
+
+    assert!(set_recipe_note(&pool, OWNER_A, recipe_id, Some("Four 180 °C")).await?);
+    assert_eq!(note(OWNER_A).await?.as_deref(), Some("Four 180 °C"));
+    assert!(set_recipe_note(&pool, OWNER_A, recipe_id, Some("Four 200 °C")).await?);
+    assert_eq!(
+        note(OWNER_A).await?.as_deref(),
+        Some("Four 200 °C"),
+        "replaced"
+    );
+
+    // Another user's write changes nothing and reports it
+    assert!(!set_recipe_note(&pool, OTHER_B, recipe_id, Some("Mine now")).await?);
+    assert!(!set_recipe_note(&pool, OTHER_B, recipe_id, None).await?);
+    assert_eq!(note(OWNER_A).await?.as_deref(), Some("Four 200 °C"));
+    // A recipe that does not exist
+    assert!(!set_recipe_note(&pool, OWNER_A, recipe_id + 1000, Some("x")).await?);
+
+    // Quotes and markup are data
+    let odd = "'; DROP TABLE recipes; -- <b>&</b>";
+    assert!(set_recipe_note(&pool, OWNER_A, recipe_id, Some(odd)).await?);
+    assert_eq!(note(OWNER_A).await?.as_deref(), Some(odd));
+
+    // The constraint: 300 characters (not bytes) pass, 301 do not
+    let long = "é".repeat(300);
+    assert!(set_recipe_note(&pool, OWNER_A, recipe_id, Some(&long)).await?);
+    assert!(
+        set_recipe_note(&pool, OWNER_A, recipe_id, Some(&"é".repeat(301)))
+            .await
+            .is_err()
+    );
+    assert_eq!(
+        note(OWNER_A).await?.as_deref(),
+        Some(long.as_str()),
+        "unchanged"
+    );
+
+    assert!(set_recipe_note(&pool, OWNER_A, recipe_id, None).await?);
+    assert_eq!(note(OWNER_A).await?, None, "cleared");
     Ok(())
 }

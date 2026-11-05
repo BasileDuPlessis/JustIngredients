@@ -65,6 +65,7 @@ const FRACTION_CHARACTERS: [(char, &str); 9] = [
 /// assert!(validate_recipe_name("My Recipe").is_ok());
 /// assert_eq!(validate_recipe_name("").unwrap_err(), AppError::Validation(ValidationError::EmptyName));
 /// assert_eq!(validate_recipe_name(&"a".repeat(256)).unwrap_err(), AppError::Validation(ValidationError::NameTooLong));
+/// assert!(validate_recipe_name(&"é".repeat(255)).is_ok()); // 510 bytes, 255 characters
 /// ```
 pub fn validate_recipe_name(name: &str) -> Result<&str, AppError> {
     let trimmed = name.trim();
@@ -73,11 +74,96 @@ pub fn validate_recipe_name(name: &str) -> Result<&str, AppError> {
         return Err(AppError::Validation(ValidationError::EmptyName));
     }
 
-    if trimmed.len() > 255 {
+    // Characters, as the message and the column (VARCHAR(255)) count them: "é" is one
+    if trimmed.chars().count() > MAX_RECIPE_NAME_CHARS {
         return Err(AppError::Validation(ValidationError::NameTooLong));
     }
 
     Ok(trimmed)
+}
+
+/// Longest recipe name accepted, in characters (the `recipe_name` column is `VARCHAR(255)`).
+pub const MAX_RECIPE_NAME_CHARS: usize = 255;
+
+/// Longest recipe note accepted, in characters: "Four 180 °C, 25 min, 10 min de repos" fits
+/// with room, and the card stays within Telegram's 4096 characters. The database constraint
+/// (300) is only a second wall.
+pub const MAX_NOTE_CHARS: usize = 200;
+
+/// Characters that show nothing or reverse the text direction: a note could hide or reorder
+/// what it says. The joiner U+200D stays, it builds emoji such as 👨‍🍳.
+fn is_invisible(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}' // soft hyphen
+        | '\u{061C}' // Arabic letter mark
+        | '\u{180E}' // Mongolian vowel separator
+        | '\u{200B}' // zero width space
+        | '\u{200C}' // zero width non-joiner
+        | '\u{034F}' // combining grapheme joiner
+        | '\u{115F}'..='\u{1160}' // Hangul fillers
+        | '\u{3164}' // Hangul filler
+        | '\u{FFA0}' // halfwidth Hangul filler
+        | '\u{2800}' // braille blank
+        | '\u{E0000}'..='\u{E007F}' // tag characters: they can carry hidden text
+        | '\u{200E}'..='\u{200F}' // left-to-right and right-to-left marks
+        | '\u{202A}'..='\u{202E}' // embeddings and overrides
+        | '\u{2060}'..='\u{2064}' // word joiner, invisible operators
+        | '\u{2066}'..='\u{2069}' // isolates
+        | '\u{FEFF}' // byte order mark
+    )
+}
+
+/// A typed note made safe to keep and show: every run of whitespace (newlines included)
+/// becomes one space, control and invisible characters go, and the ends are trimmed. The note
+/// is one line.
+pub fn clean_note(input: &str) -> String {
+    let mut cleaned = String::with_capacity(input.len());
+    let mut space_pending = false;
+    for c in input.chars() {
+        if c.is_whitespace() {
+            space_pending = true;
+        } else if c.is_control() || is_invisible(c) {
+            // dropped: it joins the words around it
+        } else {
+            if space_pending && !cleaned.is_empty() {
+                cleaned.push(' ');
+            }
+            space_pending = false;
+            cleaned.push(c);
+        }
+    }
+    cleaned
+}
+
+/// Validates a typed recipe note and returns it cleaned ([`clean_note`]).
+///
+/// A text with nothing left after cleaning is refused (`EmptyNote`, e.g. only zero width
+/// characters): it never clears a note, the 🗑 button does. A text over [`MAX_NOTE_CHARS`]
+/// characters is refused (`NoteTooLong`), never cut.
+///
+/// # Examples
+/// ```
+/// use just_ingredients::validation::validate_recipe_note;
+/// use just_ingredients::errors::{AppError, ValidationError};
+///
+/// assert_eq!(validate_recipe_note("  Four 180 °C\n25 min ").ok().as_deref(), Some("Four 180 °C 25 min"));
+/// assert_eq!(validate_recipe_note(" \u{200B} ").unwrap_err(), AppError::Validation(ValidationError::EmptyNote));
+/// assert_eq!(validate_recipe_note(&"a".repeat(201)).unwrap_err(), AppError::Validation(ValidationError::NoteTooLong));
+/// ```
+pub fn validate_recipe_note(input: &str) -> Result<String, AppError> {
+    let note = clean_note(input);
+    // The joiner and the emoji selectors show nothing by themselves
+    let shows_something = note
+        .chars()
+        .any(|c| !matches!(c, '\u{200D}' | '\u{FE00}'..='\u{FE0F}'));
+    if !shows_something {
+        return Err(AppError::Validation(ValidationError::EmptyNote));
+    }
+    if note.chars().count() > MAX_NOTE_CHARS {
+        return Err(AppError::Validation(ValidationError::NoteTooLong));
+    }
+    Ok(note)
 }
 
 /// Validate basic input constraints
@@ -807,5 +893,95 @@ mod tests {
             "edit-ingredient-name-too-long"
         );
         assert!(parse_ingredient_from_text(&"é".repeat(MAX_INGREDIENT_NAME_CHARS)).is_ok());
+    }
+    #[test]
+    fn a_note_is_one_clean_line() {
+        assert_eq!(
+            clean_note("  Four 180 °C,\n\n25 min\t "),
+            "Four 180 °C, 25 min"
+        );
+        assert_eq!(
+            clean_note("a\u{00A0}\u{2028}b"),
+            "a b",
+            "no-break and line separators are spaces"
+        );
+        // Control and invisible characters go; they do not split a word
+        assert_eq!(clean_note("fo\u{0}ur\u{200B} 18\u{FEFF}0"), "four 180");
+        assert_eq!(
+            clean_note("\u{202E}cba\u{202C}"),
+            "cba",
+            "text direction overrides"
+        );
+        assert_eq!(clean_note("\u{2066}x\u{2069}"), "x");
+        // The joiner of composed emoji stays
+        assert_eq!(clean_note("👨\u{200D}🍳"), "👨\u{200D}🍳");
+        assert_eq!(clean_note("\u{0}\u{200B}  \n"), "");
+        // Hidden text in tag characters is dropped
+        assert_eq!(clean_note("Four\u{E0041}\u{E0042} 180"), "Four 180");
+        assert_eq!(clean_note("a\u{3164}b\u{2800}c"), "abc");
+    }
+
+    #[test]
+    fn a_note_is_checked_in_characters_after_cleaning() {
+        let refused = |note: &str| validate_recipe_note(note).unwrap_err();
+        assert_eq!(
+            validate_recipe_note("Four 180 °C").ok().as_deref(),
+            Some("Four 180 °C")
+        );
+        // 200 accented characters are 400 bytes: accepted
+        assert!(validate_recipe_note(&"é".repeat(MAX_NOTE_CHARS)).is_ok());
+        assert_eq!(
+            refused(&"é".repeat(MAX_NOTE_CHARS + 1)),
+            AppError::Validation(ValidationError::NoteTooLong)
+        );
+        // Whitespace that cleaning collapses does not count against the limit
+        let spaced = format!("{}   {}", "a".repeat(100), "b".repeat(99));
+        assert!(validate_recipe_note(&spaced).is_ok());
+        // A whole message (Telegram allows 4096 characters) is refused, not cut
+        assert_eq!(
+            refused(&"x".repeat(4096)),
+            AppError::Validation(ValidationError::NoteTooLong)
+        );
+        for empty in [
+            "",
+            "   ",
+            "\n\n",
+            "\u{200B}\u{FEFF}",
+            "\u{0}",
+            "\u{3164}\u{2800}",
+            "\u{200D}",
+            "\u{200D}\u{FE0F} ",
+            "\u{E0041}\u{E0042}",
+        ] {
+            assert_eq!(
+                refused(empty),
+                AppError::Validation(ValidationError::EmptyNote)
+            );
+        }
+    }
+
+    #[test]
+    fn markup_and_sql_in_a_note_are_kept_as_text() {
+        for text in [
+            "<b>x</b>",
+            "</pre><a href=\"http://x\">y</a>",
+            "a &amp; b",
+            "'; DROP TABLE recipes; --",
+        ] {
+            assert_eq!(
+                validate_recipe_note(text).ok().as_deref(),
+                Some(text),
+                "escaping is the sender's job"
+            );
+        }
+    }
+
+    #[test]
+    fn a_recipe_name_is_limited_in_characters_not_bytes() {
+        assert!(validate_recipe_name(&"é".repeat(MAX_RECIPE_NAME_CHARS)).is_ok());
+        assert_eq!(
+            validate_recipe_name(&"é".repeat(MAX_RECIPE_NAME_CHARS + 1)).unwrap_err(),
+            AppError::Validation(ValidationError::NameTooLong)
+        );
     }
 }

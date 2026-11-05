@@ -203,8 +203,8 @@ line (cut only beyond 60 characters), `item_<i>`; then ✅ `confirm`, ❌ `cance
     liée à « X »");
   - otherwise: buttons removed, `recipe-name-prompt` sent, state
     `WaitingForRecipeNameAfterConfirm`. The typed name (a cancel word cancels; empty
-    or over 255 bytes refused) is saved; the prompt is deleted with the review messages and the
-    `recipe-created-line` is sent, followed by the recipe list.
+    or over 255 characters refused) is saved; the `recipe-created-line` is sent, then the note is
+    asked (see "Recipe note" below) and the recipe list comes back after the answer.
 - `cancel_review` (and a typed cancel word; both call `review_callbacks::cancel_review`): a
   cancelled creation leaves nothing behind (photo, list and prompts deleted), dialogue ended,
   recipe list sent again. The same for a cancel at the name prompt.
@@ -230,7 +230,8 @@ typed paths; they are equal in private chats (IMP-024).
 
 ## End of an Action: the Recipe List Last
 `home::send_home` ends every finished action:
-- saving a recipe: caption path, typed name, typed "confirm";
+- saving a recipe: caption path, typed name, typed "confirm" (the list comes back after the
+  recipe's note question: answered, skipped or left with a cancel word);
 - cancelling: the review (button or typed word), the name prompt;
 - a saved recipe: rename (also when it fails), delete confirmed or cancelled, ingredient editing
   confirmed or cancelled (also when the recipe was deleted meanwhile). A delete confirmed or
@@ -317,6 +318,26 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   without buttons and show their message at the bottom, whose last button is "❌ Annuler":
   it deletes the action's messages and gives the card its buttons back (`home::back_to_card`);
   typed cancel words do the same. Review and edit keyboards end with ➕, ✅, then ❌ alone.
+- **Recipe note** (`bot::note`, `specs/tasks/recipe-notes.md`): a short free text kept with a
+  recipe (oven temperature, cooking time, a source link), `recipes.note`. Right after a recipe is
+  saved (both paths; for a photo in parts, the main recipe) the review messages go and the
+  question "🗒️ Une info à noter pour « X » ?" is sent with "⏭️ Passer" (the `cancel_action`
+  data); state `EditingRecipeNote { creation: true }`. The recipe is saved before the question,
+  so walking away loses nothing. From a card, the 🗒️ Note button (`recipe_action:note:<id>`,
+  next to 🗑️ Supprimer) asks again with the current note, "🗑️ Effacer la note"
+  (`clear_recipe_note:<id>`, tied to its recipe; the only way to clear) and "❌ Annuler" (back to the card). The typed
+  text goes through `validation::validate_recipe_note`: whitespace runs, newlines included,
+  become one space, control and invisible characters (zero width, bidi overrides, soft hyphen, fillers, tag
+  characters) are removed, the result must not be empty (`note-empty`) nor over 200 characters
+  (`note-too-long`, refused, never cut); the question stays open after a refusal or a database
+  failure. A cancel word skips (creation) or goes back (card). The write is
+  `db::set_recipe_note`, scoped by owner; then `refresh_cards`, a history line
+  (`note-saved-line` / `note-cleared-line`, without the text) and the list on the recipe's page.
+  The card shows the note under the name (`🗒️ …`, through `Html::text`) and the ingredient list
+  yields the characters it needs (`CARD_CHARS`). The note is never logged and never sent to
+  Gemini; counters `ji_actions_total{action}` `note_added`, `note_skipped`, `note_edited`,
+  `note_cleared` tell whether the creation question is worth asking. Bot messages carry no link
+  preview (`html::no_link_preview`).
 - **Rename**: prompt, state `RenamingRecipe`, typed name saved with `update_recipe_name`
   (a cancel word leaves nothing); an empty or too long name is refused and the prompt stays
   open. Names are unique per user: renaming to a taken name stores "X (2)" (`db::rename_recipe`),
@@ -387,6 +408,7 @@ of the message that opened it.
 | `EditingIngredient` | `qty_<i>`, `name_<i>`, `edit_<i>` or `add_ingredient` in a review | Quantity, name or whole line (`field`); a new line when adding |
 | `WaitingForRecipeNameAfterConfirm` | `confirm` (button or typed) without a caption or title name | Recipe name |
 | `RenamingRecipe` | `recipe_action:rename` | New name |
+| `EditingRecipeNote` | a recipe saved (`creation`), or `recipe_action:note` on a card | The note |
 | `EditingSavedIngredients` | `recipe_action:edit_ingredients` | Refused (use the buttons) |
 | `EditingSavedIngredient` | `qty_<i>`, `name_<i>` or `edit_<i>` on a saved recipe | Quantity, name or whole line (`field`) |
 | `AddingIngredientToSavedRecipe` | `add_ingredient` on a saved recipe | New ingredient line |

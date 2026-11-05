@@ -1001,6 +1001,54 @@
                 "value": "vue des unités choisie"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "note_added"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "note ajoutée"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "note_skipped"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "note passée"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "note_edited"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "note modifiée"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "note_cleared"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "note effacée"
+              }
+            ]
           }
         ]
       },

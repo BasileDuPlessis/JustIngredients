@@ -79,6 +79,7 @@ pub async fn handle_recipe_action(
 
     match action {
         "rename" => ask_new_name(&card_action, dialogue).await?,
+        "note" => ask_note(&card_action, dialogue).await?,
         "delete" => ask_delete_confirmation(&card_action, msg).await?,
         "edit_ingredients" => {
             handle_edit_ingredients_callback(
@@ -182,6 +183,107 @@ async fn ask_new_name(action: &CardAction<'_>, dialogue: &RecipeDialogue) -> Res
         .await;
     }
     Ok(())
+}
+
+/// 🗒️ Note on a card: the question goes at the bottom with the current note, "🗑️ Effacer la
+/// note" and its exit "❌ Annuler" (back to the card); the typed answer is the new note
+/// (`EditingRecipeNote`).
+async fn ask_note(action: &CardAction<'_>, dialogue: &RecipeDialogue) -> Result<()> {
+    let CardAction {
+        bot,
+        chat_id,
+        pool,
+        telegram_id,
+        recipe_id,
+        language_code,
+        localization,
+    } = *action;
+    let recipe = match crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await {
+        Ok(recipe) => recipe,
+        Err(error) => {
+            error_logging::log_database_error(
+                &error,
+                "read_recipe_with_name",
+                Some(telegram_id),
+                Some(&[("recipe_id", &recipe_id.to_string())]),
+            );
+            None
+        }
+    };
+    let Some(recipe) = recipe else {
+        let message = t_lang(localization, "recipe-not-found", language_code.as_deref());
+        let answer = send_transient(bot, chat_id, message).await?;
+        crate::bot::home::answer_at_bottom(
+            bot,
+            chat_id,
+            answer.id,
+            false,
+            localization,
+            language_code.as_deref(),
+        )
+        .await;
+        return Ok(());
+    };
+    crate::bot::note::ask(
+        bot,
+        chat_id,
+        dialogue,
+        crate::bot::note::NoteTarget {
+            recipe_id,
+            name: recipe.recipe_name.as_deref().unwrap_or("Unnamed Recipe"),
+            current: recipe.note.as_deref(),
+        },
+        false,
+        localization,
+        language_code.as_deref(),
+    )
+    .await
+}
+
+/// "🗑️ Effacer la note" on a note question opened from a card. Pressed when no such question
+/// runs for `button_recipe` (an older one, another recipe's, another action), it does nothing.
+pub async fn handle_clear_note(
+    bot: &Bot,
+    msg: &MaybeInaccessibleMessage,
+    button_recipe: i64,
+    pool: Arc<PgPool>,
+    dialogue: &RecipeDialogue,
+    from: &User,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> Result<()> {
+    let MaybeInaccessibleMessage::Regular(msg) = msg else {
+        return Ok(());
+    };
+    let Some(RecipeDialogueState::EditingRecipeNote {
+        recipe_id,
+        recipe_name,
+        creation: false,
+        language_code: dialogue_lang_code,
+    }) = dialogue.get().await?
+    else {
+        return Ok(());
+    };
+    if recipe_id != button_recipe {
+        return Ok(());
+    }
+    crate::bot::note::clear(
+        crate::bot::note::NoteAnswer {
+            bot,
+            pool: &pool,
+            chat_id: msg.chat.id,
+            telegram_id: crate::bot::telegram_id(from.id),
+            recipe_id,
+            recipe_name: &recipe_name,
+            creation: false,
+            localization,
+            // The language of the question, as for a typed answer
+            language_code: dialogue_lang_code
+                .as_deref()
+                .or(from.language_code.as_deref()),
+        },
+        dialogue,
+    )
+    .await
 }
 
 /// 🗑️ Supprimer on a card: the confirmation goes at the bottom, with the card's id in its

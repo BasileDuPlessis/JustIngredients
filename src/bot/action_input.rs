@@ -64,6 +64,11 @@ pub(super) async fn answer_in_action(
                 .await
                 .map(|()| true);
         }
+        Some(state @ RecipeDialogueState::EditingRecipeNote { .. }) => {
+            return answer_note(dialogue_ctx, pool, language_code, text, state)
+                .await
+                .map(|()| true);
+        }
         Some(state @ RecipeDialogueState::AddingIngredientToSavedRecipe { .. }) => {
             return answer_added_ingredient(dialogue_ctx, pool, language_code, text, state)
                 .await
@@ -285,6 +290,69 @@ async fn answer_new_name(
                 language_code: effective_language_code,
             },
         },
+    )
+    .await
+}
+
+/// The note typed for a recipe: right after its creation, or from its card. A cancel word is
+/// what the action's own button does.
+async fn answer_note(
+    dialogue_ctx: DialogueContext<'_>,
+    pool: Arc<PgPool>,
+    language_code: Option<&str>,
+    text: &str,
+    state: RecipeDialogueState,
+) -> Result<()> {
+    let RecipeDialogueState::EditingRecipeNote {
+        recipe_id,
+        recipe_name,
+        creation,
+        language_code: dialogue_lang_code,
+    } = state
+    else {
+        return Ok(());
+    };
+    // Use dialogue language code if available, otherwise fall back to message language
+    let language_code = dialogue_lang_code.as_deref().or(language_code);
+    let DialogueContext {
+        bot,
+        msg,
+        dialogue,
+        localization,
+    } = dialogue_ctx;
+
+    if super::dialogue_manager::is_cancellation_command(&text.trim().to_lowercase()) {
+        dialogue.exit().await?;
+        super::note::leave(
+            bot,
+            &pool,
+            msg.chat.id,
+            recipe_id,
+            creation,
+            localization,
+            language_code,
+        )
+        .await;
+        return Ok(());
+    }
+    // The owner is the sender; a message without one cannot write a note
+    let Some(user) = msg.from.as_ref() else {
+        return Ok(());
+    };
+    super::note::answer_text(
+        super::note::NoteAnswer {
+            bot,
+            pool: &pool,
+            chat_id: msg.chat.id,
+            telegram_id: super::telegram_id(user.id),
+            recipe_id,
+            recipe_name: &recipe_name,
+            creation,
+            localization,
+            language_code,
+        },
+        &dialogue,
+        text,
     )
     .await
 }

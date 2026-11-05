@@ -89,6 +89,7 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
             ("recipe_name", "character varying"),
             ("created_at", "timestamp with time zone"),
             ("content_tsv", "tsvector"),
+            ("note", "text"),
         ],
     )
     .await?;

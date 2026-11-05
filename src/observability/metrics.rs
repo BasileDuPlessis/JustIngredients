@@ -95,6 +95,14 @@ pub enum Action {
     IngredientEdited,
     IngredientDeleted,
     UnitViewChosen,
+    /// A note typed at the question that follows a recipe's creation.
+    NoteAdded,
+    /// That question answered with "Passer".
+    NoteSkipped,
+    /// A note written or replaced from the card's 🗒️ button.
+    NoteEdited,
+    /// A note cleared with 🗑.
+    NoteCleared,
 }
 
 impl Action {
@@ -113,6 +121,10 @@ impl Action {
             Self::IngredientEdited => "ingredient_edited",
             Self::IngredientDeleted => "ingredient_deleted",
             Self::UnitViewChosen => "unit_view_chosen",
+            Self::NoteAdded => "note_added",
+            Self::NoteSkipped => "note_skipped",
+            Self::NoteEdited => "note_edited",
+            Self::NoteCleared => "note_cleared",
         }
     }
 }

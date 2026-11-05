@@ -8,7 +8,7 @@
 
 use std::ops::{Add, AddAssign};
 use teloxide::prelude::*;
-use teloxide::types::{MessageId, ParseMode};
+use teloxide::types::{LinkPreviewOptions, MessageId, ParseMode};
 
 /// Telegram HTML text whose user and model parts are escaped.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -65,9 +65,23 @@ fn escape(plain: &str) -> String {
     escaped
 }
 
+/// No preview for the links of a message: a recipe's note may hold one (its source), and a
+/// preview would add a large picture under the card, loaded by Telegram from that site.
+pub(crate) fn no_link_preview() -> LinkPreviewOptions {
+    LinkPreviewOptions {
+        is_disabled: true,
+        url: None,
+        prefer_small_media: false,
+        prefer_large_media: false,
+        show_above_text: false,
+    }
+}
+
 /// Sends an HTML message; chain `.reply_markup(...)` as with `send_message`.
 pub fn send_html(bot: &Bot, chat: ChatId, html: Html) -> <Bot as Requester>::SendMessage {
-    bot.send_message(chat, html.0).parse_mode(ParseMode::Html)
+    bot.send_message(chat, html.0)
+        .parse_mode(ParseMode::Html)
+        .link_preview_options(no_link_preview())
 }
 
 /// Replaces the text of a message with HTML; chain `.reply_markup(...)` as with
@@ -80,6 +94,7 @@ pub fn edit_html(
 ) -> <Bot as Requester>::EditMessageText {
     bot.edit_message_text(chat, message, html.0)
         .parse_mode(ParseMode::Html)
+        .link_preview_options(no_link_preview())
 }
 
 #[cfg(test)]

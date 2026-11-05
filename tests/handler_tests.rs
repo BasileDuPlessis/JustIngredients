@@ -301,10 +301,12 @@ fn button_data(responses: &teloxide_tests::Responses, prefix: &str) -> Option<St
         })
 }
 
-/// ✅ on a review with the caption's name saves the recipe under that name and ends the action.
+/// ✅ on a review with the caption's name saves the recipe under that name; the action goes on
+/// with the question about its note ("Passer" is its exit).
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn confirm_with_a_caption_name_saves_the_recipe(pool: PgPool) -> Result<()> {
+    use just_ingredients::dialogue::RecipeDialogueState;
     use teloxide_tests::MockCallbackQuery;
     let services = services(&pool, Vec::new()).await?;
     let list = MockMessageText::new().text("📝 Ingrédients").build();
@@ -318,7 +320,18 @@ async fn confirm_with_a_caption_name_saves_the_recipe(pool: PgPool) -> Result<()
     bot.dispatch().await;
 
     assert_eq!(recipe_names(&pool).await?, ["Tarte aux poireaux"]);
-    assert!(action(&services, chat).await?.is_none(), "the review ended");
+    assert!(
+        matches!(
+            action(&services, chat).await?,
+            Some(RecipeDialogueState::EditingRecipeNote { creation: true, .. })
+        ),
+        "the note is asked next"
+    );
+    assert_eq!(
+        button_data(&bot.get_responses(), "cancel_action").as_deref(),
+        Some("cancel_action"),
+        "with Passer as its exit"
+    );
     Ok(())
 }
 
@@ -347,7 +360,13 @@ async fn confirm_without_a_name_asks_it_then_saves(pool: PgPool) -> Result<()> {
     bot.update(MockMessageText::new().text("Gratin"));
     bot.dispatch().await;
     assert_eq!(recipe_names(&pool).await?, ["Gratin"]);
-    assert!(action(&services, chat).await?.is_none());
+    assert!(
+        matches!(
+            action(&services, chat).await?,
+            Some(RecipeDialogueState::EditingRecipeNote { creation: true, .. })
+        ),
+        "the note is asked next"
+    );
     Ok(())
 }
 
@@ -950,5 +969,303 @@ async fn the_quantity_prompt_of_a_saved_line(pool: PgPool) -> Result<()> {
     let ingredients = get_recipe_ingredients(&pool, OWNER, saved.recipe_id).await?;
     assert_eq!(ingredients[0].quantity, Some(300.0));
     assert_eq!(ingredients[0].unit.as_deref(), Some("ml"), "the unit stays");
+    Ok(())
+}
+
+/// The note of the owner's recipe `name`.
+async fn note_of(pool: &PgPool, name: &str) -> Result<Option<String>> {
+    Ok(
+        sqlx::query_scalar("SELECT note FROM recipes WHERE telegram_id = $1 AND recipe_name = $2")
+            .bind(OWNER)
+            .bind(name)
+            .fetch_one(pool)
+            .await?,
+    )
+}
+
+/// Whether the bot sent a message with exactly this text.
+fn sent(
+    bot: &MockBot<anyhow::Error, teloxide_tests::mock_bot::DistributionKey>,
+    text: &str,
+) -> bool {
+    bot.get_responses()
+        .sent_messages
+        .iter()
+        .any(|message| message.text() == Some(text))
+}
+
+/// ✅ with the caption's name, ready to answer the note question: the bot, the services, and the
+/// chat.
+async fn creation_asking_the_note(
+    pool: &PgPool,
+) -> Result<(
+    MockBot<anyhow::Error, teloxide_tests::mock_bot::DistributionKey>,
+    BotServices,
+    teloxide::types::ChatId,
+)> {
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(pool, Vec::new()).await?;
+    let list = MockMessageText::new().text("📝 Ingrédients").build();
+    let chat = list.chat.id;
+    seed_review_with(&services, chat, false, Some("Tarte"), None).await?;
+    let mut bot = mock_bot(
+        MockCallbackQuery::new().data("confirm").message(list),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    Ok((bot, services, chat))
+}
+
+/// The note typed right after a creation is saved clean, on one line, and ends the action.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_note_typed_after_a_creation_is_saved_clean(pool: PgPool) -> Result<()> {
+    let (mut bot, services, chat) = creation_asking_the_note(&pool).await?;
+    assert_eq!(note_of(&pool, "Tarte").await?, None);
+
+    bot.update(MockMessageText::new().text("  Four 180 °C\n\n25 min \u{200B}<b>"));
+    bot.dispatch().await;
+    assert_eq!(
+        note_of(&pool, "Tarte").await?.as_deref(),
+        Some("Four 180 °C 25 min <b>"),
+        "one line; markup kept as text"
+    );
+    assert!(
+        action(&services, chat).await?.is_none(),
+        "the creation ended"
+    );
+    Ok(())
+}
+
+/// "Passer" keeps the recipe without a note and ends the action.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn skipping_the_note_question_keeps_the_recipe(pool: PgPool) -> Result<()> {
+    use teloxide_tests::MockCallbackQuery;
+    let (mut bot, services, chat) = creation_asking_the_note(&pool).await?;
+
+    let prompt = MockMessageText::new().text("🗒️ Une info").build();
+    bot.update(
+        MockCallbackQuery::new()
+            .data("cancel_action")
+            .message(prompt),
+    );
+    bot.dispatch().await;
+    assert_eq!(recipe_names(&pool).await?, ["Tarte"]);
+    assert_eq!(note_of(&pool, "Tarte").await?, None);
+    assert!(action(&services, chat).await?.is_none());
+    Ok(())
+}
+
+/// A cancel word typed at the question after a creation is "Passer": nothing is cancelled, the
+/// recipe is saved already.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_cancel_word_at_the_note_question_skips_it(pool: PgPool) -> Result<()> {
+    let (mut bot, services, chat) = creation_asking_the_note(&pool).await?;
+
+    bot.update(MockMessageText::new().text("annuler"));
+    bot.dispatch().await;
+    assert_eq!(recipe_names(&pool).await?, ["Tarte"]);
+    assert_eq!(note_of(&pool, "Tarte").await?, None);
+    assert!(action(&services, chat).await?.is_none());
+    Ok(())
+}
+
+/// A note that is too long or empty after cleaning is refused with its reason: nothing is
+/// written, the question stays open for another answer.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_refused_note_keeps_the_question_open(pool: PgPool) -> Result<()> {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    let (mut bot, services, chat) = creation_asking_the_note(&pool).await?;
+    let localization = Arc::clone(&services.messages.localization);
+
+    bot.update(MockMessageText::new().text("x".repeat(201)));
+    bot.dispatch().await;
+    assert!(sent(
+        &bot,
+        &t_lang(&localization, "note-too-long", Some("fr"))
+    ));
+    bot.update(MockMessageText::new().text("\u{200B}\u{FEFF}"));
+    bot.dispatch().await;
+    assert!(sent(&bot, &t_lang(&localization, "note-empty", Some("fr"))));
+
+    assert_eq!(note_of(&pool, "Tarte").await?, None, "nothing written");
+    assert!(matches!(
+        action(&services, chat).await?,
+        Some(RecipeDialogueState::EditingRecipeNote { creation: true, .. })
+    ));
+    // And a good answer still works
+    bot.update(MockMessageText::new().text("Four 180 °C"));
+    bot.dispatch().await;
+    assert_eq!(
+        note_of(&pool, "Tarte").await?.as_deref(),
+        Some("Four 180 °C")
+    );
+    Ok(())
+}
+
+/// ✅ without a caption name: the typed name saves the recipe, then the note is asked and saved.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn the_note_follows_a_typed_name(pool: PgPool) -> Result<()> {
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let list = MockMessageText::new().text("📝 Ingrédients").build();
+    let chat = list.chat.id;
+    seed_review_with(&services, chat, false, None, None).await?;
+    let mut bot = mock_bot(
+        MockCallbackQuery::new().data("confirm").message(list),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    bot.update(MockMessageText::new().text("Gratin"));
+    bot.dispatch().await;
+    bot.update(MockMessageText::new().text("Four 200 °C, 35 min"));
+    bot.dispatch().await;
+
+    assert_eq!(recipe_names(&pool).await?, ["Gratin"]);
+    assert_eq!(
+        note_of(&pool, "Gratin").await?.as_deref(),
+        Some("Four 200 °C, 35 min")
+    );
+    assert!(action(&services, chat).await?.is_none());
+    Ok(())
+}
+
+/// The 🗒️ button of a card: the typed note replaces the old one; 🗑 clears it; ❌ leaves it.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn the_note_of_a_saved_recipe_is_written_cleared_or_kept(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::{save_recipe, set_recipe_note};
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let saved = save_recipe(&pool, OWNER, Some("fr"), "", "Gratin", &[]).await?;
+    set_recipe_note(&pool, OWNER, saved.recipe_id, Some("Four 180 °C")).await?;
+    let card = MockMessageText::new().text("Gratin").build();
+    let chat = card.chat.id;
+    let ask = || {
+        MockCallbackQuery::new()
+            .data(format!("recipe_action:note:{}", saved.recipe_id))
+            .message(MockMessageText::new().text("Gratin").build())
+    };
+
+    let mut bot = mock_bot(ask(), services.clone());
+    bot.dispatch().await;
+    assert!(matches!(
+        action(&services, chat).await?,
+        Some(RecipeDialogueState::EditingRecipeNote {
+            creation: false,
+            ..
+        })
+    ));
+    assert!(
+        bot.get_responses()
+            .sent_messages
+            .iter()
+            .any(|message| message
+                .text()
+                .is_some_and(|text| text.contains("Four 180 °C"))),
+        "the question shows the current note"
+    );
+    assert_eq!(
+        button_data(&bot.get_responses(), "clear_recipe_note:").as_deref(),
+        Some(format!("clear_recipe_note:{}", saved.recipe_id).as_str()),
+        "the clear button names its recipe"
+    );
+
+    // Replaced
+    bot.update(MockMessageText::new().text("Four 200 °C, 30 min"));
+    bot.dispatch().await;
+    assert_eq!(
+        note_of(&pool, "Gratin").await?.as_deref(),
+        Some("Four 200 °C, 30 min")
+    );
+    assert!(action(&services, chat).await?.is_none());
+
+    // Left with ❌: unchanged
+    bot.update(ask());
+    bot.dispatch().await;
+    bot.update(
+        MockCallbackQuery::new()
+            .data("cancel_action")
+            .message(MockMessageText::new().text("🗒️").build()),
+    );
+    bot.dispatch().await;
+    assert_eq!(
+        note_of(&pool, "Gratin").await?.as_deref(),
+        Some("Four 200 °C, 30 min")
+    );
+    assert!(action(&services, chat).await?.is_none());
+
+    // Cleared with 🗑
+    bot.update(ask());
+    bot.dispatch().await;
+    bot.update(
+        MockCallbackQuery::new()
+            .data(format!("clear_recipe_note:{}", saved.recipe_id))
+            .message(MockMessageText::new().text("🗒️").build()),
+    );
+    bot.dispatch().await;
+    assert_eq!(note_of(&pool, "Gratin").await?, None);
+    assert!(action(&services, chat).await?.is_none());
+    Ok(())
+}
+
+/// A card's note button for a recipe that does not exist (or is another user's) starts nothing;
+/// a 🗑 pressed with no note question running changes nothing.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn stale_or_forged_note_buttons_do_nothing(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::{save_recipe, set_recipe_note};
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let saved = save_recipe(&pool, OWNER, Some("fr"), "", "Gratin", &[]).await?;
+    set_recipe_note(&pool, OWNER, saved.recipe_id, Some("Four 180 °C")).await?;
+    let message = MockMessageText::new().text("Gratin").build();
+    let chat = message.chat.id;
+
+    let mut bot = mock_bot(
+        MockCallbackQuery::new()
+            .data(format!("recipe_action:note:{}", saved.recipe_id + 1000))
+            .message(message.clone()),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    assert!(action(&services, chat).await?.is_none(), "no such recipe");
+
+    let clear = |recipe_id: i64| {
+        MockCallbackQuery::new()
+            .data(format!("clear_recipe_note:{recipe_id}"))
+            .message(message.clone())
+    };
+    bot.update(clear(saved.recipe_id));
+    bot.dispatch().await;
+    assert_eq!(
+        note_of(&pool, "Gratin").await?.as_deref(),
+        Some("Four 180 °C"),
+        "no question was running"
+    );
+
+    // A question runs for this recipe: the button of another recipe's question does nothing
+    bot.update(
+        MockCallbackQuery::new()
+            .data(format!("recipe_action:note:{}", saved.recipe_id))
+            .message(message.clone()),
+    );
+    bot.dispatch().await;
+    bot.update(clear(saved.recipe_id + 1));
+    bot.dispatch().await;
+    assert_eq!(
+        note_of(&pool, "Gratin").await?.as_deref(),
+        Some("Four 180 °C"),
+        "another recipe's button"
+    );
+    assert!(
+        action(&services, chat).await?.is_some(),
+        "the question stays"
+    );
     Ok(())
 }

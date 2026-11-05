@@ -137,6 +137,20 @@ back-to-recipes = Back to Recipes
 rename-recipe-title = Rename Recipe
 rename-recipe-instructions = Enter the new name for this recipe:
 current-recipe-name = Current name
+
+# A recipe's note: a short free text (oven, cooking time, a source link…)
+edit-recipe-note = Note
+note-prompt-create = A note to keep for "{$name}"?
+note-prompt-edit = Note for "{$name}"
+note-prompt-hint = For example: oven 180 °C, 25 min, or the recipe's link. One line, 200 characters at most. Type it below.
+note-current = Current note: {$note}
+note-none-yet = No note yet.
+note-skip-button = Skip
+note-clear-button = Clear the note
+note-empty = The note is empty. Write a few words, or use the button below.
+note-too-long = The note is too long (200 characters at most). Please shorten it.
+note-saved-line = 🗒️ Note saved for "{$name}"
+note-cleared-line = 🗒️ Note cleared for "{$name}"
 recipe-created-line = ✅ Recipe “{$name}” created
 recipe-renamed-line = ✏️ “{$old_name}” renamed to “{$new_name}”
 recipe-edited-line = 📝 “{$name}” updated

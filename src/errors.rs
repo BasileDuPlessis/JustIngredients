@@ -10,7 +10,7 @@ use std::fmt;
 pub enum AppError {
     /// Configuration validation errors
     Config(String),
-    /// A typed recipe name or ingredient line refused, with its reason
+    /// A typed recipe name, recipe note or ingredient line refused, with its reason
     Validation(ValidationError),
     /// Database operation errors
     Database(String),
@@ -24,7 +24,7 @@ pub enum AppError {
     Internal(String),
 }
 
-/// Why a typed recipe name or ingredient line is refused (backlog IMP-017). Each reason has the
+/// Why a typed recipe name, recipe note or ingredient line is refused (backlog IMP-017). Each reason has the
 /// message the user gets (`l10n_key`); callers match the reason, never a text.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, thiserror::Error)]
 pub enum ValidationError {
@@ -46,11 +46,15 @@ pub enum ValidationError {
     InvalidQuantityAnswer,
     #[error("several lines were typed")]
     SeveralLines,
+    #[error("the recipe note is empty")]
+    EmptyNote,
+    #[error("the recipe note is too long")]
+    NoteTooLong,
 }
 
 impl ValidationError {
     /// Every reason, for the check that each message exists in both locales.
-    pub const ALL: [ValidationError; 9] = [
+    pub const ALL: [ValidationError; 11] = [
         Self::EmptyName,
         Self::NameTooLong,
         Self::EmptyLine,
@@ -60,6 +64,8 @@ impl ValidationError {
         Self::InvalidQuantity,
         Self::InvalidQuantityAnswer,
         Self::SeveralLines,
+        Self::EmptyNote,
+        Self::NoteTooLong,
     ];
 
     /// The locale key of the message the user gets.
@@ -74,6 +80,8 @@ impl ValidationError {
             Self::InvalidQuantity => "edit-invalid-quantity",
             Self::InvalidQuantityAnswer => "edit-invalid-quantity-answer",
             Self::SeveralLines => "edit-one-line",
+            Self::EmptyNote => "note-empty",
+            Self::NoteTooLong => "note-too-long",
         }
     }
 }

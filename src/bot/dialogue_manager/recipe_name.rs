@@ -119,9 +119,8 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
         message_id,
     } = params;
 
-    // Recipe name is valid, save ingredients to database; the list then shows its page
-    let mut list_at = crate::bot::home::ListAt::Start;
-    match save_ingredients_to_database(
+    // Recipe name is valid, save ingredients to database; the note is asked next
+    let saved = match save_ingredients_to_database(
         pool,
         msg.chat.id.0,
         extracted_text,
@@ -141,32 +140,30 @@ async fn handle_recipe_name_success(params: RecipeNameSuccessParams<'_>) -> Resu
             .await?;
             return Ok(());
         }
-        Ok(saved) => {
-            crate::dialogue::end_after_write(&dialogue).await;
-            if let Some(main) = saved.first() {
-                list_at = crate::bot::home::ListAt::Recipe(main.recipe_id);
-            }
-            // One history line is the result; the name prompt goes with the review messages
-            if let Some(prompt_msg_id) = message_id {
-                cleanup::track(msg.chat.id, teloxide::types::MessageId(prompt_msg_id)).await;
-            }
-            // The stored names: "Tarte (2)" when the user already has a "Tarte"
-            crate::bot::home::send_created_lines(
-                ctx.bot,
-                msg.chat.id,
-                &saved,
-                ctx.localization,
-                ctx.language_code,
-            )
-            .await;
-        }
+        Ok(saved) => saved,
+    };
+    crate::dialogue::end_after_write(&dialogue).await;
+    // One history line is the result; the name prompt goes with the review messages
+    if let Some(prompt_msg_id) = message_id {
+        cleanup::track(msg.chat.id, teloxide::types::MessageId(prompt_msg_id)).await;
     }
+    // The stored names: "Tarte (2)" when the user already has a "Tarte"
+    crate::bot::home::send_created_lines(
+        ctx.bot,
+        msg.chat.id,
+        &saved,
+        ctx.localization,
+        ctx.language_code,
+    )
+    .await;
 
-    crate::bot::home::send_home_at(
+    // The recipe is saved: its note is asked next (the list comes back after the answer)
+    crate::bot::note::ask_after_save(
         ctx.bot,
         pool,
         msg.chat.id,
-        list_at,
+        &dialogue,
+        &saved,
         ctx.localization,
         ctx.language_code,
     )
