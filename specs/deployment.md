@@ -77,13 +77,17 @@ service). Every other path answers 404.
 ## Secrets and Configuration
 - **Production** (Fly secrets, set by hand with `fly secrets set`, never by CI):
   `DATABASE_URL` (Fly Postgres), `TELEGRAM_BOT_TOKEN`, `GEMINI_API_KEY`, `OWNER_CHAT_ID` (the
-  owner's Telegram id: [alerts and weekly report](#monitoring); optional).
+  owner's Telegram id: [alerts and weekly report](#monitoring); optional), `API_BETA_USERS`
+  (Telegram ids allowed to create API tokens with `/cle`, comma separated; optional, unset: nobody).
   The bot refuses to start without a well-formed `TELEGRAM_BOT_TOKEN` and `DATABASE_URL`, or
   without `GEMINI_API_KEY`; it exits with `Telegram rejected TELEGRAM_BOT_TOKEN` when Telegram
   refuses the token (the restart policy then restarts it, and a deploy fails its health check).
 - **Staging** (permanent app `just-ingredients-staging`, created once by hand, see
   [Staging Setup](#staging-setup)): Fly secrets `DATABASE_URL` (from `fly postgres attach` of
-  `just-ingredients-staging-db`), `TELEGRAM_BOT_TOKEN` of the test bot, `GEMINI_API_KEY`.
+  `just-ingredients-staging-db`), `TELEGRAM_BOT_TOKEN` of the test bot, `GEMINI_API_KEY`,
+  `API_BETA_USERS` (no `OWNER_CHAT_ID` there: it would start alerts and the weekly report from the
+  test bot). Tokens of staging start with `ji_stg_` and are refused by production (the app is
+  told apart by `FLY_APP_NAME`, which Fly sets).
 - **GitHub environment secrets**: `FLY_API_TOKEN` in `staging` and in `production`, each a deploy
   token of its own app (`fly tokens create deploy -a <app>`); `FLY_STAGING_DB_TOKEN` in `staging`,
   a deploy token of `just-ingredients-staging-db`, to start and stop the staging database

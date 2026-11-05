@@ -31,6 +31,7 @@ async fn handle_text_message(
     dialogue: RecipeDialogue,
     pool: Arc<PgPool>,
     localization: &Arc<crate::localization::LocalizationManager>,
+    api: &super::api_keys::ApiAccess,
 ) -> Result<()> {
     if let Some(text) = msg.text() {
         debug!(user_id = %msg.chat.id, message_length = text.len(), "Received text message from user");
@@ -57,7 +58,8 @@ async fn handle_text_message(
                 }
                 // The typed command goes too: with its answer, or at once for /liste
                 cleanup::track(msg.chat.id, msg.id).await;
-                return handle_command(bot, msg, pool, localization, language_code, command).await;
+                return handle_command(bot, msg, pool, localization, language_code, command, api)
+                    .await;
             }
             // Replies typed during an action are deleted when it ends
             TextRoute::ActionInput => cleanup::track(msg.chat.id, msg.id).await,
@@ -128,7 +130,26 @@ async fn handle_command(
     localization: &Arc<crate::localization::LocalizationManager>,
     language_code: Option<&str>,
     command: Option<Command>,
+    api: &super::api_keys::ApiAccess,
 ) -> Result<()> {
+    // A beta user's /cle; anyone else gets the unknown command answer
+    let key_owner = msg
+        .from
+        .as_ref()
+        .map(|user| crate::bot::telegram_id(user.id))
+        .filter(|telegram_id| api.allows(*telegram_id));
+    if let (Some(Command::Keys), Some(telegram_id)) = (&command, key_owner) {
+        let owner = crate::engine::Owner::telegram(telegram_id);
+        return super::api_keys::show_keys(
+            bot,
+            &pool,
+            msg.chat.id,
+            owner,
+            localization,
+            language_code,
+        )
+        .await;
+    }
     match command {
         Some(Command::Start) => {
             handle_start_command(bot, msg, localization, language_code).await?;
@@ -169,7 +190,7 @@ async fn handle_command(
             .await;
             Ok(())
         }
-        Some(Command::Stats) | None => {
+        Some(Command::Stats | Command::Keys) | None => {
             handle_unknown_command(bot, msg, localization, language_code).await?;
             Ok(())
         }
@@ -207,6 +228,7 @@ async fn dispatch_message(
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
     extractor: SharedExtractor,
+    api: &super::api_keys::ApiAccess,
 ) -> Result<()> {
     let start_time = std::time::Instant::now();
     if let Some(user) = &msg.from {
@@ -217,7 +239,7 @@ async fn dispatch_message(
         );
     }
     let result = if msg.text().is_some() {
-        handle_text_message(&bot, &msg, dialogue, pool, &localization).await
+        handle_text_message(&bot, &msg, dialogue, pool, &localization, api).await
     } else if msg.photo().is_some() {
         handle_photo_message(&bot, &msg, dialogue, pool, &localization, &extractor).await
     } else if msg.document().is_some() {
@@ -249,6 +271,8 @@ pub struct MessageServices {
     pub localization: Arc<crate::localization::LocalizationManager>,
     pub deduplicator: Option<crate::deduplication::SharedDeduplicator>,
     pub extractor: SharedExtractor,
+    /// Who may create API tokens (`/cle`), and where they are used.
+    pub api: Arc<super::api_keys::ApiAccess>,
 }
 
 /// The message branch of the dispatcher: drops duplicate deliveries, then handles the message
@@ -264,6 +288,7 @@ pub async fn message_handler_with_cache(
         localization,
         deduplicator,
         extractor,
+        api,
     } = services;
     let span = crate::observability::telegram_span(
         "message_handler_with_cache",
@@ -277,7 +302,7 @@ pub async fn message_handler_with_cache(
 
         // The duplicate check above already ran and must not run again; the dispatcher
         // measures the message.
-        dispatch_message(bot, msg, pool, dialogue, localization, extractor).await
+        dispatch_message(bot, msg, pool, dialogue, localization, extractor, &api).await
     }
     .instrument(span)
     .await

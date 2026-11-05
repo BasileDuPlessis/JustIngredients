@@ -103,6 +103,10 @@ pub enum Action {
     NoteEdited,
     /// A note cleared with 🗑.
     NoteCleared,
+    /// A personal API token created with `/cle`.
+    ApiKeyCreated,
+    /// A personal API token revoked.
+    ApiKeyRevoked,
 }
 
 impl Action {
@@ -125,6 +129,8 @@ impl Action {
             Self::NoteSkipped => "note_skipped",
             Self::NoteEdited => "note_edited",
             Self::NoteCleared => "note_cleared",
+            Self::ApiKeyCreated => "api_key_created",
+            Self::ApiKeyRevoked => "api_key_revoked",
         }
     }
 }

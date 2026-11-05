@@ -1,6 +1,6 @@
 # JustIngredients Engine: one engine, several doors (study)
 
-Status: tranche 1 in progress. Done (2026-11-05): task 1 (safety net) and task 2 (engine read side). Study revised after an independent review. Asked by the
+Status: tranche 1 in progress. Done (2026-11-05): task 1 (safety net), task 2 (engine read side), task 3 (tokens and `/cle`). Study revised after an independent review. Asked by the
 owner: "something ambitious, a big architecture change, API, events… the engine should not be
 only on Telegram but reachable from other tools". The owner chose **AI assistants through MCP
 first** and validated the four decisions of the first version: tranches in order, tokens created
@@ -87,7 +87,8 @@ Telegram stays the way in: a user creates a personal token in the bot.
   use it, and lists the active tokens with a 🗑 button each to revoke. At most 5 active tokens per
   user.
 - Stored: `api_tokens (id, user_id → users.id ON DELETE CASCADE, token_hash BYTEA UNIQUE (SHA-256),
-  prefix TEXT, label TEXT, scopes TEXT[], created_at, last_used_at, revoked_at)`. The token itself
+  hint TEXT (the prefix and 6 characters), scopes TEXT[], created_at, last_used_at, revoked_at)`;
+  no label (the bot has no way to type one; the hint and the dates tell tokens apart). The token itself
   is never stored nor logged. Verification checks the format first (prefix, length, alphabet)
   without touching the database, then looks the SHA-256 up (a 256-bit random secret needs no slow
   hash). `last_used_at` is written at most every 5 minutes.
@@ -267,8 +268,23 @@ issuer.
    the memo as `memo` and the unit view by name; the 16 golden cards unchanged after the card
    moved to the engine; `tests/architecture_tests.rs` (allowlist, mutation-checked);
    `tests/engine_tests.rs` (two users: list, search, recipe in a view, not found, language).
-3. Migration 11 `api_tokens`; `engine::tokens`; `API_BETA_USERS`; `/cle` with the list and
-   revoke buttons; the `secret` message kind and its sweeper. (M)
+3. ✅ Migration 11 `api_tokens`; `engine::tokens`; `API_BETA_USERS`; `/cle` with the list and
+   revoke buttons; the `secret` message kind and its sweeper. (M) Done: `src/db/api_tokens.rs`
+   (the creation locks the user's row, so two at once cannot pass the limit of 5),
+   `src/engine/tokens.rs` (`Realm` from `FLY_APP_NAME`: `ji_` or `ji_stg_`, each refused by the
+   other; shape checked before the database; `last_used_at` at most every 5 minutes;
+   `EngineError::LimitReached`), `config::ApiConfig`, `bot::api_keys` (`ApiAccess` given to the
+   message and button handlers, the keys message, the token message and its sweeper).
+   Tests: engine (owner only, revoked, realms, limit, secret not stored, use noted), handler
+   (beta user creates then revokes, protected spoiler message recorded as `secret`; outside the
+   beta: unknown command, forged button creates nothing), database (messages due for masking).
+   An independent review found 10 issues; 9 fixed (a production token whose random part starts
+   with `stg_` was refused; "➕ Nouvelle clé" during another action deleted its prompt without
+   ending it; three ways a token could stay shown for good: send or record failures now revoke
+   it, the sweep forgets only on permanent Telegram errors; a partial index for the sweep; the
+   secret out of `Debug`; one shared user upsert; a failed `last_used_at` write no longer refuses
+   a token; no MCP address until `/mcp` exists). The tenth was wrong (a user row created by a
+   token gets the column's default language `'en'`, not NULL).
 4. axum router on 8080 with the health routes unchanged; the limits of section 7. (M)
 5. `/mcp`: rmcp stateless, auth middleware, four tools, their tests. (M)
 6. Metrics, dashboards, specs (`telegram-bot.md`, `deployment.md`, a new `mcp.md` with the client

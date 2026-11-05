@@ -27,6 +27,9 @@ pub enum Command {
     Cancel,
     /// `/stats`: the usage report, for the owner only (`OWNER_CHAT_ID`); not in the menu.
     Stats,
+    /// `/cle`, `/key`: the personal API tokens, for the beta users only (`API_BETA_USERS`);
+    /// not in the menu.
+    Keys,
 }
 
 /// Reads a message text as a command, or returns `None` when it is not a known command.
@@ -50,6 +53,7 @@ pub fn parse_command(text: &str) -> Option<Command> {
         "unites" | "unités" | "units" => Some(Command::Units),
         "annuler" | "cancel" => Some(Command::Cancel),
         "stats" => Some(Command::Stats),
+        "cle" | "clé" | "cles" | "clés" | "key" | "keys" => Some(Command::Keys),
         _ => None,
     }
 }

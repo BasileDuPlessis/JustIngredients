@@ -175,3 +175,23 @@ pub async fn get_user_by_telegram_id(pool: &PgPool, telegram_id: i64) -> Result<
         }
     }
 }
+
+/// The id of the user of `telegram_id`, inside a transaction that writes something they own:
+/// the row is created when needed (with `language_code`, "en" without) and stays locked until
+/// the transaction ends, so concurrent writes for the same user wait for each other.
+pub(crate) async fn user_id_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    telegram_id: i64,
+    language_code: Option<&str>,
+) -> Result<i64> {
+    sqlx::query_scalar(
+        "INSERT INTO users (telegram_id, language_code) VALUES ($1, $2) \
+         ON CONFLICT (telegram_id) DO UPDATE SET telegram_id = EXCLUDED.telegram_id \
+         RETURNING id",
+    )
+    .bind(telegram_id)
+    .bind(language_code.unwrap_or("en"))
+    .fetch_one(&mut **tx)
+    .await
+    .context("Failed to get or create the user")
+}

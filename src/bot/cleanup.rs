@@ -15,7 +15,7 @@ use std::sync::{Arc, PoisonError, RwLock};
 use sqlx::postgres::PgPool;
 use teloxide::prelude::*;
 use teloxide::types::MessageId;
-use tracing::debug;
+use tracing::{debug, warn};
 
 /// A prompt, a reply, the reviewed photo or list: deleted when the action ends.
 const TRANSIENT: &str = "transient";
@@ -27,6 +27,9 @@ const LIST: &str = "list";
 const CARD: &str = "card";
 /// The recipe card at the bottom, with its buttons; at most one per chat (U6.1).
 const ACTIVE_CARD: &str = "active_card";
+/// A message showing a secret (an API token, `api_keys`): no action deletes it, the user must
+/// have time to copy it; `api_keys` hides it 10 minutes after it was sent.
+const SECRET: &str = "secret";
 
 /// What a list older than 48 hours becomes, Telegram no longer letting the bot delete it.
 const OLD_LIST_LINE: &str = "📚 ⬇️";
@@ -109,6 +112,53 @@ async fn delete_or_strip(bot: &Bot, chat: ChatId, messages: Vec<crate::db::ChatM
 /// Records a message of the current action, deleted when the action ends.
 pub async fn track(chat: ChatId, id: MessageId) {
     record(chat, id, TRANSIENT).await;
+}
+
+/// Remembers a message showing a secret, so that it is hidden later, after a restart too.
+/// `false` when it could not be recorded: the caller must not leave the secret shown.
+pub async fn record_secret(chat: ChatId, id: MessageId) -> bool {
+    let Some(pool) = pool() else {
+        return false;
+    };
+    match crate::db::record_chat_message(&pool, chat.0, id.0, SECRET, None).await {
+        Ok(()) => true,
+        Err(e) => {
+            warn!(error = %e, "Could not record a token message to mask");
+            false
+        }
+    }
+}
+
+/// Forgets the messages showing a secret sent more than `older_than_secs` seconds ago, which
+/// could not be masked; returns how many.
+pub async fn forget_secrets_older_than(older_than_secs: i32) -> u64 {
+    let Some(pool) = pool() else {
+        return 0;
+    };
+    crate::db::forget_messages_older_than(&pool, SECRET, older_than_secs)
+        .await
+        .unwrap_or_else(|e| {
+            debug!(error = %e, "Could not forget old secret messages");
+            0
+        })
+}
+
+/// The messages showing a secret sent more than `older_than_secs` seconds ago, with the language
+/// of their chat's user. Empty without a database.
+pub async fn secrets_older_than(older_than_secs: i32) -> Vec<(ChatId, MessageId, Option<String>)> {
+    let Some(pool) = pool() else {
+        return Vec::new();
+    };
+    match crate::db::messages_older_than(&pool, SECRET, older_than_secs).await {
+        Ok(rows) => rows
+            .into_iter()
+            .map(|(chat, message, language)| (ChatId(chat), MessageId(message), language))
+            .collect(),
+        Err(e) => {
+            debug!(error = %e, "Could not read the secret messages");
+            Vec::new()
+        }
+    }
 }
 
 /// Keeps a recorded message: it is no longer deleted when the action ends.

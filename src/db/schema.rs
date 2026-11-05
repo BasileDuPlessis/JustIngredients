@@ -31,6 +31,7 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
         "usage_days",
         "app_state",
         "dialogues",
+        "api_tokens",
     ];
     for table_name in required_tables {
         let exists: bool = sqlx::query_scalar(
@@ -58,6 +59,23 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
             ("chat_id", "bigint"),
             ("state", "json"),
             ("updated_at", "timestamp with time zone"),
+        ],
+    )
+    .await?;
+
+    // Personal API tokens (migration 11), stored by hash
+    validate_table_columns(
+        pool,
+        "api_tokens",
+        &[
+            ("id", "bigint"),
+            ("user_id", "bigint"),
+            ("token_hash", "bytea"),
+            ("hint", "text"),
+            ("scopes", "ARRAY"),
+            ("created_at", "timestamp with time zone"),
+            ("last_used_at", "timestamp with time zone"),
+            ("revoked_at", "timestamp with time zone"),
         ],
     )
     .await?;

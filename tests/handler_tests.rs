@@ -74,6 +74,11 @@ async fn services(pool: &PgPool, ingredients: Vec<ExtractedIngredient>) -> Resul
             localization: create_localization_manager()?,
             deduplicator: None,
             extractor: Arc::new(FakeExtractor { ingredients }),
+            api: Arc::new(just_ingredients::bot::api_keys::ApiAccess {
+                beta_users: vec![OWNER],
+                realm: just_ingredients::engine::tokens::Realm::Staging,
+                mcp_url: Some("https://staging.example/mcp".to_string()),
+            }),
         },
         dialogues: PgDialogueStorage::new((*pool).clone()),
     })
@@ -1277,6 +1282,167 @@ async fn stale_or_forged_note_buttons_do_nothing(pool: PgPool) -> Result<()> {
     assert!(
         action(&services, chat).await?.is_some(),
         "the question stays"
+    );
+    Ok(())
+}
+
+/// The active API tokens of the owner, as stored.
+async fn active_tokens(pool: &PgPool) -> Result<i64> {
+    Ok(sqlx::query_scalar(
+        "SELECT count(*) FROM api_tokens t JOIN users u ON u.id = t.user_id \
+         WHERE u.telegram_id = $1 AND t.revoked_at IS NULL",
+    )
+    .bind(OWNER)
+    .fetch_one(pool)
+    .await?)
+}
+
+/// `/cle` for a beta user: the keys message; "➕ Nouvelle clé" creates a token, shown once in a
+/// protected message (monospace under a spoiler), recorded to be masked, and the list comes
+/// back with its revoke button; "🗑️ Révoquer" revokes it.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_beta_user_creates_and_revokes_an_api_key(pool: PgPool) -> Result<()> {
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let mut bot = mock_bot(MockMessageText::new().text("/cle"), services.clone());
+    bot.dispatch().await;
+    let keys = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the keys message")?;
+    assert_eq!(
+        button_data(&bot.get_responses(), "api_key_new").as_deref(),
+        Some("api_key_new")
+    );
+
+    bot.update(MockCallbackQuery::new().data("api_key_new").message(keys));
+    bot.dispatch().await;
+    assert_eq!(active_tokens(&pool).await?, 1);
+    let responses = bot.get_responses();
+    let secret = responses
+        .sent_messages_text
+        .iter()
+        .find(|sent| sent.bot_request.text.contains("<tg-spoiler><code>ji_stg_"))
+        .context("the token message")?;
+    assert_eq!(
+        secret.bot_request.protect_content,
+        Some(true),
+        "not forwardable"
+    );
+    assert!(
+        secret
+            .bot_request
+            .text
+            .contains("https://staging.example/mcp"),
+        "the server's address"
+    );
+    let recorded: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM chat_messages WHERE kind = 'secret' AND message_id = $1",
+    )
+    .bind(i64::from(secret.message.id.0))
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(recorded, 1, "recorded to be masked");
+    let revoke = button_data(&responses, "api_key_revoke:").context("the revoke button")?;
+    let list = responses
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the keys message again")?;
+    let token = secret
+        .bot_request
+        .text
+        .split("<code>")
+        .nth(1)
+        .and_then(|rest| rest.split("</code>").next())
+        .context("the token")?;
+    assert_eq!(token.len(), "ji_stg_".len() + 43);
+    let shown = list.text().context("the list's text")?;
+    assert!(
+        !shown.contains(token),
+        "the list shows hints, never the secret"
+    );
+    assert!(shown.contains(&token[..13]), "but the hint: {shown}");
+
+    bot.update(MockCallbackQuery::new().data(revoke).message(list));
+    bot.dispatch().await;
+    assert_eq!(active_tokens(&pool).await?, 0, "revoked");
+    Ok(())
+}
+
+/// Outside the beta, `/cle` is an unknown command and a forged button creates nothing.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn outside_the_beta_there_are_no_api_keys(pool: PgPool) -> Result<()> {
+    use teloxide_tests::MockCallbackQuery;
+    let mut services = services(&pool, Vec::new()).await?;
+    services.messages.api = Arc::new(just_ingredients::bot::api_keys::ApiAccess::default());
+    let localization = Arc::clone(&services.messages.localization);
+    let mut bot = mock_bot(MockMessageText::new().text("/key"), services.clone());
+    bot.dispatch().await;
+    let unknown = t_lang(&localization, "unknown-command", None);
+    assert!(bot.get_responses().sent_messages.iter().any(|message| {
+        message
+            .text()
+            .is_some_and(|text| text.starts_with(&unknown))
+    }));
+    assert!(button_data(&bot.get_responses(), "api_key_new").is_none());
+
+    bot.update(
+        MockCallbackQuery::new()
+            .data("api_key_new")
+            .message(MockMessageText::new().text("🔑").build()),
+    );
+    bot.dispatch().await;
+    assert_eq!(
+        active_tokens(&pool).await?,
+        0,
+        "a forged button creates nothing"
+    );
+    Ok(())
+}
+
+/// "➕ Nouvelle clé" pressed while another action runs (a rename prompt is open) ends it, like a
+/// command: the next text is not taken as the recipe's new name.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_new_key_ends_the_running_action(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::save_recipe;
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let saved = save_recipe(&pool, OWNER, Some("fr"), "", "Gratin", &[]).await?;
+    let card = MockMessageText::new().text("Gratin").build();
+    let chat = card.chat.id;
+    let mut bot = mock_bot(
+        MockCallbackQuery::new()
+            .data(format!("recipe_action:rename:{}", saved.recipe_id))
+            .message(card),
+        services.clone(),
+    );
+    bot.dispatch().await;
+    assert!(matches!(
+        action(&services, chat).await?,
+        Some(RecipeDialogueState::RenamingRecipe { .. })
+    ));
+
+    bot.update(
+        MockCallbackQuery::new()
+            .data("api_key_new")
+            .message(MockMessageText::new().text("🔑").build()),
+    );
+    bot.dispatch().await;
+    assert_eq!(active_tokens(&pool).await?, 1);
+    assert!(action(&services, chat).await?.is_none(), "the rename ended");
+    bot.update(MockMessageText::new().text("gratin"));
+    bot.dispatch().await;
+    assert_eq!(
+        recipe_names(&pool).await?,
+        ["Gratin"],
+        "not renamed by the next text"
     );
     Ok(())
 }

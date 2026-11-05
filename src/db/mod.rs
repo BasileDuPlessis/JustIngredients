@@ -1,6 +1,7 @@
 //! Database access (Postgres): one module per table group; everything is re-exported here, so
 //! callers keep writing `crate::db::…`.
 
+mod api_tokens;
 mod chat_messages;
 mod ingredients;
 pub mod migrations;
@@ -10,6 +11,7 @@ mod usage;
 mod users;
 
 pub use crate::observability;
+pub use api_tokens::*;
 pub use chat_messages::*;
 pub use ingredients::*;
 pub use recipes::*;

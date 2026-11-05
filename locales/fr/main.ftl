@@ -137,6 +137,21 @@ rename-recipe-title = Renommer la recette
 rename-recipe-instructions = Entrez le nouveau nom pour cette recette :
 current-recipe-name = Nom actuel
 
+# Clés d'accès (assistants IA, serveur MCP) : /cle, pendant la bêta
+api-keys-title = 🔑 Clés d'accès
+api-keys-explain = Une clé permet à un assistant IA (Claude Code, Cursor, VS Code…) de lire vos recettes, sans pouvoir les modifier. Gardez-la pour vous.
+api-keys-none = Aucune clé pour l'instant.
+api-keys-line = • { $hint }… créée le { $created }, { $used }
+api-keys-never-used = jamais utilisée
+api-keys-used = utilisée le { $date }
+api-keys-new-button = ➕ Nouvelle clé
+api-keys-revoke-button = 🗑️ Révoquer { $hint }…
+api-keys-limit = Vous avez { $max } clés, le maximum : révoquez-en une pour en créer une autre.
+api-key-created = 🔑 Nouvelle clé { $hint }… Copiez-la maintenant : elle sera masquée dans 10 minutes. Ne la partagez pas.
+api-key-server = Serveur MCP :
+api-key-header = En-tête à envoyer :
+api-key-masked = 🔑 Clé masquée : elle n'est plus affichée ici. Gérez vos clés avec /cle.
+
 # Mémo d'une recette : une info courte et libre (four, cuisson, lien de la source…)
 edit-recipe-note = Mémo
 note-prompt-create = Un mémo pour « {$name} » ?

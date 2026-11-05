@@ -67,10 +67,12 @@ pub fn handler_tree(services: BotServices) -> UpdateHandler<anyhow::Error> {
         }))
         .branch(Update::filter_callback_query().endpoint({
             let pool = Arc::clone(&services.messages.pool);
+            let api = Arc::clone(&services.messages.api);
             let storage = Arc::clone(&services.dialogues);
             let localization = Arc::clone(&services.messages.localization);
             move |bot: Bot, q: CallbackQuery| {
                 let pool = Arc::clone(&pool);
+                let api = Arc::clone(&api);
                 let storage = storage.clone();
                 let localization = Arc::clone(&localization);
                 // Use the chat ID from the original message that contained the inline keyboard
@@ -85,7 +87,8 @@ pub fn handler_tree(services: BotServices) -> UpdateHandler<anyhow::Error> {
                 };
                 let dialogue = RecipeDialogue::new(storage, chat_id);
                 async move {
-                    super::callback_handler_with_cache(bot, q, pool, dialogue, localization).await
+                    super::callback_handler_with_cache(bot, q, pool, dialogue, localization, api)
+                        .await
                 }
             }
         }))

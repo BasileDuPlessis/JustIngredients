@@ -4,6 +4,7 @@
 //! `tests/architecture_tests.rs` checks what it may use.
 
 pub mod recipes;
+pub mod tokens;
 
 /// Whose recipes a call reads or writes: the user a door authenticated (the sender of a Telegram
 /// update, later the holder of a token). Opaque, so that owning recipes by `users.id` instead of
@@ -58,6 +59,9 @@ pub enum EngineError {
     /// The input is refused, with the reason a user is told.
     #[error("invalid input: {0}")]
     Invalid(crate::errors::ValidationError),
+    /// The owner already has as many as allowed (tokens: `tokens::MAX_ACTIVE`).
+    #[error("limit reached")]
+    LimitReached,
     /// The database or another service failed.
     #[error(transparent)]
     Internal(#[from] anyhow::Error),

@@ -167,3 +167,50 @@ pub async fn find_recipe_messages(
         .filter(|message| message.message_id > 0)
         .collect())
 }
+
+/// The messages of `kind` sent more than `older_than_secs` seconds ago, in every chat, with the
+/// language of the chat's user (a private chat's id is the user's Telegram id): the token messages
+/// that `bot::api_keys` hides after 10 minutes.
+pub async fn messages_older_than(
+    pool: &PgPool,
+    kind: &str,
+    older_than_secs: i32,
+) -> Result<Vec<(i64, i32, Option<String>)>> {
+    let rows: Vec<(i64, i64, Option<String>)> = sqlx::query_as(
+        "SELECT m.chat_id, m.message_id, u.language_code FROM chat_messages m \
+         LEFT JOIN users u ON u.telegram_id = m.chat_id \
+         WHERE m.kind = $1 AND m.sent_at < now() - make_interval(secs => $2) \
+         ORDER BY m.sent_at, m.chat_id, m.message_id",
+    )
+    .bind(kind)
+    .bind(f64::from(older_than_secs))
+    .fetch_all(pool)
+    .await
+    .context("Failed to read the messages to hide")?;
+    Ok(rows
+        .into_iter()
+        .filter_map(|(chat, message, language)| {
+            i32::try_from(message)
+                .ok()
+                .map(|message| (chat, message, language))
+        })
+        .collect())
+}
+
+/// Forgets the messages of `kind` sent more than `older_than_secs` seconds ago; returns how many.
+pub async fn forget_messages_older_than(
+    pool: &PgPool,
+    kind: &str,
+    older_than_secs: i32,
+) -> Result<u64> {
+    Ok(sqlx::query(
+        "DELETE FROM chat_messages WHERE kind = $1 \
+         AND sent_at < now() - make_interval(secs => $2)",
+    )
+    .bind(kind)
+    .bind(f64::from(older_than_secs))
+    .execute(pool)
+    .await
+    .context("Failed to forget old messages")?
+    .rows_affected())
+}

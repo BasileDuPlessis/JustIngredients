@@ -25,6 +25,20 @@ impl Html {
         Html(format!("<b>{}</b>", escape(plain)))
     }
 
+    /// A secret (an API token), escaped: monospace, so a tap copies it, and hidden under a
+    /// spoiler until tapped, so that it does not show over a shoulder.
+    pub fn secret(plain: &str) -> Self {
+        Html(format!(
+            "<tg-spoiler><code>{}</code></tg-spoiler>",
+            escape(plain)
+        ))
+    }
+
+    /// Plain text in monospace (a tap copies it), escaped.
+    pub fn code(plain: &str) -> Self {
+        Html(format!("<code>{}</code>", escape(plain)))
+    }
+
     /// Plain text as a preformatted block (monospace, kept as is), escaped.
     pub fn pre(plain: &str) -> Self {
         Html(format!("<pre>{}</pre>", escape(plain)))
@@ -133,6 +147,15 @@ mod tests {
             Html::pre("200 g <farine>\n1 œuf").as_str(),
             "<pre>200 g &lt;farine&gt;\n1 œuf</pre>"
         );
+    }
+
+    #[test]
+    fn a_secret_is_escaped_monospace_under_a_spoiler() {
+        assert_eq!(
+            Html::secret("ji_a<b>&").as_str(),
+            "<tg-spoiler><code>ji_a&lt;b&gt;&amp;</code></tg-spoiler>"
+        );
+        assert_eq!(Html::code("a&b").as_str(), "<code>a&amp;b</code>");
     }
 
     #[test]

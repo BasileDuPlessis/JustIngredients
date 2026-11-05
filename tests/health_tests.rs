@@ -117,29 +117,33 @@ async fn other_paths_and_methods_are_not_found() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// A request announcing a body over 1 MB is refused before it is read.
-#[tokio::test]
-async fn a_large_request_is_refused() -> anyhow::Result<()> {
-    let address = health_server(None).await?;
+/// The first line of the answer to a request announcing a body of `length` bytes, sent as
+/// headers only: the server answers from them, before any body.
+async fn status_line_for_length(address: SocketAddr, length: usize) -> anyhow::Result<String> {
     let mut stream = tokio::net::TcpStream::connect(address).await?;
     stream
         .write_all(
-            b"POST /health/ready HTTP/1.1\r\nHost: localhost\r\nContent-Length: 2000000\r\n\r\n",
+            format!(
+                "POST /health/ready HTTP/1.1\r\nHost: localhost\r\nContent-Length: {length}\r\n\r\n"
+            )
+            .as_bytes(),
         )
         .await?;
-    let mut answer = vec![0_u8; 256];
+    let mut answer = vec![0_u8; 512];
     let read = stream.read(&mut answer).await?;
-    let answer = String::from_utf8_lossy(&answer[..read]);
-    assert!(answer.starts_with("HTTP/1.1 413"), "{answer}");
-    assert!(answer.ends_with("Request too large"), "{answer}");
+    Ok(String::from_utf8_lossy(&answer[..read]).into_owned())
+}
 
-    // 1 MB exactly is allowed through (and then not found: not a GET)
-    let response = reqwest::Client::new()
-        .post(format!("http://{address}/health/ready"))
-        .body(vec![b'x'; 1024 * 1024])
-        .send()
-        .await?;
-    assert_eq!(response.status().as_u16(), 404);
+/// A request announcing a body over 1 MB is refused before it is read; 1 MB is let through
+/// (then not found: not a GET).
+#[tokio::test]
+async fn a_large_request_is_refused() -> anyhow::Result<()> {
+    let address = health_server(None).await?;
+    let over = status_line_for_length(address, 2_000_000).await?;
+    assert!(over.starts_with("HTTP/1.1 413"), "{over}");
+    assert!(over.ends_with("Request too large"), "{over}");
+    let limit = status_line_for_length(address, 1024 * 1024).await?;
+    assert!(limit.starts_with("HTTP/1.1 404"), "{limit}");
     Ok(())
 }
 

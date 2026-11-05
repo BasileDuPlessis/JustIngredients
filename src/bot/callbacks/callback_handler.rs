@@ -37,6 +37,7 @@ pub async fn callback_handler_with_cache(
     pool: Arc<PgPool>,
     dialogue: RecipeDialogue,
     localization: Arc<crate::localization::LocalizationManager>,
+    api: Arc<crate::bot::api_keys::ApiAccess>,
 ) -> Result<()> {
     let span = crate::observability::telegram_span(
         "callback_handler_with_cache",
@@ -107,7 +108,8 @@ pub async fn callback_handler_with_cache(
         };
 
         // Then the buttons that work in any state
-        let prefix_result = route_any_state(&bot, &q, data, &pool, &dialogue, &localization).await;
+        let prefix_result =
+            route_any_state(&bot, &q, data, &pool, &dialogue, &localization, &api).await;
 
         answer_button(&bot, &q, stale, running_action, &localization).await;
 
@@ -134,11 +136,15 @@ async fn route_any_state(
     pool: &Arc<PgPool>,
     dialogue: &RecipeDialogue,
     localization: &Arc<crate::localization::LocalizationManager>,
+    api: &crate::bot::api_keys::ApiAccess,
 ) -> Result<()> {
     let Some(msg) = &q.message else {
         return Ok(());
     };
-    if data.starts_with("recipe_instance:") {
+    if crate::bot::api_keys::is_key_button(data) {
+        crate::bot::api_keys::handle_button(bot, q, data, pool, dialogue, api, localization)
+            .await?;
+    } else if data.starts_with("recipe_instance:") {
         handle_recipe_selection_by_id(bot, msg, data, Arc::clone(pool), &q.from, localization)
             .await?;
     } else if data.starts_with("recipe_action:") {

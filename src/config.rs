@@ -228,6 +228,18 @@ impl ServerConfig {
     }
 }
 
+/// The doors other than Telegram (an MCP server, later an HTTP API):
+/// `specs/tasks/engine-api.md`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ApiConfig {
+    /// Telegram ids allowed to create tokens during the beta (`API_BETA_USERS`, separated by
+    /// commas or spaces); empty: nobody.
+    pub beta_users: Vec<i64>,
+    /// The Fly app's name (`FLY_APP_NAME`, set by Fly): production or staging tokens, and the
+    /// public address.
+    pub app_name: Option<String>,
+}
+
 /// Unified application configuration
 #[derive(Debug, Clone, Default)]
 pub struct AppConfig {
@@ -239,6 +251,8 @@ pub struct AppConfig {
     pub server: ServerConfig,
     /// Ingredient extraction (Gemini client) configuration
     pub extraction: ExtractionConfig,
+    /// The doors other than Telegram
+    pub api: ApiConfig,
 }
 
 impl AppConfig {
@@ -301,6 +315,10 @@ impl AppConfig {
                 bind_all_interfaces: flag("METRICS_BIND_ALL_INTERFACES"),
             },
             extraction: ExtractionConfig::from_lookup(&lookup)?,
+            api: ApiConfig {
+                beta_users: telegram_ids(get("API_BETA_USERS"), "API_BETA_USERS")?,
+                app_name: get("FLY_APP_NAME").map(|name| name.trim().to_string()),
+            },
         })
     }
 
@@ -320,6 +338,21 @@ impl AppConfig {
             self.server.health_port, self.server.metrics_port, self.extraction.gemini.model
         )
     }
+}
+
+/// Telegram ids from a variable, separated by commas or spaces; none when it is not set.
+fn telegram_ids(value: Option<String>, name: &str) -> AppResult<Vec<i64>> {
+    value
+        .unwrap_or_default()
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .filter(|id| !id.is_empty())
+        .map(|id| {
+            id.parse::<i64>()
+                .ok()
+                .filter(|id| *id > 0)
+                .ok_or_else(|| AppError::Config(format!("{name} must be Telegram ids")))
+        })
+        .collect()
 }
 
 /// A number from a variable, `None` when it is not set.
@@ -461,6 +494,35 @@ mod tests {
         assert_eq!(config.bot.deduplication_ttl_secs, 300);
         assert!(config.server.bind_all_interfaces);
         assert!(!config.summary().contains(TOKEN));
+        Ok(())
+    }
+
+    /// The beta list and the app name of the other doors.
+    #[test]
+    fn the_api_beta_list_and_app_name_are_read() -> AppResult<()> {
+        let base = [
+            ("TELEGRAM_BOT_TOKEN", TOKEN),
+            ("DATABASE_URL", "postgres://user:pass@localhost/app"),
+            ("GEMINI_API_KEY", "key"),
+        ];
+        let without = load(&base)?;
+        assert_eq!(without.api, ApiConfig::default(), "nobody, no app name");
+
+        let mut vars = base.to_vec();
+        vars.push(("API_BETA_USERS", " 123, 456 789,"));
+        vars.push(("FLY_APP_NAME", "just-ingredients-staging"));
+        let with = load(&vars)?;
+        assert_eq!(with.api.beta_users, [123, 456, 789]);
+        assert_eq!(
+            with.api.app_name.as_deref(),
+            Some("just-ingredients-staging")
+        );
+
+        for refused in ["abc", "12,x", "-5", "0"] {
+            let mut vars = base.to_vec();
+            vars.push(("API_BETA_USERS", refused));
+            assert!(load(&vars).is_err(), "{refused}");
+        }
         Ok(())
     }
 

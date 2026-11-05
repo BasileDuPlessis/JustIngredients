@@ -11,6 +11,7 @@
 //! - `dialogue_manager`: Manages dialogue state transitions and validation
 
 mod action_input;
+pub mod api_keys;
 pub mod callbacks;
 pub mod cards;
 pub mod cleanup;

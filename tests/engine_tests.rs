@@ -183,3 +183,151 @@ async fn a_visit_keeps_the_users_language_current(pool: PgPool) -> Result<()> {
     assert_eq!(bob.language_code, "en", "a new user without a language");
     Ok(())
 }
+
+/// Tokens on a real database: created for the owner only, found by the secret only while
+/// active, refused across realms, five at most, revocable by their owner only.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn tokens_speak_for_their_owner_until_revoked(pool: PgPool) -> Result<()> {
+    use just_ingredients::engine::tokens::{self, Realm};
+    init_database_schema(&pool).await?;
+    let alice = Owner::telegram(ALICE);
+    let bob = Owner::telegram(BOB);
+
+    let token = tokens::create(&pool, alice, Realm::Production).await?;
+    assert!(token.secret.starts_with("ji_") && token.secret.len() == 46);
+    assert!(token.secret.starts_with(&token.hint));
+    let found = tokens::authenticate(&pool, Realm::Production, &token.secret)
+        .await?
+        .context("Alice's token")?;
+    assert_eq!(found.owner, alice);
+    assert!(found.allows(tokens::SCOPE_RECIPES_READ));
+    assert!(!found.allows("recipes:write"));
+
+    // Only the exact secret, only in its realm
+    let mut altered = token.secret.clone();
+    altered.pop();
+    altered.push(if token.secret.ends_with('A') {
+        'B'
+    } else {
+        'A'
+    });
+    assert!(
+        tokens::authenticate(&pool, Realm::Production, &altered)
+            .await?
+            .is_none()
+    );
+    assert!(
+        tokens::authenticate(&pool, Realm::Staging, &token.secret)
+            .await?
+            .is_none()
+    );
+    let staging = tokens::create(&pool, alice, Realm::Staging).await?;
+    assert!(staging.secret.starts_with("ji_stg_"));
+    assert!(
+        tokens::authenticate(&pool, Realm::Production, &staging.secret)
+            .await?
+            .is_none()
+    );
+    assert!(
+        tokens::authenticate(&pool, Realm::Staging, &staging.secret)
+            .await?
+            .is_some()
+    );
+
+    // Listed by hint, its use noted
+    let listed = tokens::list(&pool, alice).await?;
+    assert_eq!(listed.len(), 2);
+    assert!(
+        listed.iter().all(|key| key.last_used_at.is_some()),
+        "both were used"
+    );
+    assert!(tokens::list(&pool, bob).await?.is_empty());
+
+    // Bob cannot revoke Alice's; Alice can, once
+    let id = found.token_id;
+    assert!(matches!(
+        tokens::revoke(&pool, bob, id).await,
+        Err(EngineError::NotFound)
+    ));
+    assert!(
+        tokens::authenticate(&pool, Realm::Production, &token.secret)
+            .await?
+            .is_some()
+    );
+    tokens::revoke(&pool, alice, id).await?;
+    assert!(
+        tokens::authenticate(&pool, Realm::Production, &token.secret)
+            .await?
+            .is_none()
+    );
+    assert!(matches!(
+        tokens::revoke(&pool, alice, id).await,
+        Err(EngineError::NotFound)
+    ));
+
+    // Five active at most; a revoked one frees a place
+    for _ in 0..4 {
+        tokens::create(&pool, alice, Realm::Production).await?;
+    }
+    assert_eq!(tokens::list(&pool, alice).await?.len(), 5);
+    assert!(matches!(
+        tokens::create(&pool, alice, Realm::Production).await,
+        Err(EngineError::LimitReached)
+    ));
+    let oldest = tokens::list(&pool, alice)
+        .await?
+        .first()
+        .context("a key")?
+        .id;
+    tokens::revoke(&pool, alice, oldest).await?;
+    tokens::create(&pool, alice, Realm::Production).await?;
+
+    // The secret is not stored
+    let stored: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM api_tokens WHERE position($1::bytea in token_hash) > 0 \
+         OR hint = $2",
+    )
+    .bind(token.secret.as_bytes())
+    .bind(&token.secret)
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(stored, 0);
+    Ok(())
+}
+
+/// A token's use is written at most every 5 minutes.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_tokens_use_is_noted_at_most_every_five_minutes(pool: PgPool) -> Result<()> {
+    use just_ingredients::engine::tokens::{self, Realm};
+    init_database_schema(&pool).await?;
+    let token = tokens::create(&pool, Owner::telegram(ALICE), Realm::Production).await?;
+    let last_used = |pool: PgPool| async move {
+        Ok::<_, anyhow::Error>(
+            sqlx::query_scalar::<_, Option<chrono::DateTime<chrono::Utc>>>(
+                "SELECT last_used_at FROM api_tokens",
+            )
+            .fetch_one(&pool)
+            .await?,
+        )
+    };
+    tokens::authenticate(&pool, Realm::Production, &token.secret).await?;
+    let first = last_used(pool.clone()).await?.context("noted")?;
+    tokens::authenticate(&pool, Realm::Production, &token.secret).await?;
+    assert_eq!(
+        last_used(pool.clone()).await?,
+        Some(first),
+        "not written again"
+    );
+    sqlx::query("UPDATE api_tokens SET last_used_at = now() - interval '6 minutes'")
+        .execute(&pool)
+        .await?;
+    tokens::authenticate(&pool, Realm::Production, &token.secret).await?;
+    let later = last_used(pool.clone()).await?.context("noted")?;
+    assert!(
+        later > first - chrono::Duration::minutes(1),
+        "written again after 5 minutes"
+    );
+    Ok(())
+}

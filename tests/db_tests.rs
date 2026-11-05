@@ -624,10 +624,16 @@ async fn test_migration_system(pool: PgPool) -> Result<()> {
 
 async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
     // Every migration applied and recorded by sqlx
-    assert_eq!(migrations::current_version(pool).await?, 10);
+    assert_eq!(migrations::current_version(pool).await?, 11);
     validate_database_schema(pool).await?;
 
     // Reverted with the down scripts, one version at a time, then all
+    migrations::undo_to(pool, 10).await?;
+    assert_eq!(migrations::current_version(pool).await?, 10);
+    assert!(
+        validate_database_schema(pool).await.is_err(),
+        "api_tokens is required"
+    );
     migrations::undo_to(pool, 9).await?;
     assert_eq!(migrations::current_version(pool).await?, 9);
     assert!(
@@ -664,7 +670,7 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
 
     // And applied again from nothing
     init_database_schema(pool).await?;
-    assert_eq!(migrations::current_version(pool).await?, 10);
+    assert_eq!(migrations::current_version(pool).await?, 11);
     validate_database_schema(pool).await?;
 
     Ok(())
@@ -1673,7 +1679,7 @@ async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
             .await?;
     assert_eq!(
         rows.iter().map(|(v, _)| *v).collect::<Vec<_>>(),
-        (1..=10).collect::<Vec<_>>()
+        (1..=11).collect::<Vec<_>>()
     );
     assert!(
         rows.iter()
@@ -1685,7 +1691,7 @@ async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
         rows.iter()
             .filter(|(v, _)| *v >= 9)
             .all(|(_, time)| *time > 0),
-        "9 and 10 ran"
+        "9 to 11 ran"
     );
     validate_database_schema(&pool).await?;
     let legacy: i64 = sqlx::query_scalar("SELECT count(*) FROM schema_migrations")
@@ -1695,7 +1701,7 @@ async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
 
     // A second start finds everything applied
     init_database_schema(&pool).await?;
-    assert_eq!(migrations::current_version(&pool).await?, 10);
+    assert_eq!(migrations::current_version(&pool).await?, 11);
     Ok(())
 }
 
@@ -1708,7 +1714,7 @@ async fn test_legacy_migrations_then_the_new_ones(pool: PgPool) -> Result<()> {
     make_legacy(&pool, 7).await?;
 
     init_database_schema(&pool).await?;
-    assert_eq!(migrations::current_version(&pool).await?, 10);
+    assert_eq!(migrations::current_version(&pool).await?, 11);
     validate_database_schema(&pool).await?;
     let run: i64 =
         sqlx::query_scalar("SELECT execution_time FROM _sqlx_migrations WHERE version = 8")
@@ -1736,7 +1742,7 @@ async fn test_a_database_ahead_of_the_binary_starts(pool: PgPool) -> Result<()> 
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations")
         .fetch_one(&pool)
         .await?;
-    assert_eq!(count, 11, "nothing applied or removed");
+    assert_eq!(count, 12, "nothing applied or removed");
     Ok(())
 }
 
@@ -1756,7 +1762,7 @@ async fn test_owner_key_migration_adds_missing_users(pool: PgPool) -> Result<()>
     get_or_create_user(&pool, 503, Some("fr")).await?;
 
     init_database_schema(&pool).await?;
-    assert_eq!(migrations::current_version(&pool).await?, 10);
+    assert_eq!(migrations::current_version(&pool).await?, 11);
     let owners: Vec<i64> = sqlx::query_scalar(
         "SELECT telegram_id FROM users WHERE telegram_id IN (501, 502, 503) ORDER BY telegram_id",
     )
@@ -1841,5 +1847,50 @@ async fn test_recipe_note(pool: PgPool) -> Result<()> {
 
     assert!(set_recipe_note(&pool, OWNER_A, recipe_id, None).await?);
     assert_eq!(note(OWNER_A).await?, None, "cleared");
+    Ok(())
+}
+
+/// The token messages to mask: recorded as `secret`, sent over the delay ago, with their user's
+/// language; other kinds and recent ones are left.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn secret_messages_are_due_after_the_delay(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    get_or_create_user(&pool, 71, Some("fr")).await?;
+    record_chat_message(&pool, 71, 10, "secret", None).await?;
+    record_chat_message(&pool, 71, 11, "secret", None).await?;
+    record_chat_message(&pool, 71, 12, "transient", None).await?;
+    record_chat_message(&pool, 72, 13, "secret", None).await?;
+    sqlx::query(
+        "UPDATE chat_messages SET sent_at = now() - interval '11 minutes' WHERE message_id <> 11",
+    )
+    .execute(&pool)
+    .await?;
+
+    let due = messages_older_than(&pool, "secret", 600).await?;
+    assert_eq!(
+        due,
+        vec![(71, 10, Some("fr".to_string())), (72, 13, None)],
+        "the recent one waits; other kinds are left; a chat without user has no language"
+    );
+    forget_chat_message(&pool, 71, 10).await?;
+    assert_eq!(messages_older_than(&pool, "secret", 600).await?.len(), 1);
+
+    // Given up after a week: only the old secret ones go
+    sqlx::query(
+        "UPDATE chat_messages SET sent_at = now() - interval '8 days' WHERE message_id IN (12, 13)",
+    )
+    .execute(&pool)
+    .await?;
+    assert_eq!(
+        forget_messages_older_than(&pool, "secret", 7 * 86_400).await?,
+        1
+    );
+    assert!(messages_older_than(&pool, "secret", 600).await?.is_empty());
+    assert_eq!(
+        chat_message_kind(&pool, 71, 12).await?.as_deref(),
+        Some("transient"),
+        "other kinds are kept"
+    );
     Ok(())
 }

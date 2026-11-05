@@ -160,6 +160,13 @@ async fn main() -> Result<()> {
         ));
     }
 
+    // Token messages of /cle are masked 10 minutes after they were sent, also those sent before
+    // a restart (they are recorded)
+    tokio::spawn(bot::api_keys::run_secret_sweeper(
+        bot.clone(),
+        Arc::clone(&localization_manager),
+    ));
+
     // The command menu only helps users find the commands: without it the bot still works
     tokio::spawn({
         let bot = bot.clone();
@@ -206,6 +213,7 @@ async fn main() -> Result<()> {
             localization: Arc::clone(&localization_manager),
             deduplicator: Some(Arc::clone(&deduplicator)),
             extractor: Arc::clone(&extractor),
+            api: Arc::new(bot::api_keys::ApiAccess::from_config(&app_config.api)),
         },
         dialogues: Arc::clone(&dialogue_storage),
     });

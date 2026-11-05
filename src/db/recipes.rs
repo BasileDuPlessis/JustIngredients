@@ -300,16 +300,7 @@ pub async fn save_recipe_parts(
         .await
         .context("Failed to start the recipe transaction")?;
 
-    let user_id: i64 = sqlx::query_scalar(
-        "INSERT INTO users (telegram_id, language_code) VALUES ($1, $2) \
-         ON CONFLICT (telegram_id) DO UPDATE SET telegram_id = EXCLUDED.telegram_id \
-         RETURNING id",
-    )
-    .bind(telegram_id)
-    .bind(language_code.unwrap_or("en"))
-    .fetch_one(&mut *tx)
-    .await
-    .context("Failed to get or create the recipe owner")?;
+    let user_id = super::users::user_id_in(&mut tx, telegram_id, language_code).await?;
 
     // One name per recipe of the user: a second "Tarte" is stored as "Tarte (2)"
     let mut taken = recipe_names_of(&mut tx, telegram_id, None).await?;
