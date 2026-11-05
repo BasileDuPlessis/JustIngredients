@@ -122,8 +122,8 @@ action_names={'start':'/start','help':'aide','list':'liste','search':'recherche'
               'linked_opened':'recette liée ouverte','rename':'renommage','edit':'modification','delete':'suppression',
               'review_confirmed':'photo validée','ingredient_edited':'ingrédient modifié',
               'ingredient_deleted':'ingrédient supprimé','unit_view_chosen':'vue des unités choisie',
-              'note_added':'note ajoutée','note_skipped':'note passée','note_edited':'note modifiée',
-              'note_cleared':'note effacée'}
+              'note_added':'mémo ajouté','note_skipped':'mémo passé','note_edited':'mémo modifié',
+              'note_cleared':'mémo effacé'}
 usage=dashboard('ji-usage','JustIngredients · Usage',
   'Utilisateurs, photos, recettes et actions (plan O, specs/tasks/observability.md). Fly garde 15 jours ; au-delà, /stats et le bilan du lundi.',[
   stat(L,'Utilisateurs actifs 24 h',f'max(ji_users{{{A},period="day"}})',0,0,sparkline=True,

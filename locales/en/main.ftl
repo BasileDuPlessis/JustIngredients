@@ -138,19 +138,19 @@ rename-recipe-title = Rename Recipe
 rename-recipe-instructions = Enter the new name for this recipe:
 current-recipe-name = Current name
 
-# A recipe's note: a short free text (oven, cooking time, a source link…)
-edit-recipe-note = Note
-note-prompt-create = A note to keep for "{$name}"?
-note-prompt-edit = Note for "{$name}"
+# A recipe's memo: a short free text (oven, cooking time, a source link…)
+edit-recipe-note = Memo
+note-prompt-create = A memo for "{$name}"?
+note-prompt-edit = Memo for "{$name}"
 note-prompt-hint = For example: oven 180 °C, 25 min, or the recipe's link. One line, 200 characters at most. Type it below.
-note-current = Current note: {$note}
-note-none-yet = No note yet.
+note-current = Current memo: {$note}
+note-none-yet = No memo yet.
 note-skip-button = Skip
-note-clear-button = Clear the note
-note-empty = The note is empty. Write a few words, or use the button below.
-note-too-long = The note is too long (200 characters at most). Please shorten it.
-note-saved-line = 🗒️ Note saved for "{$name}"
-note-cleared-line = 🗒️ Note cleared for "{$name}"
+note-clear-button = Clear the memo
+note-empty = The memo is empty. Write a few words, or use the button below.
+note-too-long = The memo is too long (200 characters at most). Please shorten it.
+note-saved-line = 📌 Memo saved for "{$name}"
+note-cleared-line = 📌 Memo cleared for "{$name}"
 recipe-created-line = ✅ Recipe “{$name}” created
 recipe-renamed-line = ✏️ “{$old_name}” renamed to “{$new_name}”
 recipe-edited-line = 📝 “{$name}” updated

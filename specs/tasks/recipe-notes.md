@@ -1,5 +1,10 @@
 # Recipe note: a short free text per recipe (study)
 
+> Wording (owner, 2026-11-05, after the staging test): the user sees **"Mémo"** with 📌 ("📌 Un
+> mémo pour « Tarte » ?", card button "📌 Mémo", card line "📌 Four 180 °C"), not "Note" / 🗒️;
+> the skip button is "Passer" without an emoji. The code, the column and the counters keep
+> "note". The rest of this study is kept as written.
+
 Status: implemented (2026-11-05, owner validated the five recommendations and the name-length fix); not in production yet. One difference from the study: at creation the bot does not show the new recipe's card before the question, the prompt names the recipe and the history already has its "créée" line. Requested by the owner: keep a short free text
 with a recipe ("four 180 °C, 25 min"), asked right after the recipe's name at creation, editable
 later. Concerns named: short, filtered, safe.

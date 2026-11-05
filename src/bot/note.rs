@@ -2,7 +2,7 @@
 //! link of its source).
 //!
 //! Asked once a recipe is saved ([`ask`] with `creation`, "Passer" as the exit), and written or
-//! cleared later from the card's 🗒️ button. Both use one dialogue state, `EditingRecipeNote`,
+//! cleared later from the card's 📌 Mémo button ("note" in the code, "mémo" for the user). Both use one dialogue state, `EditingRecipeNote`,
 //! and one answer handler. The recipe is saved before the question: walking away loses nothing.
 //!
 //! The typed text goes through `validation::validate_recipe_note` (one clean line, 200
@@ -50,7 +50,7 @@ pub async fn ask(
         "note-prompt-edit"
     };
     let mut text = format!(
-        "🗒️ {}\n\n",
+        "📌 {}\n\n",
         t_args_lang(
             localization,
             title_key,

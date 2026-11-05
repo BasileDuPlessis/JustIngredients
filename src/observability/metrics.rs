@@ -99,7 +99,7 @@ pub enum Action {
     NoteAdded,
     /// That question answered with "Passer".
     NoteSkipped,
-    /// A note written or replaced from the card's 🗒️ button.
+    /// A note written or replaced from the card's 📌 button.
     NoteEdited,
     /// A note cleared with 🗑.
     NoteCleared,

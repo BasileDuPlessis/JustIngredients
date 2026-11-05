@@ -222,7 +222,7 @@ pub fn cancel_action_keyboard(
     )]])
 }
 
-/// The buttons under a note question. Right after a creation: "⏭️ Passer" alone (the recipe is
+/// The buttons under a note question. Right after a creation: "Passer" alone (the recipe is
 /// saved already; it uses the cancel button's data, which ends the action). From a card: "🗑
 /// Effacer la note" when there is one, above "❌ Annuler" (back to the card).
 pub fn note_keyboard(
@@ -234,10 +234,7 @@ pub fn note_keyboard(
 ) -> InlineKeyboardMarkup {
     if creation {
         return InlineKeyboardMarkup::new(vec![vec![InlineKeyboardButton::callback(
-            format!(
-                "⏭️ {}",
-                t_lang(localization, "note-skip-button", language_code)
-            ),
+            t_lang(localization, "note-skip-button", language_code),
             "cancel_action",
         )]]);
     }
@@ -433,7 +430,7 @@ pub fn create_recipe_details_keyboard(
         vec![
             create_localized_button_with_emoji(
                 localization,
-                "🗒️",
+                "📌",
                 "edit-recipe-note",
                 format!("recipe_action:note:{}", recipe_id),
                 language_code,
@@ -584,7 +581,7 @@ pub fn render_recipe_card(
     // No creation date: the user asked for the card to show the recipe only (2026-10-30)
     let mut card = Html::text("📖 ") + Html::bold(title.name);
     if let Some(note) = title.note {
-        card += Html::text("\n🗒️ ") + Html::text(note);
+        card += Html::text("\n📌 ") + Html::text(note);
     }
     card += Html::text("\n\n") + Html::text(&list);
     let footer = match view {
@@ -958,7 +955,7 @@ mod tests {
         );
         assert_eq!(
             card.as_str(),
-            "📖 <b>Tarte</b>\n🗒️ Four 180 °C &lt;b&gt;25&lt;/b&gt; &amp; https://exemple.fr/a?b=1&amp;c=2\n\n• 200 ml lait"
+            "📖 <b>Tarte</b>\n📌 Four 180 °C &lt;b&gt;25&lt;/b&gt; &amp; https://exemple.fr/a?b=1&amp;c=2\n\n• 200 ml lait"
         );
     }
 

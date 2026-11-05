@@ -1044,7 +1044,7 @@ async fn skipping_the_note_question_keeps_the_recipe(pool: PgPool) -> Result<()>
     use teloxide_tests::MockCallbackQuery;
     let (mut bot, services, chat) = creation_asking_the_note(&pool).await?;
 
-    let prompt = MockMessageText::new().text("🗒️ Une info").build();
+    let prompt = MockMessageText::new().text("📌 Un mémo").build();
     bot.update(
         MockCallbackQuery::new()
             .data("cancel_action")
@@ -1134,7 +1134,7 @@ async fn the_note_follows_a_typed_name(pool: PgPool) -> Result<()> {
     Ok(())
 }
 
-/// The 🗒️ button of a card: the typed note replaces the old one; 🗑 clears it; ❌ leaves it.
+/// The 📌 button of a card: the typed note replaces the old one; 🗑 clears it; ❌ leaves it.
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn the_note_of_a_saved_recipe_is_written_cleared_or_kept(pool: PgPool) -> Result<()> {
@@ -1191,7 +1191,7 @@ async fn the_note_of_a_saved_recipe_is_written_cleared_or_kept(pool: PgPool) -> 
     bot.update(
         MockCallbackQuery::new()
             .data("cancel_action")
-            .message(MockMessageText::new().text("🗒️").build()),
+            .message(MockMessageText::new().text("📌").build()),
     );
     bot.dispatch().await;
     assert_eq!(
@@ -1206,7 +1206,7 @@ async fn the_note_of_a_saved_recipe_is_written_cleared_or_kept(pool: PgPool) -> 
     bot.update(
         MockCallbackQuery::new()
             .data(format!("clear_recipe_note:{}", saved.recipe_id))
-            .message(MockMessageText::new().text("🗒️").build()),
+            .message(MockMessageText::new().text("📌").build()),
     );
     bot.dispatch().await;
     assert_eq!(note_of(&pool, "Gratin").await?, None);

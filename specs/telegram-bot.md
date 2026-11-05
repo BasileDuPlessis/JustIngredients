@@ -318,12 +318,13 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   without buttons and show their message at the bottom, whose last button is "❌ Annuler":
   it deletes the action's messages and gives the card its buttons back (`home::back_to_card`);
   typed cancel words do the same. Review and edit keyboards end with ➕, ✅, then ❌ alone.
-- **Recipe note** (`bot::note`, `specs/tasks/recipe-notes.md`): a short free text kept with a
+- **Recipe note** (`bot::note`, `specs/tasks/recipe-notes.md`; "Mémo" / "Memo" for the user, the
+  owner's choice of 2026-11-05, "note" in the code and the database): a short free text kept with a
   recipe (oven temperature, cooking time, a source link), `recipes.note`. Right after a recipe is
   saved (both paths; for a photo in parts, the main recipe) the review messages go and the
-  question "🗒️ Une info à noter pour « X » ?" is sent with "⏭️ Passer" (the `cancel_action`
+  question "📌 Un mémo pour « X » ?" is sent with "Passer" (the `cancel_action`
   data); state `EditingRecipeNote { creation: true }`. The recipe is saved before the question,
-  so walking away loses nothing. From a card, the 🗒️ Note button (`recipe_action:note:<id>`,
+  so walking away loses nothing. From a card, the 📌 Mémo button (`recipe_action:note:<id>`,
   next to 🗑️ Supprimer) asks again with the current note, "🗑️ Effacer la note"
   (`clear_recipe_note:<id>`, tied to its recipe; the only way to clear) and "❌ Annuler" (back to the card). The typed
   text goes through `validation::validate_recipe_note`: whitespace runs, newlines included,
@@ -333,7 +334,7 @@ without deleting (Telegram refuses them). A database error only leaves the messa
   failure. A cancel word skips (creation) or goes back (card). The write is
   `db::set_recipe_note`, scoped by owner; then `refresh_cards`, a history line
   (`note-saved-line` / `note-cleared-line`, without the text) and the list on the recipe's page.
-  The card shows the note under the name (`🗒️ …`, through `Html::text`) and the ingredient list
+  The card shows the note under the name (`📌 …`, through `Html::text`) and the ingredient list
   yields the characters it needs (`CARD_CHARS`). The note is never logged and never sent to
   Gemini; counters `ji_actions_total{action}` `note_added`, `note_skipped`, `note_edited`,
   `note_cleared` tell whether the creation question is worth asking. Bot messages carry no link

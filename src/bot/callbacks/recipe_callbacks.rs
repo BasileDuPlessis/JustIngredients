@@ -185,7 +185,7 @@ async fn ask_new_name(action: &CardAction<'_>, dialogue: &RecipeDialogue) -> Res
     Ok(())
 }
 
-/// 🗒️ Note on a card: the question goes at the bottom with the current note, "🗑️ Effacer la
+/// 📌 Mémo on a card: the question goes at the bottom with the current note, "🗑️ Effacer la
 /// note" and its exit "❌ Annuler" (back to the card); the typed answer is the new note
 /// (`EditingRecipeNote`).
 async fn ask_note(action: &CardAction<'_>, dialogue: &RecipeDialogue) -> Result<()> {

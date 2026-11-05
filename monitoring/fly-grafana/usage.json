@@ -1010,7 +1010,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "note ajoutée"
+                "value": "mémo ajouté"
               }
             ]
           },
@@ -1022,7 +1022,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "note passée"
+                "value": "mémo passé"
               }
             ]
           },
@@ -1034,7 +1034,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "note modifiée"
+                "value": "mémo modifié"
               }
             ]
           },
@@ -1046,7 +1046,7 @@
             "properties": [
               {
                 "id": "displayName",
-                "value": "note effacée"
+                "value": "mémo effacé"
               }
             ]
           }
