@@ -479,7 +479,12 @@ async fn delete_confirmed(
         .and_then(|recipe| recipe.recipe_name);
     // Read before the links go with the recipe: their cards name it (U9)
     let linked = crate::bot::cards::linked_ids(pool, telegram_id, recipe_id).await;
-    let result = crate::db::delete_recipe(pool, telegram_id, recipe_id).await;
+    let actor = crate::engine::writes::Actor::telegram(crate::engine::Owner::telegram(telegram_id));
+    let result = match crate::engine::writes::delete(pool, actor, recipe_id).await {
+        Ok(_) => Ok(true),
+        Err(crate::engine::EngineError::NotFound) => Ok(false),
+        Err(error) => Err(anyhow::Error::from(error)),
+    };
 
     // The confirmation goes in every case
     if let MaybeInaccessibleMessage::Regular(msg) = msg

@@ -1,6 +1,6 @@
 # JustIngredients Engine: one engine, several doors (study)
 
-Status: tranche 1 done, tested on staging by the owner with Claude Code (2026-11-06); production release pending. Done: task 1 (safety net), task 2 (engine read side), task 3 (tokens and `/cle`), all in production since v41 (2026-11-06, with a spoon hotfix); task 4 (axum and the door guard, 2026-11-06), task 5 (`/mcp`, 2026-11-06). How to connect an assistant: [../mcp.md](../mcp.md). Study revised after an independent review. Asked by the
+Status: tranche 1 in production (v42, 2026-11-06). Tranche 2 (writes and events) started: §15b. Done: task 1 (safety net), task 2 (engine read side), task 3 (tokens and `/cle`), all in production since v41 (2026-11-06, with a spoon hotfix); task 4 (axum and the door guard, 2026-11-06), task 5 (`/mcp`, 2026-11-06). How to connect an assistant: [../mcp.md](../mcp.md). Study revised after an independent review. Asked by the
 owner: "something ambitious, a big architecture change, API, events… the engine should not be
 only on Telegram but reachable from other tools". The owner chose **AI assistants through MCP
 first** and validated the four decisions of the first version: tranches in order, tokens created
@@ -322,6 +322,44 @@ issuer.
    found on the way, fixed: the token message could not be copied (`protect_content`), and the
    set-up steps must run in a terminal of their own (a `!` command in Claude Code keeps no
    variable). Production: with the next release.
+
+## 15b. Tranche 2 tasks: writes and events (started 2026-11-06)
+
+The owner's choices (2026-11-06): an assistant may **rename** a recipe, **set or clear its memo**
+and **create a recipe from text**; no delete and no ingredient edit through MCP in this
+tranche (a mistake, or instructions hidden in a text, can destroy nothing). Write access is
+**chosen when a key is created** in `/cle` ("lecture seule" or "lecture et écriture"); the keys
+made before stay read only.
+
+1. ✅ Outbox. Migration 12: `events (id, user_id → users.id ON DELETE CASCADE, kind, recipe_id,
+   origin, token_id, version, payload JSONB, created_at)` and `event_cursors (consumer,
+   last_id)`. `db::events`: an event is inserted in the transaction of its change, after
+   `pg_advisory_xact_lock` (ids commit in order, §8), with `pg_notify('ji_events', id)`. (M)
+   Done (`src/db/events.rs`, sqlx `json` feature); `engine::events` reads them for consumers
+   (`after`, `cursor`: a new consumer starts at the last event, not the past; `advance`).
+2. Transactional writes. The five recipe writes of the bot (create, rename, memo, ingredient
+   edit, delete) get a variant that runs in a given transaction; `engine::writes` runs each
+   with its event (`Actor { owner, origin, token_id }`; kinds `recipe.created`,
+   `recipe.renamed`, `recipe.memo_changed`, `recipe.ingredients_changed`, `recipe.deleted`,
+   thin: ids, and for a delete its name and linked ids). (M) Done: `rename_recipe_in`,
+   `set_recipe_note_in`, `apply_ingredient_changes_in` (`IngredientChanges`), `delete_recipe_in`,
+   `save_recipe_parts_in` (the pool versions open their own transaction around them);
+   `src/engine/writes.rs` (`Actor`, `create`, `rename`, `set_memo`, `edit_ingredients`,
+   `delete`; names and memos checked and cleaned as in the bot).
+3. ✅ The bot writes through the engine (five call sites), `origin = telegram`; handler and golden
+   tests unchanged. (M) Done: the 31 handler scenarios, the 16 golden cards and the
+   architecture test pass unchanged; `tests/engine_tests.rs` checks every write's event, in
+   order and with its door, none for a refused write, and the consumer's cursor.
+4. Events reach Telegram: a consumer (cursor `telegram_cards`) listens and polls every 30 s;
+   for an event that does not come from Telegram it refreshes the recipe's recorded cards (and
+   the linked ones after a rename). Events older than 30 days are purged. (M)
+5. MCP writes. Scope `recipes:write`; `/cle` creates a read-only or a read-write key and shows
+   which; write tools are listed and callable only with a read-write key: `rename_recipe`
+   (unique names, as in the bot), `set_memo` (cleaned as in the bot; `null` clears),
+   `create_recipe` (a name and one ingredient per line, read by the typed-line parser, no
+   Gemini call; a refused line is told with its reason). (M)
+6. Tests (engine with events, consumer, MCP writes with both scopes), review, docs, staging
+   test, production. (S)
 
 ## 16. What the independent review changed (2026-11-05)
 

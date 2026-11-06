@@ -221,9 +221,11 @@ pub async fn save_ingredients_to_database(
                 .collect(),
         })
         .collect();
-    let saved = match crate::db::save_recipe_parts(
+    // Through the engine: the recipes and their events in one transaction
+    let actor = crate::engine::writes::Actor::telegram(crate::engine::Owner::telegram(telegram_id));
+    let saved = match crate::engine::writes::create(
         pool,
-        telegram_id,
+        actor,
         language_code,
         extracted_text,
         &parts,
@@ -234,7 +236,7 @@ pub async fn save_ingredients_to_database(
         Ok(_) => return Err(anyhow::anyhow!("No recipe saved")),
         Err(e) => {
             error!(telegram_id = %telegram_id, ingredient_count = ingredients.len(), error = %e, "Recipe save failed, nothing was written");
-            return Err(e);
+            return Err(e.into());
         }
     };
     let (recipe_id, user_id) = (saved[0].recipe_id, saved[0].user_id);

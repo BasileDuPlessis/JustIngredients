@@ -215,7 +215,12 @@ async fn write(
         localization,
         language_code,
     } = answer;
-    let written = crate::db::set_recipe_note(pool, telegram_id, recipe_id, note).await;
+    let actor = crate::engine::writes::Actor::telegram(crate::engine::Owner::telegram(telegram_id));
+    let written = match crate::engine::writes::set_memo(pool, actor, recipe_id, note).await {
+        Ok(_) => Ok(true),
+        Err(crate::engine::EngineError::NotFound) => Ok(false),
+        Err(error) => Err(error),
+    };
     let found = match written {
         Ok(found) => found,
         Err(error) => {

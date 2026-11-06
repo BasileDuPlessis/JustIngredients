@@ -3,8 +3,10 @@
 //! returns plain values or an [`EngineError`]. The engine knows nothing of Telegram, HTTP or MCP:
 //! `tests/architecture_tests.rs` checks what it may use.
 
+pub mod events;
 pub mod recipes;
 pub mod tokens;
+pub mod writes;
 
 use sqlx::PgPool;
 

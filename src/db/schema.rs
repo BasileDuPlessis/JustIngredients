@@ -32,6 +32,8 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
         "app_state",
         "dialogues",
         "api_tokens",
+        "events",
+        "event_cursors",
     ];
     for table_name in required_tables {
         let exists: bool = sqlx::query_scalar(

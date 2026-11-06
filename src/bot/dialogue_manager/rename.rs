@@ -191,7 +191,19 @@ async fn rename_for_sender(
 ) -> anyhow::Result<Option<String>> {
     match msg.from.as_ref() {
         Some(user) => {
-            crate::db::rename_recipe(pool, crate::bot::telegram_id(user.id), recipe_id, name).await
+            let owner = crate::engine::Owner::telegram(crate::bot::telegram_id(user.id));
+            match crate::engine::writes::rename(
+                pool,
+                crate::engine::writes::Actor::telegram(owner),
+                recipe_id,
+                name,
+            )
+            .await
+            {
+                Ok(stored) => Ok(Some(stored)),
+                Err(crate::engine::EngineError::NotFound) => Ok(None),
+                Err(error) => Err(error.into()),
+            }
         }
         None => Ok(None),
     }

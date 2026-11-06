@@ -160,14 +160,17 @@ async fn write_changes(
         .collect();
     let additions: Vec<crate::db::NewIngredient> =
         changes.to_add.iter().map(to_new_ingredient).collect();
-    if let Err(e) = crate::db::apply_ingredient_changes(
+    let actor = crate::engine::writes::Actor::telegram(crate::engine::Owner::telegram(telegram_id));
+    if let Err(e) = crate::engine::writes::edit_ingredients(
         pool,
-        telegram_id,
+        actor,
         recipe_id,
         lang,
-        &updates,
-        &additions,
-        &changes.to_delete,
+        crate::db::IngredientChanges {
+            updates: &updates,
+            additions: &additions,
+            deletions: &changes.to_delete,
+        },
     )
     .await
     {

@@ -336,3 +336,164 @@ async fn a_tokens_use_is_noted_at_most_every_five_minutes(pool: PgPool) -> Resul
     );
     Ok(())
 }
+
+/// The events of a user's recipes after `cursor`, as (kind, recipe id, origin).
+async fn events_since(pool: &PgPool, cursor: i64) -> Result<Vec<(String, Option<i64>, String)>> {
+    let (events, _) = just_ingredients::engine::events::after(pool, cursor).await?;
+    Ok(events
+        .into_iter()
+        .map(|event| {
+            (
+                event.kind.as_str().to_string(),
+                event.recipe_id,
+                event.origin.as_str().to_string(),
+            )
+        })
+        .collect())
+}
+
+/// Every write leaves its event in the same transaction, in order, with its door; a refused
+/// write leaves none.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn every_write_leaves_its_event(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::{IngredientChanges, NewIngredient, RecipePart};
+    use just_ingredients::engine::events::Origin;
+    use just_ingredients::engine::writes::{self, Actor};
+    init_database_schema(&pool).await?;
+    let alice = Owner::telegram(ALICE);
+    let telegram = Actor::telegram(alice);
+    let assistant = Actor {
+        owner: alice,
+        origin: Origin::Mcp,
+        token_id: Some(7),
+    };
+
+    let saved = writes::create(
+        &pool,
+        telegram,
+        Some("fr"),
+        "",
+        &[
+            RecipePart {
+                name: "Tarte".to_string(),
+                ingredients: vec![NewIngredient {
+                    name: "farine",
+                    quantity: Some(200.0),
+                    unit: Some("g"),
+                }],
+            },
+            RecipePart {
+                name: "Tarte (sauce)".to_string(),
+                ingredients: Vec::new(),
+            },
+        ],
+    )
+    .await?;
+    let tart = saved.first().context("the tart")?.recipe_id;
+    let sauce = saved.get(1).context("the sauce")?.recipe_id;
+    assert_eq!(
+        writes::rename(&pool, assistant, tart, "Tarte fine").await?,
+        "Tarte fine"
+    );
+    assert_eq!(
+        writes::set_memo(&pool, assistant, tart, Some("  Four 180 °C \n")).await?,
+        Some("Four 180 °C".to_string()),
+        "cleaned as in the bot"
+    );
+    writes::edit_ingredients(
+        &pool,
+        telegram,
+        tart,
+        Some("fr"),
+        IngredientChanges {
+            updates: &[],
+            additions: &[NewIngredient {
+                name: "sel",
+                quantity: None,
+                unit: None,
+            }],
+            deletions: &[],
+        },
+    )
+    .await?;
+    let deleted = writes::delete(&pool, telegram, sauce).await?;
+    assert_eq!(deleted.name.as_deref(), Some("Tarte (sauce)"));
+    assert_eq!(deleted.linked, [tart]);
+
+    let t = |kind: &str, id: i64, origin: &str| (kind.to_string(), Some(id), origin.to_string());
+    assert_eq!(
+        events_since(&pool, 0).await?,
+        [
+            t("recipe.created", tart, "telegram"),
+            t("recipe.created", sauce, "telegram"),
+            t("recipe.renamed", tart, "mcp"),
+            t("recipe.memo_changed", tart, "mcp"),
+            t("recipe.ingredients_changed", tart, "telegram"),
+            t("recipe.deleted", sauce, "telegram"),
+        ]
+    );
+
+    // Refused or not the owner's: nothing written, no event
+    let bob = Actor::telegram(Owner::telegram(BOB));
+    let before = events_since(&pool, 0).await?.len();
+    assert!(matches!(
+        writes::rename(&pool, bob, tart, "Mine").await,
+        Err(EngineError::NotFound)
+    ));
+    assert!(matches!(
+        writes::rename(&pool, assistant, tart, "   ").await,
+        Err(EngineError::Invalid(_))
+    ));
+    assert!(matches!(
+        writes::set_memo(&pool, assistant, tart, Some(&"x".repeat(201))).await,
+        Err(EngineError::Invalid(_))
+    ));
+    assert!(matches!(
+        writes::delete(&pool, bob, tart).await,
+        Err(EngineError::NotFound)
+    ));
+    assert_eq!(
+        events_since(&pool, 0).await?.len(),
+        before,
+        "no event for a refused write"
+    );
+    let name: Option<String> = sqlx::query_scalar("SELECT recipe_name FROM recipes WHERE id = $1")
+        .bind(tart)
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(name.as_deref(), Some("Tarte fine"));
+    Ok(())
+}
+
+/// A consumer starts at the last event (not the past), reads in order after its cursor, and
+/// keeps its place.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_consumer_reads_after_its_cursor(pool: PgPool) -> Result<()> {
+    use just_ingredients::engine::events;
+    use just_ingredients::engine::writes::{self, Actor};
+    init_database_schema(&pool).await?;
+    let actor = Actor::telegram(Owner::telegram(ALICE));
+    let first = save_recipe(&pool, ALICE, Some("fr"), "", "Gratin", &[]).await?;
+    writes::rename(&pool, actor, first.recipe_id, "Gratin dauphinois").await?;
+
+    let start = events::cursor(&pool, "test").await?;
+    assert!(
+        events::after(&pool, start).await?.0.is_empty(),
+        "the past is not read"
+    );
+    writes::set_memo(&pool, actor, first.recipe_id, Some("Four 200 °C")).await?;
+    let (read, last) = events::after(&pool, start).await?;
+    assert_eq!(read.len(), 1);
+    assert_eq!(read[0].kind, events::EventKind::MemoChanged);
+    assert_eq!(read[0].owner, Owner::telegram(ALICE));
+    events::advance(&pool, "test", last).await?;
+    assert_eq!(
+        events::cursor(&pool, "test").await?,
+        last,
+        "kept across restarts"
+    );
+    assert!(events::after(&pool, last).await?.0.is_empty());
+    Ok(())
+}

@@ -11,7 +11,7 @@ license = "MIT"
 teloxide = { version = "0.17.0", default-features = false, features = ["ctrlc_handler", "rustls"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = { version = "1.0.145", features = ["raw_value"] }
-sqlx = { version = "0.8", features = [ "postgres", "runtime-tokio-rustls", "chrono" ] }
+sqlx = { version = "0.8", features = [ "postgres", "runtime-tokio-rustls", "chrono", "json" ] }
 tokio = { version = "1.48.0", features = ["full"] }
 dotenvy = "0.15"
 anyhow = "1.0.100"

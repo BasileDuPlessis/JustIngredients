@@ -60,21 +60,34 @@ pub async fn create_recipe(pool: &PgPool, telegram_id: i64, content: &str) -> Re
 /// Returns `false` when the recipe does not exist or is owned by another user;
 /// in that case nothing is deleted.
 pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Result<bool> {
-    debug!(recipe_id = %recipe_id, "Deleting recipe");
-
-    // Ingredients first (only if the caller owns the recipe). Migration 2 makes the foreign key
-    // cascade; deleting them explicitly also works on a database where it did not apply.
     // One transaction: never a recipe left without its ingredients, or the reverse
     let mut tx = pool
         .begin()
         .await
         .context("Failed to start the delete transaction")?;
+    let deleted = delete_recipe_in(&mut tx, telegram_id, recipe_id).await?;
+    tx.commit()
+        .await
+        .context("Failed to commit the recipe deletion")?;
+    Ok(deleted)
+}
+
+/// [`delete_recipe`] in a transaction the caller commits (with the change's event).
+pub async fn delete_recipe_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    telegram_id: i64,
+    recipe_id: i64,
+) -> Result<bool> {
+    debug!(recipe_id = %recipe_id, "Deleting recipe");
+
+    // Ingredients first (only if the caller owns the recipe). Migration 2 makes the foreign key
+    // cascade; deleting them explicitly also works on a database where it did not apply.
     let ingredients_deleted = sqlx::query(
         "DELETE FROM ingredients WHERE recipe_id = (SELECT id FROM recipes WHERE id = $1 AND telegram_id = $2)",
     )
     .bind(recipe_id)
     .bind(telegram_id)
-    .execute(&mut *tx)
+    .execute(&mut **tx)
     .await
     .context("Failed to delete ingredients for recipe")?;
 
@@ -84,12 +97,9 @@ pub async fn delete_recipe(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> R
     let result = sqlx::query("DELETE FROM recipes WHERE id = $1 AND telegram_id = $2")
         .bind(recipe_id)
         .bind(telegram_id)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .context("Failed to delete recipe")?;
-    tx.commit()
-        .await
-        .context("Failed to commit the recipe deletion")?;
 
     let rows_affected = result.rows_affected();
     if rows_affected > 0 {
@@ -214,19 +224,30 @@ pub async fn rename_recipe(
         .begin()
         .await
         .context("Failed to start the rename transaction")?;
-    let taken = recipe_names_of(&mut tx, telegram_id, Some(recipe_id)).await?;
+    let renamed = rename_recipe_in(&mut tx, telegram_id, recipe_id, wanted).await?;
+    tx.commit().await.context("Failed to commit the rename")?;
+    Ok(renamed)
+}
+
+/// [`rename_recipe`] in a transaction the caller commits (with the change's event).
+pub async fn rename_recipe_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    telegram_id: i64,
+    recipe_id: i64,
+    wanted: &str,
+) -> Result<Option<String>> {
+    let taken = recipe_names_of(tx, telegram_id, Some(recipe_id)).await?;
     let name = unique_recipe_name(wanted, &taken);
     let renamed =
         sqlx::query("UPDATE recipes SET recipe_name = $1 WHERE id = $2 AND telegram_id = $3")
             .bind(&name)
             .bind(recipe_id)
             .bind(telegram_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .context("Failed to rename the recipe")?
             .rows_affected()
             > 0;
-    tx.commit().await.context("Failed to commit the rename")?;
     Ok(renamed.then_some(name))
 }
 
@@ -239,12 +260,28 @@ pub async fn set_recipe_note(
     recipe_id: i64,
     note: Option<&str>,
 ) -> Result<bool> {
+    let mut tx = pool
+        .begin()
+        .await
+        .context("Failed to start the note transaction")?;
+    let updated = set_recipe_note_in(&mut tx, telegram_id, recipe_id, note).await?;
+    tx.commit().await.context("Failed to commit the note")?;
+    Ok(updated)
+}
+
+/// [`set_recipe_note`] in a transaction the caller commits (with the change's event).
+pub async fn set_recipe_note_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    telegram_id: i64,
+    recipe_id: i64,
+    note: Option<&str>,
+) -> Result<bool> {
     let start = std::time::Instant::now();
     let updated = sqlx::query("UPDATE recipes SET note = $1 WHERE id = $2 AND telegram_id = $3")
         .bind(note)
         .bind(recipe_id)
         .bind(telegram_id)
-        .execute(pool)
+        .execute(&mut **tx)
         .await
         .context("Failed to write the recipe note")?
         .rows_affected()
@@ -299,11 +336,24 @@ pub async fn save_recipe_parts(
         .begin()
         .await
         .context("Failed to start the recipe transaction")?;
+    let saved = save_recipe_parts_in(&mut tx, telegram_id, language_code, content, parts).await?;
+    tx.commit().await.context("Failed to commit the recipe")?;
+    crate::observability::db_query("save_recipe", start_time.elapsed());
+    Ok(saved)
+}
 
-    let user_id = super::users::user_id_in(&mut tx, telegram_id, language_code).await?;
+/// [`save_recipe_parts`] in a transaction the caller commits (with the change's event).
+pub async fn save_recipe_parts_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    telegram_id: i64,
+    language_code: Option<&str>,
+    content: &str,
+    parts: &[RecipePart<'_>],
+) -> Result<Vec<SavedRecipe>> {
+    let user_id = super::users::user_id_in(tx, telegram_id, language_code).await?;
 
     // One name per recipe of the user: a second "Tarte" is stored as "Tarte (2)"
-    let mut taken = recipe_names_of(&mut tx, telegram_id, None).await?;
+    let mut taken = recipe_names_of(tx, telegram_id, None).await?;
     let mut saved = Vec::with_capacity(parts.len());
     for part in parts {
         let name = unique_recipe_name(&part.name, &taken);
@@ -313,7 +363,7 @@ pub async fn save_recipe_parts(
         .bind(telegram_id)
         .bind(content)
         .bind(&name)
-        .fetch_one(&mut *tx)
+        .fetch_one(&mut **tx)
         .await
         .context("Failed to insert the recipe")?;
 
@@ -327,7 +377,7 @@ pub async fn save_recipe_parts(
             .bind(ingredient.name)
             .bind(ingredient.quantity)
             .bind(ingredient.unit)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             // The position, not the name: errors are logged and must not carry recipe content
             .with_context(|| format!("Failed to insert ingredient {}", position + 1))?;
@@ -343,12 +393,9 @@ pub async fn save_recipe_parts(
     // Every part linked to every other one, both ways
     for (index, first) in saved.iter().enumerate() {
         for second in &saved[index + 1..] {
-            link_in(&mut tx, first.recipe_id, second.recipe_id).await?;
+            link_in(tx, first.recipe_id, second.recipe_id).await?;
         }
     }
-
-    tx.commit().await.context("Failed to commit the recipe")?;
-    crate::observability::db_query("save_recipe", start_time.elapsed());
     Ok(saved)
 }
 

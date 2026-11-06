@@ -90,18 +90,61 @@ pub async fn apply_ingredient_changes(
         .begin()
         .await
         .context("Failed to start the ingredient transaction")?;
+    let applied = apply_ingredient_changes_in(
+        &mut tx,
+        telegram_id,
+        recipe_id,
+        language_code,
+        IngredientChanges {
+            updates,
+            additions,
+            deletions,
+        },
+    )
+    .await?;
+    if !applied {
+        return Err(anyhow::anyhow!(
+            "Recipe {recipe_id} not found for this user"
+        ));
+    }
+    tx.commit()
+        .await
+        .context("Failed to commit the ingredient changes")?;
+    crate::observability::db_query("apply_ingredient_changes", start_time.elapsed());
+    Ok(())
+}
 
+/// The edit of a saved recipe: updates, additions, deletions.
+#[derive(Debug, Clone, Copy)]
+pub struct IngredientChanges<'a> {
+    pub updates: &'a [IngredientUpdate<'a>],
+    pub additions: &'a [NewIngredient<'a>],
+    pub deletions: &'a [i64],
+}
+
+/// [`apply_ingredient_changes`] in a transaction the caller commits (with the change's event):
+/// `false`, and nothing written, when the recipe is not the user's.
+pub async fn apply_ingredient_changes_in(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    telegram_id: i64,
+    recipe_id: i64,
+    language_code: Option<&str>,
+    changes: IngredientChanges<'_>,
+) -> Result<bool> {
+    let IngredientChanges {
+        updates,
+        additions,
+        deletions,
+    } = changes;
     let owned: Option<i32> =
         sqlx::query_scalar("SELECT 1 FROM recipes WHERE id = $1 AND telegram_id = $2")
             .bind(recipe_id)
             .bind(telegram_id)
-            .fetch_optional(&mut *tx)
+            .fetch_optional(&mut **tx)
             .await
             .context("Failed to check the recipe owner")?;
     if owned.is_none() {
-        return Err(anyhow::anyhow!(
-            "Recipe {recipe_id} not found for this user"
-        ));
+        return Ok(false);
     }
 
     for update in updates {
@@ -114,13 +157,13 @@ pub async fn apply_ingredient_changes(
         .bind(update.ingredient.unit)
         .bind(update.id)
         .bind(recipe_id)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await
         .with_context(|| format!("Failed to update the ingredient {}", update.id))?;
     }
 
     if !additions.is_empty() {
-        let user_id = super::users::user_id_in(&mut tx, telegram_id, language_code).await?;
+        let user_id = super::users::user_id_in(tx, telegram_id, language_code).await?;
         for (position, ingredient) in additions.iter().enumerate() {
             sqlx::query(
                 "INSERT INTO ingredients (user_id, recipe_id, name, quantity, unit) \
@@ -131,7 +174,7 @@ pub async fn apply_ingredient_changes(
             .bind(ingredient.name)
             .bind(ingredient.quantity)
             .bind(ingredient.unit)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .with_context(|| format!("Failed to add ingredient {}", position + 1))?;
         }
@@ -141,16 +184,11 @@ pub async fn apply_ingredient_changes(
         sqlx::query("DELETE FROM ingredients WHERE id = $1 AND recipe_id = $2")
             .bind(id)
             .bind(recipe_id)
-            .execute(&mut *tx)
+            .execute(&mut **tx)
             .await
             .with_context(|| format!("Failed to delete the ingredient {id}"))?;
     }
-
-    tx.commit()
-        .await
-        .context("Failed to commit the ingredient changes")?;
-    crate::observability::db_query("apply_ingredient_changes", start_time.elapsed());
-    Ok(())
+    Ok(true)
 }
 
 /// Create a new ingredient in the database
