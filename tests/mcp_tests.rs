@@ -349,3 +349,167 @@ async fn the_door_needs_a_token_and_its_own_host(pool: PgPool) -> Result<()> {
     assert_eq!(status, 200);
     Ok(())
 }
+
+/// The names of the tools a key is shown.
+async fn tool_names(address: SocketAddr, token: &str) -> Result<Vec<String>> {
+    let (_, answer) = post(
+        address,
+        Some(token),
+        None,
+        &json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }),
+    )
+    .await?;
+    Ok(answer["result"]["tools"]
+        .as_array()
+        .context("tools")?
+        .iter()
+        .filter_map(|tool| tool["name"].as_str().map(str::to_string))
+        .collect())
+}
+
+/// A read-only key cannot change anything; a read-write key renames, writes memos and creates
+/// recipes, with an event from the MCP door for each; nothing deletes.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_read_write_key_changes_recipes_a_read_only_one_cannot(pool: PgPool) -> Result<()> {
+    use just_ingredients::engine::tokens::Access;
+    let (read_only, tart, soup) = two_users(&pool).await?;
+    let read_write = tokens::create_with(
+        &pool,
+        Owner::telegram(ALICE),
+        Realm::Production,
+        Access::ReadWrite,
+    )
+    .await?
+    .secret;
+    let address = serve(&pool).await?;
+
+    // What each key is shown
+    assert_eq!(tool_names(address, &read_only).await?.len(), 4);
+    let names = tool_names(address, &read_write).await?;
+    assert_eq!(names.len(), 7, "{names:?}");
+    assert!(!names.iter().any(|name| name.contains("delete")));
+
+    // A read-only key is refused, nothing changes
+    let (_, answer) = post(
+        address,
+        Some(&read_only),
+        None,
+        &call(1, "rename_recipe", json!({ "id": tart, "name": "Volée" })),
+    )
+    .await?;
+    assert_eq!(answer["result"]["isError"], true, "{answer}");
+    let name = |pool: PgPool, id: i64| async move {
+        Ok::<_, anyhow::Error>(
+            sqlx::query_scalar::<_, Option<String>>(
+                "SELECT recipe_name FROM recipes WHERE id = $1",
+            )
+            .bind(id)
+            .fetch_one(&pool)
+            .await?,
+        )
+    };
+    assert_eq!(
+        name(pool.clone(), tart).await?.as_deref(),
+        Some("Tarte aux poireaux")
+    );
+
+    // A read-write key renames (names stay unique), writes and clears a memo
+    let write = |id: u64, tool: &str, arguments: Value| {
+        let token = read_write.clone();
+        let message = call(id, tool, arguments);
+        async move { post(address, Some(&token), None, &message).await }
+    };
+    let (_, answer) = write(2, "rename_recipe", json!({ "id": tart, "name": "sauce" })).await?;
+    assert_eq!(
+        answer["result"]["structuredContent"]["name"], "sauce (2)",
+        "{answer}"
+    );
+    let (_, answer) = write(
+        3,
+        "set_memo",
+        json!({ "id": tart, "memo": " Four\n200 °C " }),
+    )
+    .await?;
+    assert_eq!(answer["result"]["structuredContent"]["memo"], "Four 200 °C");
+    let (_, answer) = write(4, "set_memo", json!({ "id": tart, "memo": null })).await?;
+    assert!(
+        answer["result"]["structuredContent"]["memo"].is_null(),
+        "{answer}"
+    );
+
+    // Bob's recipe is not found, as for reading
+    let (_, answer) = write(5, "rename_recipe", json!({ "id": soup, "name": "Mine" })).await?;
+    assert_eq!(answer["result"]["isError"], true);
+    assert_eq!(
+        name(pool.clone(), soup).await?.as_deref(),
+        Some("Soupe aux poireaux")
+    );
+
+    // Creating from text; a line that cannot be read is told by its number, nothing created
+    let (_, answer) = write(
+        6,
+        "create_recipe",
+        json!({ "name": "Crêpes", "ingredients": ["250 g de farine", "3 oeufs", "50 cl de lait"] }),
+    )
+    .await?;
+    let created = answer["result"]["structuredContent"]["id"]
+        .as_i64()
+        .context("the new recipe")?;
+    let units: Vec<(Option<f64>, Option<String>)> = sqlx::query_as(
+        "SELECT quantity::float8, unit FROM ingredients WHERE recipe_id = $1 ORDER BY id",
+    )
+    .bind(created)
+    .fetch_all(&pool)
+    .await?;
+    assert_eq!(
+        units,
+        [
+            (Some(250.0), Some("g".to_string())),
+            (Some(3.0), None),
+            (Some(500.0), Some("ml".to_string())),
+        ],
+        "read as typed lines are"
+    );
+    let count = |pool: PgPool| async move {
+        Ok::<_, anyhow::Error>(
+            sqlx::query_scalar::<_, i64>("SELECT count(*) FROM recipes")
+                .fetch_one(&pool)
+                .await?,
+        )
+    };
+    let before = count(pool.clone()).await?;
+    let (_, answer) = write(
+        7,
+        "create_recipe",
+        json!({ "name": "Gâteau", "ingredients": ["200 g de sucre", "0 g de rien"] }),
+    )
+    .await?;
+    assert_eq!(answer["result"]["isError"], true, "{answer}");
+    assert!(
+        answer["result"]["content"][0]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("line 2")),
+        "{answer}"
+    );
+    assert_eq!(count(pool.clone()).await?, before, "nothing created");
+
+    // Each change has its event from the MCP door, with the key
+    let origins: Vec<(String, String, Option<i64>)> = sqlx::query_as(
+        "SELECT kind, origin, token_id FROM events WHERE origin = 'mcp' ORDER BY id",
+    )
+    .fetch_all(&pool)
+    .await?;
+    let kinds: Vec<&str> = origins.iter().map(|(kind, _, _)| kind.as_str()).collect();
+    assert_eq!(
+        kinds,
+        [
+            "recipe.renamed",
+            "recipe.memo_changed",
+            "recipe.memo_changed",
+            "recipe.created"
+        ]
+    );
+    assert!(origins.iter().all(|(_, _, token)| token.is_some()));
+    Ok(())
+}

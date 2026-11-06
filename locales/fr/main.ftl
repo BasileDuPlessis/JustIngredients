@@ -139,12 +139,15 @@ current-recipe-name = Nom actuel
 
 # Clés d'accès (assistants IA, serveur MCP) : /cle, pendant la bêta
 api-keys-title = 🔑 Clés d'accès
-api-keys-explain = Une clé permet à un assistant IA (Claude Code, Cursor, VS Code…) de lire vos recettes, sans pouvoir les modifier. Gardez-la pour vous.
+api-keys-explain = Une clé permet à un assistant IA (Claude Code, Cursor, VS Code…) de lire vos recettes. Une clé « lecture et écriture » lui permet aussi de renommer une recette, d'écrire son mémo et d'en créer une à partir d'un texte ; aucune ne peut supprimer. Gardez-la pour vous.
 api-keys-none = Aucune clé pour l'instant.
-api-keys-line = • { $hint }… créée le { $created }, { $used }
+api-keys-line = • { $hint }… ({ $access }) créée le { $created }, { $used }
 api-keys-never-used = jamais utilisée
 api-keys-used = utilisée le { $date }
-api-keys-new-button = ➕ Nouvelle clé
+api-keys-new-button = ➕ Clé lecture seule
+api-keys-new-write-button = ➕ Clé lecture et écriture
+api-keys-access-read = lecture seule
+api-keys-access-write = lecture et écriture
 api-keys-revoke-button = 🗑️ Révoquer { $hint }…
 api-keys-limit = Vous avez { $max } clés, le maximum : révoquez-en une pour en créer une autre.
 api-key-created = 🔑 Nouvelle clé { $hint }… Copiez-la maintenant : elle sera masquée dans 10 minutes. Ne la partagez pas.

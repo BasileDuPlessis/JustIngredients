@@ -10,6 +10,7 @@ use sqlx::postgres::PgPool;
 pub struct ApiTokenRow {
     pub id: i64,
     pub hint: String,
+    pub scopes: Vec<String>,
     pub created_at: DateTime<Utc>,
     pub last_used_at: Option<DateTime<Utc>>,
 }
@@ -100,7 +101,7 @@ pub async fn touch_api_token(pool: &PgPool, token_id: i64, every_secs: i32) -> R
 /// The active tokens of `telegram_id`, oldest first.
 pub async fn list_api_tokens(pool: &PgPool, telegram_id: i64) -> Result<Vec<ApiTokenRow>> {
     sqlx::query_as::<_, ApiTokenRow>(
-        "SELECT t.id, t.hint, t.created_at, t.last_used_at FROM api_tokens t \
+        "SELECT t.id, t.hint, t.scopes, t.created_at, t.last_used_at FROM api_tokens t \
          JOIN users u ON u.id = t.user_id \
          WHERE u.telegram_id = $1 AND t.revoked_at IS NULL ORDER BY t.created_at, t.id",
     )

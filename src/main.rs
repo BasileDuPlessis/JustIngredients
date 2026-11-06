@@ -167,6 +167,13 @@ async fn main() -> Result<()> {
         ));
     }
 
+    // Changes made through another door (an assistant) update the recipe cards in Telegram
+    tokio::spawn(bot::event_cards::run(
+        bot.clone(),
+        Arc::clone(&shared_pool),
+        Arc::clone(&localization_manager),
+    ));
+
     // Token messages of /cle are masked 10 minutes after they were sent, also those sent before
     // a restart (they are recorded)
     tokio::spawn(bot::api_keys::run_secret_sweeper(

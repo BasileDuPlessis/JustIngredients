@@ -241,3 +241,67 @@ pub async fn delete(
     commit(tx).await?;
     Ok(DeletedRecipe { name, linked })
 }
+
+/// Most ingredient lines a recipe given as text may have.
+pub const MAX_LINES: usize = 100;
+
+/// Creates one recipe from a name and its ingredients as typed lines ("200 g de farine"), read by
+/// the bot's typed-line parser: units normalized, quantities checked. No photo, no Gemini call.
+/// The first refused line is told with its number ([`EngineError::InvalidLine`]); nothing is
+/// written then.
+pub async fn create_from_lines(
+    pool: &PgPool,
+    actor: Actor,
+    name: &str,
+    lines: &[String],
+) -> Result<SavedRecipe, EngineError> {
+    let name = crate::validation::validate_recipe_name(name).map_err(invalid)?;
+    let lines: Vec<&str> = lines
+        .iter()
+        .map(|line| line.trim())
+        .filter(|line| !line.is_empty())
+        .collect();
+    if lines.is_empty() || lines.len() > MAX_LINES {
+        return Err(EngineError::Invalid(
+            crate::errors::ValidationError::EmptyLine,
+        ));
+    }
+    let mut parsed = Vec::with_capacity(lines.len());
+    for (index, line) in lines.iter().enumerate() {
+        match crate::validation::parse_ingredient_from_text(line) {
+            Ok(ingredient) => parsed.push(ingredient),
+            Err(AppError::Validation(reason)) => {
+                return Err(EngineError::InvalidLine {
+                    line: index + 1,
+                    reason,
+                });
+            }
+            Err(other) => return Err(EngineError::Internal(anyhow::anyhow!("{other}"))),
+        }
+    }
+    let ingredients = parsed
+        .iter()
+        .map(|ingredient| crate::db::NewIngredient {
+            name: &ingredient.ingredient_name,
+            quantity: crate::validation::parse_quantity(&ingredient.quantity),
+            unit: ingredient.measurement.as_deref(),
+        })
+        .collect();
+    // The lines as the recipe's text: it tells an English recipe from a French one
+    let content = lines.join("\n");
+    let saved = create(
+        pool,
+        actor,
+        None,
+        &content,
+        &[RecipePart {
+            name: name.to_string(),
+            ingredients,
+        }],
+    )
+    .await?;
+    saved
+        .into_iter()
+        .next()
+        .ok_or_else(|| EngineError::Internal(anyhow::anyhow!("No recipe saved")))
+}

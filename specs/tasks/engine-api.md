@@ -350,14 +350,23 @@ made before stay read only.
    tests unchanged. (M) Done: the 31 handler scenarios, the 16 golden cards and the
    architecture test pass unchanged; `tests/engine_tests.rs` checks every write's event, in
    order and with its door, none for a refused write, and the consumer's cursor.
-4. Events reach Telegram: a consumer (cursor `telegram_cards`) listens and polls every 30 s;
+4. ✅ Events reach Telegram: a consumer (cursor `telegram_cards`) listens and polls every 30 s;
    for an event that does not come from Telegram it refreshes the recipe's recorded cards (and
-   the linked ones after a rename). Events older than 30 days are purged. (M)
+   the linked ones after a rename). Events older than 30 days are purged. (M) Done:
+   `src/bot/event_cards.rs` (`refresh_for` decides, unit-tested; `PgListener` on `ji_events`,
+   polling only when it cannot listen), spawned by `main`.
 5. MCP writes. Scope `recipes:write`; `/cle` creates a read-only or a read-write key and shows
    which; write tools are listed and callable only with a read-write key: `rename_recipe`
    (unique names, as in the bot), `set_memo` (cleaned as in the bot; `null` clears),
    `create_recipe` (a name and one ingredient per line, read by the typed-line parser, no
-   Gemini call; a refused line is told with its reason). (M)
+   Gemini call; a refused line is told with its reason). (M) Done: `tokens::Access`,
+   `create_with`, `SCOPE_RECIPES_WRITE`; `/cle` buttons "➕ Clé lecture seule" and "➕ Clé lecture
+   et écriture", each key's access in the list; `engine::writes::create_from_lines`
+   (`EngineError::InvalidLine`, 100 lines at most); `doors::mcp` lists and allows the three write
+   tools for a read-write key only (annotations: not read only; `set_memo` replaces, so marked
+   destructive; `create_recipe` not idempotent). `tests/mcp_tests.rs`: both keys, unique names,
+   memo set and cleared, another user's recipe, creation and a refused line, the events
+   (the write gate mutation-checked).
 6. Tests (engine with events, consumer, MCP writes with both scopes), review, docs, staging
    test, production. (S)
 

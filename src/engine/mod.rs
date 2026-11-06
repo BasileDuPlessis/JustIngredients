@@ -72,6 +72,12 @@ pub enum EngineError {
     /// The input is refused, with the reason a user is told.
     #[error("invalid input: {0}")]
     Invalid(crate::errors::ValidationError),
+    /// A line of a recipe given as text is refused (`line` from 1), with its reason.
+    #[error("line {line} refused: {reason}")]
+    InvalidLine {
+        line: usize,
+        reason: crate::errors::ValidationError,
+    },
     /// The owner already has as many as allowed (tokens: `tokens::MAX_ACTIVE`).
     #[error("limit reached")]
     LimitReached,

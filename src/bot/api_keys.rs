@@ -35,6 +35,9 @@ const GIVE_UP_SECS: i32 = 7 * 86_400;
 /// Callback data of "➕ Nouvelle clé".
 const NEW_KEY: &str = "api_key_new";
 
+/// Callback data of "➕ Clé lecture et écriture".
+const NEW_WRITE_KEY: &str = "api_key_new_write";
+
 /// Callback data of "🗑️ Révoquer …" starts with this, then the token's id.
 const REVOKE_PREFIX: &str = "api_key_revoke:";
 
@@ -65,7 +68,7 @@ impl ApiAccess {
 
 /// Whether a button's data belongs to the keys message.
 pub fn is_key_button(data: &str) -> bool {
-    data == NEW_KEY || data.starts_with(REVOKE_PREFIX)
+    data == NEW_KEY || data == NEW_WRITE_KEY || data.starts_with(REVOKE_PREFIX)
 }
 
 /// `/cle`: the keys message at the bottom, with its buttons and the list button.
@@ -110,12 +113,17 @@ pub async fn handle_button(
     let chat_id = message.chat.id;
     let language_code = q.from.language_code.as_deref();
 
-    if data == NEW_KEY {
+    if data == NEW_KEY || data == NEW_WRITE_KEY {
+        let key_access = if data == NEW_WRITE_KEY {
+            tokens::Access::ReadWrite
+        } else {
+            tokens::Access::ReadOnly
+        };
         // Like a command, the new key ends a running action: the list below deletes its messages
         if dialogue.get().await?.is_some_and(|state| state.is_action()) {
             dialogue.exit().await?;
         }
-        match tokens::create(pool, owner, access.realm).await {
+        match tokens::create_with(pool, owner, access.realm, key_access).await {
             Ok(token) => {
                 crate::observability::action(crate::observability::Action::ApiKeyCreated);
                 info!(hint = %token.hint, "API token created");
@@ -283,11 +291,17 @@ fn render_keys(
                     )
                 },
             );
+            let access = text_of(if key.can_write {
+                "api-keys-access-write"
+            } else {
+                "api-keys-access-read"
+            });
             t_args_lang(
                 localization,
                 "api-keys-line",
                 &[
                     ("hint", &key.hint),
+                    ("access", &access),
                     ("created", &date(key.created_at)),
                     ("used", &used),
                 ],
@@ -302,6 +316,10 @@ fn render_keys(
         rows.push(vec![InlineKeyboardButton::callback(
             text_of("api-keys-new-button"),
             NEW_KEY,
+        )]);
+        rows.push(vec![InlineKeyboardButton::callback(
+            text_of("api-keys-new-write-button"),
+            NEW_WRITE_KEY,
         )]);
     } else {
         text.push_str("\n\n");
@@ -382,6 +400,7 @@ mod tests {
         TokenInfo {
             id,
             hint: format!("ji_Ab{id}xyz"),
+            can_write: id == 2,
             created_at: chrono::Utc::now(),
             last_used_at: None,
         }
@@ -404,25 +423,33 @@ mod tests {
         let localization = localization();
         let (text, keyboard) = render_keys(&[], &localization, Some("fr"));
         assert!(text.contains(&t_lang(&localization, "api-keys-none", Some("fr"))));
-        assert_eq!(buttons(&keyboard), [NEW_KEY, "show_list"]);
+        assert_eq!(buttons(&keyboard), [NEW_KEY, NEW_WRITE_KEY, "show_list"]);
 
         let two = [key(1), key(2)];
         let (text, keyboard) = render_keys(&two, &localization, Some("fr"));
         assert!(text.contains("ji_Ab1xyz"), "{text}");
         assert_eq!(
             buttons(&keyboard),
-            [NEW_KEY, "api_key_revoke:1", "api_key_revoke:2", "show_list"]
+            [
+                NEW_KEY,
+                NEW_WRITE_KEY,
+                "api_key_revoke:1",
+                "api_key_revoke:2",
+                "show_list"
+            ]
         );
 
         let full: Vec<TokenInfo> = (1..=tokens::MAX_ACTIVE).map(key).collect();
         let (text, keyboard) = render_keys(&full, &localization, Some("fr"));
         assert!(!buttons(&keyboard).contains(&NEW_KEY.to_string()));
+        assert!(!buttons(&keyboard).contains(&NEW_WRITE_KEY.to_string()));
         assert!(text.contains(&tokens::MAX_ACTIVE.to_string()), "{text}");
     }
 
     #[test]
     fn the_keys_message_never_holds_a_secret_and_buttons_are_recognised() {
         assert!(is_key_button(NEW_KEY));
+        assert!(is_key_button(NEW_WRITE_KEY));
         assert!(is_key_button("api_key_revoke:12"));
         assert!(!is_key_button("recipe_action:note:1"));
     }

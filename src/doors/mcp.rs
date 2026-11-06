@@ -27,8 +27,10 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 
 use super::guard::{Guard, Limits, guarded};
+use crate::engine::events::Origin;
 use crate::engine::recipes;
-use crate::engine::tokens::{Authenticated, Realm, SCOPE_RECIPES_READ};
+use crate::engine::tokens::{Authenticated, Realm, SCOPE_RECIPES_READ, SCOPE_RECIPES_WRITE};
+use crate::engine::writes::{self, Actor};
 use crate::engine::{EngineError, Lang, Owner};
 use crate::unit_view::UnitView;
 
@@ -46,7 +48,9 @@ const INSTRUCTIONS: &str = "The recipes of a JustIngredients user (a Telegram bo
 recipe photos). Recipe and ingredient names are in the user's language, mostly French: search \
 with words of that language (\"poireaux\", not \"leeks\"), or list every recipe and match the \
 names yourself, then read one with get_recipe. A recipe may have a memo (oven temperature, \
-cooking time). Measures can be shown in four unit views. Read only: nothing can be changed here.";
+cooking time). Measures can be shown in four unit views. With a read-write key, a recipe can \
+also be renamed, its memo written or cleared, and a recipe created from text (one ingredient \
+per line); nothing can be deleted. Tell the user before changing anything.";
 
 /// The MCP door's routes, behind its guard: the hosts it answers for, and the database.
 pub fn router(pool: PgPool, realm: Realm, allowed_hosts: Vec<String>, limits: Limits) -> Router {
@@ -103,9 +107,14 @@ impl ServerHandler for RecipesServer {
     async fn list_tools(
         &self,
         _request: Option<PaginatedRequestParams>,
-        _context: RequestContext<RoleServer>,
+        context: RequestContext<RoleServer>,
     ) -> Result<ListToolsResult, ErrorData> {
-        Ok(ListToolsResult::with_all_items(tools()))
+        // The tools that change recipes are shown to a read-write key only
+        let mut listed = tools();
+        if authenticated_of(&context)?.allows(SCOPE_RECIPES_WRITE) {
+            listed.extend(write_tools());
+        }
+        Ok(ListToolsResult::with_all_items(listed))
     }
 
     async fn call_tool(
@@ -113,9 +122,23 @@ impl ServerHandler for RecipesServer {
         request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResponse, ErrorData> {
-        let owner = owner_of(&context)?;
+        let authenticated = authenticated_of(&context)?;
+        let owner = authenticated.owner;
+        let actor = Actor::token(&authenticated, Origin::Mcp);
+        let may_write = authenticated.allows(SCOPE_RECIPES_WRITE);
         let arguments = Value::Object(request.arguments.unwrap_or_default());
         let (tool, outcome) = match request.name.as_ref() {
+            "rename_recipe" | "set_memo" | "create_recipe" if !may_write => (
+                "write_refused",
+                Err(Refusal::Told(
+                    "This key can only read. The user can create a read-write key with /cle \
+                     in the bot."
+                        .into(),
+                )),
+            ),
+            "rename_recipe" => ("rename_recipe", rename(&self.pool, actor, arguments).await),
+            "set_memo" => ("set_memo", set_memo(&self.pool, actor, arguments).await),
+            "create_recipe" => ("create_recipe", create(&self.pool, actor, arguments).await),
             "list_recipes" => ("list_recipes", list(&self.pool, owner, arguments).await),
             "search_recipes" => ("search_recipes", search(&self.pool, owner, arguments).await),
             "get_recipe" => ("get_recipe", get(&self.pool, owner, arguments).await),
@@ -162,18 +185,22 @@ impl From<EngineError> for Refusal {
                 Self::Told("The quantity must be a positive number, at most 10000.".into())
             }
             EngineError::Invalid(reason) => Self::Told(format!("Refused: {reason}.")),
+            EngineError::InvalidLine { line, reason } => Self::Told(format!(
+                "Ingredient line {line} refused: {reason}. One ingredient per line, e.g. \
+                 \"200 g de farine\" or \"2 oeufs\"."
+            )),
             other => Self::Failed(other),
         }
     }
 }
 
-/// The token's owner, put in the request by the guard. A request without one never gets here.
-fn owner_of(context: &RequestContext<RoleServer>) -> Result<Owner, ErrorData> {
+/// The token, put in the request by the guard. A request without one never gets here.
+fn authenticated_of(context: &RequestContext<RoleServer>) -> Result<Authenticated, ErrorData> {
     context
         .extensions
         .get::<axum::http::request::Parts>()
         .and_then(|parts| parts.extensions.get::<Authenticated>())
-        .map(|authenticated| authenticated.owner)
+        .cloned()
         .ok_or_else(|| {
             tracing::warn!("An MCP request reached a tool without its token");
             ErrorData::internal_error("Not authenticated", None)
@@ -307,6 +334,121 @@ async fn convert(pool: &PgPool, owner: Owner, arguments_value: Value) -> Result<
     Ok(json!({ "text": shown.text, "converted": shown.converted, "view": view }))
 }
 
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RenameArguments {
+    id: i64,
+    name: String,
+}
+
+async fn rename(pool: &PgPool, actor: Actor, arguments_value: Value) -> Result<Value, Refusal> {
+    let RenameArguments { id, name } = arguments(arguments_value)?;
+    let stored = writes::rename(pool, actor, id, &name).await?;
+    Ok(json!({ "id": id, "name": stored }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MemoArguments {
+    id: i64,
+    /// `null` clears the memo.
+    memo: Option<String>,
+}
+
+async fn set_memo(pool: &PgPool, actor: Actor, arguments_value: Value) -> Result<Value, Refusal> {
+    let MemoArguments { id, memo } = arguments(arguments_value)?;
+    let stored = writes::set_memo(pool, actor, id, memo.as_deref()).await?;
+    Ok(json!({ "id": id, "memo": stored }))
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CreateArguments {
+    name: String,
+    ingredients: Vec<String>,
+}
+
+async fn create(pool: &PgPool, actor: Actor, arguments_value: Value) -> Result<Value, Refusal> {
+    let CreateArguments { name, ingredients } = arguments(arguments_value)?;
+    let saved = writes::create_from_lines(pool, actor, &name, &ingredients).await?;
+    Ok(json!({ "id": saved.recipe_id, "name": saved.name }))
+}
+
+/// A tool that changes the user's data: never deletes, nothing outside it.
+fn writing(
+    name: &'static str,
+    description: &'static str,
+    input: Arc<JsonObject>,
+    replaces: bool,
+    idempotent: bool,
+) -> Tool {
+    Tool::new(name, description, input).with_annotations(
+        ToolAnnotations::new()
+            .read_only(false)
+            .destructive(replaces)
+            .idempotent(idempotent)
+            .open_world(false),
+    )
+}
+
+/// The tools of a read-write key.
+fn write_tools() -> Vec<Tool> {
+    let id = json!({ "type": "integer", "description": "From list_recipes or search_recipes" });
+    vec![
+        writing(
+            "rename_recipe",
+            "Rename one of the user's recipes. Names are unique per user: if the name is taken, \
+             the recipe gets \"Name (2)\"; the answer gives the name stored. Ask the user first.",
+            schema(
+                json!({
+                    "id": id,
+                    "name": { "type": "string", "minLength": 1, "maxLength": 255 }
+                }),
+                &["id", "name"],
+            ),
+            false,
+            true,
+        ),
+        writing(
+            "set_memo",
+            "Write the memo of one of the user's recipes (a short line: oven temperature, \
+             cooking time, a source), replacing the one it has; null clears it. One line, at \
+             most 200 characters (spaces and line breaks are collapsed). Ask the user first.",
+            schema(
+                json!({
+                    "id": id,
+                    "memo": { "type": ["string", "null"], "maxLength": 200 }
+                }),
+                &["id", "memo"],
+            ),
+            true,
+            true,
+        ),
+        writing(
+            "create_recipe",
+            "Create a recipe of the user from a name and its ingredients, one per line as a \
+             cook writes them (\"200 g de farine\", \"2 oeufs\", \"1 cuil. à café de sel\"), in \
+             the recipe's language. Quantities and units are read as in the bot; a line that \
+             cannot be read is refused with its number, and nothing is created. Ask the user \
+             first: each call creates a new recipe.",
+            schema(
+                json!({
+                    "name": { "type": "string", "minLength": 1, "maxLength": 255 },
+                    "ingredients": {
+                        "type": "array",
+                        "items": { "type": "string", "minLength": 1, "maxLength": 200 },
+                        "minItems": 1,
+                        "maxItems": writes::MAX_LINES
+                    }
+                }),
+                &["name", "ingredients"],
+            ),
+            false,
+            false,
+        ),
+    ]
+}
+
 /// An object schema from its properties and required names.
 fn schema(properties: Value, required: &[&str]) -> Arc<JsonObject> {
     let mut object = JsonObject::new();
@@ -397,6 +539,33 @@ fn tools() -> Vec<Tool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn three_write_tools_that_delete_nothing() {
+        let tools = write_tools();
+        let names: Vec<&str> = tools.iter().map(|tool| tool.name.as_ref()).collect();
+        assert_eq!(names, ["rename_recipe", "set_memo", "create_recipe"]);
+        for tool in &tools {
+            let annotations = tool.annotations.as_ref();
+            assert_eq!(
+                annotations.and_then(|annotations| annotations.read_only_hint),
+                Some(false)
+            );
+            assert_eq!(
+                tool.input_schema.get("additionalProperties"),
+                Some(&json!(false)),
+                "{}",
+                tool.name
+            );
+        }
+        assert!(
+            !tools
+                .iter()
+                .chain(super::tools().iter())
+                .any(|tool| tool.name.contains("delete")),
+            "nothing deletes"
+        );
+    }
 
     #[test]
     fn four_read_only_tools_with_closed_schemas() {

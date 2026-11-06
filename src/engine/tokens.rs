@@ -17,8 +17,28 @@ use super::{EngineError, Owner};
 /// Active tokens a user may have at once.
 pub const MAX_ACTIVE: i64 = 5;
 
-/// What a token of tranche 1 allows: reading recipes.
+/// Reading recipes: every token allows it.
 pub const SCOPE_RECIPES_READ: &str = "recipes:read";
+
+/// Changing recipes (rename, memo, create from text): a token allows it when it was created
+/// "lecture et écriture".
+pub const SCOPE_RECIPES_WRITE: &str = "recipes:write";
+
+/// What a token allows, chosen when it is created.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Access {
+    ReadOnly,
+    ReadWrite,
+}
+
+impl Access {
+    fn scopes(self) -> &'static [&'static str] {
+        match self {
+            Self::ReadOnly => &[SCOPE_RECIPES_READ],
+            Self::ReadWrite => &[SCOPE_RECIPES_READ, SCOPE_RECIPES_WRITE],
+        }
+    }
+}
 
 /// A token's use is noted at most this often.
 const TOUCH_EVERY_SECS: i32 = 300;
@@ -79,6 +99,8 @@ impl std::fmt::Debug for NewToken {
 pub struct TokenInfo {
     pub id: i64,
     pub hint: String,
+    /// It may change recipes, not only read them.
+    pub can_write: bool,
     pub created_at: DateTime<Utc>,
     pub last_used_at: Option<DateTime<Utc>>,
 }
@@ -100,6 +122,16 @@ impl Authenticated {
 /// Creates a token for `owner`, reading recipes only. [`EngineError::LimitReached`] when the
 /// owner already has [`MAX_ACTIVE`] active tokens.
 pub async fn create(pool: &PgPool, owner: Owner, realm: Realm) -> Result<NewToken, EngineError> {
+    create_with(pool, owner, realm, Access::ReadOnly).await
+}
+
+/// [`create`], allowing `access`.
+pub async fn create_with(
+    pool: &PgPool,
+    owner: Owner,
+    realm: Realm,
+    access: Access,
+) -> Result<NewToken, EngineError> {
     let mut random = [0_u8; 32];
     rand::rng().fill_bytes(&mut random);
     let secret = format!(
@@ -113,7 +145,7 @@ pub async fn create(pool: &PgPool, owner: Owner, realm: Realm) -> Result<NewToke
         owner.telegram_id(),
         &hash(&secret),
         &hint,
-        &[SCOPE_RECIPES_READ],
+        access.scopes(),
         MAX_ACTIVE,
     )
     .await?;
@@ -131,6 +163,7 @@ pub async fn list(pool: &PgPool, owner: Owner) -> Result<Vec<TokenInfo>, EngineE
         .map(|row| TokenInfo {
             id: row.id,
             hint: row.hint,
+            can_write: row.scopes.iter().any(|scope| scope == SCOPE_RECIPES_WRITE),
             created_at: row.created_at,
             last_used_at: row.last_used_at,
         })
