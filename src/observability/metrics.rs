@@ -245,6 +245,14 @@ pub fn update_handled(kind: &'static str, duration: Duration) {
         .record(duration.as_secs_f64());
 }
 
+/// A request through a door other than Telegram (`crate::doors`):
+/// `ji_api_requests_total{door, status}` and `ji_api_duration_seconds{door}`.
+pub fn api_request(door: &'static str, status: u16, duration: Duration) {
+    metrics::counter!("ji_api_requests_total", "door" => door, "status" => status.to_string())
+        .increment(1);
+    metrics::histogram!("ji_api_duration_seconds", "door" => door).record(duration.as_secs_f64());
+}
+
 /// A recipe card shown, from the button press to the card on screen.
 pub fn card_shown(duration: Duration) {
     metrics::histogram!("ji_card_shown_seconds").record(duration.as_secs_f64());

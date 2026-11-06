@@ -1,6 +1,6 @@
 # JustIngredients Engine: one engine, several doors (study)
 
-Status: tranche 1 in progress. Done (2026-11-05): task 1 (safety net), task 2 (engine read side), task 3 (tokens and `/cle`). Study revised after an independent review. Asked by the
+Status: tranche 1 in progress. Done: task 1 (safety net), task 2 (engine read side), task 3 (tokens and `/cle`), all in production since v41 (2026-11-06, with a spoon hotfix); task 4 (axum and the door guard, 2026-11-06). Study revised after an independent review. Asked by the
 owner: "something ambitious, a big architecture change, API, events… the engine should not be
 only on Telegram but reachable from other tools". The owner chose **AI assistants through MCP
 first** and validated the four decisions of the first version: tranches in order, tokens created
@@ -285,7 +285,20 @@ issuer.
    secret out of `Debug`; one shared user upsert; a failed `last_used_at` write no longer refuses
    a token; no MCP address until `/mcp` exists). The tenth was wrong (a user row created by a
    token gets the column's default language `'en'`, not NULL).
-4. axum router on 8080 with the health routes unchanged; the limits of section 7. (M)
+4. ✅ axum router on 8080 with the health routes unchanged; the limits of section 7. (M) Done:
+   `observability::server` serves both servers with axum (the `hyper` code and dependencies are
+   gone); every public request but a door's reaches one health handler that keeps the order of
+   before (limit per client, size, route, "Not Found"): `tests/health_tests.rs`, written before
+   the swap, passes unchanged, 20 runs out of 20. `start_with_doors` mounts the doors next to the
+   health routes, outside their limit. `doors::guard` (`Guard`, `Limits`, `guarded`): an address
+   with 10 failed authentications in a minute is refused (`429`), a body announced over 64 KB
+   (`413`), the token checked (`401` with `WWW-Authenticate: Bearer`, counted as a failure), 60
+   requests a minute per token (`429`), 4 at once for all doors with a 2 s wait (`503`), 10 s at
+   most (`504`); the token is handed to the door in the request's extensions and its header
+   removed; one log line and `ji_api_requests_total{door, status}`,
+   `ji_api_duration_seconds{door}` per request, never the path, the body nor the token.
+   `tests/doors_tests.rs` (real socket, throwaway database; new CI step; two steps
+   mutation-checked). No door is mounted yet: task 5.
 5. `/mcp`: rmcp stateless, auth middleware, four tools, their tests. (M)
 6. Metrics, dashboards, specs (`telegram-bot.md`, `deployment.md`, a new `mcp.md` with the client
    set-up). Staging test with Claude Code, then production. (S)

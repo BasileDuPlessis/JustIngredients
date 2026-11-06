@@ -54,7 +54,10 @@ being tested), then to production when a deployment is started by hand and appro
 
 ## HTTP Endpoints
 Two servers, bound to all interfaces only when `METRICS_BIND_ALL_INTERFACES=true` (localhost
-otherwise). Code: `src/observability/server.rs`, `src/observability/health_checks.rs`.
+otherwise), served with axum since 2026-11-06 (the answers below are unchanged, written down in
+`tests/health_tests.rs`). Code: `src/observability/server.rs`, `src/observability/health_checks.rs`.
+The doors other than Telegram (the MCP server, `specs/tasks/engine-api.md`) will be mounted on the
+public server behind `src/doors/guard.rs`, with limits of their own.
 
 The public one on `HEALTH_PORT` (8080), behind Fly's proxy, is limited to 10 requests per minute per
 client, checked before routing (except `/health/live`, which does no I/O and is called by Fly's

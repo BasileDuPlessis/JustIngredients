@@ -1,18 +1,24 @@
-//! The bot's two HTTP servers (plan O1, `specs/tasks/observability.md`):
+//! The bot's two HTTP servers (plan O1, `specs/tasks/observability.md`), on axum since
+//! 2026-11-06 (`specs/tasks/engine-api.md`, tranche 1 task 4):
 //!
 //! - the **public** one answers the health checks of Fly and of "Production Uptime"
-//!   (`/health/live`, `/health/ready`), with a rate limit per client;
+//!   (`/health/live`, `/health/ready`), with a rate limit per client; the MCP server will be
+//!   mounted next to them, with limits of its own;
 //! - the **internal** one serves the metrics (`/metrics`) that Fly collects every 15 seconds
 //!   (`[metrics]` in `fly.toml`). Its port is no Fly service: the internet cannot reach it, only
 //!   Fly's private network, so it needs no token.
+//!
+//! What the health routes answer is written down in `tests/health_tests.rs` (from before the move
+//! to axum: the same requests get the same answers).
 
 use anyhow::Result;
-use hyper::server::conn::http1;
-use hyper_util::rt::TokioIo;
+use axum::Router;
+use axum::extract::{ConnectInfo, Request, State};
+use axum::http::{HeaderMap, HeaderValue, Method, StatusCode, header};
+use axum::response::{IntoResponse, Response};
 use metrics_exporter_prometheus::PrometheusHandle;
 use sqlx::PgPool;
 use std::collections::HashMap;
-use std::future::Future;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
@@ -82,6 +88,21 @@ impl RateLimiter {
         true
     }
 
+    /// Whether `client` still has room in the window, without counting a request (a limit on
+    /// failures checks before trying, and counts only a failure).
+    pub fn has_room(&self, client: &str) -> bool {
+        let now = Instant::now();
+        let window = Duration::from_secs(self.window_secs);
+        let requests = self.requests.lock().unwrap_or_else(PoisonError::into_inner);
+        requests.get(client).is_none_or(|times| {
+            times
+                .iter()
+                .filter(|time| now.duration_since(**time) < window)
+                .count()
+                < self.max_requests as usize
+        })
+    }
+
     /// Number of clients currently remembered.
     pub fn tracked_clients(&self) -> usize {
         self.requests
@@ -93,8 +114,8 @@ impl RateLimiter {
 
 /// The client a request counts for: `Fly-Client-IP` (set by Fly's proxy, which is the TCP peer
 /// of every request from the internet) when present, else the TCP peer.
-pub fn client_key<B>(req: &hyper::Request<B>, peer: IpAddr) -> String {
-    req.headers()
+pub fn client_key(headers: &HeaderMap, peer: IpAddr) -> String {
+    headers
         .get("fly-client-ip")
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.trim().parse::<IpAddr>().ok())
@@ -103,10 +124,10 @@ pub fn client_key<B>(req: &hyper::Request<B>, peer: IpAddr) -> String {
 }
 
 /// Check request size limit
-pub fn check_request_size<B>(req: &hyper::Request<B>) -> bool {
+pub fn check_request_size(headers: &HeaderMap) -> bool {
     const MAX_REQUEST_SIZE: u64 = 1024 * 1024; // 1MB limit
 
-    if let Some(content_length) = req.headers().get("content-length") {
+    if let Some(content_length) = headers.get("content-length") {
         if let Ok(size_str) = content_length.to_str()
             && let Ok(size) = size_str.parse::<u64>()
         {
@@ -131,10 +152,8 @@ struct HealthState {
     rate_limiter: RateLimiter,
 }
 
-fn text_response(status: hyper::StatusCode, body: &str) -> hyper::Response<String> {
-    let mut response = hyper::Response::new(body.to_string());
-    *response.status_mut() = status;
-    response
+fn text_response(status: StatusCode, body: &'static str) -> Response {
+    (status, body).into_response()
 }
 
 /// Starts both servers: on all interfaces with `bind_all` (on Fly), else on localhost. Port 0
@@ -145,6 +164,27 @@ pub async fn start(
     metrics_port: u16,
     bind_all: bool,
     db_pool: Option<Arc<PgPool>>,
+) -> Result<Addresses> {
+    start_with_doors(
+        metrics_handle,
+        health_port,
+        metrics_port,
+        bind_all,
+        db_pool,
+        Router::new(),
+    )
+    .await
+}
+
+/// [`start`], with `doors` (the MCP server, `crate::doors`) served by the public server next to
+/// the health routes. Their paths do not reach the health handler nor its rate limit.
+pub async fn start_with_doors(
+    metrics_handle: PrometheusHandle,
+    health_port: u16,
+    metrics_port: u16,
+    bind_all: bool,
+    db_pool: Option<Arc<PgPool>>,
+    doors: Router,
 ) -> Result<Addresses> {
     let ip = if bind_all {
         IpAddr::V6(Ipv6Addr::UNSPECIFIED)
@@ -163,15 +203,14 @@ pub async fn start(
         // 10 requests per minute per client
         rate_limiter: RateLimiter::new(10, 60),
     });
-    serve(health_listener, move |req, peer| {
-        let health = Arc::clone(&health);
-        async move { handle_health(req, peer, &health).await }
-    });
-    let metrics_handle = Arc::new(metrics_handle);
-    serve(metrics_listener, move |req, _| {
-        let metrics_handle = Arc::clone(&metrics_handle);
-        async move { handle_metrics(&req, &metrics_handle) }
-    });
+    serve(health_listener, public_router(health, doors), "public");
+    serve(
+        metrics_listener,
+        Router::new()
+            .fallback(metrics)
+            .with_state(Arc::new(metrics_handle)),
+        "internal",
+    );
 
     tracing::info!(
         health = %addresses.health,
@@ -181,73 +220,54 @@ pub async fn start(
     Ok(addresses)
 }
 
-/// Accepts connections on `listener` and answers each request with `handler`.
-fn serve<H, F>(listener: TcpListener, handler: H)
-where
-    H: Fn(hyper::Request<hyper::body::Incoming>, IpAddr) -> F + Clone + Send + Sync + 'static,
-    F: Future<Output = hyper::Response<String>> + Send + 'static,
-{
+/// The public server's routes: the doors' own paths, and everything else to [`health`], which
+/// answers the two health paths and "Not Found" for anything else, after its limits, exactly as
+/// before axum.
+fn public_router(health_state: Arc<HealthState>, doors: Router) -> Router {
+    Router::new()
+        .fallback(health)
+        .with_state(health_state)
+        .merge(doors)
+}
+
+/// Serves `router` on `listener` in the background, with the client's address for the rate
+/// limit. A failure of the server is logged.
+fn serve(listener: TcpListener, router: Router, name: &'static str) {
     tokio::spawn(async move {
-        loop {
-            match listener.accept().await {
-                Ok((stream, peer)) => {
-                    let handler = handler.clone();
-                    tokio::spawn(async move {
-                        let service = hyper::service::service_fn(move |req| {
-                            let response = handler(req, peer.ip());
-                            async move { Ok::<_, std::convert::Infallible>(response.await) }
-                        });
-                        if let Err(err) = http1::Builder::new()
-                            .serve_connection(TokioIo::new(stream), service)
-                            .await
-                        {
-                            crate::errors::error_logging::log_network_error(
-                                &err,
-                                "serve_http_connection",
-                                Some(&peer.to_string()),
-                                None,
-                            );
-                        }
-                    });
-                }
-                Err(e) => crate::errors::error_logging::log_network_error(
-                    &e,
-                    "accept_tcp_connection",
-                    None,
-                    None,
-                ),
-            }
+        let service = router.into_make_service_with_connect_info::<SocketAddr>();
+        if let Err(error) = axum::serve(listener, service).await {
+            crate::errors::error_logging::log_network_error(&error, "serve_http", Some(name), None);
         }
     });
 }
 
 /// The public server: rate limit, size limit, then the health routes.
-async fn handle_health(
-    req: hyper::Request<hyper::body::Incoming>,
-    peer: IpAddr,
-    state: &HealthState,
-) -> hyper::Response<String> {
-    use hyper::StatusCode;
-
+async fn health(
+    State(state): State<Arc<HealthState>>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
+    req: Request,
+) -> Response {
     // Fly's machine and service checks call /health/live every 15 s each; it does no I/O, so it
     // is not counted (they would use most of a client's 10 requests per minute)
     let counted = req.uri().path() != "/health/live";
-    if counted && !state.rate_limiter.is_allowed(&client_key(&req, peer)) {
+    if counted
+        && !state
+            .rate_limiter
+            .is_allowed(&client_key(req.headers(), peer.ip()))
+    {
         return text_response(StatusCode::TOO_MANY_REQUESTS, "Rate limit exceeded");
     }
-    if !check_request_size(&req) {
+    if !check_request_size(req.headers()) {
         return text_response(StatusCode::PAYLOAD_TOO_LARGE, "Request too large");
     }
     match (req.method(), req.uri().path()) {
         // Liveness: the process runs and can reach Telegram
-        (&hyper::Method::GET, "/health/live") => {
-            match super::health_checks::check_telegram_health() {
-                Ok(()) => text_response(StatusCode::OK, "OK"),
-                Err(_) => text_response(StatusCode::SERVICE_UNAVAILABLE, "NOT LIVE"),
-            }
-        }
+        (&Method::GET, "/health/live") => match super::health_checks::check_telegram_health() {
+            Ok(()) => text_response(StatusCode::OK, "OK"),
+            Err(_) => text_response(StatusCode::SERVICE_UNAVAILABLE, "NOT LIVE"),
+        },
         // Readiness: database and Telegram. The reason is logged, never sent to the caller.
-        (&hyper::Method::GET, "/health/ready") => {
+        (&Method::GET, "/health/ready") => {
             match super::health_checks::perform_readiness_checks(state.db_pool.clone()).await {
                 Ok(_) => text_response(StatusCode::OK, "OK"),
                 Err(error) => {
@@ -261,31 +281,39 @@ async fn handle_health(
 }
 
 /// The internal server: the metrics in Prometheus text format, nothing else.
-fn handle_metrics<B>(
-    req: &hyper::Request<B>,
-    handle: &PrometheusHandle,
-) -> hyper::Response<String> {
-    if req.method() != hyper::Method::GET || req.uri().path() != "/metrics" {
-        return text_response(hyper::StatusCode::NOT_FOUND, "Not Found");
+async fn metrics(State(handle): State<Arc<PrometheusHandle>>, req: Request) -> Response {
+    metrics_response(req.method(), req.uri().path(), &handle)
+}
+
+fn metrics_response(method: &Method, path: &str, handle: &PrometheusHandle) -> Response {
+    if method != Method::GET || path != "/metrics" {
+        return text_response(StatusCode::NOT_FOUND, "Not Found");
     }
-    let mut response = hyper::Response::new(handle.render());
-    response.headers_mut().insert(
-        "content-type",
-        hyper::header::HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
-    );
-    response
+    (
+        [(
+            header::CONTENT_TYPE,
+            HeaderValue::from_static("text/plain; version=0.0.4; charset=utf-8"),
+        )],
+        handle.render(),
+    )
+        .into_response()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn request(headers: &[(&str, &str)]) -> hyper::Request<()> {
-        let mut builder = hyper::Request::builder().uri("/health/ready");
+    fn request(headers: &[(&str, &str)]) -> HeaderMap {
+        let mut map = HeaderMap::new();
         for (name, value) in headers {
-            builder = builder.header(*name, *value);
+            if let (Ok(name), Ok(value)) = (
+                header::HeaderName::from_bytes(name.as_bytes()),
+                HeaderValue::from_str(value),
+            ) {
+                map.insert(name, value);
+            }
         }
-        builder.body(()).unwrap_or_default()
+        map
     }
 
     #[test]
@@ -321,6 +349,18 @@ mod tests {
     }
 
     #[test]
+    fn room_is_looked_at_without_counting() {
+        let limiter = RateLimiter::new(2, 60);
+        assert!(limiter.has_room("a"));
+        assert!(limiter.has_room("a"), "looking does not count");
+        assert!(limiter.is_allowed("a"));
+        assert!(limiter.has_room("a"));
+        assert!(limiter.is_allowed("a"));
+        assert!(!limiter.has_room("a"));
+        assert!(limiter.has_room("b"));
+    }
+
+    #[test]
     fn expired_clients_are_forgotten_first() {
         let limiter = RateLimiter::new(1, 0).with_max_clients(2);
         assert!(limiter.is_allowed("a"));
@@ -338,14 +378,10 @@ mod tests {
         let handle = metrics_exporter_prometheus::PrometheusBuilder::new()
             .build_recorder()
             .handle();
-        let get = |path: &str| {
-            hyper::Request::builder()
-                .uri(path)
-                .body(())
-                .unwrap_or_default()
-        };
-        assert_eq!(handle_metrics(&get("/metrics"), &handle).status(), 200);
-        assert_eq!(handle_metrics(&get("/health/live"), &handle).status(), 404);
-        assert_eq!(handle_metrics(&get("/"), &handle).status(), 404);
+        let status = |method: Method, path: &str| metrics_response(&method, path, &handle).status();
+        assert_eq!(status(Method::GET, "/metrics"), StatusCode::OK);
+        assert_eq!(status(Method::POST, "/metrics"), StatusCode::NOT_FOUND);
+        assert_eq!(status(Method::GET, "/health/live"), StatusCode::NOT_FOUND);
+        assert_eq!(status(Method::GET, "/"), StatusCode::NOT_FOUND);
     }
 }

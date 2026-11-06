@@ -67,6 +67,12 @@ jobs:
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
+    # The guard of the doors other than Telegram, over a real socket (specs/tasks/engine-api.md)
+    - name: Run door tests
+      run: cargo test --test doors_tests -- --include-ignored
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
     # The exact text of recipe cards, frozen in tests/golden/cards/ (engine refactor guard)
     - name: Run card golden tests
       run: cargo test --test card_golden_tests -- --include-ignored
