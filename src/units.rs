@@ -121,7 +121,14 @@ const ALIASES: &[(CanonicalUnit, &[&str])] = &[
             "cuillerées à café",
             "cuil à café",
             "cuil. à café",
+            "cuill. à café",
             "c. à café",
+            // Québec: the teaspoon is "à thé"
+            "cuillère à thé",
+            "cuillères à thé",
+            "cuillerée à thé",
+            "cuil. à thé",
+            "c. à thé",
             "c. à c.",
             "cc",
         ],
@@ -141,6 +148,7 @@ const ALIASES: &[(CanonicalUnit, &[&str])] = &[
             "cuillerées à soupe",
             "cuil à soupe",
             "cuil. à soupe",
+            "cuill. à soupe",
             "c. à soupe",
             "c. à s.",
             "cs",
@@ -319,6 +327,34 @@ pub fn leading_unit(words: &[&str]) -> Option<LeadingUnit> {
                 needs_article: NEEDS_ARTICLE.iter().any(|unit| match_key(unit) == key),
             })
         })
+}
+
+/// The spoon a printed line measures with: "1 cuil. à café de levure" → teaspoon, "2 tbsp
+/// oil" → tablespoon. `None` without a spoon, or when the line names both ("1 cuil. à soupe,
+/// soit 3 cuil. à café"): then it says nothing sure.
+pub fn spoon_in(line: &str) -> Option<CanonicalUnit> {
+    let words: Vec<&str> = line
+        .split_whitespace()
+        .map(|word| word.trim_matches(|c: char| !c.is_alphanumeric()))
+        .filter(|word| !word.is_empty())
+        .collect();
+    let mut found = None;
+    for start in 0..words.len() {
+        let longest = MAX_UNIT_WORDS.min(words.len() - start);
+        let spoon = (1..=longest).rev().find_map(|count| {
+            match canonicalize_unit(&words[start..start + count].join(" ")) {
+                Some(unit @ (CanonicalUnit::Teaspoon | CanonicalUnit::Tablespoon)) => Some(unit),
+                _ => None,
+            }
+        });
+        if let Some(spoon) = spoon {
+            if found.is_some_and(|seen| seen != spoon) {
+                return None;
+            }
+            found = Some(spoon);
+        }
+    }
+    found
 }
 
 /// A quantity and unit after normalization.
@@ -628,6 +664,49 @@ mod tests {
                 quantity: Some(150.0),
                 unit: Some("g".to_string())
             }
+        );
+    }
+    #[test]
+    fn the_spoon_of_a_printed_line_is_read() {
+        for (line, spoon) in [
+            (
+                "1 cuil. à café de levure chimique",
+                Some(CanonicalUnit::Teaspoon),
+            ),
+            ("1 'cuil. à café de levure", Some(CanonicalUnit::Teaspoon)),
+            ("1 cuil. à soupe de lait.", Some(CanonicalUnit::Tablespoon)),
+            ("2 c. à c. de sel", Some(CanonicalUnit::Teaspoon)),
+            ("2 c.à.s d'huile", Some(CanonicalUnit::Tablespoon)),
+            ("1 càc de cannelle", Some(CanonicalUnit::Teaspoon)),
+            ("1 cuillère à thé de sel", Some(CanonicalUnit::Teaspoon)),
+            (
+                "1 cuillères à soupe rases de sucre",
+                Some(CanonicalUnit::Tablespoon),
+            ),
+            ("(1 cuil. à café)", Some(CanonicalUnit::Teaspoon)),
+            ("2 tbsp olive oil", Some(CanonicalUnit::Tablespoon)),
+            ("1 teaspoon salt", Some(CanonicalUnit::Teaspoon)),
+            ("250 g de farine", None),
+            ("1 cuillère de miel", None),
+            ("1 cuil. à soupe, soit 3 cuil. à café", None),
+            ("", None),
+        ] {
+            assert_eq!(spoon_in(line), spoon, "{line}");
+        }
+    }
+
+    #[test]
+    fn abbreviated_and_quebec_spoons_are_known() {
+        for teaspoon in ["cuill. à café", "cuillère à thé", "c. à thé", "cuil. à thé"] {
+            assert_eq!(
+                canonicalize_unit(teaspoon),
+                Some(CanonicalUnit::Teaspoon),
+                "{teaspoon}"
+            );
+        }
+        assert_eq!(
+            canonicalize_unit("cuill. à soupe"),
+            Some(CanonicalUnit::Tablespoon)
         );
     }
 }

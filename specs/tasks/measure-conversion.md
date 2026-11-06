@@ -1,5 +1,10 @@
 # Affichage des unités (validé)
 
+> 2026-11-06, à la demande du propriétaire : les cuillères s'écrivent « cuil. à soupe » et
+> « cuil. à café » (comme dans les livres de cuisine) au lieu de « c. à s. » et « c. à c. », qui
+> ne diffèrent que d'une lettre ; la relecture d'une photo nomme aussi les unités en français
+> (elle montrait « tsp »). Les exemples ci-dessous gardent l'ancienne écriture.
+
 Version 3 du 2026-10-29, validée par l'utilisateur (décisions ci-dessous) : c'est la phase U8 du
 [plan UX](ux-improvements.md). Demandes de l'utilisateur :
 - version 1 : « proposer de mettre toutes les mesures en unités françaises : g / cl / l… » et

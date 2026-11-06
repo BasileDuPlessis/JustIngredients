@@ -125,7 +125,11 @@ pub fn edit_prompt_text(
         "✏️ {}\n\n{}: {}\n\n{}",
         t_lang(localization, "edit-ingredient-title", language_code),
         t_lang(localization, "edit-ingredient-current", language_code),
-        crate::bot::ui_builder::ingredient_line(ingredient, &ingredient.ingredient_name),
+        crate::bot::ui_builder::ingredient_line(
+            ingredient,
+            &ingredient.ingredient_name,
+            crate::bot::ui_builder::ListUnits::of(std::slice::from_ref(ingredient), language_code),
+        ),
         t_lang(
             localization,
             crate::bot::ui_builder::edit_instruction_key(field),

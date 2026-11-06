@@ -49,7 +49,8 @@ fn to_measurement_match(ingredient: &ExtractedIngredient) -> Option<MeasurementM
     let quantity = rounded.filter(|_| !unstorable);
     let out_of_range = quantity.is_some_and(|q| q <= 0.0 || q > MAX_QUANTITY);
 
-    let (unit, unit_truncated) = match normalized.unit {
+    let normalized_unit = printed_spoon(normalized.unit, &ingredient.source_text);
+    let (unit, unit_truncated) = match normalized_unit {
         Some(unit) if unit.chars().count() > MAX_UNIT_CHARS => {
             (Some(unit.chars().take(MAX_UNIT_CHARS).collect()), true)
         }
@@ -69,6 +70,27 @@ fn to_measurement_match(ingredient: &ExtractedIngredient) -> Option<MeasurementM
             || unit_truncated,
         section: section_heading(ingredient.section.as_deref()),
     })
+}
+
+/// The spoon of the printed line when the model gave the other one (2026-11-06: "1 cuil. à café de
+/// levure" read as `tbsp`): the line as printed is the truth. Only teaspoon and tablespoon are
+/// swapped, and only when the line names one kind of spoon.
+fn printed_spoon(unit: Option<String>, source_text: &str) -> Option<String> {
+    use crate::units::{CanonicalUnit, canonicalize_unit, spoon_in};
+    let given = unit.as_deref().and_then(canonicalize_unit);
+    match (given, spoon_in(source_text)) {
+        (Some(given @ (CanonicalUnit::Teaspoon | CanonicalUnit::Tablespoon)), Some(printed))
+            if given != printed =>
+        {
+            tracing::info!(
+                given = given.as_str(),
+                printed = printed.as_str(),
+                "Spoon taken from the printed line"
+            );
+            Some(printed.as_str().to_string())
+        }
+        _ => unit,
+    }
 }
 
 /// Longest section heading kept, in characters.
@@ -294,5 +316,51 @@ mod tests {
         assert_eq!(format_quantity(0.1234), "0.123");
         assert_eq!(format_quantity(1500.0), "1500");
         assert_eq!(format_quantity(-0.0001), "0");
+    }
+
+    fn printed(name: &str, unit: &str, source_text: &str) -> ExtractedIngredient {
+        ExtractedIngredient {
+            source_text: source_text.to_string(),
+            ..ingredient(name, Some(1.0), Some(unit))
+        }
+    }
+
+    #[test]
+    fn the_printed_spoon_wins_over_the_models() {
+        let units = |ingredients: Vec<ExtractedIngredient>| -> Vec<Option<String>> {
+            to_measurement_matches(&extraction(ingredients))
+                .into_iter()
+                .map(|line| line.measurement)
+                .collect()
+        };
+        assert_eq!(
+            units(vec![
+                printed(
+                    "levure chimique",
+                    "tbsp",
+                    "1 cuil. à café de levure chimique"
+                ),
+                printed("cacao", "tablespoon", "1 cuil. à café de cacao"),
+                printed("cannelle", "tsp", "1 cuil. à soupe de cannelle"),
+                printed("lait", "tbsp", "1 cuil. à soupe de lait."),
+                printed(
+                    "sucre",
+                    "tbsp",
+                    "1 cuil. à soupe, soit 3 cuil. à café de sucre"
+                ),
+                printed("farine", "g", "500 g de farine"),
+                printed("sel", "tsp", ""),
+            ]),
+            [
+                Some("tsp".to_string()),
+                Some("tsp".to_string()),
+                Some("tbsp".to_string()),
+                Some("tbsp".to_string()),
+                Some("tbsp".to_string()),
+                Some("g".to_string()),
+                Some("tsp".to_string()),
+            ],
+            "swapped only when the printed line names one other spoon"
+        );
     }
 }

@@ -60,7 +60,7 @@ const SMALLEST_TEASPOONS: f64 = 0.0625;
 
 /// The measure of a saved ingredient in `view`, for a French-speaking user or not (unit names
 /// and decimal comma). "As in the recipe" names units in the recipe's language
-/// (`english_recipe`: "2 tbsp", not "2 c. à s."). Units saved before normalization ("G", "cl",
+/// (`english_recipe`: "2 tbsp", not "2 cuil. à soupe"). Units saved before normalization ("G", "cl",
 /// "cuillères à soupe") are read like normalized ones. Saved metric values convert exactly
 /// (500 ml → 50 cl); only what a density or a US unit gives is rounded.
 pub fn show_measure(
@@ -319,7 +319,7 @@ enum Labels {
     English,
 }
 
-/// "1 ½ cups", "½ c. à c.", "1,5 kg", "200 ml": spoons, cups and US masses in fractions,
+/// "1 ½ cups", "½ cuil. à café", "1,5 kg", "200 ml": spoons, cups and US masses in fractions,
 /// metric units in decimals (with a comma for a French-speaking user, whatever the labels).
 fn measure_text(quantity: f64, unit: CanonicalUnit, labels: Labels, french: bool) -> String {
     let number = if is_metric_mass(unit) || is_metric_volume(unit) {
@@ -338,8 +338,9 @@ fn label(unit: CanonicalUnit, quantity: f64, labels: Labels) -> &'static str {
     };
     let pick = |singular, plurals| if plural { plurals } else { singular };
     match (labels, unit) {
-        (Labels::French, CanonicalUnit::Tablespoon) => "c. à s.",
-        (Labels::French, CanonicalUnit::Teaspoon) => "c. à c.",
+        // As French cookbooks print them; "c. à s." and "c. à c." differ by one letter
+        (Labels::French, CanonicalUnit::Tablespoon) => "cuil. à soupe",
+        (Labels::French, CanonicalUnit::Teaspoon) => "cuil. à café",
         (Labels::French, CanonicalUnit::Cup) => pick("tasse", "tasses"),
         (Labels::French, CanonicalUnit::Pound) => pick("livre", "livres"),
         (Labels::French, CanonicalUnit::Ounce) => pick("once", "onces"),
@@ -507,7 +508,7 @@ const FRENCH_WORDS: &[&str] = &[
 
 /// Whether a recipe is written in English, from the text read off its photo and its ingredient
 /// names: more English words than French ones. Its units can be told apart only this way
-/// ("2 tbsp" and "2 c. à s." are both saved as `tbsp`).
+/// ("2 tbsp" and "2 cuil. à soupe" are both saved as `tbsp`).
 pub fn recipe_is_english<'a>(text: &str, names: impl IntoIterator<Item = &'a str>) -> bool {
     let mut english = 0;
     let mut french = 0;
@@ -567,10 +568,10 @@ mod tests {
             [
                 "1 ½ tasse farine",
                 "1 ¼ tasse lait",
-                "3 c. à s. beurre",
-                "1 c. à s. sucre",
-                "2 c. à c. levure chimique",
-                "½ c. à c. sel",
+                "3 cuil. à soupe beurre",
+                "1 cuil. à soupe sucre",
+                "2 cuil. à café levure chimique",
+                "½ cuil. à café sel",
                 "1 œuf"
             ]
         );
@@ -591,10 +592,10 @@ mod tests {
             [
                 "180 g farine",
                 "30 cl lait",
-                "3 c. à s. beurre",
-                "1 c. à s. sucre",
-                "2 c. à c. levure chimique",
-                "½ c. à c. sel",
+                "3 cuil. à soupe beurre",
+                "1 cuil. à soupe sucre",
+                "2 cuil. à café levure chimique",
+                "½ cuil. à café sel",
                 "1 œuf"
             ]
         );
@@ -682,7 +683,7 @@ mod tests {
         assert_eq!(text(5.0, "G", UnitView::Recipe), "5 g");
         assert_eq!(
             text(2.0, "cuillères à soupe", UnitView::Recipe),
-            "2 c. à s."
+            "2 cuil. à soupe"
         );
         assert_eq!(text(3.0, "dl", UnitView::Weight), "310 g", "309 g, to 5 g");
         assert_eq!(text(1.0, "litres", UnitView::French), "1 l");
@@ -742,12 +743,12 @@ mod tests {
         );
         assert_eq!(
             text(0.25, "tsp", "cannelle", UnitView::Weight, true),
-            "¼ c. à c.",
+            "¼ cuil. à café",
             "under 1 g"
         );
         assert_eq!(
             text(0.004, "tsp", "sel", UnitView::Recipe, true),
-            "0,004 c. à c."
+            "0,004 cuil. à café"
         );
         assert_eq!(text(1.2, "cup", "farine", UnitView::Us, true), "1,2 cups");
         assert_eq!(
@@ -810,7 +811,7 @@ mod tests {
         };
         assert_eq!(text(1.5, "cup", true), "1 ½ cups");
         assert_eq!(text(2.0, "tbsp", true), "2 tbsp");
-        assert_eq!(text(2.0, "tbsp", false), "2 c. à s.");
+        assert_eq!(text(2.0, "tbsp", false), "2 cuil. à soupe");
         assert_eq!(text(1.5, "cup", false), "1 ½ tasse");
         let french_view = show_measure(
             Some(2.0),
@@ -821,7 +822,7 @@ mod tests {
             true,
         );
         assert_eq!(
-            french_view.text, "2 c. à s.",
+            french_view.text, "2 cuil. à soupe",
             "the French view stays French"
         );
     }
@@ -833,7 +834,7 @@ mod tests {
             ["all-purpose flour", "unsalted butter", "egg"]
         ));
         assert!(!recipe_is_english(
-            "250 g de farine\n3 œufs\n50 cl de lait\n2 c. à s. de sucre",
+            "250 g de farine\n3 œufs\n50 cl de lait\n2 cuil. à soupe de sucre",
             ["farine", "œufs", "lait", "sucre"]
         ));
         assert!(

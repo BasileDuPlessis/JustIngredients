@@ -37,7 +37,7 @@ pub struct StoredMeasure {
     pub unit: Option<String>,
 }
 
-/// A measure as a card shows it ("180 g", "½ c. à c.", "2"; empty without quantity nor unit),
+/// A measure as a card shows it ("180 g", "½ cuil. à café", "2"; empty without quantity nor unit),
 /// and whether the view converted it from the saved unit. Text only: there is no numeric
 /// converted value.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -256,7 +256,7 @@ mod tests {
         );
         assert_eq!(
             shown(1.0, "tbsp", UnitView::Recipe, Lang::Fr).map(|shown| shown.text),
-            Ok("1 c. à s.".to_string())
+            Ok("1 cuil. à soupe".to_string())
         );
         assert_eq!(
             shown(1.0, "tbsp", UnitView::Recipe, Lang::En).map(|shown| shown.text),

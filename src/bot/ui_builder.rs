@@ -16,26 +16,69 @@ use super::ui_components::{create_add_button, create_localized_button_with_emoji
 
 /// Quantity and unit as shown to the user ("150 g", "2", "pincée"), empty when the
 /// ingredient has neither (e.g. "sel").
-fn measurement_text(ingredient: &MeasurementMatch) -> String {
-    [
-        ingredient.quantity.trim(),
-        ingredient.measurement.as_deref().unwrap_or("").trim(),
-    ]
-    .into_iter()
-    .filter(|part| !part.is_empty())
-    .collect::<Vec<_>>()
-    .join(" ")
+/// How a review or editing list names units: as the card's "as in the recipe" view does (the
+/// units are kept canonical, "tsp", whatever the page printed): in French ("1 cuil. à café") for
+/// a French-speaking user and a recipe that is not English, in English otherwise. The recipe's
+/// language is told from the ingredient names (2026-11-06: French recipes showed "tsp").
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ListUnits {
+    french_user: bool,
+    english_recipe: bool,
+}
+
+impl ListUnits {
+    pub(crate) fn of(ingredients: &[MeasurementMatch], language_code: Option<&str>) -> Self {
+        Self {
+            french_user: crate::engine::Lang::from_code(language_code).is_french(),
+            english_recipe: crate::unit_view::recipe_is_english(
+                "",
+                ingredients
+                    .iter()
+                    .map(|ingredient| ingredient.ingredient_name.as_str()),
+            ),
+        }
+    }
+}
+
+fn measurement_text(ingredient: &MeasurementMatch, units: ListUnits) -> String {
+    let quantity_text = ingredient.quantity.trim();
+    let quantity = crate::validation::parse_quantity(quantity_text);
+    // A quantity that does not read as a number is shown as it is
+    if quantity.is_none() && !quantity_text.is_empty() {
+        return [
+            quantity_text,
+            ingredient.measurement.as_deref().unwrap_or("").trim(),
+        ]
+        .into_iter()
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join(" ");
+    }
+    crate::unit_view::show_measure(
+        quantity,
+        ingredient.measurement.as_deref(),
+        &ingredient.ingredient_name,
+        crate::unit_view::UnitView::Recipe,
+        units.french_user,
+        units.english_recipe,
+    )
+    .text
 }
 
 /// One ingredient as shown in the review list, on its buttons and in the edit prompt:
-/// "150 g → farine", or just "sel" without quantity, with ⚠️ when the quantity must be checked.
-pub(crate) fn ingredient_line(ingredient: &MeasurementMatch, name: &str) -> String {
+/// "150 g → farine", "½ cuil. à café → sel", or just "sel" without quantity, with ⚠️ when the
+/// quantity must be checked.
+pub(crate) fn ingredient_line(
+    ingredient: &MeasurementMatch,
+    name: &str,
+    units: ListUnits,
+) -> String {
     let warning = if ingredient.requires_quantity_confirmation {
         "⚠️ "
     } else {
         ""
     };
-    let measurement = measurement_text(ingredient);
+    let measurement = measurement_text(ingredient, units);
     if measurement.is_empty() {
         format!("{warning}{name}")
     } else {
@@ -50,6 +93,7 @@ pub fn format_ingredients_list(
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> String {
     let mut result = String::new();
+    let units = ListUnits::of(ingredients, language_code);
 
     for (i, ingredient) in ingredients.iter().enumerate() {
         let ingredient_display = if ingredient.ingredient_name.is_empty() {
@@ -64,7 +108,7 @@ pub fn format_ingredients_list(
         result.push_str(&format!(
             "{}. {}\n",
             i + 1,
-            ingredient_line(ingredient, &ingredient_display)
+            ingredient_line(ingredient, &ingredient_display, units)
         ));
     }
 
@@ -131,6 +175,7 @@ pub fn format_review_list(
     if parts.len() < 2 {
         return format_ingredients_list(ingredients, language_code, localization);
     }
+    let units = ListUnits::of(ingredients, language_code);
     let mut result = t_args_lang(
         localization,
         "review-parts-intro",
@@ -167,7 +212,7 @@ pub fn format_review_list(
             result.push_str(&format!(
                 "\n{}. {}",
                 line + 1,
-                ingredient_line(ingredient, &name)
+                ingredient_line(ingredient, &name, units)
             ));
         }
     }
@@ -268,13 +313,14 @@ pub fn create_ingredient_review_keyboard(
     // One button per ingredient: it opens the ingredient's menu; in the order of the
     // photo's parts, like the list above
     let parts = crate::recipe_parts::split_parts(ingredients);
+    let units = ListUnits::of(ingredients, language_code);
     let mut buttons: Vec<Vec<InlineKeyboardButton>> = parts
         .iter()
         .flat_map(|part| part.lines.iter())
         .filter_map(|&i| ingredients.get(i).map(|ingredient| (i, ingredient)))
         .map(|(i, ingredient)| {
             vec![InlineKeyboardButton::callback(
-                ingredient_button_label(ingredient, language_code, localization),
+                ingredient_button_label(ingredient, units, language_code, localization),
                 format!("item_{i}"),
             )]
         })
@@ -312,6 +358,7 @@ const BUTTON_LABEL_MAX_CHARS: usize = 60;
 /// An ingredient as written on its button: the review line, shortened if very long.
 fn ingredient_button_label(
     ingredient: &MeasurementMatch,
+    units: ListUnits,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> String {
@@ -323,7 +370,10 @@ fn ingredient_button_label(
     } else {
         ingredient.ingredient_name.clone()
     };
-    truncate_text(&ingredient_line(ingredient, &name), BUTTON_LABEL_MAX_CHARS)
+    truncate_text(
+        &ingredient_line(ingredient, &name, units),
+        BUTTON_LABEL_MAX_CHARS,
+    )
 }
 
 /// What a button of the ingredient list or of an ingredient's menu asks for.
@@ -371,7 +421,12 @@ pub fn create_ingredient_menu_keyboard(
         vec![InlineKeyboardButton::callback(
             format!(
                 "👉 {}",
-                ingredient_button_label(ingredient, language_code, localization)
+                ingredient_button_label(
+                    ingredient,
+                    ListUnits::of(std::slice::from_ref(ingredient), language_code),
+                    language_code,
+                    localization
+                )
             ),
             "noop",
         )],
@@ -1194,11 +1249,23 @@ mod tests {
         }
     }
 
+    const ENGLISH: ListUnits = ListUnits {
+        french_user: false,
+        english_recipe: false,
+    };
+    const FRENCH: ListUnits = ListUnits {
+        french_user: true,
+        english_recipe: false,
+    };
+
     #[test]
     fn ingredients_without_quantity_show_only_their_name() {
-        assert_eq!(ingredient_line(&ingredient("", None, false), "sel"), "sel");
         assert_eq!(
-            ingredient_line(&ingredient("", None, true), "sel"),
+            ingredient_line(&ingredient("", None, false), "sel", FRENCH),
+            "sel"
+        );
+        assert_eq!(
+            ingredient_line(&ingredient("", None, true), "sel", FRENCH),
             "⚠️ sel"
         );
     }
@@ -1206,7 +1273,7 @@ mod tests {
     #[test]
     fn flagged_quantities_start_with_a_warning() {
         assert_eq!(
-            ingredient_line(&ingredient("0", Some("cups"), true), "sugar"),
+            ingredient_line(&ingredient("0", Some("cups"), true), "sugar", ENGLISH),
             "⚠️ 0 cups → sugar"
         );
     }
@@ -1214,16 +1281,60 @@ mod tests {
     #[test]
     fn quantities_and_units_are_shown_before_the_name() {
         assert_eq!(
-            ingredient_line(&ingredient("150", Some("g"), false), "farine"),
+            ingredient_line(&ingredient("150", Some("g"), false), "farine", FRENCH),
             "150 g → farine"
         );
         assert_eq!(
-            ingredient_line(&ingredient("2", None, true), "gousse d'ail"),
+            ingredient_line(&ingredient("2", None, true), "gousse d'ail", FRENCH),
             "⚠️ 2 → gousse d'ail"
         );
         assert_eq!(
-            ingredient_line(&ingredient("", Some("pincée"), false), "sel"),
+            ingredient_line(&ingredient("", Some("pincée"), false), "sel", FRENCH),
             "pincée → sel"
         );
+    }
+
+    /// 2026-11-06: the review of a French recipe showed "1 tsp → levure chimique".
+    #[test]
+    fn spoons_are_named_in_the_recipes_language() {
+        let spoon = |quantity: &str, unit: &str| MeasurementMatch {
+            ingredient_name: "levure chimique".to_string(),
+            ..ingredient(quantity, Some(unit), false)
+        };
+        assert_eq!(
+            ingredient_line(&spoon("1", "tsp"), "levure chimique", FRENCH),
+            "1 cuil. à café → levure chimique"
+        );
+        assert_eq!(
+            ingredient_line(&spoon("1", "tbsp"), "lait", FRENCH),
+            "1 cuil. à soupe → lait"
+        );
+        assert_eq!(
+            ingredient_line(&spoon("0.5", "tsp"), "sel", FRENCH),
+            "½ cuil. à café → sel"
+        );
+        assert_eq!(
+            ingredient_line(&spoon("1", "tsp"), "salt", ENGLISH),
+            "1 tsp → salt",
+            "an English-speaking user"
+        );
+        let english_recipe = ListUnits {
+            french_user: true,
+            english_recipe: true,
+        };
+        assert_eq!(
+            ingredient_line(&spoon("2", "tbsp"), "olive oil", english_recipe),
+            "2 tbsp → olive oil",
+            "an English recipe keeps its units"
+        );
+        assert_eq!(
+            ingredient_line(&spoon("1-2", "tsp"), "sel", FRENCH),
+            "1-2 tsp → sel",
+            "a quantity that is not a number is shown as it is"
+        );
+        // The list decides from the names and the user's language
+        let french_list = [spoon("1", "tsp")];
+        assert_eq!(ListUnits::of(&french_list, Some("fr")), FRENCH);
+        assert!(!ListUnits::of(&french_list, Some("en")).french_user);
     }
 }

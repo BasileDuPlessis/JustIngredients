@@ -137,7 +137,16 @@ the user's language.
    the name is asked after confirm.
 
 ## Review, Confirm, Name, Save
-The review message lists one line per ingredient ("150 g → farine", or "sel" without quantity).
+The review message lists one line per ingredient ("150 g → farine", "1 cuil. à café → levure
+chimique", or "sel" without quantity). Units are saved canonical (`tsp`), so the lines, the
+ingredient buttons and the edit prompts name them like the card's "as in the recipe" view
+(`ui_builder::ListUnits`, `unit_view::show_measure`): in French for a French-speaking user and a
+recipe that is not English (told from the ingredient names), in English otherwise; spoons and
+cups in fractions ("½ cuil. à café"). Until 2026-11-06 they showed the canonical spelling ("1 tsp"
+on a French recipe, a bug the owner reported). The model's spoon is checked against the printed
+line (`source_text`): "1 cuil. à café" read as `tbsp` is saved as `tsp`
+(`extraction::mapping`, `units::spoon_in`; only teaspoon and tablespoon are swapped, only when
+the line names one kind).
 A ⚠️ prefix marks `requires_quantity_confirmation`: `needs_review` from the model, quantity
 outside (0, `MAX_QUANTITY`], not storable in `DECIMAL(10,3)`, or unit cut to 50 characters
 (`extraction/mapping.rs`).
