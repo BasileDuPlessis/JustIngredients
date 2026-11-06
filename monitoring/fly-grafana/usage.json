@@ -1049,6 +1049,30 @@
                 "value": "mémo effacé"
               }
             ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "api_key_created"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "clé créée"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "api_key_revoked"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "clé révoquée"
+              }
+            ]
           }
         ]
       },
@@ -1186,6 +1210,362 @@
         "tooltip": {
           "mode": "multi",
           "sort": "none"
+        }
+      }
+    },
+    {
+      "id": 10,
+      "type": "timeseries",
+      "title": "Assistants IA : requêtes MCP par jour",
+      "description": "Requêtes reçues sur /mcp (specs/mcp.md), par réponse : acceptées, clé refusée (401), trop nombreuses (429), occupé (503)…",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_api_requests_total{app=\"$app\",door=\"mcp\",status=\"200\"}[1d]))",
+          "legendFormat": "acceptée",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_api_requests_total{app=\"$app\",door=\"mcp\",status=\"401\"}[1d]))",
+          "legendFormat": "clé refusée",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "C",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_api_requests_total{app=\"$app\",door=\"mcp\",status=\"429\"}[1d]))",
+          "legendFormat": "trop nombreuses",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "D",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_api_requests_total{app=\"$app\",door=\"mcp\",status=\"503\"}[1d]))",
+          "legendFormat": "occupé",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "E",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_api_requests_total{app=\"$app\",door=\"mcp\",status=\"504\"}[1d]))",
+          "legendFormat": "trop longue",
+          "range": true,
+          "instant": false
+        },
+        {
+          "refId": "F",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sum(increase(ji_api_requests_total{app=\"$app\",door=\"mcp\",status=\"413\"}[1d]))",
+          "legendFormat": "trop grande",
+          "range": true,
+          "instant": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "lineWidth": 0,
+            "fillOpacity": 85,
+            "gradientMode": "none",
+            "showPoints": "never",
+            "pointSize": 8,
+            "spanNulls": false,
+            "axisSoftMin": 0,
+            "barAlignment": 0,
+            "stacking": {
+              "mode": "normal",
+              "group": "A"
+            },
+            "lineInterpolation": "linear",
+            "axisBorderShow": false,
+            "axisCenteredZero": false
+          },
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "decimals": 0
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "acceptée"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "acceptée"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#3987e5"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "clé refusée"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "clé refusée"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d95926"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trop nombreuses"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "trop nombreuses"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#199e70"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "occupé"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "occupé"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#c98500"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trop longue"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "trop longue"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#d55181"
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "trop grande"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "trop grande"
+              },
+              {
+                "id": "color",
+                "value": {
+                  "mode": "fixed",
+                  "fixedColor": "#008300"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "interval": "1d"
+    },
+    {
+      "id": 11,
+      "type": "bargauge",
+      "title": "Assistants IA : outils appelés sur la période",
+      "description": "",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 31
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "expr": "sort_desc(sum by (tool) (increase(ji_mcp_tool_calls_total{app=\"$app\"}[$__range])))",
+          "legendFormat": "{{tool}}",
+          "instant": true,
+          "range": false
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 0,
+          "min": 0,
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#3987e5"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "#3987e5",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "list_recipes"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "lister"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "search_recipes"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "chercher"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "get_recipe"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "lire une recette"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "convert_quantity"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "convertir"
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "orientation": "horizontal",
+        "displayMode": "basic",
+        "showUnfilled": false,
+        "valueMode": "text",
+        "namePlacement": "left",
+        "sizing": "auto",
+        "minVizHeight": 16,
+        "maxVizHeight": 24,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
         }
       }
     }

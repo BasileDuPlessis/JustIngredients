@@ -1,6 +1,6 @@
 # JustIngredients Engine: one engine, several doors (study)
 
-Status: tranche 1 in progress. Done: task 1 (safety net), task 2 (engine read side), task 3 (tokens and `/cle`), all in production since v41 (2026-11-06, with a spoon hotfix); task 4 (axum and the door guard, 2026-11-06), task 5 (`/mcp`, 2026-11-06). How to connect an assistant: [../mcp.md](../mcp.md). Study revised after an independent review. Asked by the
+Status: tranche 1 done, tested on staging by the owner with Claude Code (2026-11-06); production release pending. Done: task 1 (safety net), task 2 (engine read side), task 3 (tokens and `/cle`), all in production since v41 (2026-11-06, with a spoon hotfix); task 4 (axum and the door guard, 2026-11-06), task 5 (`/mcp`, 2026-11-06). How to connect an assistant: [../mcp.md](../mcp.md). Study revised after an independent review. Asked by the
 owner: "something ambitious, a big architecture change, API, events… the engine should not be
 only on Telegram but reachable from other tools". The owner chose **AI assistants through MCP
 first** and validated the four decisions of the first version: tranches in order, tokens created
@@ -312,8 +312,16 @@ issuer.
    `ji_mcp_tool_calls_total{tool, result}`. The `/cle` token message gives the address.
    `tests/mcp_tests.rs`: handshake, list, each tool, two users, bad calls, no token, another
    host (mutation-checked); new CI step. Client set-up: `specs/mcp.md`.
-6. Metrics, dashboards, specs (`telegram-bot.md`, `deployment.md`, a new `mcp.md` with the client
-   set-up). Staging test with Claude Code, then production. (S)
+6. ✅ Metrics, dashboards, specs (`telegram-bot.md`, `deployment.md`, a new `mcp.md` with the client
+   set-up). Staging test with Claude Code, then production. (S) Done: the usage dashboard has
+   "Assistants IA : requêtes MCP par jour" (by answer) and "outils appelés" panels, and names the
+   key actions. Staging test (2026-11-06, the owner): Claude Code connected with a `ji_stg_`
+   token, answered "which recipes have leeks?" (6 calls: searches in French and English, then
+   the list) and "with flour?" (11 calls); the logs held one `Door request` line per call
+   (door, status, 8–41 ms, token id) and nothing of the questions, recipes or token. Two problems
+   found on the way, fixed: the token message could not be copied (`protect_content`), and the
+   set-up steps must run in a terminal of their own (a `!` command in Claude Code keeps no
+   variable). Production: with the next release.
 
 ## 16. What the independent review changed (2026-11-05)
 

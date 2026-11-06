@@ -123,7 +123,12 @@ action_names={'start':'/start','help':'aide','list':'liste','search':'recherche'
               'review_confirmed':'photo validée','ingredient_edited':'ingrédient modifié',
               'ingredient_deleted':'ingrédient supprimé','unit_view_chosen':'vue des unités choisie',
               'note_added':'mémo ajouté','note_skipped':'mémo passé','note_edited':'mémo modifié',
-              'note_cleared':'mémo effacé'}
+              'note_cleared':'mémo effacé','api_key_created':'clé créée','api_key_revoked':'clé révoquée'}
+mcp_requests=per_value('ji_api_requests_total','status',
+  [('200','acceptée'),('401','clé refusée'),('429','trop nombreuses'),('503','occupé'),('504','trop longue'),('413','trop grande')],
+  extra=',door="mcp"')
+mcp_tools={'list_recipes':'lister','search_recipes':'chercher','get_recipe':'lire une recette',
+           'convert_quantity':'convertir'}
 usage=dashboard('ji-usage','JustIngredients · Usage',
   'Utilisateurs, photos, recettes et actions (plan O, specs/tasks/observability.md). Fly garde 15 jours ; au-delà, /stats et le bilan du lundi.',[
   stat(L,'Utilisateurs actifs 24 h',f'max(ji_users{{{A},period="day"}})',0,0,sparkline=True,
@@ -145,6 +150,12 @@ usage=dashboard('ji-usage','JustIngredients · Usage',
   series(L,'Utilisateurs actifs dans le temps',[(f'max(ji_users{{{A},period="day"}})','24 h'),
          (f'max(ji_users{{{A},period="week"}})','7 jours')],0,23,w=24,decimals=0,
          names={'24 h':('24 h',SLOT[0]),'7 jours':('7 jours',SLOT[1])}),
+  series(L,'Assistants IA : requêtes MCP par jour',mcp_requests[0],0,31,w=12,h=8,
+         bars=True,stack=True,names=mcp_requests[1],interval='1d',decimals=0,
+         description='Requêtes reçues sur /mcp (specs/mcp.md), par réponse : acceptées, clé refusée (401), trop nombreuses (429), occupé (503)…'),
+  bargauge(L,'Assistants IA : outils appelés sur la période',
+           f'sort_desc(sum by (tool) (increase(ji_mcp_tool_calls_total{{{A}}}[$__range])))',
+           '{{tool}}',12,31,h=8,names=mcp_tools),
 ])
 # ---------- Gemini ----------
 L=Layout()
