@@ -3,3 +3,4 @@
 //! [`guard`]: a valid personal token, and limits that keep the bot's own work safe.
 
 pub mod guard;
+pub mod mcp;

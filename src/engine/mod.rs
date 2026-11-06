@@ -6,6 +6,8 @@
 pub mod recipes;
 pub mod tokens;
 
+use sqlx::PgPool;
+
 /// Whose recipes a call reads or writes: the user a door authenticated (the sender of a Telegram
 /// update, later the holder of a token). Opaque, so that owning recipes by `users.id` instead of
 /// the Telegram id only changes this type and `db`.
@@ -47,6 +49,15 @@ impl Lang {
     pub const fn is_french(self) -> bool {
         matches!(self, Self::Fr)
     }
+}
+
+/// The language the owner uses in Telegram (`users.language_code`, kept current by their visits):
+/// the default language of what the engine composes for another door. English without a user.
+pub async fn language_of(pool: &PgPool, owner: Owner) -> Result<Lang, EngineError> {
+    let user = crate::db::get_user_by_telegram_id(pool, owner.telegram_id()).await?;
+    Ok(Lang::from_code(
+        user.as_ref().map(|user| user.language_code.as_str()),
+    ))
 }
 
 /// Why an engine call gave no result.

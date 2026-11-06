@@ -253,6 +253,11 @@ pub fn api_request(door: &'static str, status: u16, duration: Duration) {
     metrics::histogram!("ji_api_duration_seconds", "door" => door).record(duration.as_secs_f64());
 }
 
+/// An MCP tool called: `ji_mcp_tool_calls_total{tool, result}` (`ok`, `refused`, `failed`).
+pub fn mcp_tool(tool: &'static str, result: &'static str) {
+    metrics::counter!("ji_mcp_tool_calls_total", "tool" => tool, "result" => result).increment(1);
+}
+
 /// A recipe card shown, from the button press to the card on screen.
 pub fn card_shown(duration: Duration) {
     metrics::histogram!("ji_card_shown_seconds").record(duration.as_secs_f64());

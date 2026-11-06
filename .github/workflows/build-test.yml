@@ -73,6 +73,12 @@ jobs:
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
+    # The MCP door: raw JSON-RPC requests over a real socket, two users
+    - name: Run MCP tests
+      run: cargo test --test mcp_tests -- --include-ignored
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
     # The exact text of recipe cards, frozen in tests/golden/cards/ (engine refactor guard)
     - name: Run card golden tests
       run: cargo test --test card_golden_tests -- --include-ignored

@@ -53,8 +53,10 @@ impl ApiAccess {
         Self {
             beta_users: config.beta_users.clone(),
             realm: Realm::from_app_name(config.app_name.as_deref()),
-            // Told once `/mcp` is served (engine-api.md, tranche 1 task 5), from the settings
-            mcp_url: None,
+            mcp_url: config
+                .app_name
+                .as_ref()
+                .map(|app| format!("https://{app}.fly.dev{}", crate::doors::mcp::PATH)),
         }
     }
 
@@ -439,7 +441,10 @@ mod tests {
         assert!(access.allows(42));
         assert!(!access.allows(43));
         assert_eq!(access.realm, Realm::Staging);
-        assert_eq!(access.mcp_url, None, "no address before /mcp is served");
+        assert_eq!(
+            access.mcp_url.as_deref(),
+            Some("https://just-ingredients-staging.fly.dev/mcp")
+        );
         assert!(!ApiAccess::default().allows(42), "nobody by default");
     }
 }

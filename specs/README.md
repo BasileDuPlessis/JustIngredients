@@ -12,6 +12,7 @@ specs/
 ├── database-design.md            # Feature: data persistence
 ├── deployment.md                 # Feature: Fly.io, CI/CD, health checks, metrics, alerts
 ├── llm-extraction.md             # Feature: ingredient extraction with Gemini
+├── mcp.md                        # Feature: MCP server for AI assistants (tokens, tools, client set-up)
 └── tasks/
     ├── ux-improvements.md                # UX plan (phases U0–U9), its review log
     ├── ux-thread-wireframes.md           # Design of phase U6 (one active message)

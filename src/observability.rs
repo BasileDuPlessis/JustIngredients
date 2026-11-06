@@ -51,6 +51,7 @@ pub fn init_logging() -> anyhow::Result<()> {
 pub async fn start(
     db_pool: Option<std::sync::Arc<sqlx::PgPool>>,
     config: &crate::config::AppConfig,
+    doors: axum::Router,
 ) -> anyhow::Result<server::Addresses> {
     let handle = metrics::install_recorder()?;
     // Without the exporter's own HTTP listener nothing drains the histograms between two reads:
@@ -63,12 +64,13 @@ pub async fn start(
             upkeep.run_upkeep();
         }
     });
-    let addresses = server::start(
+    let addresses = server::start_with_doors(
         handle,
         config.server.health_port,
         config.server.metrics_port,
         config.server.bind_all_interfaces,
         db_pool,
+        doors,
     )
     .await?;
     metrics::started();

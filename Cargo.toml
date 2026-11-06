@@ -33,6 +33,7 @@ tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] } # Tr
 metrics = "0.24" # Metrics collection
 metrics-exporter-prometheus = { version = "0.18", default-features = false } # Renders /metrics (served by our own server)
 axum = { version = "0.8", default-features = false, features = ["tokio", "http1", "http2"] } # Health, metrics and (tranche 1) MCP servers
+rmcp = { version = "=3.9.0", default-features = false, features = ["server", "transport-streamable-http-server"] } # MCP server (pinned: the crate changes fast); no macros, their expansion panics
 
 # Training data generation dependencies
 # (Removed - training binaries deleted)

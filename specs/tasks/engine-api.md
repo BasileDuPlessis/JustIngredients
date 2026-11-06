@@ -1,6 +1,6 @@
 # JustIngredients Engine: one engine, several doors (study)
 
-Status: tranche 1 in progress. Done: task 1 (safety net), task 2 (engine read side), task 3 (tokens and `/cle`), all in production since v41 (2026-11-06, with a spoon hotfix); task 4 (axum and the door guard, 2026-11-06). Study revised after an independent review. Asked by the
+Status: tranche 1 in progress. Done: task 1 (safety net), task 2 (engine read side), task 3 (tokens and `/cle`), all in production since v41 (2026-11-06, with a spoon hotfix); task 4 (axum and the door guard, 2026-11-06), task 5 (`/mcp`, 2026-11-06). How to connect an assistant: [../mcp.md](../mcp.md). Study revised after an independent review. Asked by the
 owner: "something ambitious, a big architecture change, API, events… the engine should not be
 only on Telegram but reachable from other tools". The owner chose **AI assistants through MCP
 first** and validated the four decisions of the first version: tranches in order, tokens created
@@ -299,7 +299,19 @@ issuer.
    `ji_api_duration_seconds{door}` per request, never the path, the body nor the token.
    `tests/doors_tests.rs` (real socket, throwaway database; new CI step; two steps
    mutation-checked). No door is mounted yet: task 5.
-5. `/mcp`: rmcp stateless, auth middleware, four tools, their tests. (M)
+5. ✅ `/mcp`: rmcp stateless, auth middleware, four tools, their tests. (M) Done:
+   `src/doors/mcp.rs`: rmcp `=3.9.0` without its macros, `StreamableHttpService` with
+   `NeverSessionManager`, `legacy_session_mode(false)`, JSON answers, no SSE keep-alive, the
+   app's public name as the only allowed host (`allowed_hosts`), 64 KB; behind `doors::guard`,
+   mounted by `main` on the public server. `list_tools` / `call_tool` by hand, four read-only
+   tools (annotations read-only, not destructive, idempotent, closed world; closed input
+   schemas): `list_recipes`, `search_recipes`, `get_recipe` (`units`, `lang`, default the user's
+   view and Telegram language: `engine::language_of`), `convert_quantity`. Answers: the engine's
+   JSON as structured content and as text; a refusal (unknown id, another user's, bad argument) is
+   a tool result with `isError`, a failure of ours an internal error without detail (logged);
+   `ji_mcp_tool_calls_total{tool, result}`. The `/cle` token message gives the address.
+   `tests/mcp_tests.rs`: handshake, list, each tool, two users, bad calls, no token, another
+   host (mutation-checked); new CI step. Client set-up: `specs/mcp.md`.
 6. Metrics, dashboards, specs (`telegram-bot.md`, `deployment.md`, a new `mcp.md` with the client
    set-up). Staging test with Claude Code, then production. (S)
 
