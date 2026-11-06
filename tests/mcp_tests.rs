@@ -194,6 +194,8 @@ async fn an_assistant_reads_its_users_recipes(pool: PgPool) -> Result<()> {
         .filter_map(|recipe| recipe["name"].as_str())
         .collect();
     assert_eq!(names, ["sauce", "Tarte aux poireaux"], "{answer}");
+    assert_eq!(listed["total"], 2);
+    assert_eq!(listed["truncated"], false);
     assert_eq!(listed["recipes"][1]["memo"], "Four 180 °C");
     assert!(
         answer["result"]["content"][0]["text"]
@@ -314,6 +316,17 @@ async fn bad_calls_are_answered_not_crashed(pool: PgPool) -> Result<()> {
             "{tool} {arguments}: {answer}"
         );
     }
+    let (_, answer) = post(
+        address,
+        token,
+        None,
+        &call(3, "list_recipes", json!({ "all": true })),
+    )
+    .await?;
+    assert_eq!(
+        answer["result"]["isError"], true,
+        "list_recipes takes no argument: {answer}"
+    );
     let (_, answer) = post(address, token, None, &call(2, "delete_recipe", json!({}))).await?;
     assert_eq!(answer["error"]["code"], -32602, "an unknown tool: {answer}");
     Ok(())

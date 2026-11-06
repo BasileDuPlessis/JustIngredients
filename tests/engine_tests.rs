@@ -80,7 +80,9 @@ async fn two_users(pool: &PgPool) -> Result<(i64, i64)> {
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn the_list_is_the_owners_named_recipes_alphabetical_with_memos(pool: PgPool) -> Result<()> {
     let (tart, _) = two_users(&pool).await?;
-    let listed = recipes::list(&pool, Owner::telegram(ALICE)).await?;
+    let list = recipes::list(&pool, Owner::telegram(ALICE)).await?;
+    assert_eq!(list.total, 3);
+    let listed = list.recipes;
     assert_eq!(
         names(&listed),
         ["crêpes", "sauce", "Tarte aux poireaux"],
@@ -93,7 +95,10 @@ async fn the_list_is_the_owners_named_recipes_alphabetical_with_memos(pool: PgPo
         .collect();
     assert_eq!(with_memo, [(tart, Some("Four 180 °C"))]);
     assert!(
-        recipes::list(&pool, Owner::telegram(999)).await?.is_empty(),
+        recipes::list(&pool, Owner::telegram(999))
+            .await?
+            .recipes
+            .is_empty(),
         "a stranger"
     );
     Ok(())

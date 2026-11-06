@@ -1,7 +1,6 @@
 //! Live test of the Gemini extraction against the real API, on every image of `test_images/`
-//! that has an expected answer in `scripts/llm_benchmark/expected/`. The folder is not kept in
-//! the repository since 2026-11-06 (the owner removed it): put a photo there, named like its
-//! expected answer, to run the test; without one it is skipped.
+//! that has an expected answer in `scripts/llm_benchmark/expected/`. Skipped without a key, or
+//! without the `test_images/` folder; with it, at least one image must have been checked.
 //!
 //! It calls the paid API (about 0.002 USD per image), so it is ignored by default and never
 //! runs in CI. Run it with a key in the environment or in `.env`:
@@ -57,9 +56,13 @@ async fn extracts_the_test_images() -> Result<(), Box<dyn Error>> {
 
     let expected_dir = Path::new("scripts/llm_benchmark/expected");
     let mut checked = 0;
-    let Ok(images) = std::fs::read_dir("test_images") else {
-        eprintln!("No test_images/ folder: skipping the live Gemini test");
-        return Ok(());
+    let images = match std::fs::read_dir("test_images") {
+        Ok(images) => images,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("No test_images/ folder: skipping the live Gemini test");
+            return Ok(());
+        }
+        Err(error) => return Err(error.into()),
     };
     for entry in images {
         let path = entry?.path();
@@ -111,8 +114,6 @@ async fn extracts_the_test_images() -> Result<(), Box<dyn Error>> {
         }
         checked += 1;
     }
-    if checked == 0 {
-        eprintln!("No image of test_images/ has an expected answer: nothing was checked");
-    }
+    assert!(checked > 0, "no test image with an expected answer");
     Ok(())
 }

@@ -72,11 +72,19 @@ pub struct ReadRecipe<'a> {
     pub english_recipe: bool,
 }
 
+/// A user's recipes as [`list`] gives them: at most [`MAX_LISTED`], and how many there are.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct RecipeList {
+    pub recipes: Vec<RecipeEntry>,
+    pub total: usize,
+}
+
 /// The owner's named recipes in the order of the bot's list (case and accents ignored, numbers
-/// by value, then oldest first), with their memos; at most [`MAX_LISTED`].
-pub async fn list(pool: &PgPool, owner: Owner) -> Result<Vec<RecipeEntry>, EngineError> {
-    let recipes = crate::db::alphabetical_recipes(pool, owner.telegram_id()).await?;
-    Ok(recipes
+/// by value, then oldest first), with their memos; at most [`MAX_LISTED`] of `total`.
+pub async fn list(pool: &PgPool, owner: Owner) -> Result<RecipeList, EngineError> {
+    let all = crate::db::alphabetical_recipes(pool, owner.telegram_id()).await?;
+    let total = all.len();
+    let recipes = all
         .into_iter()
         .take(MAX_LISTED)
         .map(|recipe| RecipeEntry {
@@ -84,7 +92,8 @@ pub async fn list(pool: &PgPool, owner: Owner) -> Result<Vec<RecipeEntry>, Engin
             name: recipe.name,
             note: recipe.note,
         })
-        .collect())
+        .collect();
+    Ok(RecipeList { recipes, total })
 }
 
 /// The owner's named recipes that the words of `query` find, best first, as the bot's search

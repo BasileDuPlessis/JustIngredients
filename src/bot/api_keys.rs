@@ -53,10 +53,8 @@ impl ApiAccess {
         Self {
             beta_users: config.beta_users.clone(),
             realm: Realm::from_app_name(config.app_name.as_deref()),
-            mcp_url: config
-                .app_name
-                .as_ref()
-                .map(|app| format!("https://{app}.fly.dev{}", crate::doors::mcp::PATH)),
+            mcp_url: crate::doors::public_host(config.app_name.as_deref())
+                .map(|host| format!("https://{host}{}", crate::doors::mcp::PATH)),
         }
     }
 

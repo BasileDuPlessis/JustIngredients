@@ -27,7 +27,7 @@ use serde_json::{Value, json};
 use sqlx::PgPool;
 
 use super::guard::{Guard, Limits, guarded};
-use crate::engine::recipes::{self, MAX_LISTED};
+use crate::engine::recipes;
 use crate::engine::tokens::{Authenticated, Realm, SCOPE_RECIPES_READ};
 use crate::engine::{EngineError, Lang, Owner};
 use crate::unit_view::UnitView;
@@ -35,11 +35,11 @@ use crate::unit_view::UnitView;
 /// The path of the door.
 pub const PATH: &str = "/mcp";
 
-/// Largest request body read, in bytes (a tool call is a few hundred).
-const MAX_BODY_BYTES: usize = 64 * 1024;
-
 /// Longest search accepted, in characters.
 const MAX_QUERY_CHARS: usize = 200;
+
+/// Most recipes a search returns (a short word can match nearly all of them).
+const MAX_FOUND: usize = 50;
 
 /// What the server tells an assistant when it connects.
 const INSTRUCTIONS: &str = "The recipes of a JustIngredients user (a Telegram bot that reads \
@@ -63,7 +63,10 @@ pub fn router(pool: PgPool, realm: Realm, allowed_hosts: Vec<String>, limits: Li
             .with_json_response(true)
             .with_sse_keep_alive(None)
             .with_allowed_hosts(allowed_hosts)
-            .with_max_request_body_bytes(MAX_BODY_BYTES),
+            // The guard's limit, also for a body sent without a length
+            .with_max_request_body_bytes(
+                usize::try_from(limits.max_body_bytes).unwrap_or(usize::MAX),
+            ),
     );
     let guard = Guard::new(pool, realm, "mcp", SCOPE_RECIPES_READ, limits);
     guarded(Router::new().nest_service(PATH, service), guard)
@@ -71,8 +74,8 @@ pub fn router(pool: PgPool, realm: Realm, allowed_hosts: Vec<String>, limits: Li
 
 /// The hosts the door answers for: the Fly app's public name, or the local ones without it.
 pub fn allowed_hosts(app_name: Option<&str>) -> Vec<String> {
-    match app_name {
-        Some(app) => vec![format!("{app}.fly.dev")],
+    match super::public_host(app_name) {
+        Some(host) => vec![host],
         None => vec![
             "localhost".to_string(),
             "127.0.0.1".to_string(),
@@ -113,7 +116,7 @@ impl ServerHandler for RecipesServer {
         let owner = owner_of(&context)?;
         let arguments = Value::Object(request.arguments.unwrap_or_default());
         let (tool, outcome) = match request.name.as_ref() {
-            "list_recipes" => ("list_recipes", list(&self.pool, owner).await),
+            "list_recipes" => ("list_recipes", list(&self.pool, owner, arguments).await),
             "search_recipes" => ("search_recipes", search(&self.pool, owner, arguments).await),
             "get_recipe" => ("get_recipe", get(&self.pool, owner, arguments).await),
             "convert_quantity" => (
@@ -155,9 +158,10 @@ impl From<EngineError> for Refusal {
             EngineError::NotFound => {
                 Self::Told("No recipe of the user has this id: list or search them.".into())
             }
-            EngineError::Invalid(_) => {
+            EngineError::Invalid(crate::errors::ValidationError::InvalidQuantity) => {
                 Self::Told("The quantity must be a positive number, at most 10000.".into())
             }
+            EngineError::Invalid(reason) => Self::Told(format!("Refused: {reason}.")),
             other => Self::Failed(other),
         }
     }
@@ -190,22 +194,43 @@ fn unit_view(name: Option<&str>) -> Result<Option<UnitView>, Refusal> {
     .transpose()
 }
 
-/// A language by its code; the owner's own when not given.
-async fn language(pool: &PgPool, owner: Owner, code: Option<&str>) -> Result<Lang, Refusal> {
+/// A language by its code: "fr" or "en".
+fn language_code(code: Option<&str>) -> Result<Option<Lang>, Refusal> {
     match code {
-        Some("fr") => Ok(Lang::Fr),
-        Some("en") => Ok(Lang::En),
+        None => Ok(None),
+        Some("fr") => Ok(Some(Lang::Fr)),
+        Some("en") => Ok(Some(Lang::En)),
         Some(_) => Err(Refusal::Told("lang must be fr or en.".into())),
-        None => Ok(crate::engine::language_of(pool, owner).await?),
     }
 }
 
-async fn list(pool: &PgPool, owner: Owner) -> Result<Value, Refusal> {
-    let listed = recipes::list(pool, owner).await?;
+/// The language asked for, else the owner's own; English when it cannot be read, as the engine
+/// falls back on the default unit view: a recipe is still shown.
+async fn language(pool: &PgPool, owner: Owner, asked: Option<Lang>) -> Lang {
+    match asked {
+        Some(lang) => lang,
+        None => crate::engine::language_of(pool, owner)
+            .await
+            .unwrap_or_else(|error| {
+                tracing::warn!(error = %error, "Could not read the user's language");
+                Lang::default()
+            }),
+    }
+}
+
+/// `list_recipes` takes no argument.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct NoArguments {}
+
+async fn list(pool: &PgPool, owner: Owner, arguments_value: Value) -> Result<Value, Refusal> {
+    let NoArguments {} = arguments(arguments_value)?;
+    let list = recipes::list(pool, owner).await?;
     Ok(json!({
-        "count": listed.len(),
-        "truncated": listed.len() >= MAX_LISTED,
-        "recipes": listed,
+        "count": list.recipes.len(),
+        "total": list.total,
+        "truncated": list.total > list.recipes.len(),
+        "recipes": list.recipes,
     }))
 }
 
@@ -223,8 +248,15 @@ async fn search(pool: &PgPool, owner: Owner, arguments_value: Value) -> Result<V
             "query must be 1 to {MAX_QUERY_CHARS} characters."
         )));
     }
-    let found = recipes::search(pool, owner, query).await?;
-    Ok(json!({ "query": query, "recipes": found }))
+    let mut found = recipes::search(pool, owner, query).await?;
+    let total = found.len();
+    found.truncate(MAX_FOUND);
+    Ok(json!({
+        "query": query,
+        "total": total,
+        "truncated": total > found.len(),
+        "recipes": found,
+    }))
 }
 
 #[derive(Deserialize)]
@@ -240,7 +272,7 @@ struct GetRecipeArguments {
 async fn get(pool: &PgPool, owner: Owner, arguments_value: Value) -> Result<Value, Refusal> {
     let GetRecipeArguments { id, units, lang } = arguments(arguments_value)?;
     let view = unit_view(units.as_deref())?;
-    let lang = language(pool, owner, lang.as_deref()).await?;
+    let lang = language(pool, owner, language_code(lang.as_deref())?).await;
     let recipe = recipes::recipe(pool, owner, id, view, lang).await?;
     serde_json::to_value(recipe)
         .map_err(|error| Refusal::Failed(EngineError::Internal(error.into())))
@@ -265,12 +297,12 @@ async fn convert(pool: &PgPool, owner: Owner, arguments_value: Value) -> Result<
         to,
         lang,
     } = arguments(arguments_value)?;
-    let Some(view) = unit_view(Some(&to))? else {
-        return Err(Refusal::Told(
-            "to must be one of recipe, weight, french, us.".into(),
-        ));
-    };
-    let lang = language(pool, owner, lang.as_deref()).await?;
+    let view = UnitView::parse(&to)
+        .ok_or_else(|| Refusal::Told("to must be one of recipe, weight, french, us.".into()))?;
+    let asked = language_code(lang.as_deref())?;
+    // A refused quantity costs no database read
+    recipes::convert(quantity, &unit, &ingredient, view, Lang::default())?;
+    let lang = language(pool, owner, asked).await;
     let shown = recipes::convert(quantity, &unit, &ingredient, view, lang)?;
     Ok(json!({ "text": shown.text, "converted": shown.converted, "view": view }))
 }
@@ -421,5 +453,27 @@ mod tests {
             Ok(Some(UnitView::Weight))
         ));
         assert!(matches!(unit_view(None), Ok(None)));
+        assert!(matches!(
+            arguments::<NoArguments>(json!({ "foo": 1 })),
+            Err(Refusal::Told(_))
+        ));
+        assert!(matches!(
+            arguments::<NoArguments>(json!({})),
+            Ok(NoArguments {})
+        ));
+        assert!(matches!(language_code(Some("de")), Err(Refusal::Told(_))));
+    }
+
+    #[test]
+    fn a_refusal_says_its_own_reason() {
+        use crate::errors::ValidationError;
+        let told = |error| match Refusal::from(error) {
+            Refusal::Told(text) => text,
+            Refusal::Failed(_) => String::new(),
+        };
+        assert!(told(EngineError::Invalid(ValidationError::InvalidQuantity)).contains("quantity"));
+        let other = told(EngineError::Invalid(ValidationError::NoteTooLong));
+        assert!(other.contains("note"), "{other}");
+        assert!(!other.contains("quantity"), "{other}");
     }
 }
