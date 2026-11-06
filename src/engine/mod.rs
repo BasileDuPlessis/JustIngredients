@@ -78,6 +78,9 @@ pub enum EngineError {
         line: usize,
         reason: crate::errors::ValidationError,
     },
+    /// More than `max` were given (ingredient lines of a recipe given as text).
+    #[error("at most {max} allowed")]
+    TooMany { max: usize },
     /// The owner already has as many as allowed (tokens: `tokens::MAX_ACTIVE`).
     #[error("limit reached")]
     LimitReached,

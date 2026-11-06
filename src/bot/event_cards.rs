@@ -4,9 +4,11 @@
 //!
 //! One consumer, `telegram_cards`, with its cursor in the database: it wakes on each event
 //! (`LISTEN`, the notification sent when a change commits) and also every 30 seconds, since a
-//! notification can be missed while the listening connection reconnects. Delivery is at least
-//! once: refreshing a card again is harmless (an unchanged card is left as it is). Events are
-//! kept 30 days.
+//! notification can be missed while the listening connection reconnects. Every event is read
+//! (the cursor moves after a batch is handled; after a restart, a batch may be read again, which is
+//! harmless: an unchanged card is left as it is). A refresh that Telegram refuses (unreachable,
+//! too many requests) is not tried again: the card is corrected the next time it is shown or
+//! changed. Events are kept 30 days.
 
 use std::sync::Arc;
 use std::time::Duration;

@@ -108,8 +108,8 @@ pub async fn after(pool: &PgPool, cursor: i64) -> Result<(Vec<Event>, i64), Engi
 /// Where `consumer` is. A new consumer starts at the last event written: it handles what
 /// happens from now on.
 pub async fn cursor(pool: &PgPool, consumer: &str) -> Result<i64, EngineError> {
-    let cursor = crate::db::event_cursor(pool, consumer).await?;
-    if cursor > 0 {
+    // A cursor at 0 is a consumer that started before any event: it reads from the first one
+    if let Some(cursor) = crate::db::event_cursor(pool, consumer).await? {
         return Ok(cursor);
     }
     let last = crate::db::last_event_id(pool).await?;

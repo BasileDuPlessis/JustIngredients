@@ -185,6 +185,9 @@ impl From<EngineError> for Refusal {
                 Self::Told("The quantity must be a positive number, at most 10000.".into())
             }
             EngineError::Invalid(reason) => Self::Told(format!("Refused: {reason}.")),
+            EngineError::TooMany { max } => {
+                Self::Told(format!("At most {max} ingredient lines: split the recipe."))
+            }
             EngineError::InvalidLine { line, reason } => Self::Told(format!(
                 "Ingredient line {line} refused: {reason}. One ingredient per line, e.g. \
                  \"200 g de farine\" or \"2 oeufs\"."

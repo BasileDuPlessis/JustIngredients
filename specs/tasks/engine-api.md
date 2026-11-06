@@ -367,6 +367,16 @@ made before stay read only.
    destructive; `create_recipe` not idempotent). `tests/mcp_tests.rs`: both keys, unique names,
    memo set and cleared, another user's recipe, creation and a refused line, the events
    (the write gate mutation-checked).
+   Independent review (2026-11-06), 10 findings, all fixed: a deadlock between a bot save and an
+   assistant's rename of the same user (the events lock was taken after a row lock in one and
+   before it in the other: it is now the first lock of every writing transaction, and an event
+   only reads its user's row; reproduced by `concurrent_writes_of_one_user_do_not_deadlock`,
+   which fails with "deadlock detected" under the old order); a consumer started before any
+   event skipped the first ones (a cursor at 0 was taken for a new consumer); the save and edit
+   timings had stopped; a delete read its name and links outside the lock; a refused line was
+   numbered without the blank lines and over 100 lines was told as an empty list; the bot read
+   a deleted recipe's name and links twice; one conversion of a parsed line instead of two
+   (`NewIngredient::from`); the consumer's documentation promised a retry it does not do.
 6. Tests (engine with events, consumer, MCP writes with both scopes), review, docs, staging
    test, production. (S)
 

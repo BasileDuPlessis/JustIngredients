@@ -331,14 +331,12 @@ pub async fn save_recipe_parts(
     content: &str,
     parts: &[RecipePart<'_>],
 ) -> Result<Vec<SavedRecipe>> {
-    let start_time = std::time::Instant::now();
     let mut tx = pool
         .begin()
         .await
         .context("Failed to start the recipe transaction")?;
     let saved = save_recipe_parts_in(&mut tx, telegram_id, language_code, content, parts).await?;
     tx.commit().await.context("Failed to commit the recipe")?;
-    crate::observability::db_query("save_recipe", start_time.elapsed());
     Ok(saved)
 }
 
@@ -350,6 +348,7 @@ pub async fn save_recipe_parts_in(
     content: &str,
     parts: &[RecipePart<'_>],
 ) -> Result<Vec<SavedRecipe>> {
+    let start_time = std::time::Instant::now();
     let user_id = super::users::user_id_in(tx, telegram_id, language_code).await?;
 
     // One name per recipe of the user: a second "Tarte" is stored as "Tarte (2)"
@@ -396,6 +395,7 @@ pub async fn save_recipe_parts_in(
             link_in(tx, first.recipe_id, second.recipe_id).await?;
         }
     }
+    crate::observability::db_query("save_recipe", start_time.elapsed());
     Ok(saved)
 }
 

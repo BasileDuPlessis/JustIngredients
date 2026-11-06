@@ -471,20 +471,10 @@ async fn delete_confirmed(
     let mut keep = Vec::new();
     // The list on the recipe's page, unless it is gone
     let mut list_at = crate::bot::home::ListAt::Recipe(recipe_id);
-    // The name, for the history line that replaces the card
-    let name = crate::db::read_recipe_with_name(pool, telegram_id, recipe_id)
-        .await
-        .ok()
-        .flatten()
-        .and_then(|recipe| recipe.recipe_name);
-    // Read before the links go with the recipe: their cards name it (U9)
-    let linked = crate::bot::cards::linked_ids(pool, telegram_id, recipe_id).await;
+    // The engine reads the name (for the history line) and the links (their cards name it, U9)
+    // before they go with the recipe
     let actor = crate::engine::writes::Actor::telegram(crate::engine::Owner::telegram(telegram_id));
-    let result = match crate::engine::writes::delete(pool, actor, recipe_id).await {
-        Ok(_) => Ok(true),
-        Err(crate::engine::EngineError::NotFound) => Ok(false),
-        Err(error) => Err(anyhow::Error::from(error)),
-    };
+    let result = crate::engine::writes::delete(pool, actor, recipe_id).await;
 
     // The confirmation goes in every case
     if let MaybeInaccessibleMessage::Regular(msg) = msg
@@ -500,13 +490,13 @@ async fn delete_confirmed(
     let card = original_message_id.map(teloxide::types::MessageId);
 
     match result {
-        Ok(true) => {
+        Ok(deleted) => {
             crate::observability::action(crate::observability::Action::Delete);
             // Gone: the page of its neighbours
-            list_at = crate::bot::home::ListAt::Gone(name.clone().unwrap_or_default());
-            show_deleted(action, name.as_deref(), card, &linked).await?;
+            list_at = crate::bot::home::ListAt::Gone(deleted.name.clone().unwrap_or_default());
+            show_deleted(action, deleted.name.as_deref(), card, &deleted.linked).await?;
         }
-        Ok(false) => {
+        Err(crate::engine::EngineError::NotFound) => {
             // Already gone: its card goes too, the message stays until the next action
             if let Some(card) = card {
                 crate::bot::cleanup::untrack(chat_id, card).await;

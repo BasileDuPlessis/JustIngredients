@@ -10,10 +10,22 @@ use sqlx::postgres::{PgPool, Postgres};
 /// The channel `pg_notify` announces new events on, after their transaction commits.
 pub const EVENTS_CHANNEL: &str = "ji_events";
 
-/// Taken before an event is inserted, for the rest of the transaction: two transactions that
-/// write events commit one after the other, so ids are committed in increasing order and a
-/// consumer reading "after its cursor" can never miss one committed late.
+/// Taken first by every transaction that will write an event ([`lock_events`]), before any row
+/// lock: such transactions run one after the other, so ids are committed in increasing order (a
+/// consumer reading "after its cursor" can never miss one committed late), and since it is always
+/// the first lock taken, two of them cannot wait for each other (no deadlock).
 const EVENTS_LOCK: i64 = 0x6A69_6576; // "jiev"
+
+/// Takes the events lock for the rest of `tx`: the first statement of a transaction that writes
+/// an event.
+pub async fn lock_events(tx: &mut Transaction<'_, Postgres>) -> Result<()> {
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(EVENTS_LOCK)
+        .execute(&mut **tx)
+        .await
+        .context("Failed to take the events lock")?;
+    Ok(())
+}
 
 /// An event to write.
 #[derive(Debug, Clone, PartialEq)]
@@ -39,24 +51,19 @@ pub struct EventRow {
     pub created_at: DateTime<Utc>,
 }
 
-/// Writes an event of the user of `telegram_id` in `tx`, the transaction of the change, and
-/// announces it (delivered when the transaction commits). Returns its id.
+/// Writes an event of the user of `telegram_id` in `tx`, the transaction of the change, which
+/// began with [`lock_events`]; announces it (delivered when the transaction commits). Returns
+/// its id. The user's row is only read, not locked: every change is made by an existing user.
 pub async fn insert_event(
     tx: &mut Transaction<'_, Postgres>,
     telegram_id: i64,
     event: &NewEventRow<'_>,
 ) -> Result<i64> {
-    sqlx::query("SELECT pg_advisory_xact_lock($1)")
-        .bind(EVENTS_LOCK)
-        .execute(&mut **tx)
-        .await
-        .context("Failed to take the events lock")?;
-    let user_id = super::users::user_id_in(tx, telegram_id, None).await?;
     let id: i64 = sqlx::query_scalar(
         "INSERT INTO events (user_id, kind, recipe_id, origin, token_id, payload) \
-         VALUES ($1, $2, $3, $4, $5, $6) RETURNING id",
+         SELECT id, $2, $3, $4, $5, $6 FROM users WHERE telegram_id = $1 RETURNING id",
     )
-    .bind(user_id)
+    .bind(telegram_id)
     .bind(event.kind)
     .bind(event.recipe_id)
     .bind(event.origin)
@@ -89,15 +96,13 @@ pub async fn events_after(pool: &PgPool, last_id: i64, limit: i64) -> Result<Vec
     .context("Failed to read the events")
 }
 
-/// The last event `consumer` handled; 0 for a new consumer.
-pub async fn event_cursor(pool: &PgPool, consumer: &str) -> Result<i64> {
-    let last: Option<i64> =
-        sqlx::query_scalar("SELECT last_id FROM event_cursors WHERE consumer = $1")
-            .bind(consumer)
-            .fetch_optional(pool)
-            .await
-            .context("Failed to read an event cursor")?;
-    Ok(last.unwrap_or(0))
+/// The last event `consumer` handled; `None` for a consumer that never ran.
+pub async fn event_cursor(pool: &PgPool, consumer: &str) -> Result<Option<i64>> {
+    sqlx::query_scalar("SELECT last_id FROM event_cursors WHERE consumer = $1")
+        .bind(consumer)
+        .fetch_optional(pool)
+        .await
+        .context("Failed to read an event cursor")
 }
 
 /// Notes that `consumer` handled the events up to `last_id`.

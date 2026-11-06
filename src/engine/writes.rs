@@ -47,8 +47,11 @@ pub struct DeletedRecipe {
     pub linked: Vec<i64>,
 }
 
+/// A transaction for a change and its event: the events lock is its first lock (`db::events`).
 async fn begin(pool: &PgPool) -> Result<sqlx::Transaction<'static, Postgres>, EngineError> {
-    Ok(pool.begin().await.map_err(anyhow::Error::from)?)
+    let mut tx = pool.begin().await.map_err(anyhow::Error::from)?;
+    crate::db::lock_events(&mut tx).await?;
+    Ok(tx)
 }
 
 async fn commit(tx: sqlx::Transaction<'_, Postgres>) -> Result<(), EngineError> {
@@ -217,6 +220,8 @@ pub async fn delete(
     recipe_id: i64,
 ) -> Result<DeletedRecipe, EngineError> {
     let telegram_id = actor.owner.telegram_id();
+    // Read once the lock is held: no other change of the engine can come in between
+    let mut tx = begin(pool).await?;
     let name = crate::db::read_recipe_with_name(pool, telegram_id, recipe_id)
         .await?
         .ok_or(EngineError::NotFound)?
@@ -226,7 +231,6 @@ pub async fn delete(
         .into_iter()
         .map(|recipe| recipe.id)
         .collect();
-    let mut tx = begin(pool).await?;
     if !crate::db::delete_recipe_in(&mut tx, telegram_id, recipe_id).await? {
         return Err(EngineError::NotFound);
     }
@@ -256,18 +260,23 @@ pub async fn create_from_lines(
     lines: &[String],
 ) -> Result<SavedRecipe, EngineError> {
     let name = crate::validation::validate_recipe_name(name).map_err(invalid)?;
-    let lines: Vec<&str> = lines
+    if lines.len() > MAX_LINES {
+        return Err(EngineError::TooMany { max: MAX_LINES });
+    }
+    // Blank lines are skipped; a refused line keeps its number in what was given
+    let lines: Vec<(usize, &str)> = lines
         .iter()
         .map(|line| line.trim())
-        .filter(|line| !line.is_empty())
+        .enumerate()
+        .filter(|(_, line)| !line.is_empty())
         .collect();
-    if lines.is_empty() || lines.len() > MAX_LINES {
+    if lines.is_empty() {
         return Err(EngineError::Invalid(
             crate::errors::ValidationError::EmptyLine,
         ));
     }
     let mut parsed = Vec::with_capacity(lines.len());
-    for (index, line) in lines.iter().enumerate() {
+    for &(index, line) in &lines {
         match crate::validation::parse_ingredient_from_text(line) {
             Ok(ingredient) => parsed.push(ingredient),
             Err(AppError::Validation(reason)) => {
@@ -279,16 +288,13 @@ pub async fn create_from_lines(
             Err(other) => return Err(EngineError::Internal(anyhow::anyhow!("{other}"))),
         }
     }
-    let ingredients = parsed
-        .iter()
-        .map(|ingredient| crate::db::NewIngredient {
-            name: &ingredient.ingredient_name,
-            quantity: crate::validation::parse_quantity(&ingredient.quantity),
-            unit: ingredient.measurement.as_deref(),
-        })
-        .collect();
+    let ingredients = parsed.iter().map(crate::db::NewIngredient::from).collect();
     // The lines as the recipe's text: it tells an English recipe from a French one
-    let content = lines.join("\n");
+    let content = lines
+        .iter()
+        .map(|(_, line)| *line)
+        .collect::<Vec<_>>()
+        .join("\n");
     let saved = create(
         pool,
         actor,

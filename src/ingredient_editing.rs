@@ -12,11 +12,7 @@ use crate::validation::{
 /// The values to store for an ingredient: quantities are parsed like typed ones ("1/2",
 /// "1 1/2"), and an empty quantity is stored as none.
 pub fn to_new_ingredient(ingredient: &MeasurementMatch) -> crate::db::NewIngredient<'_> {
-    crate::db::NewIngredient {
-        name: &ingredient.ingredient_name,
-        quantity: crate::validation::parse_quantity(&ingredient.quantity),
-        unit: ingredient.measurement.as_deref(),
-    }
+    crate::db::NewIngredient::from(ingredient)
 }
 
 /// Puts the answer of a line prompt into the list: replaces ingredient `index`, or adds a new

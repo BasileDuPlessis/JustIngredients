@@ -497,3 +497,83 @@ async fn a_consumer_reads_after_its_cursor(pool: PgPool) -> Result<()> {
     assert!(events::after(&pool, last).await?.0.is_empty());
     Ok(())
 }
+
+/// A consumer that started before any event reads the first ones (2026-11-06 review: a cursor
+/// at 0 was taken for a new consumer and moved past them).
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_consumer_started_before_any_event_reads_the_first(pool: PgPool) -> Result<()> {
+    use just_ingredients::engine::events;
+    use just_ingredients::engine::writes::{self, Actor};
+    init_database_schema(&pool).await?;
+    let gratin = save_recipe(&pool, ALICE, Some("fr"), "", "Gratin", &[]).await?;
+    assert_eq!(events::cursor(&pool, "fresh").await?, 0, "no event yet");
+    writes::rename(
+        &pool,
+        Actor::telegram(Owner::telegram(ALICE)),
+        gratin.recipe_id,
+        "Gratin dauphinois",
+    )
+    .await?;
+    let start = events::cursor(&pool, "fresh").await?;
+    assert_eq!(start, 0, "its place is kept, not moved past the new event");
+    let (read, _) = events::after(&pool, start).await?;
+    assert_eq!(read.len(), 1);
+    Ok(())
+}
+
+/// The bot saving a photo and an assistant renaming, both for the same user at the same time,
+/// do not deadlock (2026-11-06 review: locks were taken in opposite orders).
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn concurrent_writes_of_one_user_do_not_deadlock(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::{NewIngredient, RecipePart};
+    use just_ingredients::engine::events::Origin;
+    use just_ingredients::engine::writes::{self, Actor};
+    init_database_schema(&pool).await?;
+    let alice = Owner::telegram(ALICE);
+    let existing = save_recipe(&pool, ALICE, Some("fr"), "", "Gratin", &[]).await?;
+    let assistant = Actor {
+        owner: alice,
+        origin: Origin::Mcp,
+        token_id: Some(1),
+    };
+    let mut tasks = Vec::new();
+    for round in 0..20 {
+        let pool_a = pool.clone();
+        tasks.push(tokio::spawn(async move {
+            writes::create(
+                &pool_a,
+                Actor::telegram(alice),
+                Some("fr"),
+                "",
+                &[RecipePart {
+                    name: format!("Tarte {round}"),
+                    ingredients: vec![NewIngredient {
+                        name: "farine",
+                        quantity: Some(200.0),
+                        unit: Some("g"),
+                    }],
+                }],
+            )
+            .await
+            .map(|_| ())
+        }));
+        let pool_b = pool.clone();
+        let id = existing.recipe_id;
+        tasks.push(tokio::spawn(async move {
+            writes::rename(&pool_b, assistant, id, &format!("Gratin {round}"))
+                .await
+                .map(|_| ())
+        }));
+    }
+    for task in tasks {
+        task.await?
+            .map_err(|error| anyhow::anyhow!("a write failed: {:#}", anyhow::Error::from(error)))?;
+    }
+    let events: i64 = sqlx::query_scalar("SELECT count(*) FROM events")
+        .fetch_one(&pool)
+        .await?;
+    assert_eq!(events, 40, "every write and its event");
+    Ok(())
+}

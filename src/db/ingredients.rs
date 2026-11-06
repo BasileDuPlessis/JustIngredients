@@ -66,6 +66,18 @@ pub async fn normalize_saved_units(pool: &PgPool) -> Result<u64> {
     Ok(changed)
 }
 
+/// The values to store for a parsed ingredient: quantities read like typed ones ("1/2",
+/// "1 1/2"), an empty quantity stored as none. One conversion for the bot and the engine.
+impl<'a> From<&'a crate::text_processing::MeasurementMatch> for NewIngredient<'a> {
+    fn from(ingredient: &'a crate::text_processing::MeasurementMatch) -> Self {
+        Self {
+            name: &ingredient.ingredient_name,
+            quantity: crate::validation::parse_quantity(&ingredient.quantity),
+            unit: ingredient.measurement.as_deref(),
+        }
+    }
+}
+
 /// New values of a saved ingredient, written as they are (`None` clears the quantity or unit).
 #[derive(Debug, Clone, PartialEq)]
 pub struct IngredientUpdate<'a> {
@@ -85,7 +97,6 @@ pub async fn apply_ingredient_changes(
     additions: &[NewIngredient<'_>],
     deletions: &[i64],
 ) -> Result<()> {
-    let start_time = std::time::Instant::now();
     let mut tx = pool
         .begin()
         .await
@@ -110,7 +121,6 @@ pub async fn apply_ingredient_changes(
     tx.commit()
         .await
         .context("Failed to commit the ingredient changes")?;
-    crate::observability::db_query("apply_ingredient_changes", start_time.elapsed());
     Ok(())
 }
 
@@ -131,6 +141,7 @@ pub async fn apply_ingredient_changes_in(
     language_code: Option<&str>,
     changes: IngredientChanges<'_>,
 ) -> Result<bool> {
+    let start_time = std::time::Instant::now();
     let IngredientChanges {
         updates,
         additions,
@@ -188,6 +199,7 @@ pub async fn apply_ingredient_changes_in(
             .await
             .with_context(|| format!("Failed to delete the ingredient {id}"))?;
     }
+    crate::observability::db_query("apply_ingredient_changes", start_time.elapsed());
     Ok(true)
 }
 

@@ -482,14 +482,27 @@ async fn a_read_write_key_changes_recipes_a_read_only_one_cannot(pool: PgPool) -
     let (_, answer) = write(
         7,
         "create_recipe",
-        json!({ "name": "Gâteau", "ingredients": ["200 g de sucre", "0 g de rien"] }),
+        json!({ "name": "Gâteau", "ingredients": ["200 g de sucre", "", "0 g de rien"] }),
     )
     .await?;
     assert_eq!(answer["result"]["isError"], true, "{answer}");
     assert!(
         answer["result"]["content"][0]["text"]
             .as_str()
-            .is_some_and(|text| text.contains("line 2")),
+            .is_some_and(|text| text.contains("line 3")),
+        "the line's place in what was given, blank lines counted: {answer}"
+    );
+    let too_many: Vec<String> = (0..101).map(|i| format!("{i} g de sucre")).collect();
+    let (_, answer) = write(
+        8,
+        "create_recipe",
+        json!({ "name": "Long", "ingredients": too_many }),
+    )
+    .await?;
+    assert!(
+        answer["result"]["content"][0]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("At most 100")),
         "{answer}"
     );
     assert_eq!(count(pool.clone()).await?, before, "nothing created");
