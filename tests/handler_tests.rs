@@ -1327,10 +1327,10 @@ async fn a_beta_user_creates_and_revokes_an_api_key(pool: PgPool) -> Result<()> 
         .iter()
         .find(|sent| sent.bot_request.text.contains("<tg-spoiler><code>ji_stg_"))
         .context("the token message")?;
-    assert_eq!(
+    assert_ne!(
         secret.bot_request.protect_content,
         Some(true),
-        "not forwardable"
+        "a protected message cannot be copied, the token would be useless"
     );
     assert!(
         secret

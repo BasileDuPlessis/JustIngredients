@@ -83,7 +83,7 @@ Telegram stays the way in: a user creates a personal token in the bot.
   (not `OWNER_CHAT_ID`: staging has none, and setting it there would start alerts and the weekly
   report from the test bot). The owner sets it on both apps.
 - The bot creates `ji_` (`ji_stg_` on staging) + 32 random bytes (base64url), shows it once as
-  `<tg-spoiler><code>…</code></tg-spoiler>` with `protect_content` (no forwarding), with how to
+  `<tg-spoiler><code>…</code></tg-spoiler>` (not `protect_content`, which also forbids copying the text: dropped on 2026-11-06 when the owner could not copy a token), with how to
   use it, and lists the active tokens with a 🗑 button each to revoke. At most 5 active tokens per
   user.
 - Stored: `api_tokens (id, user_id → users.id ON DELETE CASCADE, token_hash BYTEA UNIQUE (SHA-256),

@@ -4,7 +4,7 @@
 //!
 //! The keys message lists the active tokens (their hint, never the secret) with "➕ Nouvelle clé"
 //! and one "🗑️ Révoquer" button each. A new token is shown once, in a message of its own,
-//! protected from forwarding, under a spoiler; that message is kept when actions end and is
+//! under a spoiler (a tap shows it, a tap on it copies it); that message is kept when actions end and is
 //! edited to a masked text 10 minutes later ([`run_secret_sweeper`]): an edit works at any age,
 //! unlike a delete, and the sweep reads the recorded messages, so a restart does not forget it.
 
@@ -210,7 +210,7 @@ async fn mask(
         .map(|_| ())
 }
 
-/// The token's message: monospace under a spoiler, protected from forwarding. A spoiler refused
+/// The token's message: monospace under a spoiler. A spoiler refused
 /// by Telegram falls back to monospace alone.
 async fn send_secret(
     bot: &Bot,
@@ -240,16 +240,13 @@ async fn send_secret(
         )) + Html::code("Authorization: Bearer …");
         html
     };
-    let sent = match send_html(bot, chat_id, compose(Html::secret(&token.secret)))
-        .protect_content(true)
-        .await
-    {
+    // Not `protect_content`: Telegram then refuses to copy the text too, on every device, and a
+    // token that cannot be copied is useless (the owner, 2026-11-06)
+    let sent = match send_html(bot, chat_id, compose(Html::secret(&token.secret))).await {
         Ok(sent) => sent,
         Err(teloxide::RequestError::Api(error)) => {
             warn!(error = %error, "The token message was refused with a spoiler: sent without");
-            send_html(bot, chat_id, compose(Html::code(&token.secret)))
-                .protect_content(true)
-                .await?
+            send_html(bot, chat_id, compose(Html::code(&token.secret))).await?
         }
         Err(error) => return Err(error.into()),
     };
