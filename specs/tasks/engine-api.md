@@ -1,6 +1,6 @@
 # JustIngredients Engine: one engine, several doors (study)
 
-Status: tranche 1 in production (v42, 2026-11-06). Tranche 2 (writes and events) started: §15b. Done: task 1 (safety net), task 2 (engine read side), task 3 (tokens and `/cle`), all in production since v41 (2026-11-06, with a spoon hotfix); task 4 (axum and the door guard, 2026-11-06), task 5 (`/mcp`, 2026-11-06). How to connect an assistant: [../mcp.md](../mcp.md). Study revised after an independent review. Asked by the
+Status: tranche 1 in production (v42, 2026-11-06); tranche 2 (writes and events, §15b) in production (v43, 2026-11-09), tested on staging by the owner with Claude Code. Left for later on purpose: SSE and webhooks (no tool needs them yet, §8), delete and ingredient edits through MCP (the owner's choice, §15b), tranches 3 (photos) and 4 (OAuth).
 owner: "something ambitious, a big architecture change, API, events… the engine should not be
 only on Telegram but reachable from other tools". The owner chose **AI assistants through MCP
 first** and validated the four decisions of the first version: tranches in order, tokens created
@@ -377,8 +377,11 @@ made before stay read only.
    numbered without the blank lines and over 100 lines was told as an empty list; the bot read
    a deleted recipe's name and links twice; one conversion of a parsed line instead of two
    (`NewIngredient::from`); the consumer's documentation promised a retry it does not do.
-6. Tests (engine with events, consumer, MCP writes with both scopes), review, docs, staging
-   test, production. (S)
+6. ✅ Tests (engine with events, consumer, MCP writes with both scopes), review, docs, staging
+   test, production. (S) Done: independent review (10 findings, all fixed, a deadlock first);
+   the owner's staging test on 2026-11-09 (a read-write key, Claude Code renamed a recipe and
+   wrote its memo, the card in the test bot followed); production v43 (`3db2113`) the same day,
+   migration 12 applied.
 
 ## 16. What the independent review changed (2026-11-05)
 
