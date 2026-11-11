@@ -19,6 +19,7 @@ specs/
     ├── measure-conversion.md             # Design of phase U8 (unit views, conversion table)
     ├── recipe-notes.md                   # Study and design of the recipe note (short free text per recipe)
     ├── engine-api.md                     # Study: one engine, several doors (HTTP API, MCP, events)
+    ├── oauth.md                          # Study: OAuth sign-in for claude.ai and ChatGPT (tranche 4)
     ├── linked-recipes.md                 # Design of phase U9 (linked recipes)
     ├── ingredient-sections.md            # Abandoned design, replaced by linked-recipes.md
     ├── observability.md                  # Plan O (Fly metrics, dashboards, alerts)
