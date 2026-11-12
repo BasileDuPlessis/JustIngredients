@@ -46,6 +46,9 @@ pub fn router(settings: Arc<OAuthSettings>) -> Router {
             "/.well-known/oauth-authorization-server",
             get(authorization_server),
         )
+        // Any other well-known document (`openid-configuration`…) does not exist: said plainly,
+        // not by the health server's fallback
+        .route("/.well-known/{*rest}", get(not_found))
         .with_state(settings)
 }
 
@@ -83,6 +86,18 @@ async fn protected_resource(State(settings): State<Arc<OAuthSettings>>) -> Respo
 
 async fn authorization_server(State(settings): State<Arc<OAuthSettings>>) -> Response {
     document(&authorization_server_document(&settings))
+}
+
+async fn not_found() -> Response {
+    (
+        axum::http::StatusCode::NOT_FOUND,
+        [(
+            header::CACHE_CONTROL,
+            HeaderValue::from_static("public, max-age=300"),
+        )],
+        "Not found",
+    )
+        .into_response()
 }
 
 fn document(value: &serde_json::Value) -> Response {

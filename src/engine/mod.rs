@@ -63,6 +63,12 @@ pub async fn language_of(pool: &PgPool, owner: Owner) -> Result<Lang, EngineErro
     ))
 }
 
+/// The language the owner uses in Telegram, when the bot knows the owner (`None`: never seen).
+pub async fn known_language_of(pool: &PgPool, owner: Owner) -> Result<Option<Lang>, EngineError> {
+    let user = crate::db::get_user_by_telegram_id(pool, owner.telegram_id()).await?;
+    Ok(user.map(|user| Lang::from_code(Some(user.language_code.as_str()))))
+}
+
 /// Why an engine call gave no result.
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {

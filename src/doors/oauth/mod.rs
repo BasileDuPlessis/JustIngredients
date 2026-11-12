@@ -2,12 +2,15 @@
 //! key, the user signing in with Telegram. The bot is both the protected resource (`/mcp`) and
 //! its authorization server, on one origin.
 //!
-//! This module serves the discovery documents ([`metadata`]) and signs users in with Telegram
-//! ([`telegram`]); for now the sign-in is only tried on staging ([`spike`], task 0). Mounted only
-//! when the Telegram login is configured.
+//! This module serves the discovery documents ([`metadata`]) and the authorization server
+//! ([`server`]) for the allowed assistants ([`clients`]), users signing in with Telegram
+//! ([`telegram`]); on staging, a bare trial of the Telegram sign-in ([`spike`], task 0). Mounted
+//! only when the Telegram login is configured.
 
+pub mod clients;
 pub mod metadata;
 pub mod page;
+pub mod server;
 pub mod spike;
 pub mod telegram;
 

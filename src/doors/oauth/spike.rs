@@ -4,23 +4,24 @@
 //! was checked and received (claim names, whether the nonce came back, the Telegram id to the
 //! person who just signed in). Nothing is stored but the attempt, in memory, 10 minutes.
 //!
-//! Replaced by `/oauth/authorize` and the stored sign-in requests (tasks 2 and 4).
+//! Telegram's callback is the authorization server's ([`super::server`]): it hands back the
+//! attempts started here ([`Spike::take`], [`Spike::answer`]). Removed once the sign-in works on
+//! staging.
 
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 use axum::Router;
-use axum::extract::{Query, State};
+use axum::extract::State;
 use axum::http::StatusCode;
 use axum::response::Response;
 use axum::routing::get;
-use serde::Deserialize;
 use tokio::sync::Semaphore;
 use tracing::{info, warn};
 
 use super::page::{escape, html, see_other};
-use super::telegram::{Attempt, CALLBACK_PATH, TelegramLogin};
+use super::telegram::{Attempt, TelegramLogin};
 
 /// The page that starts a trial sign-in.
 pub const TRY_PATH: &str = "/oauth/telegram/try";
@@ -58,12 +59,9 @@ impl Spike {
     }
 }
 
-/// The trial's routes: the start and Telegram's callback.
+/// The trial's start page (Telegram's callback is the authorization server's).
 pub fn router(spike: Arc<Spike>) -> Router {
-    Router::new()
-        .route(TRY_PATH, get(start))
-        .route(CALLBACK_PATH, get(callback))
-        .with_state(spike)
+    Router::new().route(TRY_PATH, get(start)).with_state(spike)
 }
 
 async fn start(State(spike): State<Arc<Spike>>) -> Response {
@@ -94,90 +92,79 @@ async fn start(State(spike): State<Arc<Spike>>) -> Response {
     see_other(&url)
 }
 
-#[derive(Debug, Deserialize)]
-struct Callback {
-    code: Option<String>,
-    state: Option<String>,
-    error: Option<String>,
-}
-
-async fn callback(State(spike): State<Arc<Spike>>, Query(answer): Query<Callback>) -> Response {
-    let attempt = answer.state.as_ref().and_then(|state| {
-        spike
-            .pending
+impl Spike {
+    /// Takes the trial attempt of `state`, if it is one (used once, 10 minutes).
+    pub fn take(&self, state: &str) -> Option<Attempt> {
+        self.pending
             .lock()
             .unwrap_or_else(PoisonError::into_inner)
             .remove(state)
             .filter(|(_, created)| created.elapsed() < ATTEMPT_LIFETIME)
             .map(|(attempt, _)| attempt)
-    });
-    let Some(attempt) = attempt else {
-        return html(
-            StatusCode::BAD_REQUEST,
-            "Essai inconnu",
-            &format!(
-                "<p>Cet essai est inconnu ou a expiré (10 minutes). \
-                 <a href=\"{TRY_PATH}\">Recommencer</a>.</p>"
-            ),
-        );
-    };
-    if let Some(error) = &answer.error {
-        let error: String = error.chars().take(100).collect();
-        warn!(error = %error, "Telegram sign-in trial: Telegram answered an error");
-        return html(
-            StatusCode::BAD_REQUEST,
-            "Telegram a refusé",
-            &format!(
-                "<p>Telegram a répondu : <code>{}</code>.</p><p><a href=\"{TRY_PATH}\">Recommencer</a>.</p>",
-                escape(&error)
-            ),
-        );
     }
-    let Some(code) = answer
-        .code
-        .filter(|code| !code.is_empty() && code.len() <= 512)
-    else {
-        return html(
-            StatusCode::BAD_REQUEST,
-            "Pas de code",
-            "<p>Telegram n'a pas renvoyé de code.</p>",
-        );
-    };
-    let Ok(_permit) = spike.exchanges.try_acquire() else {
-        return html(
-            StatusCode::SERVICE_UNAVAILABLE,
-            "Occupé",
-            "<p>Trop de connexions en cours : réessaie dans un instant.</p>",
-        );
-    };
-    match spike.login.exchange(&code, &attempt.verifier).await {
-        Ok(identity) => {
-            let nonce_returned = identity.nonce.as_deref() == Some(attempt.nonce.as_str());
-            let nonce_mismatch = identity.nonce.is_some() && !nonce_returned;
-            let beta = spike.beta_users.contains(&identity.telegram_id);
-            let client_id_is_bot_id = spike.bot_id.as_deref() == Some(spike.login.client_id());
-            info!(
-                claims = ?identity.claim_names,
-                algorithm = identity.algorithm.as_deref().unwrap_or("none"),
-                nonce_returned,
-                nonce_mismatch,
-                beta,
-                client_id_is_bot_id,
-                "Telegram sign-in trial succeeded"
-            );
-            let yes_no = |yes: bool| if yes { "oui" } else { "non" };
-            let nonce = if nonce_returned {
-                "oui, identique"
-            } else if nonce_mismatch {
-                "<strong>différent</strong> (à signaler)"
-            } else {
-                "non (absent du jeton)"
-            };
-            html(
-                StatusCode::OK,
-                "Connexion Telegram réussie",
+
+    /// Telegram's answer to a trial attempt: the report page.
+    pub async fn answer(
+        &self,
+        attempt: Attempt,
+        code: Option<String>,
+        error: Option<String>,
+    ) -> Response {
+        let spike = self;
+        if let Some(error) = &error {
+            let error: String = error.chars().take(100).collect();
+            warn!(error = %error, "Telegram sign-in trial: Telegram answered an error");
+            return html(
+                StatusCode::BAD_REQUEST,
+                "Telegram a refusé",
                 &format!(
-                    "<p>Telegram a répondu et son jeton d'identité est valable : émetteur, \
+                    "<p>Telegram a répondu : <code>{}</code>.</p><p><a href=\"{TRY_PATH}\">Recommencer</a>.</p>",
+                    escape(&error)
+                ),
+            );
+        }
+        let Some(code) = code.filter(|code| !code.is_empty() && code.len() <= 512) else {
+            return html(
+                StatusCode::BAD_REQUEST,
+                "Pas de code",
+                "<p>Telegram n'a pas renvoyé de code.</p>",
+            );
+        };
+        let Ok(_permit) = spike.exchanges.try_acquire() else {
+            return html(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Occupé",
+                "<p>Trop de connexions en cours : réessaie dans un instant.</p>",
+            );
+        };
+        match spike.login.exchange(&code, &attempt.verifier).await {
+            Ok(identity) => {
+                let nonce_returned = identity.nonce.as_deref() == Some(attempt.nonce.as_str());
+                let nonce_mismatch = identity.nonce.is_some() && !nonce_returned;
+                let beta = spike.beta_users.contains(&identity.telegram_id);
+                let client_id_is_bot_id = spike.bot_id.as_deref() == Some(spike.login.client_id());
+                info!(
+                    claims = ?identity.claim_names,
+                    algorithm = identity.algorithm.as_deref().unwrap_or("none"),
+                    nonce_returned,
+                    nonce_mismatch,
+                    beta,
+                    client_id_is_bot_id,
+                    "Telegram sign-in trial succeeded"
+                );
+                let yes_no = |yes: bool| if yes { "oui" } else { "non" };
+                let nonce = if nonce_returned {
+                    "oui, identique"
+                } else if nonce_mismatch {
+                    "<strong>différent</strong> (à signaler)"
+                } else {
+                    "non (absent du jeton)"
+                };
+                html(
+                    StatusCode::OK,
+                    "Connexion Telegram réussie",
+                    &format!(
+                        "<p>Telegram a répondu et son jeton d'identité est valable : émetteur, \
                      destinataire (le Client ID) et date d'expiration vérifiés.</p><ul>\
                      <li>Compte Telegram : <code>{id}</code> (c'est bien le tien ?)</li>\
                      <li>Dans la liste bêta : {beta}</li>\
@@ -186,24 +173,25 @@ async fn callback(State(spike): State<Arc<Spike>>, Query(answer): Query<Callback
                      <li>Signature annoncée : <code>{algorithm}</code></li>\
                      <li>Champs reçus : <code>{claims}</code></li></ul>\
                      <p>Tu peux fermer cette page. <a href=\"{TRY_PATH}\">Refaire l'essai</a>.</p>",
-                    id = identity.telegram_id,
-                    beta = yes_no(beta),
-                    bot = yes_no(client_id_is_bot_id),
-                    algorithm = escape(identity.algorithm.as_deref().unwrap_or("aucune")),
-                    claims = escape(&identity.claim_names.join(", ")),
-                ),
-            )
-        }
-        Err(error) => {
-            warn!(error = %error, "Telegram sign-in trial failed");
-            html(
-                StatusCode::BAD_GATEWAY,
-                "Échec de la connexion",
-                &format!(
-                    "<p>{}</p><p><a href=\"{TRY_PATH}\">Recommencer</a>.</p>",
-                    escape(&error.to_string())
-                ),
-            )
+                        id = identity.telegram_id,
+                        beta = yes_no(beta),
+                        bot = yes_no(client_id_is_bot_id),
+                        algorithm = escape(identity.algorithm.as_deref().unwrap_or("aucune")),
+                        claims = escape(&identity.claim_names.join(", ")),
+                    ),
+                )
+            }
+            Err(error) => {
+                warn!(error = %error, "Telegram sign-in trial failed");
+                html(
+                    StatusCode::BAD_GATEWAY,
+                    "Échec de la connexion",
+                    &format!(
+                        "<p>{}</p><p><a href=\"{TRY_PATH}\">Recommencer</a>.</p>",
+                        escape(&error.to_string())
+                    ),
+                )
+            }
         }
     }
 }

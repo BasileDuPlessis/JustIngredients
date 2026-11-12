@@ -107,26 +107,40 @@ async fn main() -> Result<()> {
             (*shared_pool).clone(),
         ));
     }
-    // Task 0 of the OAuth tranche: the Telegram sign-in tried on staging
-    if let (Some(settings), Some(login), just_ingredients::engine::tokens::Realm::Staging) =
-        (&oauth, &app_config.api.telegram_login, realm)
-    {
-        use just_ingredients::doors::oauth::{spike, telegram};
+    // The authorization server, users signing in with Telegram; on staging, the bare trial of
+    // the Telegram sign-in too (task 0 of the OAuth tranche)
+    if let (Some(settings), Some(login)) = (&oauth, &app_config.api.telegram_login) {
+        use just_ingredients::doors::oauth::{server, spike, telegram};
         match telegram::TelegramLogin::new(
             login.clone(),
             &settings.issuer,
             telegram::Endpoints::telegram(),
         ) {
             Ok(login) => {
-                let bot_id = app_config.bot.token.split(':').next().map(str::to_string);
-                doors = doors.merge(spike::router(Arc::new(spike::Spike::new(
+                let trial =
+                    (realm == just_ingredients::engine::tokens::Realm::Staging).then(|| {
+                        let bot_id = app_config.bot.token.split(':').next().map(str::to_string);
+                        Arc::new(spike::Spike::new(
+                            login.clone(),
+                            app_config.api.beta_users.clone(),
+                            bot_id,
+                        ))
+                    });
+                if let Some(trial) = &trial {
+                    doors = doors.merge(spike::router(Arc::clone(trial)));
+                    info!(path = spike::TRY_PATH, "Telegram sign-in trial served");
+                }
+                doors = doors.merge(server::router(server::AuthorizationServer::new(
+                    (*shared_pool).clone(),
+                    realm,
+                    settings.clone(),
                     login,
                     app_config.api.beta_users.clone(),
-                    bot_id,
-                ))));
-                info!(path = spike::TRY_PATH, "Telegram sign-in trial served");
+                    trial,
+                )));
+                info!(issuer = %settings.issuer, "OAuth authorization server served");
             }
-            Err(error) => warn!(error = %error, "Telegram sign-in trial not served"),
+            Err(error) => warn!(error = %error, "OAuth authorization server not served"),
         }
     }
     observability::start(Some(Arc::clone(&shared_pool)), &app_config, doors).await?;

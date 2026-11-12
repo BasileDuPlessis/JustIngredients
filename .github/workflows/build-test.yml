@@ -79,6 +79,12 @@ jobs:
       env:
         DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
 
+    # The OAuth door: an assistant's sign-in with a fake Telegram, every refusal
+    - name: Run OAuth tests
+      run: cargo test --test oauth_tests -- --include-ignored
+      env:
+        DATABASE_URL: postgres://postgres:postgres@localhost:5432/postgres
+
     # The exact text of recipe cards, frozen in tests/golden/cards/ (engine refactor guard)
     - name: Run card golden tests
       run: cargo test --test card_golden_tests -- --include-ignored

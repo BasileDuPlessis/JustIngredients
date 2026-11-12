@@ -1,6 +1,6 @@
 # OAuth for AI assistants (tranche 4 of the engine): study
 
-Status: validated by the owner (2026-11-12) and revised after an independent review (§7); tasks 1 (discovery documents, the 401 challenge) and 2 (migration 13, `engine::oauth`, keys and grants told apart) done; task 0 (the Telegram spike) on staging, waiting for the BotFather set-up.
+Status: validated by the owner (2026-11-12) and revised after an independent review (§7); tasks 1 to 6 done (discovery documents and the 401; migration 13 and `engine::oauth`; the pinned clients; `/oauth/authorize`, Telegram's callback, the consent page, `/oauth/token`), under review; task 0 (the Telegram trial) and the first real sign-in on staging wait for the BotFather set-up; task 7 (`/cle` lists and revokes connected apps, the Telegram notice of a new grant) next.
 Goal: the user adds JustIngredients to **claude.ai** (web, desktop, mobile apps) or **ChatGPT** by
 its URL, signs in **with Telegram**, approves what the assistant may do, and is done: no
 terminal, no key to copy. The personal keys of `/cle` keep working for Claude Code, Cursor, VS

@@ -4,6 +4,8 @@
 use axum::http::{HeaderValue, StatusCode, header};
 use axum::response::{IntoResponse, Response};
 
+use crate::engine::Lang;
+
 /// The headers every sign-in page and redirect carries.
 pub fn protective_headers() -> [(header::HeaderName, HeaderValue); 3] {
     [
@@ -16,15 +18,21 @@ pub fn protective_headers() -> [(header::HeaderName, HeaderValue); 3] {
     ]
 }
 
-/// A page titled `title` around `body` (already escaped HTML), without forms.
+/// A page in French titled `title` around `body` (already escaped HTML), without forms.
 pub fn html(status: StatusCode, title: &str, body: &str) -> Response {
+    html_in(Lang::Fr, status, title, body)
+}
+
+/// [`html`], in `lang`.
+pub fn html_in(lang: Lang, status: StatusCode, title: &str, body: &str) -> Response {
     let document = format!(
-        "<!doctype html><html lang=\"fr\"><head><meta charset=\"utf-8\">\
+        "<!doctype html><html lang=\"{code}\"><head><meta charset=\"utf-8\">\
          <meta name=\"viewport\" content=\"width=device-width, initial-scale=1\">\
          <title>{title}</title><style>body{{font-family:system-ui,sans-serif;max-width:36rem;\
          margin:2rem auto;padding:0 1rem;line-height:1.5}}code{{word-break:break-all}}</style>\
          </head><body><h1>{title}</h1>{body}</body></html>",
         title = escape(title),
+        code = if lang.is_french() { "fr" } else { "en" },
     );
     (
         status,
