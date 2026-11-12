@@ -238,6 +238,16 @@ pub struct ApiConfig {
     /// The Fly app's name (`FLY_APP_NAME`, set by Fly): production or staging tokens, and the
     /// public address.
     pub app_name: Option<String>,
+    /// The sign-in with Telegram of the OAuth door (`specs/tasks/oauth.md`); `None`: no OAuth.
+    pub telegram_login: Option<TelegramLoginConfig>,
+}
+
+/// The bot's "Log In With Telegram" client, as BotFather shows it (mini app, the bot, Login
+/// Widget): `TELEGRAM_LOGIN_CLIENT_ID` and `TELEGRAM_LOGIN_SECRET`, both or neither.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TelegramLoginConfig {
+    pub client_id: String,
+    pub secret: crate::secret::SecretString,
 }
 
 /// Unified application configuration
@@ -318,6 +328,22 @@ impl AppConfig {
             api: ApiConfig {
                 beta_users: telegram_ids(get("API_BETA_USERS"), "API_BETA_USERS")?,
                 app_name: get("FLY_APP_NAME").map(|name| name.trim().to_string()),
+                telegram_login: match (
+                    get("TELEGRAM_LOGIN_CLIENT_ID"),
+                    get("TELEGRAM_LOGIN_SECRET"),
+                ) {
+                    (Some(client_id), Some(secret)) => Some(TelegramLoginConfig {
+                        client_id: client_id.trim().to_string(),
+                        secret: crate::secret::SecretString::new(secret.trim()),
+                    }),
+                    (None, None) => None,
+                    _ => {
+                        return Err(AppError::Config(
+                            "TELEGRAM_LOGIN_CLIENT_ID and TELEGRAM_LOGIN_SECRET go together: set both or neither"
+                                .to_string(),
+                        ));
+                    }
+                },
             },
         })
     }
@@ -522,6 +548,37 @@ mod tests {
             let mut vars = base.to_vec();
             vars.push(("API_BETA_USERS", refused));
             assert!(load(&vars).is_err(), "{refused}");
+        }
+        Ok(())
+    }
+
+    /// The Telegram login: both variables or neither; the secret is never printed.
+    #[test]
+    fn the_telegram_login_needs_its_id_and_secret() -> AppResult<()> {
+        let base = [
+            ("TELEGRAM_BOT_TOKEN", TOKEN),
+            ("DATABASE_URL", "postgres://user:pass@localhost/app"),
+        ];
+        assert_eq!(load(&base)?.api.telegram_login, None);
+
+        let mut vars = base.to_vec();
+        vars.push(("TELEGRAM_LOGIN_CLIENT_ID", " 123456 "));
+        vars.push(("TELEGRAM_LOGIN_SECRET", "s3cr3t-value"));
+        let login = load(&vars)?.api.telegram_login;
+        assert_eq!(
+            login.as_ref().map(|login| login.client_id.as_str()),
+            Some("123456")
+        );
+        assert_eq!(
+            login.as_ref().map(|login| login.secret.expose()),
+            Some("s3cr3t-value")
+        );
+        assert!(!format!("{login:?}").contains("s3cr3t"));
+
+        for alone in ["TELEGRAM_LOGIN_CLIENT_ID", "TELEGRAM_LOGIN_SECRET"] {
+            let mut vars = base.to_vec();
+            vars.push((alone, "x"));
+            assert!(load(&vars).is_err(), "{alone} alone");
         }
         Ok(())
     }

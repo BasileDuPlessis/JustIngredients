@@ -459,6 +459,7 @@ mod tests {
         let access = ApiAccess::from_config(&crate::config::ApiConfig {
             beta_users: vec![42],
             app_name: Some("just-ingredients-staging".to_string()),
+            telegram_login: None,
         });
         assert!(access.allows(42));
         assert!(!access.allows(43));

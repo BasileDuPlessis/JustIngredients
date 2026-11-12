@@ -1,6 +1,6 @@
 # OAuth for AI assistants (tranche 4 of the engine): study
 
-Status: validated by the owner (2026-11-12) and revised after an independent review (§7); task 1 done (discovery documents, the 401 challenge); task 0 (the Telegram spike) next.
+Status: validated by the owner (2026-11-12) and revised after an independent review (§7); task 1 done (discovery documents, the 401 challenge); task 0 (the Telegram spike) on staging, waiting for the BotFather set-up.
 Goal: the user adds JustIngredients to **claude.ai** (web, desktop, mobile apps) or **ChatGPT** by
 its URL, signs in **with Telegram**, approves what the assistant may do, and is done: no
 terminal, no key to copy. The personal keys of `/cle` keep working for Claude Code, Cursor, VS
@@ -158,9 +158,9 @@ telegram_nonce, telegram_verifier, telegram_id, csrf, expires_at)`,
 
 ### Settings and the owner's part
 
-- `TELEGRAM_LOGIN_SECRET` (each bot's client secret from BotFather), set by the owner with
-  `fly secrets set` on staging and production. The client id is the bot's id (the part of the bot
-  token before `:`).
+- `TELEGRAM_LOGIN_CLIENT_ID` and `TELEGRAM_LOGIN_SECRET` (each bot's client id and secret from
+  BotFather, both or neither), set by the owner with `fly secrets set` on staging and production.
+  Without them, no OAuth: no discovery documents, the 401 says `Bearer` only.
 - In BotFather, for the test bot and the real one: Login Widget → allowed URL
   `https://<app>.fly.dev/oauth/telegram/callback`.
 - `OAUTH_CLIENTS` (the allowlist), with the three clients above by default.
@@ -216,12 +216,15 @@ documented. The staging test covers the first on the owner's phone.
 18 findings, checked against the specifications and the code; the design's shape holds (one
 origin, allowlisted clients, our consent after Telegram, opaque hashed tokens, no DCR). Changes:
 
-- **Task 0 first: a Telegram spike on staging.** Telegram's documentation does not list `nonce` as
-  an `/auth` parameter (discovery has no `nonce` claim), and OIDC requires the claim back when one
-  is sent: no nonce is sent (PKCE, a random `state` and the server-side exchange with the secret
-  protect the code flow). The user is the `id` claim (scope `profile`, a number), never `sub`. The
-  client id is the one BotFather shows (that it equals the bot id is not documented). The spike
-  checks `aud`, `id` and the mobile behaviour before anything is built on them.
+- **Task 0 first: a Telegram spike on staging** (`src/doors/oauth/spike.rs`, staging only:
+  `/oauth/telegram/try`). Discovery has no `nonce` claim, while the login page (re-read
+  2026-11-12) lists `nonce` as optional and "included in the resulting id_token", and OIDC
+  requires it back once sent: the spike sends one and reports whether it returns; it is kept only
+  if it does (PKCE, a random `state` and the server-side exchange with the secret protect the code
+  flow anyway). The user is the `id` claim (scope `profile`, a number), never `sub`. The client id
+  is the one BotFather shows (`TELEGRAM_LOGIN_CLIENT_ID`; the spike reports whether it is the
+  bot's id). The spike checks `aud`, `id` and the phone's behaviour before anything is built on
+  them.
 - **No ID token signature check**: OIDC Core §3.1.3.7(6) allows relying on TLS for an ID token
   received directly from the token endpoint; `iss`, `aud` and `exp` are still checked. No JWT
   library, no key cache.

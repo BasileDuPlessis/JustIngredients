@@ -88,16 +88,42 @@ async fn main() -> Result<()> {
     // runs).
     // Readiness waits for a Telegram success from the start, not only once the heartbeat runs
     observability::health_checks::expect_telegram();
-    // The MCP door for AI assistants, behind its guard (personal tokens of /cle)
+    // The MCP door for AI assistants, behind its guard (personal tokens of /cle); OAuth only
+    // with the Telegram login configured
+    let realm =
+        just_ingredients::engine::tokens::Realm::from_app_name(app_config.api.app_name.as_deref());
     let oauth = just_ingredients::doors::public_host(app_config.api.app_name.as_deref())
+        .filter(|_| app_config.api.telegram_login.is_some())
         .map(|host| just_ingredients::doors::oauth::OAuthSettings::for_host(&host));
-    let doors = just_ingredients::doors::mcp::router(
+    let mut doors = just_ingredients::doors::mcp::router(
         (*shared_pool).clone(),
-        just_ingredients::engine::tokens::Realm::from_app_name(app_config.api.app_name.as_deref()),
+        realm,
         just_ingredients::doors::mcp::allowed_hosts(app_config.api.app_name.as_deref()),
         just_ingredients::doors::guard::Limits::default(),
         oauth.as_ref(),
     );
+    // Task 0 of the OAuth tranche: the Telegram sign-in tried on staging
+    if let (Some(settings), Some(login), just_ingredients::engine::tokens::Realm::Staging) =
+        (&oauth, &app_config.api.telegram_login, realm)
+    {
+        use just_ingredients::doors::oauth::{spike, telegram};
+        match telegram::TelegramLogin::new(
+            login.clone(),
+            &settings.issuer,
+            telegram::Endpoints::telegram(),
+        ) {
+            Ok(login) => {
+                let bot_id = app_config.bot.token.split(':').next().map(str::to_string);
+                doors = doors.merge(spike::router(Arc::new(spike::Spike::new(
+                    login,
+                    app_config.api.beta_users.clone(),
+                    bot_id,
+                ))));
+                info!(path = spike::TRY_PATH, "Telegram sign-in trial served");
+            }
+            Err(error) => warn!(error = %error, "Telegram sign-in trial not served"),
+        }
+    }
     observability::start(Some(Arc::clone(&shared_pool)), &app_config, doors).await?;
     // The usage history: visits and daily totals, the user and recipe gauges
     tokio::spawn(observability::usage::run(Arc::clone(&shared_pool)));

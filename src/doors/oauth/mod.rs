@@ -2,9 +2,14 @@
 //! key, the user signing in with Telegram. The bot is both the protected resource (`/mcp`) and
 //! its authorization server, on one origin.
 //!
-//! This module serves the discovery documents ([`metadata`]); the sign-in and the tokens follow.
+//! This module serves the discovery documents ([`metadata`]) and signs users in with Telegram
+//! ([`telegram`]); for now the sign-in is only tried on staging ([`spike`], task 0). Mounted only
+//! when the Telegram login is configured.
 
 pub mod metadata;
+pub mod page;
+pub mod spike;
+pub mod telegram;
 
 /// The addresses OAuth is about, from the app's public host.
 #[derive(Debug, Clone, PartialEq, Eq)]
