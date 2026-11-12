@@ -66,6 +66,9 @@ pub struct Guard {
     /// What a token must allow (`tokens::SCOPE_RECIPES_READ`).
     scope: &'static str,
     limits: Limits,
+    /// The `WWW-Authenticate` of a refused token: `Bearer`, with where to sign in when the door
+    /// has an authorization server (`oauth::OAuthSettings::challenge`).
+    challenge: HeaderValue,
     per_token: RateLimiter,
     failures: RateLimiter,
     in_flight: Arc<Semaphore>,
@@ -78,12 +81,17 @@ impl Guard {
         door: &'static str,
         scope: &'static str,
         limits: Limits,
+        challenge: Option<&str>,
     ) -> Arc<Self> {
+        let challenge = challenge
+            .and_then(|challenge| HeaderValue::from_str(challenge).ok())
+            .unwrap_or_else(|| HeaderValue::from_static("Bearer"));
         Arc::new(Self {
             pool,
             realm,
             door,
             scope,
+            challenge,
             per_token: RateLimiter::new(limits.per_token_per_minute, 60),
             failures: RateLimiter::new(limits.failures_per_address_per_minute, 60),
             in_flight: Arc::new(Semaphore::new(limits.max_in_flight)),
@@ -147,7 +155,7 @@ async fn pass(
         Ok(Some(authenticated)) if authenticated.allows(guard.scope) => authenticated,
         Ok(_) => {
             guard.failures.is_allowed(&address);
-            return (unauthorized(), None);
+            return (unauthorized(&guard.challenge), None);
         }
         Err(error) => {
             tracing::warn!(error = %error, door = guard.door, "Could not check a token");
@@ -207,10 +215,10 @@ fn refusal(status: StatusCode, text: &'static str) -> Response {
     (status, text).into_response()
 }
 
-fn unauthorized() -> Response {
+fn unauthorized(challenge: &HeaderValue) -> Response {
     (
         StatusCode::UNAUTHORIZED,
-        [(header::WWW_AUTHENTICATE, HeaderValue::from_static("Bearer"))],
+        [(header::WWW_AUTHENTICATE, challenge.clone())],
         "Unauthorized",
     )
         .into_response()

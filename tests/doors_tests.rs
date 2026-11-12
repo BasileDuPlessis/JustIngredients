@@ -42,6 +42,7 @@ async fn serve(pool: &PgPool, limits: Limits) -> Result<SocketAddr> {
         "test",
         SCOPE_RECIPES_READ,
         limits,
+        None,
     );
     let app = guarded(
         axum::Router::new()

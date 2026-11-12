@@ -89,11 +89,14 @@ async fn main() -> Result<()> {
     // Readiness waits for a Telegram success from the start, not only once the heartbeat runs
     observability::health_checks::expect_telegram();
     // The MCP door for AI assistants, behind its guard (personal tokens of /cle)
+    let oauth = just_ingredients::doors::public_host(app_config.api.app_name.as_deref())
+        .map(|host| just_ingredients::doors::oauth::OAuthSettings::for_host(&host));
     let doors = just_ingredients::doors::mcp::router(
         (*shared_pool).clone(),
         just_ingredients::engine::tokens::Realm::from_app_name(app_config.api.app_name.as_deref()),
         just_ingredients::doors::mcp::allowed_hosts(app_config.api.app_name.as_deref()),
         just_ingredients::doors::guard::Limits::default(),
+        oauth.as_ref(),
     );
     observability::start(Some(Arc::clone(&shared_pool)), &app_config, doors).await?;
     // The usage history: visits and daily totals, the user and recipe gauges

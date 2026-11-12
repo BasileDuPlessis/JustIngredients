@@ -4,6 +4,7 @@
 
 pub mod guard;
 pub mod mcp;
+pub mod oauth;
 
 /// The public host of the Fly app (`just-ingredients.fly.dev`): the only `Host` the doors answer
 /// for, and the address `/cle` gives. `None` without an app name (local runs).

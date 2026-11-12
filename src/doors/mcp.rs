@@ -52,8 +52,15 @@ cooking time). Measures can be shown in four unit views. With a read-write key, 
 also be renamed, its memo written or cleared, and a recipe created from text (one ingredient \
 per line); nothing can be deleted. Tell the user before changing anything.";
 
-/// The MCP door's routes, behind its guard: the hosts it answers for, and the database.
-pub fn router(pool: PgPool, realm: Realm, allowed_hosts: Vec<String>, limits: Limits) -> Router {
+/// The MCP door's routes, behind its guard: the hosts it answers for, and the database. With
+/// `oauth`, a refused request says where to sign in (and the discovery documents are served).
+pub fn router(
+    pool: PgPool,
+    realm: Realm,
+    allowed_hosts: Vec<String>,
+    limits: Limits,
+    oauth: Option<&super::oauth::OAuthSettings>,
+) -> Router {
     let server_pool = pool.clone();
     let service = StreamableHttpService::new(
         move || {
@@ -72,8 +79,22 @@ pub fn router(pool: PgPool, realm: Realm, allowed_hosts: Vec<String>, limits: Li
                 usize::try_from(limits.max_body_bytes).unwrap_or(usize::MAX),
             ),
     );
-    let guard = Guard::new(pool, realm, "mcp", SCOPE_RECIPES_READ, limits);
-    guarded(Router::new().nest_service(PATH, service), guard)
+    let challenge = oauth.map(super::oauth::OAuthSettings::challenge);
+    let guard = Guard::new(
+        pool,
+        realm,
+        "mcp",
+        SCOPE_RECIPES_READ,
+        limits,
+        challenge.as_deref(),
+    );
+    let door = guarded(Router::new().nest_service(PATH, service), guard);
+    match oauth {
+        Some(settings) => door.merge(super::oauth::metadata::router(std::sync::Arc::new(
+            settings.clone(),
+        ))),
+        None => door,
+    }
 }
 
 /// The hosts the door answers for: the Fly app's public name, or the local ones without it.

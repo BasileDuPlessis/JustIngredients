@@ -10,6 +10,7 @@ use anyhow::{Context, Result};
 use just_ingredients::db::{NewIngredient, RecipePart, init_database_schema, save_recipe_parts};
 use just_ingredients::doors::guard::Limits;
 use just_ingredients::doors::mcp;
+use just_ingredients::doors::oauth::OAuthSettings;
 use just_ingredients::engine::Owner;
 use just_ingredients::engine::tokens::{self, Realm};
 use serde_json::{Value, json};
@@ -25,6 +26,7 @@ async fn serve(pool: &PgPool) -> Result<SocketAddr> {
         Realm::Production,
         vec!["127.0.0.1".to_string()],
         Limits::default(),
+        Some(&OAuthSettings::for_host("127.0.0.1")),
     );
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;
     let address = listener.local_addr()?;
@@ -524,5 +526,68 @@ async fn a_read_write_key_changes_recipes_a_read_only_one_cannot(pool: PgPool) -
         ]
     );
     assert!(origins.iter().all(|(_, _, token)| token.is_some()));
+    Ok(())
+}
+
+/// A request without a token is told where to sign in (RFC 9728), and the two discovery
+/// documents answer, public, with the exact issuer and resource.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_refused_request_points_to_the_sign_in_documents(pool: PgPool) -> Result<()> {
+    two_users(&pool).await?;
+    let address = serve(&pool).await?;
+    let client = reqwest::Client::builder().no_proxy().build()?;
+
+    let refused = client
+        .post(format!("http://{address}/mcp"))
+        .header("Content-Type", "application/json")
+        .header("Accept", "application/json, text/event-stream")
+        .json(&json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/list" }))
+        .send()
+        .await?;
+    assert_eq!(refused.status().as_u16(), 401);
+    let challenge = refused
+        .headers()
+        .get("www-authenticate")
+        .and_then(|value| value.to_str().ok())
+        .context("a challenge")?
+        .to_string();
+    assert_eq!(
+        challenge,
+        "Bearer resource_metadata=\"https://127.0.0.1/.well-known/oauth-protected-resource/mcp\", scope=\"recipes:read\""
+    );
+
+    for path in [
+        "/.well-known/oauth-protected-resource/mcp",
+        "/.well-known/oauth-protected-resource",
+    ] {
+        let document: Value = client
+            .get(format!("http://{address}{path}"))
+            .send()
+            .await?
+            .json()
+            .await?;
+        assert_eq!(document["resource"], "https://127.0.0.1/mcp", "{path}");
+        assert_eq!(
+            document["authorization_servers"],
+            json!(["https://127.0.0.1"])
+        );
+    }
+    let server = client
+        .get(format!(
+            "http://{address}/.well-known/oauth-authorization-server"
+        ))
+        .send()
+        .await?;
+    assert_eq!(
+        server
+            .headers()
+            .get("access-control-allow-origin")
+            .and_then(|value| value.to_str().ok()),
+        Some("*")
+    );
+    let server: Value = server.json().await?;
+    assert_eq!(server["issuer"], "https://127.0.0.1");
+    assert_eq!(server["code_challenge_methods_supported"], json!(["S256"]));
     Ok(())
 }

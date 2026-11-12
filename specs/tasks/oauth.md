@@ -1,6 +1,6 @@
 # OAuth for AI assistants (tranche 4 of the engine): study
 
-Status: study (2026-11-11), nothing implemented. The owner chose this tranche after tranche 2.
+Status: validated by the owner (2026-11-12) and revised after an independent review (§7); task 1 done (discovery documents, the 401 challenge); task 0 (the Telegram spike) next.
 Goal: the user adds JustIngredients to **claude.ai** (web, desktop, mobile apps) or **ChatGPT** by
 its URL, signs in **with Telegram**, approves what the assistant may do, and is done: no
 terminal, no key to copy. The personal keys of `/cle` keep working for Claude Code, Cursor, VS
@@ -210,3 +210,63 @@ documented. The staging test covers the first on the owner's phone.
 5. Tokens: 1 hour, renewed by the assistant for 30 days without asking; revocable in `/cle`.
 6. Your part: BotFather set-up for both bots and one secret per app (`fly secrets set`), with
    step-by-step instructions when we get there.
+
+## 7. What the independent review changed (2026-11-12)
+
+18 findings, checked against the specifications and the code; the design's shape holds (one
+origin, allowlisted clients, our consent after Telegram, opaque hashed tokens, no DCR). Changes:
+
+- **Task 0 first: a Telegram spike on staging.** Telegram's documentation does not list `nonce` as
+  an `/auth` parameter (discovery has no `nonce` claim), and OIDC requires the claim back when one
+  is sent: no nonce is sent (PKCE, a random `state` and the server-side exchange with the secret
+  protect the code flow). The user is the `id` claim (scope `profile`, a number), never `sub`. The
+  client id is the one BotFather shows (that it equals the bot id is not documented). The spike
+  checks `aud`, `id` and the mobile behaviour before anything is built on them.
+- **No ID token signature check**: OIDC Core §3.1.3.7(6) allows relying on TLS for an ID token
+  received directly from the token endpoint; `iss`, `aud` and `exp` are still checked. No JWT
+  library, no key cache.
+- **Clients pinned, not fetched**: the allowlist holds each client id with its redirect URIs
+  (claude.ai: `https://claude.ai/api/mcp/auth_callback`; ChatGPT:
+  `https://chatgpt.com/connector_platform_oauth_redirect`). No document fetch: no request forgery,
+  no cache. A client is accepted when `none` is among its methods (ChatGPT's singular field says
+  `private_key_jwt`, its list includes `none`). Refused client ids are logged (public URLs).
+  **Claude Code is left out** (its `/cle` keys work; no localhost redirects to match).
+- **Refresh rotation with a grace window**: refresh rows get `parent_id` and `rotated_at`; a token
+  rotated less than 60 s ago gives a fresh pair (a retry after a lost answer, or two refreshes at
+  once), older reuse revokes the grant. Rotated rows are kept until they expire. Expiry is sliding:
+  30 days without use.
+- **Credentials told apart**: `Authenticated` and `Actor` carry `Credential::Key(id)` or
+  `Credential::Grant { grant_id, client }`; migration 13 adds `events.grant_id`; limits and logs
+  key on `key:{id}` / `grant:{id}`.
+- **`iss` and `state` on every authorization response**, errors included, through one function;
+  a "Refuser" button answers `error=access_denied`, a Telegram error too; problems found after the
+  client and redirect are validated are redirected as `invalid_request`, those found before are
+  shown on a page.
+- **Consent page**: CSP `default-src 'none'; style-src 'unsafe-inline'; form-action 'self'
+  <redirect origin>; frame-ancestors 'none'; base-uri 'none'` (Chromium applies `form-action` to
+  the redirect after the post), `X-Frame-Options: DENY`, `Referrer-Policy: no-referrer`,
+  `Cache-Control: no-store`; the callback answers 303 to `GET /oauth/consent?req=…` (Telegram's
+  code never in the page's address); the display name escaped; the post reads everything from the
+  database and consumes the request atomically. The `__Host-` binding cookie (SameSite=Lax) is set
+  before the redirect to Telegram: it comes back on Telegram's top-level redirect; this is right
+  because our consent comes after Telegram. A flow finished in another browser is refused with an
+  explanation.
+- **Codes**: one atomic `UPDATE … WHERE used_at IS NULL AND expires_at > now() RETURNING`; a reused
+  code revokes its grant; `code_challenge_method=S256` required, verifier 43–128 characters;
+  `client_id` and `redirect_uri` checked at the token endpoint.
+- **Token endpoint**: `Cache-Control: no-store`; `token_type`, `expires_in`, `scope` (consent may
+  grant more than asked); `invalid_grant` for any bad, expired or revoked refresh token; axum's
+  `form` and `query` features.
+- **Scopes**: unknown ones (`offline_access`, `openid`) ignored; none means `recipes:read`; the
+  "key can only read" message says to reconnect and tick writing for a grant.
+- **Limits**: the guard counts as failures only unknown presented tokens (not a missing header, not
+  a known expired `jio_` token), since claude.ai's users share its addresses and every connection
+  starts with a 401; the token endpoint limits `invalid_grant` per address, with a global cap; a
+  small concurrency cap on the OAuth paths; 5 s on outbound calls; `/.well-known/*` served
+  explicitly (404 for others), never through the health limiter.
+- **Grants**: a new grant for the same user and client replaces the previous one; each new grant
+  is announced in Telegram ("🔗 claude.ai connecté… [Révoquer]"), the cheapest way to notice an
+  approval obtained by a crafted link; the beta list is checked at refresh too.
+- **Prefixes by realm**: `jio_` / `jir_` in production, `jio_stg_` / `jir_stg_` on staging.
+- Secrets in `SecretString`; never logged: codes, state, verifier, tokens, ID token, Telegram name.
+- OAuth routes and metadata are mounted only when the Telegram login is configured.
