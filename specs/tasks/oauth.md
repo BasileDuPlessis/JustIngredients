@@ -318,6 +318,11 @@ these, all fixed with tests:
   pages clear the binding cookie; secrets of a sign-in redacted from `Debug`; revoked grants
   purged after 30 days.
 
-Left for later: the nonce becomes required once the trial shows Telegram returns it; the trial
-page (`spike.rs`) is removed before production; a double click on "Autoriser" may lose the first
+The trial on staging (2026-11-12, the owner's account): the ID token holds `aud`, `exp`,
+`family_name`, `given_name`, `iat`, `id`, `iss`, `name`, `nonce`, `sub`, signed RS256; `id` is the
+Telegram id, the client id is the bot's id, and the nonce comes back as sent: it is now required.
+BotFather's mini app calls the section "OAuth2 login" (Redirect URLs: the callback; Trusted
+origins: the origin; Native login: empty).
+
+Left for later: the trial page (`spike.rs`) is removed before production; a double click on "Autoriser" may lose the first
 code (the client then shows a failure, the user tries again).

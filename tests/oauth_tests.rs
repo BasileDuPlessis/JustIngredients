@@ -819,6 +819,16 @@ async fn a_reloaded_answer_a_forged_nonce_and_a_failed_exchange(pool: PgPool) ->
         .unwrap_or_else(PoisonError::into_inner)
         .wrong_nonce = false;
 
+    // An ID token without the nonce: refused too
+    let state = start(&mut browser, &fake).await?;
+    fake.lock().unwrap_or_else(PoisonError::into_inner).nonce = None;
+    let answer = browser.telegram_answers(&state).await?;
+    let (_, query) = answer.location()?;
+    assert_eq!(
+        query.get("error").map(String::as_str),
+        Some("access_denied")
+    );
+
     // Telegram refuses the exchange (here, our verifier): server_error, the sign-in over
     let state = start(&mut browser, &fake).await?;
     fake.lock()

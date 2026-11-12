@@ -589,17 +589,15 @@ async fn telegram_callback(
             return give_up("server_error", "the Telegram sign-in failed").await;
         }
     };
-    match identity.nonce.as_deref() {
-        Some(nonce) if nonce != pending.nonce => {
-            warn!("OAuth sign-in refused: Telegram's nonce is not ours");
-            return give_up("access_denied", "the Telegram sign-in failed").await;
-        }
-        returned => info!(
-            nonce_returned = returned.is_some(),
-            claims = ?identity.claim_names,
-            "OAuth sign-in: Telegram answered"
-        ),
+    // Telegram returns the nonce it was sent (the staging trial, 2026-11-12): required
+    if identity.nonce.as_deref() != Some(pending.nonce.as_str()) {
+        warn!(
+            nonce_returned = identity.nonce.is_some(),
+            "OAuth sign-in refused: Telegram's nonce is missing or not ours"
+        );
+        return give_up("access_denied", "the Telegram sign-in failed").await;
     }
+    info!(claims = ?identity.claim_names, "OAuth sign-in: Telegram answered");
     let owner = Owner::telegram(identity.telegram_id);
     if !server.allowed(owner) {
         info!("OAuth sign-in refused: not in the beta");
