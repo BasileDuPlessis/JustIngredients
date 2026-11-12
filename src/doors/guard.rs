@@ -4,16 +4,19 @@
 //! 1. an address with too many failed authentications in the last minute is refused (`429`),
 //!    so tokens cannot be guessed;
 //! 2. a request announcing a body over the limit is refused (`413`);
-//! 3. the `Authorization: Bearer` token must be an active token of this realm allowing the
-//!    door's scope (`401` with `WWW-Authenticate: Bearer`, counted as a failure of the address);
-//! 4. at most so many requests a minute per token (`429`);
+//! 3. the `Authorization: Bearer` token must be an active personal key of this realm, or an
+//!    OAuth access token for this door's resource, allowing the door's scope (`401` with
+//!    `WWW-Authenticate`). Only a token we do not know counts as a failure of the address: not a
+//!    missing header (every OAuth client starts so), nor an expired access token, since the
+//!    users of one assistant share its addresses;
+//! 4. at most so many requests a minute per key or grant (`429`);
 //! 5. at most so many requests at once for all doors (`503` after a short wait): the bot keeps
 //!    its database connections;
 //! 6. a request that takes too long is cut (`504`).
 //!
 //! The request then reaches the door with the [`Authenticated`] token in its extensions and
-//! without its `Authorization` header. One log line per request: door, status, duration, token
-//! id; never the path's query, the body nor the token.
+//! without its `Authorization` header. One log line per request: door, status, duration, key or
+//! grant (`key:3`, `grant:7`); never the path's query, the body nor the token.
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -27,7 +30,7 @@ use axum::response::{IntoResponse, Response};
 use sqlx::PgPool;
 use tokio::sync::Semaphore;
 
-use crate::engine::tokens::{self, Authenticated, Realm};
+use crate::engine::tokens::{self, Authenticated, Checked, Credential, Realm};
 use crate::observability::server::{RateLimiter, client_key};
 
 /// The limits of a door.
@@ -69,6 +72,8 @@ pub struct Guard {
     /// The `WWW-Authenticate` of a refused token: `Bearer`, with where to sign in when the door
     /// has an authorization server (`oauth::OAuthSettings::challenge`).
     challenge: HeaderValue,
+    /// The resource OAuth access tokens must be for; none: they are refused.
+    resource: Option<String>,
     per_token: RateLimiter,
     failures: RateLimiter,
     in_flight: Arc<Semaphore>,
@@ -81,17 +86,19 @@ impl Guard {
         door: &'static str,
         scope: &'static str,
         limits: Limits,
-        challenge: Option<&str>,
+        oauth: Option<&super::oauth::OAuthSettings>,
     ) -> Arc<Self> {
-        let challenge = challenge
-            .and_then(|challenge| HeaderValue::from_str(challenge).ok())
+        let challenge = oauth
+            .and_then(|oauth| HeaderValue::from_str(&oauth.challenge()).ok())
             .unwrap_or_else(|| HeaderValue::from_static("Bearer"));
+        let resource = oauth.map(|oauth| oauth.resource.clone());
         Arc::new(Self {
             pool,
             realm,
             door,
             scope,
             challenge,
+            resource,
             per_token: RateLimiter::new(limits.per_token_per_minute, 60),
             failures: RateLimiter::new(limits.failures_per_address_per_minute, 60),
             in_flight: Arc::new(Semaphore::new(limits.max_in_flight)),
@@ -112,26 +119,26 @@ async fn check(
     next: Next,
 ) -> Response {
     let started = Instant::now();
-    let (response, token_id) = pass(&guard, peer, request, next).await;
+    let (response, credential) = pass(&guard, peer, request, next).await;
     let status = response.status().as_u16();
     crate::observability::api_request(guard.door, status, started.elapsed());
     tracing::info!(
         door = guard.door,
         status,
         duration_ms = u64::try_from(started.elapsed().as_millis()).unwrap_or(u64::MAX),
-        token_id,
+        credential = credential.map(|credential| credential.to_string()),
         "Door request"
     );
     response
 }
 
-/// The steps of the module's documentation; returns the answer and the token's id once known.
+/// The steps of the module's documentation; returns the answer and the key or grant once known.
 async fn pass(
     guard: &Guard,
     peer: SocketAddr,
     mut request: Request,
     next: Next,
-) -> (Response, Option<i64>) {
+) -> (Response, Option<Credential>) {
     let address = client_key(request.headers(), peer.ip());
     if !guard.failures.has_room(&address) {
         return (
@@ -147,13 +154,24 @@ async fn pass(
             None,
         );
     }
-    let authenticated = match bearer(request.headers()) {
-        Some(presented) => tokens::authenticate(&guard.pool, guard.realm, presented).await,
-        None => Ok(None),
+    let checked = match bearer(request.headers()) {
+        Some(presented) => {
+            tokens::check(
+                &guard.pool,
+                guard.realm,
+                presented,
+                guard.resource.as_deref(),
+            )
+            .await
+        }
+        None => Ok(Checked::Known),
     };
-    let authenticated: Authenticated = match authenticated {
-        Ok(Some(authenticated)) if authenticated.allows(guard.scope) => authenticated,
-        Ok(_) => {
+    let authenticated: Authenticated = match checked {
+        Ok(Checked::Valid(authenticated)) if authenticated.allows(guard.scope) => authenticated,
+        Ok(Checked::Valid(_) | Checked::Known) => {
+            return (unauthorized(&guard.challenge), None);
+        }
+        Ok(Checked::Unknown) => {
             guard.failures.is_allowed(&address);
             return (unauthorized(&guard.challenge), None);
         }
@@ -165,14 +183,14 @@ async fn pass(
             );
         }
     };
-    let token_id = Some(authenticated.token_id);
+    let credential = Some(authenticated.credential);
     if !guard
         .per_token
-        .is_allowed(&authenticated.token_id.to_string())
+        .is_allowed(&authenticated.credential.to_string())
     {
         return (
             refusal(StatusCode::TOO_MANY_REQUESTS, "Too many requests"),
-            token_id,
+            credential,
         );
     }
     let place = tokio::time::timeout(
@@ -181,13 +199,13 @@ async fn pass(
     )
     .await;
     let Ok(Ok(_place)) = place else {
-        return (refusal(StatusCode::SERVICE_UNAVAILABLE, "Busy"), token_id);
+        return (refusal(StatusCode::SERVICE_UNAVAILABLE, "Busy"), credential);
     };
     request.headers_mut().remove(header::AUTHORIZATION);
     request.extensions_mut().insert(authenticated);
     match tokio::time::timeout(guard.limits.timeout, next.run(request)).await {
-        Ok(response) => (response, token_id),
-        Err(_) => (refusal(StatusCode::GATEWAY_TIMEOUT, "Timeout"), token_id),
+        Ok(response) => (response, credential),
+        Err(_) => (refusal(StatusCode::GATEWAY_TIMEOUT, "Timeout"), credential),
     }
 }
 

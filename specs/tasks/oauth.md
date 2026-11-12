@@ -1,6 +1,6 @@
 # OAuth for AI assistants (tranche 4 of the engine): study
 
-Status: validated by the owner (2026-11-12) and revised after an independent review (§7); task 1 done (discovery documents, the 401 challenge); task 0 (the Telegram spike) on staging, waiting for the BotFather set-up.
+Status: validated by the owner (2026-11-12) and revised after an independent review (§7); tasks 1 (discovery documents, the 401 challenge) and 2 (migration 13, `engine::oauth`, keys and grants told apart) done; task 0 (the Telegram spike) on staging, waiting for the BotFather set-up.
 Goal: the user adds JustIngredients to **claude.ai** (web, desktop, mobile apps) or **ChatGPT** by
 its URL, signs in **with Telegram**, approves what the assistant may do, and is done: no
 terminal, no key to copy. The personal keys of `/cle` keep working for Claude Code, Cursor, VS
@@ -148,13 +148,25 @@ the request-forgery risk of fetching documents by URL.
 - `/cle` lists the connected apps ("🔗 claude.ai, lecture et écriture, connecté le 12 nov.") with
   a revoke button (the grant and its tokens).
 
-### Storage (migration 13)
+### Storage (migration 13, as built)
 
-`oauth_grants (id, user_id, client_id, scopes, resource, created_at, last_used_at, revoked_at)`,
-`oauth_tokens (id, grant_id, kind, token_hash UNIQUE, expires_at, revoked_at)`,
-`oauth_requests (id, client_id, redirect_uri, code_challenge, state, scope, resource,
-telegram_nonce, telegram_verifier, telegram_id, csrf, expires_at)`,
-`oauth_codes (code_hash, request…, expires_at, used_at)`. Expired rows purged daily.
+- `oauth_requests`: a sign-in (10 minutes) found by the hash of our `state` with Telegram on its
+  answer, and by the hash of the browser's binding cookie on the consent page; the client's
+  checked request (client, redirect, its `state`, PKCE challenge, scopes, resource), our PKCE
+  verifier and nonce with Telegram, then `telegram_id`, and the hash of the consent form's token
+  (a new one at each display: an older form no longer counts); consumed once by the decision.
+- `oauth_codes`: our codes (60 s), holding the user and everything checked at the token endpoint;
+  the **grant is made when the code is redeemed** (an approval never redeemed replaces nothing),
+  and the code keeps its `grant_id`, so a code presented again revokes that grant.
+- `oauth_grants`: one active per user and client (a partial unique index; the user's row is
+  locked while one is made, so two codes at once leave one grant).
+- `oauth_tokens`: access and refresh tokens by hash, `parent_id` and `rotated_at` for the
+  rotation and its 60 s grace.
+- `events.grant_id`, next to `token_id`: a change names its key or its grant.
+- Rows that can no longer be used are deleted every 6 hours (codes and tokens a day after they
+  expire, so a late reuse is still recognised).
+
+The database's clock decides every expiry (`now()`), never the app's.
 
 ### Settings and the owner's part
 

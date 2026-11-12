@@ -8,16 +8,17 @@ use sqlx::PgPool;
 use sqlx::postgres::Postgres;
 
 use super::events::{EventKind, Origin};
+use super::tokens::Credential;
 use super::{EngineError, Owner};
 use crate::db::{IngredientChanges, RecipePart, SavedRecipe};
 use crate::errors::AppError;
 
-/// Who makes a change: the owner, through which door, with which token.
+/// Who makes a change: the owner, through which door, with which key or grant.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Actor {
     pub owner: Owner,
     pub origin: Origin,
-    pub token_id: Option<i64>,
+    pub credential: Option<Credential>,
 }
 
 impl Actor {
@@ -26,16 +27,16 @@ impl Actor {
         Self {
             owner,
             origin: Origin::Telegram,
-            token_id: None,
+            credential: None,
         }
     }
 
-    /// The holder of a token, through `origin`.
+    /// The holder of a key or grant, through `origin`.
     pub fn token(authenticated: &super::tokens::Authenticated, origin: Origin) -> Self {
         Self {
             owner: authenticated.owner,
             origin,
-            token_id: Some(authenticated.token_id),
+            credential: Some(authenticated.credential),
         }
     }
 }
@@ -72,7 +73,8 @@ async fn record(
             kind: kind.as_str(),
             recipe_id: Some(recipe_id),
             origin: actor.origin.as_str(),
-            token_id: actor.token_id,
+            token_id: actor.credential.and_then(Credential::key_id),
+            grant_id: actor.credential.and_then(Credential::grant_id),
             payload,
         },
     )

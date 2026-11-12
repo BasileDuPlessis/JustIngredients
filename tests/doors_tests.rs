@@ -230,6 +230,32 @@ async fn an_address_that_keeps_failing_is_refused(pool: PgPool) -> Result<()> {
     Ok(())
 }
 
+/// A request without a token is not a guess: every OAuth client starts so, and the users of one
+/// assistant share its addresses.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_request_without_a_token_is_not_a_failure(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let limits = Limits {
+        failures_per_address_per_minute: 2,
+        ..Limits::default()
+    };
+    let address = serve(&pool, limits).await?;
+    let token = tokens::create(&pool, Owner::telegram(OWNER), Realm::Production).await?;
+    let assistant = Some("160.79.104.10");
+    for _ in 0..5 {
+        assert_eq!(call(address, "/echo", None, assistant).await?.0, 401);
+    }
+    assert_eq!(
+        call(address, "/echo", Some(&bearer(&token.secret)), assistant)
+            .await?
+            .0,
+        200,
+        "the address is not refused"
+    );
+    Ok(())
+}
+
 /// The first line of the answer to a request announcing a body of `length` bytes, sent as
 /// headers only: the guard answers from them.
 async fn status_line_for_length(

@@ -4,6 +4,7 @@
 //! `tests/architecture_tests.rs` checks what it may use.
 
 pub mod events;
+pub mod oauth;
 pub mod recipes;
 pub mod tokens;
 pub mod writes;

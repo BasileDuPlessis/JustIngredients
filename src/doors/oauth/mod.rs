@@ -11,6 +11,23 @@ pub mod page;
 pub mod spike;
 pub mod telegram;
 
+/// How often the sign-ins, codes and tokens that can no longer be used are deleted.
+const PURGE_EVERY: std::time::Duration = std::time::Duration::from_secs(6 * 3600);
+
+/// Deletes, every few hours, what OAuth can no longer use (`engine::oauth::purge`); runs while
+/// the bot does.
+pub async fn run_purge(pool: sqlx::PgPool) {
+    let mut every = tokio::time::interval(PURGE_EVERY);
+    loop {
+        every.tick().await;
+        match crate::engine::oauth::purge(&pool).await {
+            Ok(0) => {}
+            Ok(deleted) => tracing::info!(deleted, "Purged expired OAuth rows"),
+            Err(error) => tracing::warn!(error = %error, "Could not purge expired OAuth rows"),
+        }
+    }
+}
+
 /// The addresses OAuth is about, from the app's public host.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OAuthSettings {

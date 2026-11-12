@@ -250,7 +250,9 @@ async fn tokens_speak_for_their_owner_until_revoked(pool: PgPool) -> Result<()> 
     assert!(tokens::list(&pool, bob).await?.is_empty());
 
     // Bob cannot revoke Alice's; Alice can, once
-    let id = found.token_id;
+    let Some(id) = found.credential.key_id() else {
+        anyhow::bail!("a key");
+    };
     assert!(matches!(
         tokens::revoke(&pool, bob, id).await,
         Err(EngineError::NotFound)
@@ -366,7 +368,7 @@ async fn every_write_leaves_its_event(pool: PgPool) -> Result<()> {
     let assistant = Actor {
         owner: alice,
         origin: Origin::Mcp,
-        token_id: Some(7),
+        credential: Some(just_ingredients::engine::tokens::Credential::Key(7)),
     };
 
     let saved = writes::create(
@@ -536,7 +538,7 @@ async fn concurrent_writes_of_one_user_do_not_deadlock(pool: PgPool) -> Result<(
     let assistant = Actor {
         owner: alice,
         origin: Origin::Mcp,
-        token_id: Some(1),
+        credential: Some(just_ingredients::engine::tokens::Credential::Key(1)),
     };
     let mut tasks = Vec::new();
     for round in 0..20 {
@@ -576,4 +578,558 @@ async fn concurrent_writes_of_one_user_do_not_deadlock(pool: PgPool) -> Result<(
         .await?;
     assert_eq!(events, 40, "every write and its event");
     Ok(())
+}
+
+// OAuth grants (`specs/tasks/oauth.md`): the sign-in's state, our codes, the tokens' rotation
+
+mod oauth {
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    use anyhow::{Context, Result, bail};
+    use just_ingredients::db::init_database_schema;
+    use just_ingredients::engine::oauth::{
+        self, Callback, CodeExchange, Decision, GrantError, Issued, SignInRequest, SignInSecrets,
+    };
+    use just_ingredients::engine::tokens::{self, Checked, Credential, Realm};
+    use just_ingredients::engine::{EngineError, Owner};
+    use just_ingredients::secret::SecretString;
+    use sqlx::PgPool;
+
+    use super::{ALICE, BOB};
+
+    const CLAUDE: &str = "https://claude.ai/oauth/mcp-oauth-client-metadata";
+    const CHATGPT: &str = "https://chatgpt.com/oauth/client.json";
+    const CALLBACK: &str = "https://claude.ai/api/mcp/auth_callback";
+    const RESOURCE: &str = "https://just-ingredients.fly.dev/mcp";
+    const VERIFIER: &str = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+
+    /// A different state and binding for each sign-in of a test.
+    static SIGN_INS: AtomicU64 = AtomicU64::new(0);
+
+    fn request(client: &str) -> SignInRequest {
+        SignInRequest {
+            client_id: client.to_string(),
+            redirect_uri: CALLBACK.to_string(),
+            client_state: Some("client-state".to_string()),
+            code_challenge: oauth::pkce_challenge(VERIFIER),
+            scopes: vec![tokens::SCOPE_RECIPES_READ.to_string()],
+            resource: RESOURCE.to_string(),
+        }
+    }
+
+    /// A whole sign-in of `telegram_id` for `client`, up to our code.
+    async fn code_for(
+        pool: &PgPool,
+        telegram_id: i64,
+        client: &str,
+        write: bool,
+    ) -> Result<String> {
+        let state = format!("state-{}", SIGN_INS.fetch_add(1, Ordering::Relaxed));
+        let binding = format!("binding-{state}");
+        let verifier = SecretString::new("telegram-verifier");
+        oauth::start_sign_in(
+            pool,
+            &request(client),
+            &SignInSecrets {
+                state: &state,
+                binding: &binding,
+                verifier: &verifier,
+                nonce: "nonce",
+            },
+        )
+        .await?;
+        let Callback::Pending(pending) = oauth::find_sign_in(pool, &state, Some(&binding)).await?
+        else {
+            bail!("the sign-in waits");
+        };
+        assert!(oauth::signed_in(pool, pending.id, Owner::telegram(telegram_id)).await?);
+        let consent = oauth::open_consent(pool, &binding, "form")
+            .await?
+            .context("consent")?;
+        assert_eq!(consent.owner, Owner::telegram(telegram_id));
+        let decided = oauth::decide(pool, &binding, "form", Decision::Allow { write })
+            .await?
+            .context("decided")?;
+        Ok(decided.code.context("a code")?.expose().to_string())
+    }
+
+    fn exchange(code: &str) -> CodeExchange<'_> {
+        CodeExchange {
+            code,
+            client_id: CLAUDE,
+            redirect_uri: CALLBACK,
+            verifier: VERIFIER,
+            resource: Some(RESOURCE),
+        }
+    }
+
+    async fn grant(pool: &PgPool, telegram_id: i64, write: bool) -> Result<Issued> {
+        let code = code_for(pool, telegram_id, CLAUDE, write).await?;
+        Ok(oauth::redeem_code(pool, Realm::Production, exchange(&code)).await?)
+    }
+
+    async fn check(pool: &PgPool, token: &SecretString) -> Result<Checked> {
+        Ok(tokens::check(pool, Realm::Production, token.expose(), Some(RESOURCE)).await?)
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn a_sign_in_becomes_a_grant_its_tokens_open_the_door(pool: PgPool) -> Result<()> {
+        init_database_schema(&pool).await?;
+        let (state, binding) = ("the-state", "the-binding");
+        let verifier = SecretString::new("v");
+        let started = oauth::start_sign_in(
+            &pool,
+            &request(CLAUDE),
+            &SignInSecrets {
+                state,
+                binding,
+                verifier: &verifier,
+                nonce: "n",
+            },
+        )
+        .await?;
+
+        // Telegram's answer: in the browser that started, never another
+        assert!(matches!(
+            oauth::find_sign_in(&pool, "made-up", Some(binding)).await?,
+            Callback::Unknown
+        ));
+        for other in [None, Some("another-browser")] {
+            assert!(matches!(
+                oauth::find_sign_in(&pool, state, other).await?,
+                Callback::OtherBrowser
+            ));
+        }
+        let Callback::Pending(pending) = oauth::find_sign_in(&pool, state, Some(binding)).await?
+        else {
+            bail!("pending");
+        };
+        assert_eq!(pending.id, started);
+        assert_eq!(pending.verifier.expose(), "v");
+        assert_eq!(pending.request, request(CLAUDE));
+        assert!(
+            oauth::open_consent(&pool, binding, "early")
+                .await?
+                .is_none(),
+            "nobody signed in yet"
+        );
+        assert!(oauth::signed_in(&pool, started, Owner::telegram(ALICE)).await?);
+        assert!(
+            !oauth::signed_in(&pool, started, Owner::telegram(BOB)).await?,
+            "once"
+        );
+        assert!(
+            matches!(
+                oauth::find_sign_in(&pool, state, Some(binding)).await?,
+                Callback::Unknown
+            ),
+            "Telegram's answer counts once"
+        );
+
+        // Consent: the current form only, decided once
+        assert!(
+            oauth::open_consent(&pool, "another-browser", "f")
+                .await?
+                .is_none()
+        );
+        oauth::open_consent(&pool, binding, "first")
+            .await?
+            .context("consent")?;
+        oauth::open_consent(&pool, binding, "second")
+            .await?
+            .context("reloaded")?;
+        assert!(
+            oauth::decide(&pool, binding, "first", Decision::Allow { write: true })
+                .await?
+                .is_none(),
+            "an older form"
+        );
+        let decided = oauth::decide(&pool, binding, "second", Decision::Allow { write: false })
+            .await?
+            .context("decided")?;
+        assert_eq!(
+            decided.request.client_state.as_deref(),
+            Some("client-state")
+        );
+        let code = decided.code.context("a code")?;
+        assert!(
+            oauth::decide(&pool, binding, "second", Decision::Deny)
+                .await?
+                .is_none(),
+            "decided once"
+        );
+
+        // The code for a grant and its first tokens
+        let issued = oauth::redeem_code(&pool, Realm::Production, exchange(code.expose())).await?;
+        assert!(issued.access_token.expose().starts_with("jio_"));
+        assert!(issued.refresh_token.expose().starts_with("jir_"));
+        assert_eq!(issued.expires_in, 3600);
+        assert_eq!(issued.scopes, [tokens::SCOPE_RECIPES_READ]);
+        assert_eq!(issued.owner, Owner::telegram(ALICE));
+        assert_eq!(issued.new_grant.map(|grant| grant.replaced), Some(false));
+
+        let Checked::Valid(authenticated) = check(&pool, &issued.access_token).await? else {
+            bail!("the access token opens the door");
+        };
+        assert_eq!(authenticated.owner, Owner::telegram(ALICE));
+        assert_eq!(authenticated.credential, Credential::Grant(issued.grant_id));
+        assert_eq!(authenticated.client.as_deref(), Some(CLAUDE));
+        assert!(
+            !authenticated.allows(tokens::SCOPE_RECIPES_WRITE),
+            "writing not ticked"
+        );
+        let access = issued.access_token.expose();
+        assert_eq!(
+            tokens::check(
+                &pool,
+                Realm::Production,
+                access,
+                Some("https://other.example/mcp")
+            )
+            .await?,
+            Checked::Known,
+            "for another resource"
+        );
+        assert_eq!(
+            tokens::check(&pool, Realm::Production, access, None).await?,
+            Checked::Unknown,
+            "a door without OAuth"
+        );
+        assert_eq!(
+            tokens::check(&pool, Realm::Staging, access, Some(RESOURCE)).await?,
+            Checked::Unknown,
+            "a production token on staging"
+        );
+        assert_eq!(
+            check(&pool, &issued.refresh_token).await?,
+            Checked::Unknown,
+            "a refresh token does not open the door"
+        );
+
+        // Listed for Alice only, revoked by her only
+        let listed = oauth::list_grants(&pool, Owner::telegram(ALICE)).await?;
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].client_id, CLAUDE);
+        assert!(!listed[0].can_write);
+        assert!(
+            oauth::list_grants(&pool, Owner::telegram(BOB))
+                .await?
+                .is_empty()
+        );
+        assert!(matches!(
+            oauth::revoke_grant(&pool, Owner::telegram(BOB), issued.grant_id).await,
+            Err(EngineError::NotFound)
+        ));
+        oauth::revoke_grant(&pool, Owner::telegram(ALICE), issued.grant_id).await?;
+        assert_eq!(check(&pool, &issued.access_token).await?, Checked::Known);
+        assert!(
+            oauth::list_grants(&pool, Owner::telegram(ALICE))
+                .await?
+                .is_empty()
+        );
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn a_code_is_used_once_and_its_reuse_revokes_the_grant(pool: PgPool) -> Result<()> {
+        init_database_schema(&pool).await?;
+        let code = code_for(&pool, ALICE, CLAUDE, true).await?;
+        let issued = oauth::redeem_code(&pool, Realm::Production, exchange(&code)).await?;
+        assert_eq!(
+            issued.scopes,
+            [tokens::SCOPE_RECIPES_READ, tokens::SCOPE_RECIPES_WRITE]
+        );
+        assert!(matches!(
+            oauth::redeem_code(&pool, Realm::Production, exchange(&code)).await,
+            Err(GrantError::Reused { grant_id }) if grant_id == issued.grant_id
+        ));
+        assert_eq!(check(&pool, &issued.access_token).await?, Checked::Known);
+        assert!(matches!(
+            oauth::refresh(
+                &pool,
+                Realm::Production,
+                issued.refresh_token.expose(),
+                CLAUDE,
+                |_| true
+            )
+            .await,
+            Err(GrantError::Refused(_))
+        ));
+
+        // Each mismatch refuses, and burns the code
+        let wrong_verifier = "x".repeat(43);
+        let mismatches = [
+            (
+                "client",
+                CodeExchange {
+                    client_id: CHATGPT,
+                    ..exchange("")
+                },
+            ),
+            (
+                "redirect",
+                CodeExchange {
+                    redirect_uri: "https://claude.ai/other",
+                    ..exchange("")
+                },
+            ),
+            (
+                "verifier",
+                CodeExchange {
+                    verifier: &wrong_verifier,
+                    ..exchange("")
+                },
+            ),
+            (
+                "short verifier",
+                CodeExchange {
+                    verifier: "short",
+                    ..exchange("")
+                },
+            ),
+            (
+                "resource",
+                CodeExchange {
+                    resource: Some("https://other.example/mcp"),
+                    ..exchange("")
+                },
+            ),
+        ];
+        for (what, mismatch) in mismatches {
+            let code = code_for(&pool, BOB, CLAUDE, false).await?;
+            let presented = CodeExchange {
+                code: &code,
+                ..mismatch
+            };
+            assert!(
+                matches!(
+                    oauth::redeem_code(&pool, Realm::Production, presented).await,
+                    Err(GrantError::Refused(_))
+                ),
+                "{what}"
+            );
+            assert!(
+                oauth::redeem_code(&pool, Realm::Production, exchange(&code))
+                    .await
+                    .is_err(),
+                "{what}: burnt"
+            );
+        }
+        let code = code_for(&pool, BOB, CLAUDE, false).await?;
+        let without_resource = CodeExchange {
+            resource: None,
+            ..exchange(&code)
+        };
+        oauth::redeem_code(&pool, Realm::Production, without_resource)
+            .await
+            .context("no resource sent: the code's")?;
+
+        // An expired code
+        let code = code_for(&pool, BOB, CLAUDE, false).await?;
+        sqlx::query(
+            "UPDATE oauth_codes SET expires_at = now() - interval '1 second' \
+             WHERE used_at IS NULL",
+        )
+        .execute(&pool)
+        .await?;
+        assert!(matches!(
+            oauth::redeem_code(&pool, Realm::Production, exchange(&code)).await,
+            Err(GrantError::Refused("unknown or expired code"))
+        ));
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn a_refresh_token_rotates_with_a_grace_then_its_reuse_revokes(
+        pool: PgPool,
+    ) -> Result<()> {
+        init_database_schema(&pool).await?;
+        let first = grant(&pool, ALICE, false).await?;
+        let refresh = |token: SecretString| {
+            let pool = pool.clone();
+            async move {
+                oauth::refresh(&pool, Realm::Production, token.expose(), CLAUDE, |_| true).await
+            }
+        };
+
+        let second = refresh(first.refresh_token.clone()).await?;
+        assert_eq!(second.grant_id, first.grant_id);
+        assert!(second.new_grant.is_none());
+        assert_ne!(second.refresh_token.expose(), first.refresh_token.expose());
+        assert!(matches!(
+            check(&pool, &second.access_token).await?,
+            Checked::Valid(_)
+        ));
+        assert!(
+            matches!(check(&pool, &first.access_token).await?, Checked::Valid(_)),
+            "the previous access token lives its hour"
+        );
+
+        // A retry within the grace period: a fresh pair, both chains work
+        let retried = refresh(first.refresh_token.clone()).await?;
+        assert_ne!(
+            retried.refresh_token.expose(),
+            second.refresh_token.expose()
+        );
+        let third = refresh(second.refresh_token.clone()).await?;
+        assert!(matches!(
+            check(&pool, &third.access_token).await?,
+            Checked::Valid(_)
+        ));
+
+        // Later, the reuse of a rotated token revokes the grant
+        sqlx::query(
+            "UPDATE oauth_tokens SET rotated_at = now() - interval '2 minutes' \
+             WHERE rotated_at IS NOT NULL",
+        )
+        .execute(&pool)
+        .await?;
+        assert!(matches!(
+            refresh(first.refresh_token.clone()).await,
+            Err(GrantError::Reused { grant_id }) if grant_id == first.grant_id
+        ));
+        assert_eq!(check(&pool, &third.access_token).await?, Checked::Known);
+        assert!(matches!(
+            refresh(third.refresh_token.clone()).await,
+            Err(GrantError::Refused(_))
+        ));
+        assert!(
+            oauth::list_grants(&pool, Owner::telegram(ALICE))
+                .await?
+                .is_empty()
+        );
+
+        // Another client, a made-up token, an access token, a user no longer allowed
+        let other = grant(&pool, BOB, false).await?;
+        for (presented, client) in [
+            (other.refresh_token.expose().to_string(), CHATGPT),
+            (format!("jir_{}", "A".repeat(43)), CLAUDE),
+            (other.access_token.expose().to_string(), CLAUDE),
+        ] {
+            assert!(matches!(
+                oauth::refresh(&pool, Realm::Production, &presented, client, |_| true).await,
+                Err(GrantError::Refused(_))
+            ));
+        }
+        let bob = Owner::telegram(BOB);
+        assert!(matches!(
+            oauth::refresh(
+                &pool,
+                Realm::Production,
+                other.refresh_token.expose(),
+                CLAUDE,
+                |owner| owner != bob
+            )
+            .await,
+            Err(GrantError::Refused(_))
+        ));
+        assert_eq!(
+            check(&pool, &other.access_token).await?,
+            Checked::Known,
+            "revoked"
+        );
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn a_new_grant_replaces_the_previous_one_of_the_client(pool: PgPool) -> Result<()> {
+        init_database_schema(&pool).await?;
+        let first = grant(&pool, ALICE, false).await?;
+        let second = grant(&pool, ALICE, true).await?;
+        assert_eq!(second.new_grant.map(|grant| grant.replaced), Some(true));
+        assert_eq!(check(&pool, &first.access_token).await?, Checked::Known);
+        let listed = oauth::list_grants(&pool, Owner::telegram(ALICE)).await?;
+        assert_eq!(listed.len(), 1);
+        assert!(listed[0].can_write);
+
+        // Another client is another grant
+        let code = code_for(&pool, ALICE, CHATGPT, false).await?;
+        let issued = oauth::redeem_code(
+            &pool,
+            Realm::Production,
+            CodeExchange {
+                client_id: CHATGPT,
+                ..exchange(&code)
+            },
+        )
+        .await?;
+        assert_eq!(issued.new_grant.map(|grant| grant.replaced), Some(false));
+        assert_eq!(
+            oauth::list_grants(&pool, Owner::telegram(ALICE))
+                .await?
+                .len(),
+            2
+        );
+
+        // Two codes of one user and client redeemed at once: one grant stays
+        let one = code_for(&pool, BOB, CLAUDE, false).await?;
+        let two = code_for(&pool, BOB, CLAUDE, false).await?;
+        let (a, b) = tokio::join!(
+            oauth::redeem_code(&pool, Realm::Production, exchange(&one)),
+            oauth::redeem_code(&pool, Realm::Production, exchange(&two)),
+        );
+        assert!(a.is_ok() && b.is_ok(), "{a:?} {b:?}");
+        assert_eq!(
+            oauth::list_grants(&pool, Owner::telegram(BOB)).await?.len(),
+            1
+        );
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn a_change_through_a_grant_names_it_in_its_event(pool: PgPool) -> Result<()> {
+        use just_ingredients::engine::events::{self, Origin};
+        use just_ingredients::engine::writes::{self, Actor};
+        init_database_schema(&pool).await?;
+        let issued = grant(&pool, ALICE, true).await?;
+        let Checked::Valid(authenticated) = check(&pool, &issued.access_token).await? else {
+            bail!("valid");
+        };
+        let recipe = writes::create_from_lines(
+            &pool,
+            Actor::token(&authenticated, Origin::Mcp),
+            "Crêpes",
+            &["250 g de farine".to_string()],
+        )
+        .await?;
+        let row: (Option<i64>, Option<i64>) =
+            sqlx::query_as("SELECT token_id, grant_id FROM events WHERE recipe_id = $1")
+                .bind(recipe.recipe_id)
+                .fetch_one(&pool)
+                .await?;
+        assert_eq!(row, (None, Some(issued.grant_id)));
+        let (read, _) = events::after(&pool, 0).await?;
+        assert_eq!(
+            read.last().and_then(|event| event.credential),
+            Some(Credential::Grant(issued.grant_id))
+        );
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn what_can_no_longer_be_used_is_purged(pool: PgPool) -> Result<()> {
+        init_database_schema(&pool).await?;
+        let issued = grant(&pool, ALICE, false).await?;
+        assert_eq!(oauth::purge(&pool).await?, 0, "everything is recent");
+        for table in ["oauth_requests", "oauth_codes", "oauth_tokens"] {
+            sqlx::query(&format!(
+                "UPDATE {table} SET expires_at = now() - interval '2 days'"
+            ))
+            .execute(&pool)
+            .await?;
+        }
+        assert_eq!(
+            oauth::purge(&pool).await?,
+            4,
+            "a sign-in, a code, two tokens"
+        );
+        assert_eq!(check(&pool, &issued.access_token).await?, Checked::Unknown);
+        Ok(())
+    }
 }

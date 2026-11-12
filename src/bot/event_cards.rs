@@ -187,7 +187,7 @@ mod tests {
             kind,
             recipe_id: Some(7),
             origin,
-            token_id: None,
+            credential: None,
             payload: serde_json::json!({}),
         }
     }

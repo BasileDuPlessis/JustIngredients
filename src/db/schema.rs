@@ -34,6 +34,10 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
         "api_tokens",
         "events",
         "event_cursors",
+        "oauth_grants",
+        "oauth_tokens",
+        "oauth_requests",
+        "oauth_codes",
     ];
     for table_name in required_tables {
         let exists: bool = sqlx::query_scalar(
@@ -77,6 +81,23 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
             ("scopes", "ARRAY"),
             ("created_at", "timestamp with time zone"),
             ("last_used_at", "timestamp with time zone"),
+            ("revoked_at", "timestamp with time zone"),
+        ],
+    )
+    .await?;
+
+    // OAuth (migration 13): events name the grant they came through
+    validate_table_columns(pool, "events", &[("grant_id", "bigint")]).await?;
+    validate_table_columns(
+        pool,
+        "oauth_tokens",
+        &[
+            ("grant_id", "bigint"),
+            ("kind", "text"),
+            ("token_hash", "bytea"),
+            ("parent_id", "bigint"),
+            ("expires_at", "timestamp with time zone"),
+            ("rotated_at", "timestamp with time zone"),
             ("revoked_at", "timestamp with time zone"),
         ],
     )

@@ -74,6 +74,59 @@ impl Realm {
             Self::Staging => "ji_stg_",
         }
     }
+
+    /// The prefix of the OAuth access tokens of the realm (`engine::oauth`).
+    pub const fn access_prefix(self) -> &'static str {
+        match self {
+            Self::Production => "jio_",
+            Self::Staging => "jio_stg_",
+        }
+    }
+
+    /// The prefix of the OAuth refresh tokens of the realm.
+    pub const fn refresh_prefix(self) -> &'static str {
+        match self {
+            Self::Production => "jir_",
+            Self::Staging => "jir_stg_",
+        }
+    }
+}
+
+/// What a request was authenticated with: a personal key of `/cle`, or an OAuth grant (an
+/// assistant the user connected). Events name it, limits and logs count by it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum Credential {
+    /// A personal key (`api_tokens.id`).
+    Key(i64),
+    /// An OAuth grant (`oauth_grants.id`).
+    Grant(i64),
+}
+
+impl Credential {
+    /// The key's id, for a key.
+    pub const fn key_id(self) -> Option<i64> {
+        match self {
+            Self::Key(id) => Some(id),
+            Self::Grant(_) => None,
+        }
+    }
+
+    /// The grant's id, for a grant.
+    pub const fn grant_id(self) -> Option<i64> {
+        match self {
+            Self::Key(_) => None,
+            Self::Grant(id) => Some(id),
+        }
+    }
+}
+
+impl std::fmt::Display for Credential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Key(id) => write!(f, "key:{id}"),
+            Self::Grant(id) => write!(f, "grant:{id}"),
+        }
+    }
 }
 
 /// A token just created: its id, the secret, shown once and never again, and its hint. Its
@@ -105,12 +158,25 @@ pub struct TokenInfo {
     pub last_used_at: Option<DateTime<Utc>>,
 }
 
-/// Who a valid token speaks for.
+/// Who a valid token speaks for, and through what.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Authenticated {
     pub owner: Owner,
-    pub token_id: i64,
+    pub credential: Credential,
+    /// The client a grant was given to (`https://claude.ai/oauth/…`); `None` for a key.
+    pub client: Option<String>,
     pub scopes: Vec<String>,
+}
+
+/// What a presented token turned out to be.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Checked {
+    Valid(Authenticated),
+    /// A token that was ours but no longer works (an expired or revoked access token): not a
+    /// guess, the client is told to sign in again.
+    Known,
+    /// Anything else: a guess, a token of the other realm, a typo.
+    Unknown,
 }
 
 impl Authenticated {
@@ -132,13 +198,7 @@ pub async fn create_with(
     realm: Realm,
     access: Access,
 ) -> Result<NewToken, EngineError> {
-    let mut random = [0_u8; 32];
-    rand::rng().fill_bytes(&mut random);
-    let secret = format!(
-        "{}{}",
-        realm.prefix(),
-        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(random)
-    );
+    let secret = new_secret(realm.prefix());
     let hint = hint_of(&secret, realm);
     let created = crate::db::create_api_token(
         pool,
@@ -199,16 +259,54 @@ pub async fn authenticate(
     }
     Ok(Some(Authenticated {
         owner: Owner::telegram(found.telegram_id),
-        token_id: found.id,
+        credential: Credential::Key(found.id),
+        client: None,
         scopes: found.scopes,
     }))
 }
 
+/// Checks a presented token of any kind: a personal key, or an OAuth access token for
+/// `resource` (none: the door has no authorization server, access tokens are refused).
+pub async fn check(
+    pool: &PgPool,
+    realm: Realm,
+    presented: &str,
+    resource: Option<&str>,
+) -> Result<Checked, EngineError> {
+    if has_token_shape(presented, realm) {
+        return Ok(match authenticate(pool, realm, presented).await? {
+            Some(authenticated) => Checked::Valid(authenticated),
+            None => Checked::Unknown,
+        });
+    }
+    match resource {
+        Some(resource) if has_shape(presented, realm.access_prefix()) => {
+            super::oauth::authenticate_access(pool, presented, resource).await
+        }
+        _ => Ok(Checked::Unknown),
+    }
+}
+
+/// A new secret: `prefix` and 32 random bytes in base64url.
+pub(crate) fn new_secret(prefix: &str) -> String {
+    let mut random = [0_u8; 32];
+    rand::rng().fill_bytes(&mut random);
+    format!(
+        "{prefix}{}",
+        base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(random)
+    )
+}
+
 /// Whether `text` has the shape of a token of `realm`: its prefix, then 43 base64url characters.
 pub fn has_token_shape(text: &str, realm: Realm) -> bool {
+    has_shape(text, realm.prefix())
+}
+
+/// Whether `text` is `prefix` then 43 base64url characters.
+pub(crate) fn has_shape(text: &str, prefix: &str) -> bool {
     // "ji_" is also the start of "ji_stg_": a staging token stripped of "ji_" is 4 characters too
     // long, so the length alone tells them apart (a production token may start with "stg_")
-    let Some(secret) = text.strip_prefix(realm.prefix()) else {
+    let Some(secret) = text.strip_prefix(prefix) else {
         return false;
     };
     secret.len() == SECRET_CHARS
@@ -229,7 +327,7 @@ fn hint_of(secret: &str, realm: Realm) -> String {
     format!("{prefix}{random}")
 }
 
-fn hash(secret: &str) -> Vec<u8> {
+pub(crate) fn hash(secret: &str) -> Vec<u8> {
     Sha256::digest(secret.as_bytes()).to_vec()
 }
 

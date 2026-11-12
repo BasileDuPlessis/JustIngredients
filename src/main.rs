@@ -102,6 +102,11 @@ async fn main() -> Result<()> {
         just_ingredients::doors::guard::Limits::default(),
         oauth.as_ref(),
     );
+    if oauth.is_some() {
+        tokio::spawn(just_ingredients::doors::oauth::run_purge(
+            (*shared_pool).clone(),
+        ));
+    }
     // Task 0 of the OAuth tranche: the Telegram sign-in tried on staging
     if let (Some(settings), Some(login), just_ingredients::engine::tokens::Realm::Staging) =
         (&oauth, &app_config.api.telegram_login, realm)

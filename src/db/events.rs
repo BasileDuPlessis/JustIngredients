@@ -33,7 +33,10 @@ pub struct NewEventRow<'a> {
     pub kind: &'a str,
     pub recipe_id: Option<i64>,
     pub origin: &'a str,
+    /// The personal key it was made with (`api_tokens.id`).
     pub token_id: Option<i64>,
+    /// The OAuth grant it was made through (`oauth_grants.id`).
+    pub grant_id: Option<i64>,
     pub payload: serde_json::Value,
 }
 
@@ -46,6 +49,7 @@ pub struct EventRow {
     pub recipe_id: Option<i64>,
     pub origin: String,
     pub token_id: Option<i64>,
+    pub grant_id: Option<i64>,
     pub version: i16,
     pub payload: serde_json::Value,
     pub created_at: DateTime<Utc>,
@@ -60,14 +64,15 @@ pub async fn insert_event(
     event: &NewEventRow<'_>,
 ) -> Result<i64> {
     let id: i64 = sqlx::query_scalar(
-        "INSERT INTO events (user_id, kind, recipe_id, origin, token_id, payload) \
-         SELECT id, $2, $3, $4, $5, $6 FROM users WHERE telegram_id = $1 RETURNING id",
+        "INSERT INTO events (user_id, kind, recipe_id, origin, token_id, grant_id, payload) \
+         SELECT id, $2, $3, $4, $5, $6, $7 FROM users WHERE telegram_id = $1 RETURNING id",
     )
     .bind(telegram_id)
     .bind(event.kind)
     .bind(event.recipe_id)
     .bind(event.origin)
     .bind(event.token_id)
+    .bind(event.grant_id)
     .bind(&event.payload)
     .fetch_one(&mut **tx)
     .await
@@ -84,7 +89,8 @@ pub async fn insert_event(
 /// The events after `last_id`, in order, at most `limit`.
 pub async fn events_after(pool: &PgPool, last_id: i64, limit: i64) -> Result<Vec<EventRow>> {
     sqlx::query_as::<_, EventRow>(
-        "SELECT e.id, u.telegram_id, e.kind, e.recipe_id, e.origin, e.token_id, e.version, \
+        "SELECT e.id, u.telegram_id, e.kind, e.recipe_id, e.origin, e.token_id, e.grant_id, \
+                e.version, \
                 e.payload, e.created_at \
          FROM events e JOIN users u ON u.id = e.user_id \
          WHERE e.id > $1 ORDER BY e.id LIMIT $2",

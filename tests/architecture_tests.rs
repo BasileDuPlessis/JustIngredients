@@ -13,6 +13,7 @@ const ALLOWED_MODULES: &[&str] = &[
     "extraction",
     "recipe_parts",
     "search",
+    "secret",
     "text_processing",
     "unit_view",
     "units",

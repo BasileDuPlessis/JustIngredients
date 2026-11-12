@@ -591,3 +591,121 @@ async fn a_refused_request_points_to_the_sign_in_documents(pool: PgPool) -> Resu
     assert_eq!(server["code_challenge_methods_supported"], json!(["S256"]));
     Ok(())
 }
+
+/// An assistant connected with OAuth: its access token opens the door as a key does, for the
+/// grant's scopes; its changes name the grant; once revoked or expired, the token is refused
+/// without counting as a guess of the address.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn an_assistant_connected_with_oauth_uses_its_grant(pool: PgPool) -> Result<()> {
+    use just_ingredients::engine::oauth::{
+        self, Callback, CodeExchange, Decision, SignInRequest, SignInSecrets,
+    };
+    use just_ingredients::secret::SecretString;
+    let (_, tart, _) = two_users(&pool).await?;
+    let address = serve(&pool).await?;
+    let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    let client = "https://claude.ai/oauth/mcp-oauth-client-metadata";
+    let callback = "https://claude.ai/api/mcp/auth_callback";
+    let resource = OAuthSettings::for_host("127.0.0.1").resource;
+
+    // A sign-in of Alice; `write`: writing ticked
+    let connect = |name: &'static str, write: bool| {
+        let pool = pool.clone();
+        let resource = resource.clone();
+        async move {
+            let telegram_verifier = SecretString::new("t");
+            oauth::start_sign_in(
+                &pool,
+                &SignInRequest {
+                    client_id: client.to_string(),
+                    redirect_uri: callback.to_string(),
+                    client_state: None,
+                    code_challenge: oauth::pkce_challenge(verifier),
+                    scopes: Vec::new(),
+                    resource,
+                },
+                &SignInSecrets {
+                    state: name,
+                    binding: name,
+                    verifier: &telegram_verifier,
+                    nonce: "n",
+                },
+            )
+            .await?;
+            let Callback::Pending(pending) = oauth::find_sign_in(&pool, name, Some(name)).await?
+            else {
+                anyhow::bail!("pending");
+            };
+            oauth::signed_in(&pool, pending.id, Owner::telegram(ALICE)).await?;
+            oauth::open_consent(&pool, name, "form").await?;
+            let code = oauth::decide(&pool, name, "form", Decision::Allow { write })
+                .await?
+                .and_then(|decided| decided.code)
+                .context("a code")?;
+            Ok::<_, anyhow::Error>(
+                oauth::redeem_code(
+                    &pool,
+                    Realm::Production,
+                    CodeExchange {
+                        code: code.expose(),
+                        client_id: client,
+                        redirect_uri: callback,
+                        verifier,
+                        resource: None,
+                    },
+                )
+                .await?,
+            )
+        }
+    };
+
+    // Reading only: the read tools, and writing refused with how to allow it
+    let reader = connect("reader", false).await?;
+    let token = reader.access_token.expose().to_string();
+    assert_eq!(tool_names(address, &token).await?.len(), 4);
+    let (_, answer) = post(
+        address,
+        Some(&token),
+        None,
+        &call(1, "rename_recipe", json!({ "id": tart, "name": "Volée" })),
+    )
+    .await?;
+    assert_eq!(answer["result"]["isError"], true, "{answer}");
+    assert!(
+        answer["result"]["content"][0]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("connect again")),
+        "{answer}"
+    );
+
+    // Reading and writing: a change names the grant
+    let writer = connect("writer", true).await?;
+    let token = writer.access_token.expose().to_string();
+    assert_eq!(tool_names(address, &token).await?.len(), 7);
+    let (_, answer) = post(
+        address,
+        Some(&token),
+        None,
+        &call(2, "set_memo", json!({ "id": tart, "memo": "Four 200 °C" })),
+    )
+    .await?;
+    assert_eq!(answer["result"]["structuredContent"]["memo"], "Four 200 °C");
+    let named: (Option<i64>, Option<i64>) = sqlx::query_as(
+        "SELECT token_id, grant_id FROM events WHERE origin = 'mcp' ORDER BY id DESC LIMIT 1",
+    )
+    .fetch_one(&pool)
+    .await?;
+    assert_eq!(named, (None, Some(writer.grant_id)));
+
+    // The reader's grant was replaced by the writer's: refused, as many times as tried, and the
+    // address is not refused for it (more than the 10 failures a minute)
+    let list = json!({ "jsonrpc": "2.0", "id": 3, "method": "tools/list" });
+    for _ in 0..12 {
+        let (status, _) = post(address, Some(reader.access_token.expose()), None, &list).await?;
+        assert_eq!(status, 401);
+    }
+    let (status, _) = post(address, Some(&token), None, &list).await?;
+    assert_eq!(status, 200, "the address still opens the door");
+    Ok(())
+}

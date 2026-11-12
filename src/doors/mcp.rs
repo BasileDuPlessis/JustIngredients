@@ -29,7 +29,9 @@ use sqlx::PgPool;
 use super::guard::{Guard, Limits, guarded};
 use crate::engine::events::Origin;
 use crate::engine::recipes;
-use crate::engine::tokens::{Authenticated, Realm, SCOPE_RECIPES_READ, SCOPE_RECIPES_WRITE};
+use crate::engine::tokens::{
+    Authenticated, Credential, Realm, SCOPE_RECIPES_READ, SCOPE_RECIPES_WRITE,
+};
 use crate::engine::writes::{self, Actor};
 use crate::engine::{EngineError, Lang, Owner};
 use crate::unit_view::UnitView;
@@ -79,15 +81,7 @@ pub fn router(
                 usize::try_from(limits.max_body_bytes).unwrap_or(usize::MAX),
             ),
     );
-    let challenge = oauth.map(super::oauth::OAuthSettings::challenge);
-    let guard = Guard::new(
-        pool,
-        realm,
-        "mcp",
-        SCOPE_RECIPES_READ,
-        limits,
-        challenge.as_deref(),
-    );
+    let guard = Guard::new(pool, realm, "mcp", SCOPE_RECIPES_READ, limits, oauth);
     let door = guarded(Router::new().nest_service(PATH, service), guard);
     match oauth {
         Some(settings) => door.merge(super::oauth::metadata::router(std::sync::Arc::new(
@@ -151,11 +145,7 @@ impl ServerHandler for RecipesServer {
         let (tool, outcome) = match request.name.as_ref() {
             "rename_recipe" | "set_memo" | "create_recipe" if !may_write => (
                 "write_refused",
-                Err(Refusal::Told(
-                    "This key can only read. The user can create a read-write key with /cle \
-                     in the bot."
-                        .into(),
-                )),
+                Err(Refusal::Told(write_refused(&authenticated).into())),
             ),
             "rename_recipe" => ("rename_recipe", rename(&self.pool, actor, arguments).await),
             "set_memo" => ("set_memo", set_memo(&self.pool, actor, arguments).await),
@@ -413,6 +403,19 @@ fn writing(
             .idempotent(idempotent)
             .open_world(false),
     )
+}
+
+/// What an assistant is told when its key or grant can only read: how the user lets it write.
+fn write_refused(authenticated: &Authenticated) -> &'static str {
+    match authenticated.credential {
+        Credential::Key(_) => {
+            "This key can only read. The user can create a read-write key with /cle in the bot."
+        }
+        Credential::Grant(_) => {
+            "This connection can only read. The user can connect again and tick \"modifier\" \
+             on the approval page to allow changes."
+        }
+    }
 }
 
 /// The tools of a read-write key.

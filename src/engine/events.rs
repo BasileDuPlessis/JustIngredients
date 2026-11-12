@@ -75,7 +75,8 @@ pub struct Event {
     pub kind: EventKind,
     pub recipe_id: Option<i64>,
     pub origin: Origin,
-    pub token_id: Option<i64>,
+    /// The key or grant it was made with (none from Telegram).
+    pub credential: Option<super::tokens::Credential>,
     pub payload: Value,
 }
 
@@ -97,7 +98,10 @@ pub async fn after(pool: &PgPool, cursor: i64) -> Result<(Vec<Event>, i64), Engi
                 kind: EventKind::parse(&row.kind)?,
                 recipe_id: row.recipe_id,
                 origin: Origin::parse(&row.origin)?,
-                token_id: row.token_id,
+                credential: row
+                    .grant_id
+                    .map(super::tokens::Credential::Grant)
+                    .or(row.token_id.map(super::tokens::Credential::Key)),
                 payload: row.payload,
             })
         })
