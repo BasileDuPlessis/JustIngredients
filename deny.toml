@@ -12,6 +12,11 @@ ignore = [
     # h2 0.3 comes only through actix-http, the fake Telegram server of teloxide_tests, a
     # dev-dependency run by the handler tests on localhost; the bot itself uses h2 0.4 (fixed).
     { id = "RUSTSEC-2026-0258", reason = "dev-only: the tests' fake Telegram server on localhost" },
+    # libsqlite3-sys 0.30 (bundled SQLite before 3.54) comes only through teloxide_tests, which
+    # turns on teloxide's sqlite storage: the release build has no SQLite (`cargo tree -e no-dev
+    # -i libsqlite3-sys` prints nothing), and no SQLite file is ever opened. sqlx 0.8 pins 0.30;
+    # the fix is 0.39. Drop this line when sqlx or teloxide_tests move on.
+    { id = "RUSTSEC-2026-0459", reason = "dev-only: SQLite through teloxide_tests, never opened" },
 ]
 
 [sources]
