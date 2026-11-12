@@ -466,6 +466,61 @@ fn render_keys(
     (text, InlineKeyboardMarkup::new(rows))
 }
 
+/// Tells the user an assistant was just connected to their recipes (an `oauth.connected`
+/// event), with a button to disconnect it: the way to notice a connection approved by mistake or
+/// through a crafted link.
+pub async fn announce_grant(
+    bot: &Bot,
+    chat_id: ChatId,
+    grant_id: i64,
+    client_id: &str,
+    can_write: bool,
+    localization: &Arc<LocalizationManager>,
+    language_code: Option<&str>,
+) {
+    let (text, keyboard) =
+        announcement(grant_id, client_id, can_write, localization, language_code);
+    if let Err(error) = bot.send_message(chat_id, text).reply_markup(keyboard).await {
+        warn!(error = %error, grant_id, "Could not announce a connected assistant");
+    }
+}
+
+/// The message of [`announce_grant`] and its disconnect button.
+fn announcement(
+    grant_id: i64,
+    client_id: &str,
+    can_write: bool,
+    localization: &Arc<LocalizationManager>,
+    language_code: Option<&str>,
+) -> (String, InlineKeyboardMarkup) {
+    let client = client_name(client_id);
+    let access = t_lang(
+        localization,
+        if can_write {
+            "api-keys-access-write"
+        } else {
+            "api-keys-access-read"
+        },
+        language_code,
+    );
+    let text = t_args_lang(
+        localization,
+        "api-grant-connected",
+        &[("client", &client), ("access", &access)],
+        language_code,
+    );
+    let keyboard = InlineKeyboardMarkup::new([[InlineKeyboardButton::callback(
+        t_args_lang(
+            localization,
+            "api-grants-disconnect-button",
+            &[("client", &client)],
+            language_code,
+        ),
+        format!("{DISCONNECT_PREFIX}{grant_id}"),
+    )]]);
+    (text, keyboard)
+}
+
 /// Masks the token messages sent over [`SHOWN_SECS`] ago, now and then every minute. A message
 /// Telegram cannot edit any more (deleted by the user, too old for its type) is forgotten; a
 /// network failure leaves it for the next round.
@@ -618,6 +673,27 @@ mod tests {
             client_name("https://other.example/client.json"),
             "other.example"
         );
+    }
+
+    #[test]
+    fn a_new_connection_is_announced_with_its_disconnect_button() {
+        let localization = localization();
+        let (text, keyboard) = announcement(
+            9,
+            "https://chatgpt.com/oauth/client.json",
+            true,
+            &localization,
+            Some("fr"),
+        );
+        assert!(
+            text.contains(
+                "chatgpt.com est maintenant connecté à vos recettes (lecture et écriture)"
+            ),
+            "{text}"
+        );
+        assert!(text.contains("Ce n'est pas vous ?"));
+        assert_eq!(buttons(&keyboard), ["api_grant_revoke:9"]);
+        assert!(is_key_button("api_grant_revoke:9"), "handled as /cle's");
     }
 
     #[test]

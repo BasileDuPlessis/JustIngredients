@@ -7,9 +7,11 @@
 //! - our codes live 60 seconds and are used once; a code presented again revokes its grant;
 //! - a grant's access tokens live an hour, its refresh tokens 30 days, renewed at each use (so a
 //!   grant used within 30 days never expires); a refresh token is exchanged once, but presented
-//!   again within 60 seconds (a retry after a lost answer) it gives a fresh pair; later, it
-//!   revokes the grant (it was copied);
-//! - one grant per user and client: a new one replaces the previous one.
+//!   again within 60 seconds (a retry after a lost answer) it gives a fresh pair, once; later, it
+//!   revokes the grant (it was copied). A grant is renewed at most 10 times in 10 minutes and
+//!   keeps at most 3 live refresh tokens;
+//! - one grant per user and client: a new one replaces the previous one, and is announced to
+//!   the user (an `oauth.connected` event, written with it).
 //!
 //! Every secret is random (32 bytes), given once, stored by SHA-256.
 
@@ -34,6 +36,11 @@ pub const REFRESH_LIFETIME_SECS: i64 = 30 * 24 * 3600;
 pub const REFRESH_GRACE_SECS: i64 = 60;
 /// A grant's use is noted at most this often.
 const TOUCH_EVERY_SECS: i32 = 300;
+/// Most renewals of a grant in [`RENEWAL_WINDOW_SECS`] (a client renews about once an hour).
+const MAX_RENEWALS: i64 = 10;
+const RENEWAL_WINDOW_SECS: i64 = 600;
+/// Most live refresh tokens a grant keeps (the retries of the grace period make more).
+const MAX_LIVE_REFRESHES: i64 = 3;
 
 /// What a client asked for, once the door checked it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -50,8 +57,8 @@ pub struct SignInRequest {
 }
 
 /// The secrets of a sign-in with the identity provider: our `state` with it, the browser's
-/// binding (its cookie), our PKCE verifier and nonce with it.
-#[derive(Debug, Clone)]
+/// binding (its cookie), our PKCE verifier and nonce with it. Never printed.
+#[derive(Clone)]
 pub struct SignInSecrets<'a> {
     pub state: &'a str,
     pub binding: &'a str,
@@ -59,8 +66,14 @@ pub struct SignInSecrets<'a> {
     pub nonce: &'a str,
 }
 
+impl std::fmt::Debug for SignInSecrets<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("SignInSecrets([REDACTED])")
+    }
+}
+
 /// A sign-in waiting for the identity provider's answer.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct PendingSignIn {
     pub id: i64,
     pub request: SignInRequest,
@@ -68,13 +81,24 @@ pub struct PendingSignIn {
     pub nonce: String,
 }
 
+impl std::fmt::Debug for PendingSignIn {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PendingSignIn")
+            .field("id", &self.id)
+            .field("request", &self.request)
+            .finish_non_exhaustive()
+    }
+}
+
 /// What the provider's answer leads to.
 #[derive(Debug, Clone)]
 pub enum Callback {
-    /// No sign-in waits with this state (expired, already answered, made up).
+    /// No sign-in waits with this state (expired, decided, made up).
     Unknown,
     /// The sign-in was started in another browser: its owner may have been sent a crafted link.
     OtherBrowser,
+    /// Someone signed in already, in this browser: the answer was reloaded.
+    SignedIn,
     Pending(PendingSignIn),
 }
 
@@ -83,6 +107,8 @@ pub enum Callback {
 pub struct Consent {
     pub request: SignInRequest,
     pub owner: Owner,
+    /// The Telegram account's name, as its ID token gave it.
+    pub telegram_name: Option<String>,
 }
 
 /// The user's answer on the consent page.
@@ -131,6 +157,9 @@ pub enum GrantError {
     /// A used code or a rotated refresh token presented again: its grant was revoked.
     #[error("reused, grant {grant_id} revoked")]
     Reused { grant_id: i64 },
+    /// Renewed too often: refused for now, the grant is kept.
+    #[error("renewed too often")]
+    TooOften,
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
 }
@@ -202,6 +231,9 @@ pub async fn find_sign_in(
     if !same_browser {
         return Ok(Callback::OtherBrowser);
     }
+    if row.telegram_id.is_some() {
+        return Ok(Callback::SignedIn);
+    }
     Ok(Callback::Pending(PendingSignIn {
         id: row.id,
         request: request_of(&row),
@@ -210,9 +242,27 @@ pub async fn find_sign_in(
     }))
 }
 
-/// Records who signed in; `false` when the sign-in is over or someone already did.
-pub async fn signed_in(pool: &PgPool, sign_in: i64, owner: Owner) -> Result<bool, EngineError> {
-    Ok(crate::db::set_oauth_request_user(pool, sign_in, owner.telegram_id()).await?)
+/// Claims the provider's answer to a sign-in before its code is exchanged; `false` when another
+/// request (a reload, a double load) already did.
+pub async fn claim_sign_in(pool: &PgPool, sign_in: i64) -> Result<bool, EngineError> {
+    Ok(crate::db::claim_oauth_request(pool, sign_in).await?)
+}
+
+/// Whether a claimed sign-in is signed in (`Some(true)`), still being answered (`Some(false)`)
+/// or over (`None`).
+pub async fn sign_in_state(pool: &PgPool, sign_in: i64) -> Result<Option<bool>, EngineError> {
+    Ok(crate::db::oauth_request_signed_in(pool, sign_in).await?)
+}
+
+/// Records who signed in, with their name for the consent page; `false` when the sign-in is
+/// over or someone already did.
+pub async fn signed_in(
+    pool: &PgPool,
+    sign_in: i64,
+    owner: Owner,
+    name: Option<&str>,
+) -> Result<bool, EngineError> {
+    Ok(crate::db::set_oauth_request_user(pool, sign_in, owner.telegram_id(), name).await?)
 }
 
 /// Ends a sign-in without a code; the request, for the error sent back to the client.
@@ -238,6 +288,7 @@ pub async fn open_consent(
         Some(Consent {
             owner: Owner::telegram(row.telegram_id?),
             request: request_of(&row),
+            telegram_name: row.telegram_name.clone(),
         })
     }))
 }
@@ -318,6 +369,8 @@ pub async fn redeem_code(
 ) -> Result<Issued, GrantError> {
     let code_hash = hash(exchange.code);
     let mut tx = pool.begin().await.map_err(anyhow::Error::from)?;
+    // The grant is announced by an event: the events lock comes first (`db::events`)
+    crate::db::lock_events(&mut tx).await?;
     let Some(code) = crate::db::use_oauth_code(&mut tx, &code_hash).await? else {
         let revoked = crate::db::revoke_grant_of_used_code(&mut tx, &code_hash).await?;
         tx.commit().await.map_err(anyhow::Error::from)?;
@@ -353,6 +406,23 @@ pub async fn redeem_code(
     let (grant_id, replaced) = crate::db::insert_oauth_grant(&mut tx, &code_hash, &code).await?;
     let telegram_id = crate::db::telegram_id_of_user(&mut tx, code.user_id).await?;
     let (access_token, refresh_token) = issue_pair(&mut tx, realm, grant_id, None).await?;
+    crate::db::insert_event(
+        &mut tx,
+        telegram_id,
+        &crate::db::NewEventRow {
+            kind: super::events::EventKind::AssistantConnected.as_str(),
+            recipe_id: None,
+            origin: super::events::Origin::Mcp.as_str(),
+            token_id: None,
+            grant_id: Some(grant_id),
+            payload: serde_json::json!({
+                "client_id": code.client_id,
+                "write": code.scopes.iter().any(|scope| scope == tokens::SCOPE_RECIPES_WRITE),
+                "replaced": replaced,
+            }),
+        },
+    )
+    .await?;
     tx.commit().await.map_err(anyhow::Error::from)?;
     Ok(Issued {
         access_token,
@@ -433,9 +503,19 @@ pub async fn refresh(
         tx.commit().await.map_err(anyhow::Error::from)?;
         return Err(GrantError::Refused("the user may no longer use the doors"));
     }
+    // Within the grace period, one retry only: its rotation and the retry make two
+    if token.rotated && crate::db::oauth_refresh_children(&mut tx, token.id).await? >= 2 {
+        return Err(GrantError::Refused("already renewed twice"));
+    }
+    if crate::db::oauth_recent_refreshes(&mut tx, token.grant_id, RENEWAL_WINDOW_SECS).await?
+        >= MAX_RENEWALS
+    {
+        return Err(GrantError::TooOften);
+    }
     crate::db::rotate_oauth_refresh(&mut tx, token.id).await?;
     let (access_token, refresh_token) =
         issue_pair(&mut tx, realm, token.grant_id, Some(token.id)).await?;
+    crate::db::trim_oauth_refreshes(&mut tx, token.grant_id, MAX_LIVE_REFRESHES).await?;
     tx.commit().await.map_err(anyhow::Error::from)?;
     Ok(Issued {
         access_token,

@@ -92,15 +92,30 @@ async fn main() -> Result<()> {
     // with the Telegram login configured
     let realm =
         just_ingredients::engine::tokens::Realm::from_app_name(app_config.api.app_name.as_deref());
+    // OAuth (its documents, the 401's pointer, the authorization server) only with a working
+    // Telegram login
     let oauth = just_ingredients::doors::public_host(app_config.api.app_name.as_deref())
-        .filter(|_| app_config.api.telegram_login.is_some())
-        .map(|host| just_ingredients::doors::oauth::OAuthSettings::for_host(&host));
+        .zip(app_config.api.telegram_login.clone())
+        .and_then(|(host, login)| {
+            let settings = just_ingredients::doors::oauth::OAuthSettings::for_host(&host);
+            match just_ingredients::doors::oauth::telegram::TelegramLogin::new(
+                login,
+                &settings.issuer,
+                just_ingredients::doors::oauth::telegram::Endpoints::telegram(),
+            ) {
+                Ok(login) => Some((settings, login)),
+                Err(error) => {
+                    warn!(error = %error, "OAuth not served: the Telegram login could not be built");
+                    None
+                }
+            }
+        });
     let mut doors = just_ingredients::doors::mcp::router(
         (*shared_pool).clone(),
         realm,
         just_ingredients::doors::mcp::allowed_hosts(app_config.api.app_name.as_deref()),
         just_ingredients::doors::guard::Limits::default(),
-        oauth.as_ref(),
+        oauth.as_ref().map(|(settings, _)| settings),
     );
     if oauth.is_some() {
         tokio::spawn(just_ingredients::doors::oauth::run_purge(
@@ -109,39 +124,29 @@ async fn main() -> Result<()> {
     }
     // The authorization server, users signing in with Telegram; on staging, the bare trial of
     // the Telegram sign-in too (task 0 of the OAuth tranche)
-    if let (Some(settings), Some(login)) = (&oauth, &app_config.api.telegram_login) {
-        use just_ingredients::doors::oauth::{server, spike, telegram};
-        match telegram::TelegramLogin::new(
-            login.clone(),
-            &settings.issuer,
-            telegram::Endpoints::telegram(),
-        ) {
-            Ok(login) => {
-                let trial =
-                    (realm == just_ingredients::engine::tokens::Realm::Staging).then(|| {
-                        let bot_id = app_config.bot.token.split(':').next().map(str::to_string);
-                        Arc::new(spike::Spike::new(
-                            login.clone(),
-                            app_config.api.beta_users.clone(),
-                            bot_id,
-                        ))
-                    });
-                if let Some(trial) = &trial {
-                    doors = doors.merge(spike::router(Arc::clone(trial)));
-                    info!(path = spike::TRY_PATH, "Telegram sign-in trial served");
-                }
-                doors = doors.merge(server::router(server::AuthorizationServer::new(
-                    (*shared_pool).clone(),
-                    realm,
-                    settings.clone(),
-                    login,
-                    app_config.api.beta_users.clone(),
-                    trial,
-                )));
-                info!(issuer = %settings.issuer, "OAuth authorization server served");
-            }
-            Err(error) => warn!(error = %error, "OAuth authorization server not served"),
+    if let Some((settings, login)) = &oauth {
+        use just_ingredients::doors::oauth::{server, spike};
+        let trial = (realm == just_ingredients::engine::tokens::Realm::Staging).then(|| {
+            let bot_id = app_config.bot.token.split(':').next().map(str::to_string);
+            Arc::new(spike::Spike::new(
+                login.clone(),
+                app_config.api.beta_users.clone(),
+                bot_id,
+            ))
+        });
+        if let Some(trial) = &trial {
+            doors = doors.merge(spike::router(Arc::clone(trial)));
+            info!(path = spike::TRY_PATH, "Telegram sign-in trial served");
         }
+        doors = doors.merge(server::router(server::AuthorizationServer::new(
+            (*shared_pool).clone(),
+            realm,
+            settings.clone(),
+            login.clone(),
+            app_config.api.beta_users.clone(),
+            trial,
+        )));
+        info!(issuer = %settings.issuer, "OAuth authorization server served");
     }
     observability::start(Some(Arc::clone(&shared_pool)), &app_config, doors).await?;
     // The usage history: visits and daily totals, the user and recipe gauges

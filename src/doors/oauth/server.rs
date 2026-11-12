@@ -9,24 +9,29 @@
 //!   every answer carrying the client's `state` and our `iss` (RFC 9207);
 //! - the browser that starts is bound by a `__Host-` cookie (SameSite=Lax: it comes back on
 //!   Telegram's redirect, never on another site's form); Telegram's answer and the consent page
-//!   need it;
-//! - the consent page is never framed nor cached, has no script, and its form only posts to us,
-//!   whose 303 goes to the client;
+//!   need it; Telegram's answer is claimed once (a reload waits for the first to finish);
+//! - the consent page names the Telegram account, is never framed nor cached, has no script, and
+//!   its form only posts to us, whose 303 goes to the client;
 //! - the token endpoint answers JSON, never cached, `invalid_grant` for any bad code or refresh
-//!   token, with a limit per address.
+//!   token. Clients are public (PKCE binds the code): a secret or an assertion sent anyway is
+//!   ignored, never trusted;
+//! - limits never refuse a request that turns out valid: the assistants' users share their
+//!   addresses. Sign-ins started are limited per address (an IPv6 /64) and in all; at most
+//!   [`MAX_AT_ONCE`] requests at once, the database's connections being few.
 
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
+use std::time::Duration;
 
 use axum::Router;
 use axum::extract::{ConnectInfo, DefaultBodyLimit, Form, Query, State};
-use axum::http::{HeaderMap, HeaderValue, StatusCode, header};
+use axum::http::{HeaderMap, HeaderValue, StatusCode, Uri, header};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use serde::Deserialize;
 use serde_json::json;
 use sqlx::PgPool;
-use tokio::sync::Semaphore;
+use tokio::sync::{Semaphore, SemaphorePermit};
 use tracing::{info, warn};
 
 use super::OAuthSettings;
@@ -37,7 +42,7 @@ use super::telegram::{Attempt, CALLBACK_PATH, TelegramLogin};
 use crate::engine::oauth::{self, Callback, CodeExchange, Decision, GrantError, SignInRequest};
 use crate::engine::tokens::{Realm, SCOPE_RECIPES_READ, SCOPE_RECIPES_WRITE};
 use crate::engine::{Lang, Owner};
-use crate::observability::server::{RateLimiter, client_key};
+use crate::observability::server::RateLimiter;
 
 pub use super::metadata::{AUTHORIZE_PATH, TOKEN_PATH};
 
@@ -47,17 +52,27 @@ pub const CONSENT_PATH: &str = "/oauth/consent";
 /// The cookie binding a sign-in to the browser that started it.
 pub const BINDING_COOKIE: &str = "__Host-ji_signin";
 
-/// Largest form or query the authorization server reads.
+/// Largest form body the authorization server reads.
 const MAX_BODY_BYTES: usize = 4 * 1024;
 
-/// Longest `state` a client may send (given back as is).
-const MAX_STATE_CHARS: usize = 1024;
+/// Largest query string it reads (the authorization request, Telegram's answer).
+const MAX_QUERY_BYTES: usize = 4 * 1024;
 
-/// Requests the authorization server handles at once (the rest wait).
-const MAX_AT_ONCE: usize = 8;
+/// Longest `state` a client may send, in bytes (given back as is).
+const MAX_STATE_BYTES: usize = 1024;
+
+/// Requests the authorization server handles at once: with the MCP door's 4, within the bot's
+/// 10 database connections.
+pub const MAX_AT_ONCE: usize = 3;
+
+/// How long a request waits for a place.
+const WAIT_FOR_PLACE: Duration = Duration::from_secs(2);
 
 /// Exchanges with Telegram at once.
-const MAX_TELEGRAM_EXCHANGES: usize = 4;
+const MAX_TELEGRAM_EXCHANGES: usize = 2;
+
+/// How long a reloaded Telegram answer waits for the first one to finish.
+const WAIT_FOR_FIRST_ANSWER: Duration = Duration::from_secs(8);
 
 /// What the authorization server needs, shared by its requests.
 #[derive(Debug)]
@@ -72,7 +87,9 @@ pub struct AuthorizationServer {
     telegram_exchanges: Semaphore,
     /// Sign-ins started per address (each writes a row).
     sign_ins: RateLimiter,
-    /// Codes and refresh tokens refused per address.
+    /// Sign-ins started in all.
+    all_sign_ins: RateLimiter,
+    /// Codes and refresh tokens refused per address: past the limit, refusals answer 429.
     refused_grants: RateLimiter,
 }
 
@@ -95,12 +112,21 @@ impl AuthorizationServer {
             at_once: Semaphore::new(MAX_AT_ONCE),
             telegram_exchanges: Semaphore::new(MAX_TELEGRAM_EXCHANGES),
             sign_ins: RateLimiter::new(30, 60),
+            all_sign_ins: RateLimiter::new(300, 600),
             refused_grants: RateLimiter::new(20, 60),
         })
     }
 
     fn allowed(&self, owner: Owner) -> bool {
         self.beta_users.contains(&owner.telegram_id())
+    }
+
+    /// A place among the requests at once, or `None` after [`WAIT_FOR_PLACE`].
+    async fn place(&self) -> Option<SemaphorePermit<'_>> {
+        tokio::time::timeout(WAIT_FOR_PLACE, self.at_once.acquire())
+            .await
+            .ok()?
+            .ok()
     }
 }
 
@@ -113,6 +139,26 @@ pub fn router(server: Arc<AuthorizationServer>) -> Router {
         .route(TOKEN_PATH, axum::routing::post(token))
         .layer(DefaultBodyLimit::max(MAX_BODY_BYTES))
         .with_state(server)
+}
+
+/// The client's address for the limits: Fly's `Fly-Client-IP`, else the peer; an IPv6 address
+/// by its /64, the block one subscriber usually holds.
+pub fn address_key(headers: &HeaderMap, peer: IpAddr) -> String {
+    let address = headers
+        .get("fly-client-ip")
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.trim().parse::<IpAddr>().ok())
+        .unwrap_or(peer);
+    match address {
+        IpAddr::V6(v6) if v6.to_ipv4_mapped().is_none() => {
+            let [a, b, c, d, ..] = v6.segments();
+            format!("{a:x}:{b:x}:{c:x}:{d:x}::/64")
+        }
+        IpAddr::V6(v6) => v6
+            .to_ipv4_mapped()
+            .map_or_else(|| v6.to_string(), |v4| v4.to_string()),
+        IpAddr::V4(v4) => v4.to_string(),
+    }
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -132,14 +178,15 @@ fn text(lang: Lang, fr: &'static str, en: &'static str) -> &'static str {
     if lang.is_french() { fr } else { en }
 }
 
-/// A page saying why the sign-in stops here, without going back to the assistant.
+/// A page saying why the sign-in stops here, without going back to the assistant; it ends the
+/// browser's binding.
 fn stop_page(
     lang: Lang,
     status: StatusCode,
     why_fr: &'static str,
     why_en: &'static str,
 ) -> Response {
-    super::page::html_in(
+    let mut response = super::page::html_in(
         lang,
         status,
         text(lang, "Connexion impossible", "Cannot connect"),
@@ -148,11 +195,15 @@ fn stop_page(
             text(lang, why_fr, why_en),
             text(
                 lang,
-                "Tu peux fermer cette page et recommencer depuis ton assistant.",
+                "Vous pouvez fermer cette page et recommencer depuis votre assistant.",
                 "You can close this page and start again from your assistant."
             )
         ),
-    )
+    );
+    response
+        .headers_mut()
+        .insert(header::SET_COOKIE, binding_cookie(None));
+    response
 }
 
 fn unknown_sign_in(lang: Lang) -> Response {
@@ -165,11 +216,24 @@ fn unknown_sign_in(lang: Lang) -> Response {
 }
 
 fn busy(lang: Lang) -> Response {
-    stop_page(
+    super::page::html_in(
         lang,
         StatusCode::SERVICE_UNAVAILABLE,
-        "Trop de connexions en cours : réessaie dans un instant.",
-        "Too many sign-ins at once: try again in a moment.",
+        text(lang, "Un instant", "One moment"),
+        text(
+            lang,
+            "<p>Trop de connexions en cours : réessayez dans un instant.</p>",
+            "<p>Too many sign-ins at once: try again in a moment.</p>",
+        ),
+    )
+}
+
+fn too_long(lang: Lang) -> Response {
+    stop_page(
+        lang,
+        StatusCode::URI_TOO_LONG,
+        "Cette adresse est trop longue.",
+        "This address is too long.",
     )
 }
 
@@ -251,6 +315,11 @@ fn binding_of(headers: &HeaderMap) -> Option<String> {
         })
 }
 
+fn query_too_long(uri: &Uri) -> bool {
+    uri.query()
+        .is_some_and(|query| query.len() > MAX_QUERY_BYTES)
+}
+
 // ---------------------------------------------------------------------------------------------
 // The authorization endpoint
 
@@ -287,10 +356,14 @@ async fn authorize(
     State(server): State<Arc<AuthorizationServer>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
+    uri: Uri,
     query: Result<Query<AuthorizeQuery>, axum::extract::rejection::QueryRejection>,
 ) -> Response {
     let lang = lang_of(&headers);
-    let Ok(_place) = server.at_once.acquire().await else {
+    if query_too_long(&uri) {
+        return too_long(lang);
+    }
+    let Some(_place) = server.place().await else {
         return busy(lang);
     };
     let Query(query) = query.unwrap_or_default();
@@ -327,9 +400,11 @@ async fn authorize(
         );
     };
     // From here, problems go back to the client
-    let state = query
+    let state_too_long = query
         .state
-        .filter(|state| state.chars().count() <= MAX_STATE_CHARS);
+        .as_ref()
+        .is_some_and(|state| state.len() > MAX_STATE_BYTES);
+    let state = query.state.filter(|_| !state_too_long);
     let refuse = |error: &str, description: &str| {
         back_to_client(
             &server.settings,
@@ -339,6 +414,9 @@ async fn authorize(
             false,
         )
     };
+    if state_too_long {
+        return refuse("invalid_request", "state is too long");
+    }
     if query.response_type.as_deref() != Some("code") {
         return refuse("unsupported_response_type", "response_type must be code");
     }
@@ -361,9 +439,13 @@ async fn authorize(
     {
         return refuse("invalid_target", "unknown resource");
     }
-    let address = client_key(&headers, peer.ip());
-    if !server.sign_ins.is_allowed(&address) {
-        return refuse("temporarily_unavailable", "too many sign-ins");
+    let address = address_key(&headers, peer.ip());
+    if !server.sign_ins.is_allowed(&address) || !server.all_sign_ins.is_allowed("all") {
+        warn!("OAuth sign-in refused: too many started");
+        return refuse(
+            "temporarily_unavailable",
+            "too many sign-ins, try again later",
+        );
     }
 
     let request = SignInRequest {
@@ -419,9 +501,13 @@ struct TelegramAnswer {
 async fn telegram_callback(
     State(server): State<Arc<AuthorizationServer>>,
     headers: HeaderMap,
+    uri: Uri,
     query: Result<Query<TelegramAnswer>, axum::extract::rejection::QueryRejection>,
 ) -> Response {
     let lang = lang_of(&headers);
+    if query_too_long(&uri) {
+        return too_long(lang);
+    }
     let Query(answer) = query.unwrap_or_default();
     let Some(state) = answer.state.filter(|state| state.len() <= 128) else {
         return unknown_sign_in(lang);
@@ -432,22 +518,23 @@ async fn telegram_callback(
     {
         return spike.answer(attempt, answer.code, answer.error).await;
     }
-    let Ok(_place) = server.at_once.acquire().await else {
+    let Some(_place) = server.place().await else {
         return busy(lang);
     };
     let binding = binding_of(&headers);
     let pending = match oauth::find_sign_in(&server.pool, &state, binding.as_deref()).await {
         Ok(Callback::Pending(pending)) => pending,
+        Ok(Callback::SignedIn) => return see_other(CONSENT_PATH),
         Ok(Callback::Unknown) => return unknown_sign_in(lang),
         Ok(Callback::OtherBrowser) => {
             warn!("OAuth sign-in refused: finished in another browser");
             return stop_page(
                 lang,
                 StatusCode::BAD_REQUEST,
-                "Cette connexion a été commencée dans un autre navigateur. Si tu n'as rien \
-                 demandé, ignore ce lien.",
-                "This sign-in was started in another browser. If you did not ask for it, ignore \
-                 this link.",
+                "Cette connexion a été commencée dans un autre navigateur, ou remplacée par une \
+                 connexion plus récente. Si vous n'avez rien demandé, ignorez ce lien.",
+                "This sign-in was started in another browser, or replaced by a newer one. If you \
+                 did not ask for it, ignore this link.",
             );
         }
         Err(error) => {
@@ -455,6 +542,15 @@ async fn telegram_callback(
             return busy(lang);
         }
     };
+    // Telegram's answer counts once: a reload waits for the first to finish
+    match oauth::claim_sign_in(&server.pool, pending.id).await {
+        Ok(true) => {}
+        Ok(false) => return wait_for_first_answer(&server, pending.id, lang).await,
+        Err(error) => {
+            warn!(error = %error, "OAuth sign-in: could not claim the request");
+            return busy(lang);
+        }
+    }
     // Every way out from here ends the sign-in and goes back to the client
     let give_up = |error: &'static str, description: &'static str| {
         let server = Arc::clone(&server);
@@ -482,8 +578,9 @@ async fn telegram_callback(
     else {
         return give_up("access_denied", "the Telegram sign-in was not completed").await;
     };
-    let Ok(_exchange) = server.telegram_exchanges.try_acquire() else {
-        return busy(lang);
+    let exchange = tokio::time::timeout(WAIT_FOR_PLACE, server.telegram_exchanges.acquire()).await;
+    let Ok(Ok(_exchange)) = exchange else {
+        return give_up("temporarily_unavailable", "too many sign-ins at once").await;
     };
     let identity = match server.login.exchange(&code, &pending.verifier).await {
         Ok(identity) => identity,
@@ -516,7 +613,14 @@ async fn telegram_callback(
             "Assistants are not open to this Telegram account yet.",
         );
     }
-    match oauth::signed_in(&server.pool, pending.id, owner).await {
+    match oauth::signed_in(
+        &server.pool,
+        pending.id,
+        owner,
+        identity.display_name.as_deref(),
+    )
+    .await
+    {
         Ok(true) => see_other(CONSENT_PATH),
         Ok(false) => unknown_sign_in(lang),
         Err(error) => {
@@ -524,6 +628,20 @@ async fn telegram_callback(
             busy(lang)
         }
     }
+}
+
+/// A Telegram answer received again (a reload, a double load): once the first one has signed the
+/// user in, on to the consent page; if it failed or takes too long, the sign-in is over.
+async fn wait_for_first_answer(server: &AuthorizationServer, sign_in: i64, lang: Lang) -> Response {
+    let started = tokio::time::Instant::now();
+    while started.elapsed() < WAIT_FOR_FIRST_ANSWER {
+        match oauth::sign_in_state(&server.pool, sign_in).await {
+            Ok(Some(true)) => return see_other(CONSENT_PATH),
+            Ok(Some(false)) => tokio::time::sleep(Duration::from_millis(250)).await,
+            Ok(None) | Err(_) => break,
+        }
+    }
+    unknown_sign_in(lang)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -536,6 +654,9 @@ async fn consent_page(
     let browser_lang = lang_of(&headers);
     let Some(binding) = binding_of(&headers) else {
         return unknown_sign_in(browser_lang);
+    };
+    let Some(_place) = server.place().await else {
+        return busy(browser_lang);
     };
     let form_token = crate::engine::tokens::new_secret("");
     let consent = match oauth::open_consent(&server.pool, &binding, &form_token).await {
@@ -567,31 +688,60 @@ async fn consent_page(
         .scopes
         .iter()
         .any(|scope| scope == SCOPE_RECIPES_WRITE);
-    consent_html(
+    consent_html(&ConsentView {
         lang,
         client,
-        &redirect_host,
-        &origin,
-        &form_token,
+        account: consent.telegram_name.as_deref(),
+        redirect_host: &redirect_host,
+        redirect_origin: &origin,
+        form_token: &form_token,
         asks_write,
-    )
+    })
 }
 
-fn consent_html(
+/// What the consent page shows.
+struct ConsentView<'a> {
     lang: Lang,
-    client: &Client,
-    redirect_host: &str,
-    redirect_origin: &str,
-    form_token: &str,
+    client: &'a Client,
+    /// The Telegram account's name.
+    account: Option<&'a str>,
+    redirect_host: &'a str,
+    redirect_origin: &'a str,
+    form_token: &'a str,
     asks_write: bool,
-) -> Response {
-    let name = escape(client.name);
+}
+
+fn consent_html(view: &ConsentView<'_>) -> Response {
+    let lang = view.lang;
+    let name = escape(view.client.name);
+    // Escaped by the page
     let title = if lang.is_french() {
-        format!("{name} demande l'accès à tes recettes")
+        format!("{} demande l'accès à vos recettes", view.client.name)
     } else {
-        format!("{name} asks to access your recipes")
+        format!("{} asks to access your recipes", view.client.name)
     };
-    let write_hint = if asks_write {
+    let account = view.account.map(escape);
+    let intro = match (lang.is_french(), &account) {
+        (true, Some(account)) => format!(
+            "Vous êtes connecté avec le compte Telegram <strong>{account}</strong>. \
+             <strong>{name}</strong> veut utiliser JustIngredients en votre nom. Ce n'est pas \
+             votre compte ? Refusez."
+        ),
+        (true, None) => format!(
+            "Vous êtes connecté avec Telegram. <strong>{name}</strong> veut utiliser \
+             JustIngredients en votre nom."
+        ),
+        (false, Some(account)) => format!(
+            "You are signed in with the Telegram account <strong>{account}</strong>. \
+             <strong>{name}</strong> wants to use JustIngredients on your behalf. Not your \
+             account? Deny."
+        ),
+        (false, None) => format!(
+            "You are signed in with Telegram. <strong>{name}</strong> wants to use \
+             JustIngredients on your behalf."
+        ),
+    };
+    let write_hint = if view.asks_write {
         text(
             lang,
             " (demandé par l'assistant)",
@@ -611,21 +761,10 @@ fn consent_html(
          <p><button type=\"submit\" name=\"decision\" value=\"allow\">{allow}</button> \
          <button type=\"submit\" name=\"decision\" value=\"deny\">{deny}</button></p>\
          </form><p><small>{revoke}</small></p>",
-        intro = if lang.is_french() {
-            format!(
-                "Tu es connecté avec Telegram. <strong>{name}</strong> veut utiliser \
-                 JustIngredients en ton nom."
-            )
-        } else {
-            format!(
-                "You are signed in with Telegram. <strong>{name}</strong> wants to use \
-                 JustIngredients on your behalf."
-            )
-        },
-        token = escape(form_token),
+        token = escape(view.form_token),
         read = text(
             lang,
-            "Lire tes recettes et tes mémos",
+            "Lire vos recettes et vos mémos",
             "Read your recipes and memos"
         ),
         write = text(
@@ -635,23 +774,24 @@ fn consent_html(
         ),
         back = text(
             lang,
-            "Ta réponse sera renvoyée à",
+            "Votre réponse sera renvoyée à",
             "Your answer will be sent back to"
         ),
-        host = escape(redirect_host),
+        host = escape(view.redirect_host),
         allow = text(lang, "Autoriser", "Allow"),
         deny = text(lang, "Refuser", "Deny"),
         revoke = text(
             lang,
-            "Tu pourras retirer cet accès à tout moment avec /cle dans le bot.",
+            "Vous pourrez retirer cet accès à tout moment avec /cle dans le bot.",
             "You can remove this access at any time with /key in the bot."
         ),
     );
     let mut response = super::page::html_in(lang, StatusCode::OK, &title, &body);
     // The form posts to us; our 303 then goes to the client, which Chromium also checks
     if let Ok(policy) = HeaderValue::from_str(&format!(
-        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' {redirect_origin}; \
-         frame-ancestors 'none'; base-uri 'none'"
+        "default-src 'none'; style-src 'unsafe-inline'; form-action 'self' {}; \
+         frame-ancestors 'none'; base-uri 'none'",
+        view.redirect_origin
     )) {
         response
             .headers_mut()
@@ -676,6 +816,9 @@ async fn consent_decision(
     let Form(form) = form.unwrap_or_default();
     let (Some(binding), Some(token)) = (binding_of(&headers), form.consent) else {
         return unknown_sign_in(lang);
+    };
+    let Some(_place) = server.place().await else {
+        return busy(lang);
     };
     let decision = match form.decision.as_deref() {
         Some("allow") => Decision::Allow {
@@ -736,7 +879,7 @@ struct TokenForm {
 
 /// A JSON answer of the token endpoint, never cached.
 fn token_answer(status: StatusCode, body: &serde_json::Value) -> Response {
-    let mut response = (
+    (
         status,
         [
             (
@@ -748,7 +891,14 @@ fn token_answer(status: StatusCode, body: &serde_json::Value) -> Response {
         ],
         body.to_string(),
     )
-        .into_response();
+        .into_response()
+}
+
+fn token_error(status: StatusCode, error: &str, description: &str) -> Response {
+    let mut response = token_answer(
+        status,
+        &json!({ "error": error, "error_description": description }),
+    );
     if status == StatusCode::UNAUTHORIZED {
         response.headers_mut().insert(
             header::WWW_AUTHENTICATE,
@@ -758,27 +908,12 @@ fn token_answer(status: StatusCode, body: &serde_json::Value) -> Response {
     response
 }
 
-fn token_error(status: StatusCode, error: &str, description: &str) -> Response {
-    token_answer(
-        status,
-        &json!({ "error": error, "error_description": description }),
-    )
-}
-
 async fn token(
     State(server): State<Arc<AuthorizationServer>>,
     ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
     form: Result<Form<TokenForm>, axum::extract::rejection::FormRejection>,
 ) -> Response {
-    let address = client_key(&headers, peer.ip());
-    if !server.refused_grants.has_room(&address) {
-        return token_error(
-            StatusCode::TOO_MANY_REQUESTS,
-            "invalid_request",
-            "too many refused requests",
-        );
-    }
     let Ok(Form(form)) = form else {
         return token_error(
             StatusCode::BAD_REQUEST,
@@ -786,27 +921,26 @@ async fn token(
             "the body must be a form",
         );
     };
-    let Ok(_place) = server.at_once.acquire().await else {
+    let Some(_place) = server.place().await else {
         return token_error(
             StatusCode::SERVICE_UNAVAILABLE,
             "temporarily_unavailable",
-            "busy",
+            "busy, try again",
         );
     };
-    // Public clients: PKCE alone, no secret nor assertion
+    let Some(client) = form.client_id.as_deref().and_then(clients::find) else {
+        return token_error(StatusCode::UNAUTHORIZED, "invalid_client", "unknown client");
+    };
+    // Public clients: PKCE binds the code; a secret or an assertion sent anyway proves nothing
     if headers.contains_key(header::AUTHORIZATION)
         || form.client_secret.is_some()
         || form.client_assertion.is_some()
     {
-        return token_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_client",
-            "public clients only (token_endpoint_auth_method none)",
+        info!(
+            client_id = client.id,
+            "OAuth token request with client authentication: ignored"
         );
     }
-    let Some(client) = form.client_id.as_deref().and_then(clients::find) else {
-        return token_error(StatusCode::UNAUTHORIZED, "invalid_client", "unknown client");
-    };
     if form
         .resource
         .as_deref()
@@ -897,20 +1031,33 @@ async fn token(
                 "try again",
             )
         }
+        Err(GrantError::TooOften) => {
+            warn!(client_id = client.id, "OAuth grant renewed too often");
+            token_error(
+                StatusCode::TOO_MANY_REQUESTS,
+                "invalid_request",
+                "renewed too often, try again in a few minutes",
+            )
+        }
         Err(refused) => {
-            server.refused_grants.is_allowed(&address);
             match &refused {
-                GrantError::Reused { grant_id } => {
-                    warn!(
-                        grant_id,
-                        client_id = client.id,
-                        "OAuth grant revoked: a reused code or token"
-                    );
-                }
+                GrantError::Reused { grant_id } => warn!(
+                    grant_id,
+                    client_id = client.id,
+                    "OAuth grant revoked: a reused code or token"
+                ),
                 other => info!(reason = %other, client_id = client.id, "OAuth grant refused"),
             }
+            // Only refusals are counted, and past the limit they answer 429: a valid code or
+            // token from the same (shared) address is never refused for them
+            let address = address_key(&headers, peer.ip());
+            let status = if server.refused_grants.is_allowed(&address) {
+                StatusCode::BAD_REQUEST
+            } else {
+                StatusCode::TOO_MANY_REQUESTS
+            };
             token_error(
-                StatusCode::BAD_REQUEST,
+                status,
                 "invalid_grant",
                 "the code or refresh token is invalid, expired or revoked",
             )
@@ -976,5 +1123,26 @@ mod tests {
             HeaderValue::from_static("fr-FR,fr;q=0.9,en;q=0.8"),
         );
         assert_eq!(lang_of(&headers), Lang::Fr);
+    }
+
+    #[test]
+    fn an_ipv6_client_is_limited_by_its_64() {
+        let headers = HeaderMap::new();
+        let one: IpAddr = "2a09:8280:1::1"
+            .parse()
+            .unwrap_or(IpAddr::from([0, 0, 0, 0]));
+        let other: IpAddr = "2a09:8280:1:0:ffff::9"
+            .parse()
+            .unwrap_or(IpAddr::from([0, 0, 0, 0]));
+        assert_eq!(address_key(&headers, one), address_key(&headers, other));
+        assert_eq!(address_key(&headers, one), "2a09:8280:1:0::/64");
+        let v4: IpAddr = "160.79.104.10"
+            .parse()
+            .unwrap_or(IpAddr::from([0, 0, 0, 0]));
+        assert_eq!(address_key(&headers, v4), "160.79.104.10");
+        let mapped: IpAddr = "::ffff:160.79.104.10"
+            .parse()
+            .unwrap_or(IpAddr::from([0, 0, 0, 0]));
+        assert_eq!(address_key(&headers, mapped), "160.79.104.10");
     }
 }

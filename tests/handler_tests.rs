@@ -1418,6 +1418,7 @@ async fn a_connected_assistant_is_listed_and_disconnected(pool: PgPool) -> Resul
         &pool,
         pending.id,
         just_ingredients::engine::Owner::telegram(OWNER),
+        None,
     )
     .await?;
     oauth::open_consent(&pool, "b", "f").await?;

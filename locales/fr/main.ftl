@@ -156,6 +156,7 @@ api-key-header = En-tête à envoyer :
 api-grants-title = 🔗 Assistants connectés
 api-grants-line = • { $client } ({ $access }), connecté le { $created }
 api-grants-disconnect-button = 🔌 Déconnecter { $client }
+api-grant-connected = 🔗 { $client } est maintenant connecté à vos recettes ({ $access }). Ce n'est pas vous ? Déconnectez-le avec le bouton ci-dessous.
 api-grants-connect = Pour claude.ai ou ChatGPT, pas besoin de clé : ajoutez { $url } comme connecteur, puis connectez-vous avec Telegram.
 api-key-masked = 🔑 Clé masquée : elle n'est plus affichée ici. Gérez vos clés avec /cle.
 

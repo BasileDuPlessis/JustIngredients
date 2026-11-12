@@ -41,6 +41,9 @@ pub enum EventKind {
     MemoChanged,
     IngredientsChanged,
     RecipeDeleted,
+    /// An assistant was connected with OAuth (`engine::oauth`): no recipe, the grant's id in
+    /// the event, `client_id`, `write` and `replaced` in its payload.
+    AssistantConnected,
 }
 
 impl EventKind {
@@ -51,6 +54,7 @@ impl EventKind {
             Self::MemoChanged => "recipe.memo_changed",
             Self::IngredientsChanged => "recipe.ingredients_changed",
             Self::RecipeDeleted => "recipe.deleted",
+            Self::AssistantConnected => "oauth.connected",
         }
     }
 
@@ -61,6 +65,7 @@ impl EventKind {
             Self::MemoChanged,
             Self::IngredientsChanged,
             Self::RecipeDeleted,
+            Self::AssistantConnected,
         ]
         .into_iter()
         .find(|kind| kind.as_str() == value)

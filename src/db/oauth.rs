@@ -38,6 +38,8 @@ pub struct OAuthRequestRow {
     pub telegram_verifier: String,
     pub telegram_nonce: String,
     pub telegram_id: Option<i64>,
+    /// The Telegram account's name, from the ID token, for the consent page.
+    pub telegram_name: Option<String>,
 }
 
 impl std::fmt::Debug for OAuthRequestRow {
@@ -52,7 +54,8 @@ impl std::fmt::Debug for OAuthRequestRow {
 }
 
 const REQUEST_COLUMNS: &str = "id, binding_hash, client_id, redirect_uri, client_state, \
-     code_challenge, scopes, resource, telegram_verifier, telegram_nonce, telegram_id";
+     code_challenge, scopes, resource, telegram_verifier, telegram_nonce, telegram_id, \
+     telegram_name";
 
 /// Stores a sign-in, valid `lifetime_secs`.
 pub async fn insert_oauth_request(pool: &PgPool, request: &NewOAuthRequest<'_>) -> Result<i64> {
@@ -79,16 +82,15 @@ pub async fn insert_oauth_request(pool: &PgPool, request: &NewOAuthRequest<'_>) 
     .context("Failed to store the sign-in")
 }
 
-/// The sign-in waiting for Telegram's answer with this state: unexpired, not consumed, nobody
-/// signed in yet.
+/// The sign-in Telegram answers for with this state: unexpired, not consumed (someone may have
+/// signed in already: Telegram's answer reloaded).
 pub async fn find_oauth_request_by_state(
     pool: &PgPool,
     state_hash: &[u8],
 ) -> Result<Option<OAuthRequestRow>> {
     sqlx::query_as::<_, OAuthRequestRow>(&format!(
         "SELECT {REQUEST_COLUMNS} FROM oauth_requests \
-         WHERE state_hash = $1 AND telegram_id IS NULL AND consumed_at IS NULL \
-           AND expires_at > now()"
+         WHERE state_hash = $1 AND consumed_at IS NULL AND expires_at > now()"
     ))
     .bind(state_hash)
     .fetch_optional(pool)
@@ -96,15 +98,50 @@ pub async fn find_oauth_request_by_state(
     .context("Failed to find the sign-in")
 }
 
-/// Records who signed in with Telegram; `false` when someone already did, or the sign-in is
-/// over.
-pub async fn set_oauth_request_user(pool: &PgPool, id: i64, telegram_id: i64) -> Result<bool> {
+/// Claims Telegram's answer to a sign-in, once: `false` when another request claimed it (a
+/// reload, a double load) or the sign-in is over.
+pub async fn claim_oauth_request(pool: &PgPool, id: i64) -> Result<bool> {
     Ok(sqlx::query(
-        "UPDATE oauth_requests SET telegram_id = $2 \
+        "UPDATE oauth_requests SET claimed_at = now() \
+         WHERE id = $1 AND claimed_at IS NULL AND telegram_id IS NULL AND consumed_at IS NULL \
+           AND expires_at > now()",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .context("Failed to claim the sign-in")?
+    .rows_affected()
+        > 0)
+}
+
+/// Where a claimed sign-in is: signed in (`Some(true)`), still being answered (`Some(false)`), or
+/// over (`None`).
+pub async fn oauth_request_signed_in(pool: &PgPool, id: i64) -> Result<Option<bool>> {
+    sqlx::query_scalar(
+        "SELECT telegram_id IS NOT NULL FROM oauth_requests \
+         WHERE id = $1 AND consumed_at IS NULL AND expires_at > now()",
+    )
+    .bind(id)
+    .fetch_optional(pool)
+    .await
+    .context("Failed to read the sign-in")
+}
+
+/// Records who signed in with Telegram, and their name; `false` when someone already did, or the
+/// sign-in is over.
+pub async fn set_oauth_request_user(
+    pool: &PgPool,
+    id: i64,
+    telegram_id: i64,
+    telegram_name: Option<&str>,
+) -> Result<bool> {
+    Ok(sqlx::query(
+        "UPDATE oauth_requests SET telegram_id = $2, telegram_name = $3 \
          WHERE id = $1 AND telegram_id IS NULL AND consumed_at IS NULL AND expires_at > now()",
     )
     .bind(id)
     .bind(telegram_id)
+    .bind(telegram_name)
     .execute(pool)
     .await
     .context("Failed to record who signed in")?
@@ -152,11 +189,13 @@ pub async fn consume_oauth_consent(
     .context("Failed to consume the consent")
 }
 
-/// Consumes a sign-in that ends without a code (Telegram refused, the user is not allowed).
+/// Consumes a sign-in that ends without a code (Telegram refused, the user is not allowed),
+/// unless someone already signed in to it.
 pub async fn abandon_oauth_request(pool: &PgPool, id: i64) -> Result<Option<OAuthRequestRow>> {
     sqlx::query_as::<_, OAuthRequestRow>(&format!(
         "UPDATE oauth_requests SET consumed_at = now() \
-         WHERE id = $1 AND consumed_at IS NULL RETURNING {REQUEST_COLUMNS}"
+         WHERE id = $1 AND consumed_at IS NULL AND telegram_id IS NULL \
+         RETURNING {REQUEST_COLUMNS}"
     ))
     .bind(id)
     .fetch_optional(pool)
@@ -368,6 +407,53 @@ pub async fn lock_oauth_refresh(
     .context("Failed to find the refresh token")
 }
 
+/// How many refresh tokens were made from the refresh token `token_id` (its rotation, and a
+/// retry within the grace period).
+pub async fn oauth_refresh_children(conn: &mut PgConnection, token_id: i64) -> Result<i64> {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM oauth_tokens WHERE parent_id = $1 AND kind = 'refresh'",
+    )
+    .bind(token_id)
+    .fetch_one(conn)
+    .await
+    .context("Failed to count the renewals of a token")
+}
+
+/// How many refresh tokens a grant was given in the last `window_secs` seconds.
+pub async fn oauth_recent_refreshes(
+    conn: &mut PgConnection,
+    grant_id: i64,
+    window_secs: i64,
+) -> Result<i64> {
+    sqlx::query_scalar(
+        "SELECT count(*) FROM oauth_tokens WHERE grant_id = $1 AND kind = 'refresh' \
+         AND created_at > now() - make_interval(secs => $2)",
+    )
+    .bind(grant_id)
+    .bind(window_secs as f64)
+    .fetch_one(conn)
+    .await
+    .context("Failed to count a grant's renewals")
+}
+
+/// Revokes a grant's live refresh tokens (not yet exchanged) but the `keep` newest: a grant
+/// never has more chains than that.
+pub async fn trim_oauth_refreshes(conn: &mut PgConnection, grant_id: i64, keep: i64) -> Result<()> {
+    sqlx::query(
+        "UPDATE oauth_tokens SET revoked_at = now() \
+         WHERE grant_id = $1 AND kind = 'refresh' AND rotated_at IS NULL AND revoked_at IS NULL \
+           AND id NOT IN (SELECT id FROM oauth_tokens WHERE grant_id = $1 AND kind = 'refresh' \
+                          AND rotated_at IS NULL AND revoked_at IS NULL \
+                          ORDER BY id DESC LIMIT $2)",
+    )
+    .bind(grant_id)
+    .bind(keep)
+    .execute(conn)
+    .await
+    .context("Failed to trim a grant's refresh tokens")?;
+    Ok(())
+}
+
 /// Notes that a refresh token was exchanged, and the grant used.
 pub async fn rotate_oauth_refresh(conn: &mut PgConnection, token_id: i64) -> Result<()> {
     sqlx::query("UPDATE oauth_tokens SET rotated_at = now() WHERE id = $1 AND rotated_at IS NULL")
@@ -489,14 +575,16 @@ pub async fn revoke_oauth_grant(pool: &PgPool, telegram_id: i64, grant_id: i64) 
         > 0)
 }
 
-/// Deletes what can no longer be used: sign-ins over an hour ago, codes and tokens expired a day
-/// ago (kept that long so a late reuse is still recognised). Returns the rows deleted.
+/// Deletes what can no longer be used: sign-ins once expired, codes and tokens expired a day
+/// ago (kept that long so a late reuse is still recognised), grants revoked 30 days ago (with
+/// what is left of them). Returns the rows deleted.
 pub async fn purge_oauth(pool: &PgPool) -> Result<u64> {
     let mut deleted = 0;
     for statement in [
-        "DELETE FROM oauth_requests WHERE expires_at < now() - interval '1 hour'",
+        "DELETE FROM oauth_requests WHERE expires_at < now()",
         "DELETE FROM oauth_codes WHERE expires_at < now() - interval '1 day'",
         "DELETE FROM oauth_tokens WHERE expires_at < now() - interval '1 day'",
+        "DELETE FROM oauth_grants WHERE revoked_at < now() - interval '30 days'",
     ] {
         deleted += sqlx::query(statement)
             .execute(pool)

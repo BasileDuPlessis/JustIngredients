@@ -1,14 +1,15 @@
 //! What every request through a door passes before the engine (`specs/tasks/engine-api.md`,
 //! §7), in this order:
 //!
-//! 1. an address with too many failed authentications in the last minute is refused (`429`),
-//!    so tokens cannot be guessed;
-//! 2. a request announcing a body over the limit is refused (`413`);
+//! 1. a request announcing a body over the limit is refused (`413`);
+//! 2. a personal key, or anything that is not an OAuth access token, from an address with too
+//!    many failed authentications in the last minute is refused (`429`), before it is looked
+//!    up: keys are not guessed, nor the database worn out. An OAuth access token never is: the
+//!    users of one assistant share its addresses, and one of them must not lock out the others;
 //! 3. the `Authorization: Bearer` token must be an active personal key of this realm, or an
 //!    OAuth access token for this door's resource, allowing the door's scope (`401` with
-//!    `WWW-Authenticate`). Only a token we do not know counts as a failure of the address: not a
-//!    missing header (every OAuth client starts so), nor an expired access token, since the
-//!    users of one assistant share its addresses;
+//!    `WWW-Authenticate`). Counted as a failure of the address: an unknown key or malformed
+//!    token only; not a missing header (every OAuth client starts so), nor any access token;
 //! 4. at most so many requests a minute per key or grant (`429`);
 //! 5. at most so many requests at once for all doors (`503` after a short wait): the bot keeps
 //!    its database connections;
@@ -140,12 +141,6 @@ async fn pass(
     next: Next,
 ) -> (Response, Option<Credential>) {
     let address = client_key(request.headers(), peer.ip());
-    if !guard.failures.has_room(&address) {
-        return (
-            refusal(StatusCode::TOO_MANY_REQUESTS, "Too many failed attempts"),
-            None,
-        );
-    }
     if announced_length(request.headers())
         .is_some_and(|length| length > guard.limits.max_body_bytes)
     {
@@ -154,7 +149,17 @@ async fn pass(
             None,
         );
     }
-    let checked = match bearer(request.headers()) {
+    let presented = bearer(request.headers());
+    let access_token = guard.resource.is_some()
+        && presented
+            .is_some_and(|presented| tokens::has_shape(presented, guard.realm.access_prefix()));
+    if presented.is_some() && !access_token && !guard.failures.has_room(&address) {
+        return (
+            refusal(StatusCode::TOO_MANY_REQUESTS, "Too many failed attempts"),
+            None,
+        );
+    }
+    let checked = match presented {
         Some(presented) => {
             tokens::check(
                 &guard.pool,
@@ -172,7 +177,9 @@ async fn pass(
             return (unauthorized(&guard.challenge), None);
         }
         Ok(Checked::Unknown) => {
-            guard.failures.is_allowed(&address);
+            if !access_token {
+                guard.failures.is_allowed(&address);
+            }
             return (unauthorized(&guard.challenge), None);
         }
         Err(error) => {

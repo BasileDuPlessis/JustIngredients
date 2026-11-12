@@ -1,6 +1,6 @@
 # OAuth for AI assistants (tranche 4 of the engine): study
 
-Status: validated by the owner (2026-11-12) and revised after an independent review (§7); tasks 1 to 6 done (discovery documents and the 401; migration 13 and `engine::oauth`; the pinned clients; `/oauth/authorize`, Telegram's callback, the consent page, `/oauth/token`), under review; task 0 (the Telegram trial) and the first real sign-in on staging wait for the BotFather set-up; task 7 (`/cle` lists and revokes connected apps, the Telegram notice of a new grant) next.
+Status: validated by the owner (2026-11-12) and revised after an independent review (§7); tasks 1 to 7 done and reviewed (§8); task 0 (the Telegram trial) and the first real sign-ins on staging (claude.ai, ChatGPT, computer and phone) wait for the BotFather set-up; then docs and production.
 Goal: the user adds JustIngredients to **claude.ai** (web, desktop, mobile apps) or **ChatGPT** by
 its URL, signs in **with Telegram**, approves what the assistant may do, and is done: no
 terminal, no key to copy. The personal keys of `/cle` keep working for Claude Code, Cursor, VS
@@ -285,3 +285,39 @@ origin, allowlisted clients, our consent after Telegram, opaque hashed tokens, n
 - **Prefixes by realm**: `jio_` / `jir_` in production, `jio_stg_` / `jir_stg_` on staging.
 - Secrets in `SecretString`; never logged: codes, state, verifier, tokens, ID token, Telegram name.
 - OAuth routes and metadata are mounted only when the Telegram login is configured.
+
+## 8. What the code review changed (2026-11-12)
+
+An independent review of tasks 0 to 7 found the core sound (no open redirect, CSRF and login
+CSRF blocked, PKCE, single-use codes, realms and kinds never confused, no secret in logs) and
+these, all fixed with tests:
+
+- **Limits never refuse what turns out valid** (claude.ai's users share its addresses): the guard
+  never refuses nor counts an OAuth access token for its address (a personal key or garbage still
+  is, before its lookup); the token endpoint counts refusals only, past 20 a minute they answer
+  429, and a valid code or refresh token from that address still works.
+- **Sign-ins started**: 30 a minute per address, an IPv6 address by its /64, and 300 per 10
+  minutes in all; `state` at most 1024 bytes (else `invalid_request`), queries at most 4 KB;
+  sign-ins deleted once expired, the purge every 6 hours (rows are small and capped).
+- **Renewals bounded**: a rotated refresh token gives one retry within its 60 s, not more; a grant
+  is renewed at most 10 times in 10 minutes (then 429, the grant kept) and keeps at most 3 live
+  refresh tokens (the oldest revoked).
+- **Telegram's answer claimed once** (migration 14, `claimed_at`): a double load waits for the
+  first to finish; a reload after sign-in goes to the consent page; a late failure never ends a
+  signed-in sign-in.
+- **The consent page names the Telegram account** (migration 14, `telegram_name`, escaped; "Ce
+  n'est pas votre compte ? Refusez."), and says *vous*, as the bot does.
+- **A new grant is announced in Telegram** ("🔗 claude.ai est maintenant connecté à vos recettes
+  (lecture seule). Ce n'est pas vous ? …" with "🔌 Déconnecter"): an `oauth.connected` event
+  written in the grant's transaction (the events lock first), sent by the bot's event consumer.
+- At most 3 authorization server requests at once (with the MCP door's 4, within the 10 database
+  connections), waiting 2 s at most; 2 exchanges with Telegram at once.
+- Clients are public: a client secret, assertion or `Authorization` header sent anyway is
+  ignored (PKCE binds the code), so ChatGPT works whichever method it picks.
+- OAuth (documents, 401 pointer, server) only when the Telegram login could be built; the stop
+  pages clear the binding cookie; secrets of a sign-in redacted from `Debug`; revoked grants
+  purged after 30 days.
+
+Left for later: the nonce becomes required once the trial shows Telegram returns it; the trial
+page (`spike.rs`) is removed before production; a double click on "Autoriser" may lose the first
+code (the client then shows a failure, the user tries again).

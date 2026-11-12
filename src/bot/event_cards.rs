@@ -56,7 +56,7 @@ pub fn refresh_for(event: &Event) -> Option<Refresh> {
             recipe_id,
             linked_too: false,
         }),
-        EventKind::RecipeCreated | EventKind::RecipeDeleted => None,
+        EventKind::RecipeCreated | EventKind::RecipeDeleted | EventKind::AssistantConnected => None,
     }
 }
 
@@ -127,13 +127,46 @@ async fn handle_pending(
             return Ok(());
         }
         for event in &batch {
-            if let Some(refresh) = refresh_for(event) {
+            if event.kind == EventKind::AssistantConnected {
+                announce(bot, pool, localization, event).await;
+            } else if let Some(refresh) = refresh_for(event) {
                 apply(bot, pool, localization, event, refresh).await;
             }
         }
         events::advance(pool, CONSUMER, last).await?;
         cursor = last;
     }
+}
+
+/// A new OAuth grant, told to its user with a disconnect button.
+async fn announce(
+    bot: &Bot,
+    pool: &PgPool,
+    localization: &Arc<LocalizationManager>,
+    event: &Event,
+) {
+    let Some(grant_id) = event
+        .credential
+        .and_then(crate::engine::tokens::Credential::grant_id)
+    else {
+        return;
+    };
+    let client_id = event.payload["client_id"].as_str().unwrap_or_default();
+    let can_write = event.payload["write"].as_bool().unwrap_or(false);
+    let lang = crate::engine::language_of(pool, event.owner)
+        .await
+        .unwrap_or_default();
+    let language_code = Some(if lang.is_french() { "fr" } else { "en" });
+    super::api_keys::announce_grant(
+        bot,
+        ChatId(event.owner.telegram_id()),
+        grant_id,
+        client_id,
+        can_write,
+        localization,
+        language_code,
+    )
+    .await;
 }
 
 async fn apply(

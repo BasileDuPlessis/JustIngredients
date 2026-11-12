@@ -70,16 +70,26 @@ pub struct Identity {
     pub nonce: Option<String>,
     /// The signing algorithm the token's header names (not checked, see the module).
     pub algorithm: Option<String>,
+    /// The account's name for the consent page: `name`, else `@preferred_username` (64
+    /// characters at most). Never logged.
+    pub display_name: Option<String>,
     /// The names of the claims received, sorted (for the spike's report and logs: no values).
     pub claim_names: Vec<String>,
 }
 
-/// One sign-in's secrets with Telegram: the `state`, the PKCE verifier, the nonce.
-#[derive(Debug, Clone)]
+/// One sign-in's secrets with Telegram: the `state`, the PKCE verifier, the nonce. Never
+/// printed.
+#[derive(Clone)]
 pub struct Attempt {
     pub state: String,
     pub verifier: SecretString,
     pub nonce: String,
+}
+
+impl std::fmt::Debug for Attempt {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Attempt([REDACTED])")
+    }
 }
 
 impl Attempt {
@@ -309,6 +319,21 @@ pub fn check_id_token(
     .filter(|id| *id > 0)
     .ok_or(LoginError::BadToken("no Telegram id (scope profile)"))?;
 
+    let text_claim = |name: &str| {
+        claims
+            .get(name)
+            .and_then(|value| value.as_str())
+            .map(|text| {
+                text.trim()
+                    .chars()
+                    .filter(|c| !c.is_control())
+                    .take(64)
+                    .collect::<String>()
+            })
+            .filter(|text| !text.is_empty())
+    };
+    let display_name = text_claim("name")
+        .or_else(|| text_claim("preferred_username").map(|username| format!("@{username}")));
     let mut claim_names: Vec<String> = claims.keys().cloned().collect();
     claim_names.sort();
     Ok(Identity {
@@ -318,6 +343,7 @@ pub fn check_id_token(
             .and_then(|nonce| nonce.as_str())
             .map(str::to_string),
         algorithm: header.get("alg").and_then(|alg| alg.as_str()).map(short),
+        display_name,
         claim_names,
     })
 }

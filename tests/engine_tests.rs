@@ -642,11 +642,24 @@ mod oauth {
         else {
             bail!("the sign-in waits");
         };
-        assert!(oauth::signed_in(pool, pending.id, Owner::telegram(telegram_id)).await?);
+        assert!(
+            oauth::signed_in(
+                pool,
+                pending.id,
+                Owner::telegram(telegram_id),
+                Some("Alice")
+            )
+            .await?
+        );
         let consent = oauth::open_consent(pool, &binding, "form")
             .await?
             .context("consent")?;
         assert_eq!(consent.owner, Owner::telegram(telegram_id));
+        assert_eq!(
+            consent.telegram_name.as_deref(),
+            Some("Alice"),
+            "for the page"
+        );
         let decided = oauth::decide(pool, &binding, "form", Decision::Allow { write })
             .await?
             .context("decided")?;
@@ -714,17 +727,17 @@ mod oauth {
                 .is_none(),
             "nobody signed in yet"
         );
-        assert!(oauth::signed_in(&pool, started, Owner::telegram(ALICE)).await?);
+        assert!(oauth::signed_in(&pool, started, Owner::telegram(ALICE), None).await?);
         assert!(
-            !oauth::signed_in(&pool, started, Owner::telegram(BOB)).await?,
+            !oauth::signed_in(&pool, started, Owner::telegram(BOB), None).await?,
             "once"
         );
         assert!(
             matches!(
                 oauth::find_sign_in(&pool, state, Some(binding)).await?,
-                Callback::Unknown
+                Callback::SignedIn
             ),
-            "Telegram's answer counts once"
+            "Telegram's answer counts once; reloaded, it leads to the consent page"
         );
 
         // Consent: the current form only, decided once
@@ -1108,6 +1121,21 @@ mod oauth {
             read.last().and_then(|event| event.credential),
             Some(Credential::Grant(issued.grant_id))
         );
+
+        // The grant itself was announced, written with it
+        let connected = read
+            .iter()
+            .find(|event| event.kind == events::EventKind::AssistantConnected)
+            .context("the oauth.connected event")?;
+        assert_eq!(connected.owner, Owner::telegram(ALICE));
+        assert_eq!(
+            connected.credential,
+            Some(Credential::Grant(issued.grant_id))
+        );
+        assert_eq!(connected.recipe_id, None);
+        assert_eq!(connected.payload["client_id"], CLAUDE);
+        assert_eq!(connected.payload["write"], true);
+        assert_eq!(connected.payload["replaced"], false);
         Ok(())
     }
 
@@ -1130,6 +1158,120 @@ mod oauth {
             "a sign-in, a code, two tokens"
         );
         assert_eq!(check(&pool, &issued.access_token).await?, Checked::Unknown);
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn renewals_are_bounded_retries_chains_and_rate(pool: PgPool) -> Result<()> {
+        init_database_schema(&pool).await?;
+        let first = grant(&pool, ALICE, false).await?;
+        let refresh = |token: SecretString| {
+            let pool = pool.clone();
+            async move {
+                oauth::refresh(&pool, Realm::Production, token.expose(), CLAUDE, |_| true).await
+            }
+        };
+        let live = |pool: PgPool, grant_id: i64| async move {
+            Ok::<i64, anyhow::Error>(
+                sqlx::query_scalar(
+                    "SELECT count(*) FROM oauth_tokens WHERE grant_id = $1 AND kind = 'refresh' \
+                     AND rotated_at IS NULL AND revoked_at IS NULL",
+                )
+                .bind(grant_id)
+                .fetch_one(&pool)
+                .await?,
+            )
+        };
+
+        // One retry within the grace period, not two; the grant is kept
+        let second = refresh(first.refresh_token.clone()).await?;
+        let retried = refresh(first.refresh_token.clone()).await?;
+        assert!(matches!(
+            refresh(first.refresh_token.clone()).await,
+            Err(GrantError::Refused("already renewed twice"))
+        ));
+        assert!(matches!(
+            check(&pool, &second.access_token).await?,
+            Checked::Valid(_)
+        ));
+
+        // At most three live chains: the oldest goes
+        let s2 = refresh(second.refresh_token.clone()).await?;
+        let s2b = refresh(second.refresh_token.clone()).await?;
+        assert_eq!(live(pool.clone(), first.grant_id).await?, 3);
+        let r2 = refresh(retried.refresh_token.clone()).await?;
+        assert_eq!(live(pool.clone(), first.grant_id).await?, 3, "s2, s2b, r2");
+        refresh(retried.refresh_token.clone()).await?;
+        assert_eq!(
+            live(pool.clone(), first.grant_id).await?,
+            3,
+            "a fourth: s2 goes"
+        );
+        assert!(
+            refresh(s2.refresh_token.clone()).await.is_err(),
+            "the oldest live token was revoked"
+        );
+        assert!(refresh(s2b.refresh_token.clone()).await.is_ok());
+
+        // Renewed too often: refused for now, the grant and its tokens kept
+        let mut latest = r2.refresh_token.clone();
+        let mut too_often = false;
+        for _ in 0..12 {
+            match refresh(latest.clone()).await {
+                Ok(issued) => latest = issued.refresh_token,
+                Err(GrantError::TooOften) => {
+                    too_often = true;
+                    break;
+                }
+                Err(other) => bail!("{other}"),
+            }
+        }
+        assert!(too_often, "10 renewals in 10 minutes at most");
+        assert!(matches!(
+            check(&pool, &r2.access_token).await?,
+            Checked::Valid(_)
+        ));
+        assert_eq!(
+            oauth::list_grants(&pool, Owner::telegram(ALICE))
+                .await?
+                .len(),
+            1
+        );
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn telegrams_answer_is_claimed_once_and_a_late_failure_keeps_the_sign_in(
+        pool: PgPool,
+    ) -> Result<()> {
+        init_database_schema(&pool).await?;
+        let verifier = SecretString::new("v");
+        oauth::start_sign_in(
+            &pool,
+            &request(CLAUDE),
+            &SignInSecrets {
+                state: "s",
+                binding: "b",
+                verifier: &verifier,
+                nonce: "n",
+            },
+        )
+        .await?;
+        let Callback::Pending(pending) = oauth::find_sign_in(&pool, "s", Some("b")).await? else {
+            bail!("pending");
+        };
+        assert!(oauth::claim_sign_in(&pool, pending.id).await?);
+        assert!(!oauth::claim_sign_in(&pool, pending.id).await?, "once");
+        assert_eq!(oauth::sign_in_state(&pool, pending.id).await?, Some(false));
+        assert!(oauth::signed_in(&pool, pending.id, Owner::telegram(ALICE), Some("Alice")).await?);
+        assert_eq!(oauth::sign_in_state(&pool, pending.id).await?, Some(true));
+        assert!(
+            oauth::abandon_sign_in(&pool, pending.id).await?.is_none(),
+            "a late failure does not end a signed-in sign-in"
+        );
+        assert!(oauth::open_consent(&pool, "b", "f").await?.is_some());
         Ok(())
     }
 }

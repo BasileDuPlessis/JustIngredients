@@ -49,6 +49,8 @@ struct Fake {
     challenge: Option<String>,
     nonce: Option<String>,
     user: i64,
+    /// The ID token carries another nonce than the one asked.
+    wrong_nonce: bool,
 }
 
 type Shared = Arc<Mutex<Fake>>;
@@ -88,7 +90,12 @@ async fn telegram_token(
     let field = |name: &str| form.get(name).map(String::as_str);
     let (challenge, nonce, user) = {
         let fake = fake.lock().unwrap_or_else(PoisonError::into_inner);
-        (fake.challenge.clone(), fake.nonce.clone(), fake.user)
+        let nonce = if fake.wrong_nonce {
+            Some("not-ours".to_string())
+        } else {
+            fake.nonce.clone()
+        };
+        (fake.challenge.clone(), nonce, fake.user)
     };
     let verified = field("code_verifier").map(telegram::challenge) == challenge;
     if field("grant_type") != Some("authorization_code")
@@ -401,6 +408,12 @@ async fn claude_connects_with_telegram_and_uses_the_tools(pool: PgPool) -> Resul
     let page = browser.get(server::CONSENT_PATH).await?;
     assert_eq!(page.status, 200, "{}", page.body);
     assert!(page.body.contains("claude.ai demande l"), "{}", page.body);
+    assert!(
+        page.body
+            .contains("le compte Telegram <strong>&lt;b&gt;Basile&lt;/b&gt;</strong>"),
+        "the account, escaped: {}",
+        page.body
+    );
     assert!(page.body.contains("type=\"checkbox\" name=\"write\""));
     assert!(
         !page.body.contains("checked"),
@@ -644,11 +657,11 @@ async fn every_refusal_is_shown_or_sent_back_with_the_issuer(pool: PgPool) -> Re
             vec![
                 ("grant_type", "refresh_token"),
                 ("client_id", CLAUDE),
-                ("client_secret", "s"),
+                ("client_secret", "ignored: a public client"),
                 ("refresh_token", "r"),
             ],
-            401,
-            "invalid_client",
+            400,
+            "invalid_grant",
         ),
         (
             vec![
@@ -759,5 +772,195 @@ async fn a_trial_sign_in_reads_the_telegram_id_from_the_id_token() -> Result<()>
         .await?;
     assert_eq!(page.status, 502);
     assert!(page.body.contains("invalid_grant"), "{}", page.body);
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_reloaded_answer_a_forged_nonce_and_a_failed_exchange(pool: PgPool) -> Result<()> {
+    init_database_schema(&pool).await?;
+    let (address, fake) = serve(pool.clone(), false).await?;
+    let mut browser = Browser::new(address);
+
+    // Telegram's answer loaded twice at once: the first signs in, the second waits for it
+    let state = start(&mut browser, &fake).await?;
+    let mut twin = Browser {
+        address,
+        cookie: browser.cookie.clone(),
+    };
+    let (first, second) = tokio::join!(
+        browser.telegram_answers(&state),
+        twin.telegram_answers(&state)
+    );
+    for answer in [first?, second?] {
+        assert_eq!(answer.status, 303, "{}", answer.body);
+        assert_eq!(answer.header("location"), Some(server::CONSENT_PATH));
+    }
+    assert_eq!(browser.get(server::CONSENT_PATH).await?.status, 200);
+
+    // Reloaded later (the back button): the consent page again, Telegram not asked again
+    let answer = browser.telegram_answers(&state).await?;
+    assert_eq!(answer.status, 303, "{}", answer.body);
+    assert_eq!(answer.header("location"), Some(server::CONSENT_PATH));
+
+    // An ID token with another nonce: refused, sent back as access_denied
+    fake.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .wrong_nonce = true;
+    let state = start(&mut browser, &fake).await?;
+    let answer = browser.telegram_answers(&state).await?;
+    let (_, query) = answer.location()?;
+    assert_eq!(
+        query.get("error").map(String::as_str),
+        Some("access_denied")
+    );
+    assert_eq!(query.get("iss"), Some(&origin()));
+    fake.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .wrong_nonce = false;
+
+    // Telegram refuses the exchange (here, our verifier): server_error, the sign-in over
+    let state = start(&mut browser, &fake).await?;
+    fake.lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .challenge = Some("other".to_string());
+    let answer = browser.telegram_answers(&state).await?;
+    let (_, query) = answer.location()?;
+    assert_eq!(query.get("error").map(String::as_str), Some("server_error"));
+    assert_eq!(query.get("state").map(String::as_str), Some("claude-state"));
+    assert!(browser.cookie.is_none(), "the binding is cleared");
+    Ok(())
+}
+
+/// A whole sign-in up to our code, for `client` sent back to `callback`.
+async fn code_for(
+    browser: &mut Browser,
+    fake: &Shared,
+    client: &str,
+    callback: &str,
+) -> Result<String> {
+    let answer = browser
+        .get(&authorize_path(&[
+            ("client_id", Some(client)),
+            ("redirect_uri", Some(callback)),
+        ])?)
+        .await?;
+    assert_eq!(answer.status, 303, "{}", answer.body);
+    let (_, query) = answer.location()?;
+    {
+        let mut shared = fake.lock().unwrap_or_else(PoisonError::into_inner);
+        shared.challenge = query.get("code_challenge").cloned();
+        shared.nonce = query.get("nonce").cloned();
+    }
+    let state = query.get("state").context("a state")?.clone();
+    browser.telegram_answers(&state).await?;
+    let form = consent_token(&browser.get(server::CONSENT_PATH).await?.body)?;
+    let answer = browser
+        .post_form(
+            server::CONSENT_PATH,
+            &[("consent", &form), ("decision", "allow")],
+        )
+        .await?;
+    let (back, query) = answer.location()?;
+    assert_eq!(back, callback);
+    query.get("code").cloned().context("a code")
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn chatgpt_connects_and_refusals_never_block_a_valid_code(pool: PgPool) -> Result<()> {
+    const CHATGPT: &str = "https://chatgpt.com/oauth/client.json";
+    const CHATGPT_CALLBACK: &str = "https://chatgpt.com/connector_platform_oauth_redirect";
+    init_database_schema(&pool).await?;
+    let (address, fake) = serve(pool.clone(), false).await?;
+    let mut browser = Browser::new(address);
+
+    // ChatGPT, with a client assertion it may send anyway: ignored, PKCE binds the code
+    let code = code_for(&mut browser, &fake, CHATGPT, CHATGPT_CALLBACK).await?;
+    let (status, tokens, _) = token(
+        address,
+        &[
+            ("grant_type", "authorization_code"),
+            ("code", &code),
+            ("redirect_uri", CHATGPT_CALLBACK),
+            ("client_id", CHATGPT),
+            ("code_verifier", VERIFIER),
+            (
+                "client_assertion_type",
+                "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            ),
+            ("client_assertion", "eyJhbGciOiJSUzI1NiJ9.e30.c2ln"),
+        ],
+    )
+    .await?;
+    assert_eq!(status, 200, "{tokens}");
+    assert_eq!(tokens["scope"], "recipes:read", "writing not ticked");
+
+    // A wrong verifier at the token endpoint: invalid_grant, the code burnt
+    let code = code_for(&mut browser, &fake, CLAUDE, CLAUDE_CALLBACK).await?;
+    let wrong = "x".repeat(43);
+    let exchange = |verifier: &str| {
+        vec![
+            ("grant_type", "authorization_code"),
+            ("code", code.as_str()),
+            ("redirect_uri", CLAUDE_CALLBACK),
+            ("client_id", CLAUDE),
+            ("code_verifier", verifier),
+        ]
+        .into_iter()
+        .map(|(name, value)| (name, value.to_string()))
+        .collect::<Vec<_>>()
+    };
+    let refused = exchange(&wrong);
+    let refused: Vec<(&str, &str)> = refused.iter().map(|(n, v)| (*n, v.as_str())).collect();
+    let (status, answer, _) = token(address, &refused).await?;
+    assert_eq!(
+        (status, answer["error"].as_str()),
+        (400, Some("invalid_grant"))
+    );
+
+    // Refusals from one address answer 429 past 20 a minute, but a valid code from the same
+    // address still works: the assistants' users share their addresses
+    let valid = code_for(&mut browser, &fake, CLAUDE, CLAUDE_CALLBACK).await?;
+    let mut last = 0;
+    for _ in 0..21 {
+        let (status, _, _) = token(
+            address,
+            &[
+                ("grant_type", "authorization_code"),
+                ("code", "made-up"),
+                ("redirect_uri", CLAUDE_CALLBACK),
+                ("client_id", CLAUDE),
+                ("code_verifier", VERIFIER),
+            ],
+        )
+        .await?;
+        last = status;
+    }
+    assert_eq!(last, 429);
+    let (status, answer, _) = token(
+        address,
+        &[
+            ("grant_type", "authorization_code"),
+            ("code", &valid),
+            ("redirect_uri", CLAUDE_CALLBACK),
+            ("client_id", CLAUDE),
+            ("code_verifier", VERIFIER),
+        ],
+    )
+    .await?;
+    assert_eq!(status, 200, "{answer}");
+
+    // A state too long is refused, not dropped
+    let long = "s".repeat(1025);
+    let answer = browser
+        .get(&authorize_path(&[("state", Some(&long))])?)
+        .await?;
+    let (_, query) = answer.location()?;
+    assert_eq!(
+        query.get("error").map(String::as_str),
+        Some("invalid_request")
+    );
+    assert!(!query.contains_key("state"));
     Ok(())
 }

@@ -86,8 +86,17 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
     )
     .await?;
 
-    // OAuth (migration 13): events name the grant they came through
+    // OAuth (migrations 13 and 14): events name the grant they came through
     validate_table_columns(pool, "events", &[("grant_id", "bigint")]).await?;
+    validate_table_columns(
+        pool,
+        "oauth_requests",
+        &[
+            ("claimed_at", "timestamp with time zone"),
+            ("telegram_name", "text"),
+        ],
+    )
+    .await?;
     validate_table_columns(
         pool,
         "oauth_tokens",

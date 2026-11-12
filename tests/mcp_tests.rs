@@ -637,7 +637,7 @@ async fn an_assistant_connected_with_oauth_uses_its_grant(pool: PgPool) -> Resul
             else {
                 anyhow::bail!("pending");
             };
-            oauth::signed_in(&pool, pending.id, Owner::telegram(ALICE)).await?;
+            oauth::signed_in(&pool, pending.id, Owner::telegram(ALICE), None).await?;
             oauth::open_consent(&pool, name, "form").await?;
             let code = oauth::decide(&pool, name, "form", Decision::Allow { write })
                 .await?
@@ -707,5 +707,26 @@ async fn an_assistant_connected_with_oauth_uses_its_grant(pool: PgPool) -> Resul
     }
     let (status, _) = post(address, Some(&token), None, &list).await?;
     assert_eq!(status, 200, "the address still opens the door");
+
+    // Unknown access tokens (a database restored from a snapshot): refused, never counted
+    // against the address either, whose personal keys still open the door
+    for round in 0..12 {
+        let unknown = format!(
+            "jio_{}",
+            format!("{round:02}")
+                .repeat(22)
+                .get(..43)
+                .unwrap_or_default()
+        );
+        let (status, _) = post(address, Some(&unknown), None, &list).await?;
+        assert_eq!(status, 401);
+    }
+    let (status, _) = post(address, Some(&token), None, &list).await?;
+    assert_eq!(status, 200);
+    let key = tokens::create(&pool, Owner::telegram(ALICE), Realm::Production)
+        .await?
+        .secret;
+    let (status, _) = post(address, Some(&key), None, &list).await?;
+    assert_eq!(status, 200, "a personal key from the same address");
     Ok(())
 }
