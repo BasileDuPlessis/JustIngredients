@@ -154,6 +154,10 @@ api-keys-limit = You have { $max } keys, the most allowed: revoke one to create 
 api-key-created = 🔑 New key { $hint }… Copy it now: it will be hidden in 10 minutes. Do not share it.
 api-key-server = MCP server:
 api-key-header = Header to send:
+api-grants-title = 🔗 Connected assistants
+api-grants-line = • { $client } ({ $access }), connected { $created }
+api-grants-disconnect-button = 🔌 Disconnect { $client }
+api-grants-connect = For claude.ai or ChatGPT, no key needed: add { $url } as a connector, then sign in with Telegram.
 api-key-masked = 🔑 Key hidden: it is no longer shown here. Manage your keys with /key.
 
 # A recipe's memo: a short free text (oven, cooking time, a source link…)

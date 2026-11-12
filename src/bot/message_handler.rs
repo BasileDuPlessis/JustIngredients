@@ -145,6 +145,7 @@ async fn handle_command(
             &pool,
             msg.chat.id,
             owner,
+            api,
             localization,
             language_code,
         )

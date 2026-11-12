@@ -78,6 +78,7 @@ async fn services(pool: &PgPool, ingredients: Vec<ExtractedIngredient>) -> Resul
                 beta_users: vec![OWNER],
                 realm: just_ingredients::engine::tokens::Realm::Staging,
                 mcp_url: Some("https://staging.example/mcp".to_string()),
+                oauth: false,
             }),
         },
         dialogues: PgDialogueStorage::new((*pool).clone()),
@@ -1370,6 +1371,128 @@ async fn a_beta_user_creates_and_revokes_an_api_key(pool: PgPool) -> Result<()> 
     bot.update(MockCallbackQuery::new().data(revoke).message(list));
     bot.dispatch().await;
     assert_eq!(active_tokens(&pool).await?, 0, "revoked");
+    Ok(())
+}
+
+/// `/cle` lists an assistant connected with OAuth; "🔌 Déconnecter" revokes its grant: its token
+/// no longer opens the door.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_connected_assistant_is_listed_and_disconnected(pool: PgPool) -> Result<()> {
+    use just_ingredients::engine::oauth::{
+        self, Callback, CodeExchange, Decision, SignInRequest, SignInSecrets,
+    };
+    use just_ingredients::engine::tokens::{self, Checked, Realm};
+    use just_ingredients::secret::SecretString;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+
+    // claude.ai connected by the owner, reading only
+    let verifier = "dBjftJeZ4CVP-mB92K27uhbUJU1p1r_wW1gFWFOEjXk";
+    let client = "https://claude.ai/oauth/mcp-oauth-client-metadata";
+    let callback = "https://claude.ai/api/mcp/auth_callback";
+    let resource = "https://staging.example/mcp";
+    let telegram_verifier = SecretString::new("t");
+    oauth::start_sign_in(
+        &pool,
+        &SignInRequest {
+            client_id: client.to_string(),
+            redirect_uri: callback.to_string(),
+            client_state: None,
+            code_challenge: oauth::pkce_challenge(verifier),
+            scopes: Vec::new(),
+            resource: resource.to_string(),
+        },
+        &SignInSecrets {
+            state: "s",
+            binding: "b",
+            verifier: &telegram_verifier,
+            nonce: "n",
+        },
+    )
+    .await?;
+    let Callback::Pending(pending) = oauth::find_sign_in(&pool, "s", Some("b")).await? else {
+        anyhow::bail!("pending");
+    };
+    oauth::signed_in(
+        &pool,
+        pending.id,
+        just_ingredients::engine::Owner::telegram(OWNER),
+    )
+    .await?;
+    oauth::open_consent(&pool, "b", "f").await?;
+    let code = oauth::decide(&pool, "b", "f", Decision::Allow { write: false })
+        .await?
+        .and_then(|decided| decided.code)
+        .context("a code")?;
+    let issued = oauth::redeem_code(
+        &pool,
+        Realm::Staging,
+        CodeExchange {
+            code: code.expose(),
+            client_id: client,
+            redirect_uri: callback,
+            verifier,
+            resource: None,
+        },
+    )
+    .await?;
+
+    let mut bot = mock_bot(MockMessageText::new().text("/cle"), services.clone());
+    bot.dispatch().await;
+    let responses = bot.get_responses();
+    let keys = responses
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the keys message")?;
+    let shown = keys.text().context("its text")?;
+    let localization = Arc::clone(&services.messages.localization);
+    assert!(
+        shown.contains(&t_lang(&localization, "api-grants-title", None)),
+        "{shown}"
+    );
+    let read_only = t_lang(&localization, "api-keys-access-read", None);
+    assert!(
+        shown.contains(&format!("claude.ai ({read_only})")),
+        "{shown}"
+    );
+    let disconnect =
+        button_data(&responses, "api_grant_revoke:").context("the disconnect button")?;
+    assert_eq!(disconnect, format!("api_grant_revoke:{}", issued.grant_id));
+
+    bot.update(MockCallbackQuery::new().data(disconnect).message(keys));
+    bot.dispatch().await;
+    assert!(
+        oauth::list_grants(&pool, just_ingredients::engine::Owner::telegram(OWNER))
+            .await?
+            .is_empty()
+    );
+    assert_eq!(
+        tokens::check(
+            &pool,
+            Realm::Staging,
+            issued.access_token.expose(),
+            Some(resource)
+        )
+        .await?,
+        Checked::Known,
+        "the token no longer opens the door"
+    );
+    let edited = bot
+        .get_responses()
+        .edited_messages_text
+        .last()
+        .cloned()
+        .context("the list again")?;
+    assert!(
+        !edited
+            .message
+            .text()
+            .unwrap_or_default()
+            .contains("claude.ai ("),
+        "no longer listed"
+    );
     Ok(())
 }
 

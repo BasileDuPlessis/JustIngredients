@@ -3,7 +3,8 @@
 //! `API_BETA_USERS` see it; anyone else gets the unknown-command answer, as for `/stats`.
 //!
 //! The keys message lists the active tokens (their hint, never the secret) with "➕ Nouvelle clé"
-//! and one "🗑️ Révoquer" button each. A new token is shown once, in a message of its own,
+//! and one "🗑️ Révoquer" button each, then the assistants connected with OAuth
+//! (`specs/tasks/oauth.md`) with one "🔌 Déconnecter" button each. A new token is shown once, in a message of its own,
 //! under a spoiler (a tap shows it, a tap on it copies it); that message is kept when actions end and is
 //! edited to a masked text 10 minutes later ([`run_secret_sweeper`]): an edit works at any age,
 //! unlike a delete, and the sweep reads the recorded messages, so a restart does not forget it.
@@ -19,6 +20,7 @@ use tracing::{info, warn};
 
 use super::cleanup;
 use super::html::{Html, edit_html, send_html};
+use crate::engine::oauth::GrantInfo;
 use crate::engine::tokens::{self, Realm, TokenInfo};
 use crate::engine::{EngineError, Owner};
 use crate::localization::{LocalizationManager, t_args_lang, t_lang};
@@ -41,6 +43,9 @@ const NEW_WRITE_KEY: &str = "api_key_new_write";
 /// Callback data of "🗑️ Révoquer …" starts with this, then the token's id.
 const REVOKE_PREFIX: &str = "api_key_revoke:";
 
+/// Callback data of "🔌 Déconnecter …" starts with this, then the grant's id.
+const DISCONNECT_PREFIX: &str = "api_grant_revoke:";
+
 /// Who may create tokens, and where they are used.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ApiAccess {
@@ -49,6 +54,8 @@ pub struct ApiAccess {
     pub realm: Realm,
     /// The MCP server's address, told with a new token; `None` when not known (local runs).
     pub mcp_url: Option<String>,
+    /// Assistants can connect with OAuth (the Telegram login is configured).
+    pub oauth: bool,
 }
 
 impl ApiAccess {
@@ -58,7 +65,13 @@ impl ApiAccess {
             realm: Realm::from_app_name(config.app_name.as_deref()),
             mcp_url: crate::doors::public_host(config.app_name.as_deref())
                 .map(|host| format!("https://{host}{}", crate::doors::mcp::PATH)),
+            oauth: config.telegram_login.is_some(),
         }
+    }
+
+    /// The address to add in claude.ai or ChatGPT, when they can connect with OAuth.
+    fn connect_url(&self) -> Option<&str> {
+        self.mcp_url.as_deref().filter(|_| self.oauth)
     }
 
     pub fn allows(&self, telegram_id: i64) -> bool {
@@ -68,7 +81,41 @@ impl ApiAccess {
 
 /// Whether a button's data belongs to the keys message.
 pub fn is_key_button(data: &str) -> bool {
-    data == NEW_KEY || data == NEW_WRITE_KEY || data.starts_with(REVOKE_PREFIX)
+    data == NEW_KEY
+        || data == NEW_WRITE_KEY
+        || data.starts_with(REVOKE_PREFIX)
+        || data.starts_with(DISCONNECT_PREFIX)
+}
+
+/// What the keys message shows.
+struct KeysView<'a> {
+    keys: Vec<TokenInfo>,
+    grants: Vec<GrantInfo>,
+    /// The address to add in claude.ai or ChatGPT (OAuth on).
+    connect_url: Option<&'a str>,
+}
+
+impl<'a> KeysView<'a> {
+    async fn load(pool: &PgPool, owner: Owner, access: &'a ApiAccess) -> Result<Self> {
+        Ok(Self {
+            keys: tokens::list(pool, owner).await?,
+            grants: crate::engine::oauth::list_grants(pool, owner).await?,
+            connect_url: access.connect_url(),
+        })
+    }
+}
+
+/// The name an assistant is shown by: the allowed client's, else its client id's host.
+fn client_name(client_id: &str) -> String {
+    crate::doors::oauth::clients::find(client_id).map_or_else(
+        || {
+            reqwest::Url::parse(client_id)
+                .ok()
+                .and_then(|url| url.host_str().map(str::to_string))
+                .unwrap_or_else(|| client_id.chars().take(40).collect())
+        },
+        |client| client.name.to_string(),
+    )
 }
 
 /// `/cle`: the keys message at the bottom, with its buttons and the list button.
@@ -77,11 +124,12 @@ pub async fn show_keys(
     pool: &PgPool,
     chat_id: ChatId,
     owner: Owner,
+    access: &ApiAccess,
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
 ) -> Result<()> {
-    let keys = tokens::list(pool, owner).await?;
-    let (text, keyboard) = render_keys(&keys, localization, language_code);
+    let view = KeysView::load(pool, owner, access).await?;
+    let (text, keyboard) = render_keys(&view, localization, language_code);
     let sent = bot
         .send_message(chat_id, text)
         .reply_markup(keyboard)
@@ -144,22 +192,44 @@ pub async fn handle_button(
             Err(error) => return Err(error.into()),
         }
         // The list again, below the token
-        return show_keys(bot, pool, chat_id, owner, localization, language_code).await;
+        return show_keys(
+            bot,
+            pool,
+            chat_id,
+            owner,
+            access,
+            localization,
+            language_code,
+        )
+        .await;
     }
 
-    if let Some(id) = data.strip_prefix(REVOKE_PREFIX) {
+    let revoked = if let Some(id) = data.strip_prefix(REVOKE_PREFIX) {
         let id: i64 = id.parse().unwrap_or(0);
-        match tokens::revoke(pool, owner, id).await {
-            Ok(()) => {
-                crate::observability::action(crate::observability::Action::ApiKeyRevoked);
-                info!(token_id = id, "API token revoked");
-            }
+        let revoked = tokens::revoke(pool, owner, id).await;
+        if revoked.is_ok() {
+            crate::observability::action(crate::observability::Action::ApiKeyRevoked);
+            info!(token_id = id, "API token revoked");
+        }
+        Some(revoked)
+    } else if let Some(id) = data.strip_prefix(DISCONNECT_PREFIX) {
+        let id: i64 = id.parse().unwrap_or(0);
+        let revoked = crate::engine::oauth::revoke_grant(pool, owner, id).await;
+        if revoked.is_ok() {
+            info!(grant_id = id, "OAuth grant revoked by its user");
+        }
+        Some(revoked)
+    } else {
+        None
+    };
+    if let Some(revoked) = revoked {
+        match revoked {
             // Revoked already, or not this user's: the list shows what is left
-            Err(EngineError::NotFound) => {}
+            Ok(()) | Err(EngineError::NotFound) => {}
             Err(error) => return Err(error.into()),
         }
-        let keys = tokens::list(pool, owner).await?;
-        let (text, keyboard) = render_keys(&keys, localization, language_code);
+        let view = KeysView::load(pool, owner, access).await?;
+        let (text, keyboard) = render_keys(&view, localization, language_code);
         if let Err(error) = bot
             .edit_message_text(chat_id, message.id, text)
             .reply_markup(keyboard)
@@ -261,12 +331,14 @@ async fn send_secret(
     Ok(sent)
 }
 
-/// The keys message: what a key is for, the active ones, and the buttons.
+/// The keys message: what a key is for, the active ones, the connected assistants, and the
+/// buttons.
 fn render_keys(
-    keys: &[TokenInfo],
+    view: &KeysView<'_>,
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
 ) -> (String, InlineKeyboardMarkup) {
+    let keys = &view.keys;
     let text_of = |key: &str| t_lang(localization, key, language_code);
     let mut text = format!(
         "{}\n\n{}\n\n",
@@ -311,6 +383,41 @@ fn render_keys(
         .collect();
     text.push_str(&lines.join("\n"));
 
+    // The assistants connected with OAuth, and how to connect one
+    let access_of = |can_write: bool| {
+        text_of(if can_write {
+            "api-keys-access-write"
+        } else {
+            "api-keys-access-read"
+        })
+    };
+    if !view.grants.is_empty() {
+        text.push_str("\n\n");
+        text.push_str(&text_of("api-grants-title"));
+        for grant in &view.grants {
+            text.push('\n');
+            text.push_str(&t_args_lang(
+                localization,
+                "api-grants-line",
+                &[
+                    ("client", &client_name(&grant.client_id)),
+                    ("access", &access_of(grant.can_write)),
+                    ("created", &date(grant.created_at)),
+                ],
+                language_code,
+            ));
+        }
+    }
+    if let Some(url) = view.connect_url {
+        text.push_str("\n\n");
+        text.push_str(&t_args_lang(
+            localization,
+            "api-grants-connect",
+            &[("url", url)],
+            language_code,
+        ));
+    }
+
     let mut rows = Vec::new();
     if i64::try_from(keys.len()).unwrap_or(i64::MAX) < tokens::MAX_ACTIVE {
         rows.push(vec![InlineKeyboardButton::callback(
@@ -339,6 +446,17 @@ fn render_keys(
                 language_code,
             ),
             format!("{REVOKE_PREFIX}{}", key.id),
+        )]);
+    }
+    for grant in &view.grants {
+        rows.push(vec![InlineKeyboardButton::callback(
+            t_args_lang(
+                localization,
+                "api-grants-disconnect-button",
+                &[("client", &client_name(&grant.client_id))],
+                language_code,
+            ),
+            format!("{DISCONNECT_PREFIX}{}", grant.id),
         )]);
     }
     rows.push(vec![super::ui_builder::recipes_list_button(
@@ -418,15 +536,23 @@ mod tests {
             .collect()
     }
 
+    fn view(keys: &[TokenInfo]) -> KeysView<'static> {
+        KeysView {
+            keys: keys.to_vec(),
+            grants: Vec::new(),
+            connect_url: None,
+        }
+    }
+
     #[test]
     fn the_keys_message_offers_a_new_key_until_the_limit() {
         let localization = localization();
-        let (text, keyboard) = render_keys(&[], &localization, Some("fr"));
+        let (text, keyboard) = render_keys(&view(&[]), &localization, Some("fr"));
         assert!(text.contains(&t_lang(&localization, "api-keys-none", Some("fr"))));
         assert_eq!(buttons(&keyboard), [NEW_KEY, NEW_WRITE_KEY, "show_list"]);
 
         let two = [key(1), key(2)];
-        let (text, keyboard) = render_keys(&two, &localization, Some("fr"));
+        let (text, keyboard) = render_keys(&view(&two), &localization, Some("fr"));
         assert!(text.contains("ji_Ab1xyz"), "{text}");
         assert_eq!(
             buttons(&keyboard),
@@ -440,10 +566,58 @@ mod tests {
         );
 
         let full: Vec<TokenInfo> = (1..=tokens::MAX_ACTIVE).map(key).collect();
-        let (text, keyboard) = render_keys(&full, &localization, Some("fr"));
+        let (text, keyboard) = render_keys(&view(&full), &localization, Some("fr"));
         assert!(!buttons(&keyboard).contains(&NEW_KEY.to_string()));
         assert!(!buttons(&keyboard).contains(&NEW_WRITE_KEY.to_string()));
         assert!(text.contains(&tokens::MAX_ACTIVE.to_string()), "{text}");
+    }
+
+    #[test]
+    fn connected_assistants_are_listed_with_a_disconnect_button() {
+        let localization = localization();
+        let grant = |id: i64, client: &str| GrantInfo {
+            id,
+            client_id: client.to_string(),
+            can_write: id == 8,
+            created_at: chrono::Utc::now(),
+            last_used_at: None,
+        };
+        let shown = KeysView {
+            keys: vec![key(1)],
+            grants: vec![
+                grant(7, "https://claude.ai/oauth/mcp-oauth-client-metadata"),
+                grant(8, "https://chatgpt.com/oauth/client.json"),
+            ],
+            connect_url: Some("https://just-ingredients.fly.dev/mcp"),
+        };
+        let (text, keyboard) = render_keys(&shown, &localization, Some("fr"));
+        assert!(text.contains("🔗 Assistants connectés"), "{text}");
+        assert!(text.contains("• claude.ai (lecture seule)"), "{text}");
+        assert!(
+            text.contains("• chatgpt.com (lecture et écriture)"),
+            "{text}"
+        );
+        assert!(
+            text.contains("ajoutez https://just-ingredients.fly.dev/mcp"),
+            "{text}"
+        );
+        assert_eq!(
+            buttons(&keyboard),
+            [
+                NEW_KEY,
+                NEW_WRITE_KEY,
+                "api_key_revoke:1",
+                "api_grant_revoke:7",
+                "api_grant_revoke:8",
+                "show_list"
+            ]
+        );
+        let (text, _) = render_keys(&view(&[]), &localization, Some("fr"));
+        assert!(!text.contains("connecteur"), "no OAuth, no hint: {text}");
+        assert_eq!(
+            client_name("https://other.example/client.json"),
+            "other.example"
+        );
     }
 
     #[test]
@@ -451,6 +625,7 @@ mod tests {
         assert!(is_key_button(NEW_KEY));
         assert!(is_key_button(NEW_WRITE_KEY));
         assert!(is_key_button("api_key_revoke:12"));
+        assert!(is_key_button("api_grant_revoke:3"));
         assert!(!is_key_button("recipe_action:note:1"));
     }
 
