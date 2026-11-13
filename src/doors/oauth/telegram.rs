@@ -73,7 +73,7 @@ pub struct Identity {
     /// The account's name for the consent page: `name`, else `@preferred_username` (64
     /// characters at most). Never logged.
     pub display_name: Option<String>,
-    /// The names of the claims received, sorted (for the spike's report and logs: no values).
+    /// The names of the claims received, sorted (for logs: no values).
     pub claim_names: Vec<String>,
 }
 

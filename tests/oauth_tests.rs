@@ -1,6 +1,5 @@
 //! The OAuth door (`specs/tasks/oauth.md`) against a fake Telegram over real sockets: an
-//! assistant's sign-in from `/oauth/authorize` to the MCP tools (a database), each refusal, and
-//! the bare trial of the Telegram sign-in on staging (no database).
+//! assistant's sign-in from `/oauth/authorize` to the MCP tools, and each refusal.
 //!
 //! The database tests need Postgres: `cargo test --test oauth_tests -- --include-ignored` with
 //! `DATABASE_URL` set to a throwaway database.
@@ -20,7 +19,6 @@ use just_ingredients::config::TelegramLoginConfig;
 use just_ingredients::db::init_database_schema;
 use just_ingredients::doors::guard::Limits;
 use just_ingredients::doors::oauth::server::{self, AuthorizationServer};
-use just_ingredients::doors::oauth::spike::{self, Spike};
 use just_ingredients::doors::oauth::telegram::{self, Endpoints, TelegramLogin};
 use just_ingredients::doors::oauth::{OAuthSettings, metadata};
 use just_ingredients::engine::oauth::pkce_challenge;
@@ -134,9 +132,9 @@ async fn listen(app: Router) -> Result<SocketAddr> {
     Ok(address)
 }
 
-/// The fake Telegram, then the MCP door with its authorization server (and the trial when
-/// `trial`), served; their address and the fake's state.
-async fn serve(pool: PgPool, trial: bool) -> Result<(SocketAddr, Shared)> {
+/// The fake Telegram, then the MCP door with its authorization server, served; their address and
+/// the fake's state.
+async fn serve(pool: PgPool) -> Result<(SocketAddr, Shared)> {
     let fake: Shared = Arc::new(Mutex::new(Fake {
         user: ALICE,
         ..Fake::default()
@@ -160,14 +158,7 @@ async fn serve(pool: PgPool, trial: bool) -> Result<(SocketAddr, Shared)> {
         },
     )?;
     let settings = OAuthSettings::for_host(HOST);
-    let spike = trial.then(|| {
-        Arc::new(Spike::new(
-            login.clone(),
-            vec![ALICE],
-            Some(CLIENT_ID.to_string()),
-        ))
-    });
-    let mut app = just_ingredients::doors::mcp::router(
+    let app = just_ingredients::doors::mcp::router(
         pool.clone(),
         Realm::Production,
         vec![HOST.to_string()],
@@ -180,11 +171,7 @@ async fn serve(pool: PgPool, trial: bool) -> Result<(SocketAddr, Shared)> {
         settings,
         login,
         vec![ALICE],
-        spike.clone(),
     )));
-    if let Some(spike) = spike {
-        app = app.merge(spike::router(spike));
-    }
     Ok((listen(app).await?, fake))
 }
 
@@ -393,7 +380,7 @@ async fn tool_count(address: SocketAddr, access_token: &str) -> Result<(u16, usi
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn claude_connects_with_telegram_and_uses_the_tools(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
-    let (address, fake) = serve(pool.clone(), false).await?;
+    let (address, fake) = serve(pool.clone()).await?;
     let mut browser = Browser::new(address);
 
     // claude.ai sends the browser here; we send it to Telegram, bound by a cookie
@@ -517,7 +504,7 @@ async fn claude_connects_with_telegram_and_uses_the_tools(pool: PgPool) -> Resul
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn every_refusal_is_shown_or_sent_back_with_the_issuer(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
-    let (address, fake) = serve(pool.clone(), false).await?;
+    let (address, fake) = serve(pool.clone()).await?;
     let mut browser = Browser::new(address);
 
     // Before the client and its redirect are known: a page, never a redirect
@@ -712,74 +699,11 @@ async fn every_refusal_is_shown_or_sent_back_with_the_issuer(pool: PgPool) -> Re
     Ok(())
 }
 
-/// Starts a trial of the Telegram sign-in; Telegram's `state`.
-async fn trial(browser: &mut Browser, fake: &Shared) -> Result<String> {
-    let answer = browser.get(spike::TRY_PATH).await?;
-    assert_eq!(answer.status, 303);
-    let (_, query) = answer.location()?;
-    let mut shared = fake.lock().unwrap_or_else(PoisonError::into_inner);
-    shared.challenge = query.get("code_challenge").cloned();
-    shared.nonce = query.get("nonce").cloned();
-    query.get("state").cloned().context("a state")
-}
-
-/// The trial of the Telegram sign-in (staging): its attempts come back through the authorization
-/// server's callback, which hands them over before reading the database (the pool here never
-/// connects).
-#[tokio::test]
-async fn a_trial_sign_in_reads_the_telegram_id_from_the_id_token() -> Result<()> {
-    let pool = PgPool::connect_lazy("postgres://unused@127.0.0.1:1/unused")?;
-    let (address, fake) = serve(pool, true).await?;
-    let mut browser = Browser::new(address);
-
-    let state = trial(&mut browser, &fake).await?;
-    let page = browser.telegram_answers(&state).await?;
-    assert_eq!(page.status, 200, "{}", page.body);
-    assert!(page.body.contains("Connexion Telegram réussie"));
-    assert!(page.body.contains(&ALICE.to_string()), "the id claim");
-    assert!(!page.body.contains("424242"), "never sub");
-    assert!(page.body.contains("Dans la liste bêta : oui"));
-    assert!(page.body.contains("Nonce renvoyé : oui"));
-    assert!(page.body.contains("Client ID = identifiant du bot : oui"));
-    assert!(
-        page.body
-            .contains("aud, exp, iat, id, iss, name, nonce, sub")
-    );
-    assert!(!page.body.contains("<b>Basile"), "the name is never shown");
-    assert_eq!(page.header("cache-control"), Some("no-store"));
-    assert_eq!(page.header("x-frame-options"), Some("DENY"));
-
-    // Telegram's error, escaped; a code Telegram refuses
-    let state = trial(&mut browser, &fake).await?;
-    let page = browser
-        .get(&format!(
-            "{}?error=access_denied%3Cscript%3E&state={state}",
-            telegram::CALLBACK_PATH
-        ))
-        .await?;
-    assert_eq!(page.status, 400);
-    assert!(
-        page.body.contains("access_denied&lt;script&gt;"),
-        "{}",
-        page.body
-    );
-    let state = trial(&mut browser, &fake).await?;
-    let page = browser
-        .get(&format!(
-            "{}?code=stolen&state={state}",
-            telegram::CALLBACK_PATH
-        ))
-        .await?;
-    assert_eq!(page.status, 502);
-    assert!(page.body.contains("invalid_grant"), "{}", page.body);
-    Ok(())
-}
-
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
 async fn a_reloaded_answer_a_forged_nonce_and_a_failed_exchange(pool: PgPool) -> Result<()> {
     init_database_schema(&pool).await?;
-    let (address, fake) = serve(pool.clone(), false).await?;
+    let (address, fake) = serve(pool.clone()).await?;
     let mut browser = Browser::new(address);
 
     // Telegram's answer loaded twice at once: the first signs in, the second waits for it
@@ -882,7 +806,7 @@ async fn chatgpt_connects_and_refusals_never_block_a_valid_code(pool: PgPool) ->
     const CHATGPT: &str = "https://chatgpt.com/oauth/client.json";
     const CHATGPT_CALLBACK: &str = "https://chatgpt.com/connector_platform_oauth_redirect";
     init_database_schema(&pool).await?;
-    let (address, fake) = serve(pool.clone(), false).await?;
+    let (address, fake) = serve(pool.clone()).await?;
     let mut browser = Browser::new(address);
 
     // ChatGPT, with a client assertion it may send anyway: ignored, PKCE binds the code

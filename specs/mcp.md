@@ -3,21 +3,42 @@
 The bot serves a [Model Context Protocol](https://modelcontextprotocol.io) server, so that an AI
 assistant can read your recipes: "what can I cook with leeks?", "show the tart in grams", "what
 does 2 cups of flour weigh?". With a read-write key it can also rename a recipe, write its memo
-and create a recipe from text; nothing can be deleted, nor an ingredient changed. Design:
-[tasks/engine-api.md](tasks/engine-api.md); code: `src/doors/mcp.rs` (tools), `src/doors/guard.rs`
-(token and limits), `src/engine/` (what the tools call).
+and create a recipe from text; nothing can be deleted, nor an ingredient changed. claude.ai and
+ChatGPT connect without a key: you sign in with Telegram and approve. Design:
+[tasks/engine-api.md](tasks/engine-api.md) and [tasks/oauth.md](tasks/oauth.md); code:
+`src/doors/mcp.rs` (tools), `src/doors/guard.rs` (tokens and limits), `src/doors/oauth/` (the
+sign-in), `src/engine/` (what the tools call).
 
 ## Addresses
 
-| | Address | Token prefix |
-|---|---|---|
-| Production | `https://just-ingredients.fly.dev/mcp` | `ji_` |
-| Staging (test bot) | `https://just-ingredients-staging.fly.dev/mcp` | `ji_stg_` |
+| | Address | Key prefix | OAuth tokens |
+|---|---|---|---|
+| Production | `https://just-ingredients.fly.dev/mcp` | `ji_` | `jio_`, `jir_` |
+| Staging (test bot) | `https://just-ingredients-staging.fly.dev/mcp` | `ji_stg_` | `jio_stg_`, `jir_stg_` |
 
-A token works only where it was made. Staging runs only while a change is tested: it is stopped at
+A key or token works only where it was made. Staging runs only while a change is tested: it is stopped at
 night and after a release, and a request does not start it.
 
-## 1. Get a token
+## claude.ai and ChatGPT: sign in with Telegram
+
+No key to copy. Add the address above as a custom connector, then sign in:
+
+- **claude.ai** (web, desktop, phone): Settings → Connectors → *Add custom connector*, the address;
+  *Authentication*: "Se connecter maintenant" (sign in now); *OAuth client*: "Utiliser l'identité
+  publiée de Claude" (Claude's published identity), not your own client.
+- **ChatGPT**: chatgpt.com/plugins → *Add* → *Add custom MCP server*, the address, OAuth (it may
+  ask for its desktop app).
+
+The assistant opens Telegram's sign-in, then our approval page: it names your Telegram account
+and the assistant, reading always, changes (rename, memos, new recipes, never delete) only if you
+tick them. "Autoriser" takes you back to the assistant, and the bot tells you "🔗 claude.ai est
+maintenant connecté…" with a "🔌 Déconnecter" button. `/cle` lists the connected assistants and
+disconnects them. The assistant renews its access by itself (an hour at a time, for 30 days
+without use); during the beta, only the Telegram ids of `API_BETA_USERS` get through.
+
+Claude Code, Cursor and VS Code use a personal key instead (below).
+
+## 1. Get a key (Claude Code, Cursor, VS Code)
 
 In Telegram, send `/cle` (or `/key`) to the bot (during the beta, only the Telegram ids of
 `API_BETA_USERS` can). Tap "➕ Clé lecture seule" or "➕ Clé lecture et écriture": the token is shown once, under a
@@ -56,8 +77,6 @@ the token in Claude Code's own settings file). Check with `/mcp` inside Claude C
 `headers` (Cursor reads variables as `${env:JI_TOKEN}`; VS Code as an input with
 `"password": true`).
 
-The web connectors of claude.ai and ChatGPT need OAuth, which the server does not offer yet
-(tranche 4 of the design).
 
 ## 3. Tools
 
@@ -71,7 +90,7 @@ The web connectors of claude.ai and ChatGPT need OAuth, which the server does no
 | `set_memo` (read-write key) | `id`, `memo` (`null` clears) | the memo stored, cleaned as in the bot |
 | `create_recipe` (read-write key) | `name`, `ingredients` (one line each) | the new recipe's id and name |
 
-A read-only key is shown the first four only and cannot call the others. A change made through
+A read-only key or connection is shown the first four only and cannot call the others. A change made through
 an assistant updates the recipe's cards in Telegram within seconds (the bot follows the engine's
 events).
 
@@ -83,16 +102,23 @@ The text read from a photo is never returned.
 
 ## Limits and errors
 
-60 requests a minute per token, 4 at once, 10 seconds each, 64 KB per request. HTTP `401`: no
-token, a wrong or revoked one (10 failures in a minute from an address block it for the minute:
-`429`); `403`: a request for another host; `429` / `503`: too many, or busy, retry later. A tool
+60 requests a minute per key or connection, 4 at once, 10 seconds each, 64 KB per request. HTTP
+`401`: no token, a wrong, expired or revoked one (10 wrong keys in a minute from an address block
+it for the minute: `429`; OAuth tokens never do, an assistant's users sharing its addresses);
+`403`: a request for another host; `429` / `503`: too many, or busy, retry later. A tool
 that cannot answer (unknown id, bad argument) says why in its result, which the assistant reads.
 
 ## Operations
 
-- Every change is an event (`events`, origin `mcp`, the key's id), kept 30 days.
-- One log line per request (`Door request`: door, status, duration, token id; never the request's
-  content nor the token); counters `ji_api_requests_total{door, status}`,
+- Every change is an event (`events`, origin `mcp`, the key's or the grant's id), kept 30 days;
+  a new connection too (`oauth.connected`).
+- One log line per request (`Door request`: door, status, duration, `key:N` or `grant:N`; never
+  the request's content nor the token); the sign-in logs its steps (`OAuth sign-in started`,
+  `Telegram answered`, `approved`, `grant made`), never a code, state or token; counters `ji_api_requests_total{door, status}`,
   `ji_api_duration_seconds{door}`, `ji_mcp_tool_calls_total{tool, result}`.
+- OAuth needs `TELEGRAM_LOGIN_CLIENT_ID` and `TELEGRAM_LOGIN_SECRET` (BotFather's mini app → the
+  bot → "OAuth2 login": Redirect URL `https://<app>.fly.dev/oauth/telegram/callback`, Trusted
+  origin `https://<app>.fly.dev`); without them the door takes keys only.
 - Tests: `tests/mcp_tests.rs` (JSON-RPC over a real socket, two users), `tests/doors_tests.rs`
-  (the guard), `tests/engine_tests.rs`.
+  (the guard), `tests/oauth_tests.rs` (a whole sign-in with a fake Telegram, every refusal),
+  `tests/engine_tests.rs`.

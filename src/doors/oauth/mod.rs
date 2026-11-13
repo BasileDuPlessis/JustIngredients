@@ -4,14 +4,12 @@
 //!
 //! This module serves the discovery documents ([`metadata`]) and the authorization server
 //! ([`server`]) for the allowed assistants ([`clients`]), users signing in with Telegram
-//! ([`telegram`]); on staging, a bare trial of the Telegram sign-in ([`spike`], task 0). Mounted
-//! only when the Telegram login is configured.
+//! ([`telegram`]). Mounted only when the Telegram login is configured.
 
 pub mod clients;
 pub mod metadata;
 pub mod page;
 pub mod server;
-pub mod spike;
 pub mod telegram;
 
 /// How often the sign-ins, codes and tokens that can no longer be used are deleted.

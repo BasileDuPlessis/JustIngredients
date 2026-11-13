@@ -37,7 +37,6 @@ use tracing::{info, warn};
 use super::OAuthSettings;
 use super::clients::{self, Client};
 use super::page::{escape, see_other};
-use super::spike::Spike;
 use super::telegram::{Attempt, CALLBACK_PATH, TelegramLogin};
 use crate::engine::oauth::{self, Callback, CodeExchange, Decision, GrantError, SignInRequest};
 use crate::engine::tokens::{Realm, SCOPE_RECIPES_READ, SCOPE_RECIPES_WRITE};
@@ -82,7 +81,6 @@ pub struct AuthorizationServer {
     settings: OAuthSettings,
     login: TelegramLogin,
     beta_users: Vec<i64>,
-    spike: Option<Arc<Spike>>,
     at_once: Semaphore,
     telegram_exchanges: Semaphore,
     /// Sign-ins started per address (each writes a row).
@@ -100,7 +98,6 @@ impl AuthorizationServer {
         settings: OAuthSettings,
         login: TelegramLogin,
         beta_users: Vec<i64>,
-        spike: Option<Arc<Spike>>,
     ) -> Arc<Self> {
         Arc::new(Self {
             pool,
@@ -108,7 +105,6 @@ impl AuthorizationServer {
             settings,
             login,
             beta_users,
-            spike,
             at_once: Semaphore::new(MAX_AT_ONCE),
             telegram_exchanges: Semaphore::new(MAX_TELEGRAM_EXCHANGES),
             sign_ins: RateLimiter::new(30, 60),
@@ -512,12 +508,6 @@ async fn telegram_callback(
     let Some(state) = answer.state.filter(|state| state.len() <= 128) else {
         return unknown_sign_in(lang);
     };
-    // A trial of the Telegram sign-in (staging, task 0)
-    if let Some(spike) = &server.spike
-        && let Some(attempt) = spike.take(&state)
-    {
-        return spike.answer(attempt, answer.code, answer.error).await;
-    }
     let Some(_place) = server.place().await else {
         return busy(lang);
     };

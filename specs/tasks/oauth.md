@@ -1,6 +1,6 @@
 # OAuth for AI assistants (tranche 4 of the engine): study
 
-Status: validated by the owner (2026-11-12) and revised after an independent review (§7); tasks 1 to 7 done and reviewed (§8); task 0 (the Telegram trial) and the first real sign-ins on staging (claude.ai, ChatGPT, computer and phone) wait for the BotFather set-up; then docs and production.
+Status: validated by the owner (2026-11-12) and revised after an independent review (§7); tasks 0 to 8 done and reviewed (§8): the Telegram trial passed and claude.ai connected on staging (2026-11-13: sign-in, approval, grant, tools); the trial page is removed; docs in [../mcp.md](../mcp.md). Next: the real bot's BotFather set-up and production. ChatGPT not tried yet (it asks for its desktop app).
 Goal: the user adds JustIngredients to **claude.ai** (web, desktop, mobile apps) or **ChatGPT** by
 its URL, signs in **with Telegram**, approves what the assistant may do, and is done: no
 terminal, no key to copy. The personal keys of `/cle` keep working for Claude Code, Cursor, VS
@@ -228,8 +228,8 @@ documented. The staging test covers the first on the owner's phone.
 18 findings, checked against the specifications and the code; the design's shape holds (one
 origin, allowlisted clients, our consent after Telegram, opaque hashed tokens, no DCR). Changes:
 
-- **Task 0 first: a Telegram spike on staging** (`src/doors/oauth/spike.rs`, staging only:
-  `/oauth/telegram/try`). Discovery has no `nonce` claim, while the login page (re-read
+- **Task 0 first: a Telegram spike on staging** (a trial page on staging,
+  `/oauth/telegram/try`, removed once it passed). Discovery has no `nonce` claim, while the login page (re-read
   2026-11-12) lists `nonce` as optional and "included in the resulting id_token", and OIDC
   requires it back once sent: the spike sends one and reports whether it returns; it is kept only
   if it does (PKCE, a random `state` and the server-side exchange with the secret protect the code
@@ -324,5 +324,4 @@ Telegram id, the client id is the bot's id, and the nonce comes back as sent: it
 BotFather's mini app calls the section "OAuth2 login" (Redirect URLs: the callback; Trusted
 origins: the origin; Native login: empty).
 
-Left for later: the trial page (`spike.rs`) is removed before production; a double click on "Autoriser" may lose the first
-code (the client then shows a failure, the user tries again).
+Left for later: a double click on "Autoriser" may lose the first code (the client then shows a failure, the user tries again).
