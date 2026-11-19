@@ -255,18 +255,22 @@ pub async fn claim_photo_draft(
         > 0)
 }
 
-/// Records the recipes a draft was saved as.
+/// Records the recipes a draft was saved as; the text read goes (the recipes hold it now).
 pub async fn photo_draft_saved(
     conn: &mut sqlx::PgConnection,
     id: i64,
     recipe_ids: &[i64],
 ) -> Result<()> {
-    sqlx::query("UPDATE photo_imports SET saved_recipe_ids = $2 WHERE id = $1")
-        .bind(id)
-        .bind(recipe_ids)
-        .execute(conn)
-        .await
-        .context("Failed to record the saved recipes")?;
+    sqlx::query(
+        "UPDATE photo_imports SET saved_recipe_ids = $2, ingredients = NULL, \
+             transcription = NULL, title = NULL \
+         WHERE id = $1",
+    )
+    .bind(id)
+    .bind(recipe_ids)
+    .execute(conn)
+    .await
+    .context("Failed to record the saved recipes")?;
     Ok(())
 }
 
@@ -284,6 +288,45 @@ pub async fn discard_photo_import(pool: &PgPool, telegram_id: i64, id: i64) -> R
     .context("Failed to discard the photo import")?
     .rows_affected()
         > 0)
+}
+
+/// Forgets the text read of drafts that expired unsaved (the row stays a day, to tell "expired"
+/// from "unknown").
+pub async fn forget_expired_photo_drafts(pool: &PgPool) -> Result<u64> {
+    Ok(sqlx::query(
+        "UPDATE photo_imports SET ingredients = NULL, transcription = NULL, title = NULL \
+         WHERE expires_at < now() AND (ingredients IS NOT NULL OR transcription IS NOT NULL)",
+    )
+    .execute(pool)
+    .await
+    .context("Failed to forget expired photo drafts")?
+    .rows_affected())
+}
+
+/// A claimed import not read after all: back to waiting, as it was.
+pub async fn release_photo_import(pool: &PgPool, id: i64) -> Result<()> {
+    sqlx::query(
+        "UPDATE photo_imports SET status = 'waiting', reading_started_at = NULL \
+         WHERE id = $1 AND status = 'reading'",
+    )
+    .bind(id)
+    .execute(pool)
+    .await
+    .context("Failed to give the photo import back")?;
+    Ok(())
+}
+
+/// Readings left under way by the previous run: back to waiting, with `failure`.
+pub async fn recover_photo_readings(pool: &PgPool, failure: &str) -> Result<u64> {
+    Ok(sqlx::query(
+        "UPDATE photo_imports SET status = 'waiting', failure = $1, reading_started_at = NULL \
+         WHERE status = 'reading'",
+    )
+    .bind(failure)
+    .execute(pool)
+    .await
+    .context("Failed to recover the photo readings")?
+    .rows_affected())
 }
 
 /// Deletes the imports expired a day ago (kept that long to tell "expired" from "unknown").

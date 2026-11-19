@@ -72,6 +72,13 @@ async fn main() -> Result<()> {
         Err(e) => warn!(error = %e, "Could not normalize the saved units"),
     }
 
+    // Photo readings cut by the previous run: their links take the photo again
+    match just_ingredients::engine::photos::recover_interrupted(&pool).await {
+        Ok(0) => {}
+        Ok(recovered) => info!(imports = recovered, "Interrupted photo readings recovered"),
+        Err(e) => warn!(error = %e, "Could not recover interrupted photo readings"),
+    }
+
     // Wrap pool in Arc for sharing across async tasks
     let shared_pool = Arc::new(pool);
     // Messages to delete at the end of an action are recorded in the database

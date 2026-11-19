@@ -336,40 +336,53 @@ async fn refusals_leave_the_link_usable_or_say_why(pool: PgPool) -> Result<()> {
 
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
-async fn at_most_two_photos_are_read_at_once(pool: PgPool) -> Result<()> {
+async fn one_photo_is_read_at_once(pool: PgPool) -> Result<()> {
     let (credential, first) = import(&pool).await?;
     let fake = Arc::new(Fake {
         delay: Duration::from_millis(800),
         ..Fake::default()
     });
     let address = serve(&pool, Arc::clone(&fake)).await?;
-    let mut links = vec![first];
-    for _ in 0..2 {
-        links.push(engine_photos::start_import(&pool, Owner::telegram(ALICE), credential).await?);
-    }
-    let paths: Vec<String> = links
+    let second = engine_photos::start_import(&pool, Owner::telegram(ALICE), credential).await?;
+    let paths: Vec<String> = [&first, &second]
         .iter()
         .map(|link| format!("/photo/{}", link.secret.expose()))
         .collect();
     let photo = jpeg();
-    let (a, b) = tokio::join!(
-        post_photo(address, &paths[0], "photo", &photo),
-        post_photo(address, &paths[1], "photo", &photo)
-    );
-    assert_eq!((a?.status, b?.status), (303, 303));
-    let third = post_photo(address, &paths[2], "photo", &photo).await?;
-    assert_eq!(third.status, 503, "{}", third.body);
-    assert!(third.body.contains("réessayez dans un instant"));
+    let read = post_photo(address, &paths[0], "photo", &photo).await?;
+    assert_eq!(read.status, 303);
+    let refused = post_photo(address, &paths[1], "photo", &photo).await?;
+    assert_eq!(refused.status, 503, "{}", refused.body);
+    assert!(refused.body.contains("réessayez dans un instant"));
     assert!(
         matches!(
-            engine_photos::link_state(&pool, links[2].secret.expose()).await?,
+            engine_photos::link_state(&pool, second.secret.expose()).await?,
             Some(ImportState::Waiting { .. })
         ),
-        "the third link is still usable"
+        "the second link is still usable"
     );
     until_read(address, &paths[0], 50).await?;
-    until_read(address, &paths[1], 50).await?;
-    let later = post_photo(address, &paths[2], "photo", &photo).await?;
+    let later = post_photo(address, &paths[1], "photo", &photo).await?;
     assert_eq!(later.status, 303, "a place again: {}", later.body);
+    Ok(())
+}
+
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn an_address_showing_too_many_pages_waits(pool: PgPool) -> Result<()> {
+    let (_, started) = import(&pool).await?;
+    let address = serve(&pool, Arc::new(Fake::default())).await?;
+    let path = format!("/photo/{}", started.secret.expose());
+    let mut last = 0;
+    for _ in 0..61 {
+        last = get(address, &path).await?.status;
+    }
+    let page = get(address, &path).await?;
+    assert_eq!((last, page.status), (503, 503));
+    assert!(
+        page.body.contains("http-equiv=\"refresh\""),
+        "a reading's page keeps reloading: {}",
+        page.body
+    );
     Ok(())
 }

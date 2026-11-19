@@ -1768,7 +1768,7 @@ mod photo_imports {
 
         // A reading cut by a restart: the link takes the photo again
         photos::claim(&pool, secret).await?.context("claimed")?;
-        sqlx::query("UPDATE photo_imports SET reading_started_at = now() - interval '10 minutes'")
+        sqlx::query("UPDATE photo_imports SET reading_started_at = now() - interval '20 minutes'")
             .execute(&pool)
             .await?;
         assert_eq!(
@@ -1801,10 +1801,75 @@ mod photo_imports {
             Some(ImportState::Discarded)
         );
 
+        // A restart: the readings it cut are sent again, told why
+        let cut = photos::start_import(&pool, Owner::telegram(ALICE), credential).await?;
+        photos::claim(&pool, cut.secret.expose())
+            .await?
+            .context("claimed")?;
+        assert_eq!(
+            photos::recover_interrupted(&pool).await?,
+            2,
+            "this one and the first"
+        );
+        assert_eq!(
+            photos::link_state(&pool, cut.secret.expose()).await?,
+            Some(ImportState::Waiting {
+                last_failure: Some(ReadingFailure::Interrupted)
+            })
+        );
+
         sqlx::query("UPDATE photo_imports SET expires_at = now() - interval '2 days'")
             .execute(&pool)
             .await?;
-        assert_eq!(photos::purge(&pool).await?, 3);
+        assert_eq!(photos::purge(&pool).await?, 4);
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn a_draft_keeps_the_text_read_only_until_saved(pool: PgPool) -> Result<()> {
+        let (credential, started) = import(&pool).await?;
+        let (extractor, _) = extractor(Ok(tart()));
+        let claimed = photos::claim(&pool, started.secret.expose())
+            .await?
+            .context("claimed")?;
+        photos::read(&pool, &extractor, claimed, photo()).await;
+
+        // Lines that cannot be read back: no empty recipe, the draft unusable
+        let kept: serde_json::Value =
+            sqlx::query_scalar("SELECT ingredients FROM photo_imports WHERE id = $1")
+                .bind(started.id)
+                .fetch_one(&pool)
+                .await?;
+        sqlx::query("UPDATE photo_imports SET ingredients = '\"broken\"'::jsonb WHERE id = $1")
+            .bind(started.id)
+            .execute(&pool)
+            .await?;
+        assert!(matches!(
+            photos::import_state(&pool, Owner::telegram(ALICE), started.id).await?,
+            Some(ImportState::Failed {
+                failure: ReadingFailure::Unavailable
+            })
+        ));
+        assert!(matches!(
+            photos::save(&pool, actor(credential), started.id, None, &[]).await,
+            Err(SaveError::NotReady(_))
+        ));
+        sqlx::query("UPDATE photo_imports SET ingredients = $2 WHERE id = $1")
+            .bind(started.id)
+            .bind(&kept)
+            .execute(&pool)
+            .await?;
+
+        // Saved: the recipes hold the text, the import no longer does
+        photos::save(&pool, actor(credential), started.id, None, &[]).await?;
+        let left: (Option<serde_json::Value>, Option<String>, Option<String>) = sqlx::query_as(
+            "SELECT ingredients, transcription, title FROM photo_imports WHERE id = $1",
+        )
+        .bind(started.id)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(left, (None, None, None));
         Ok(())
     }
 

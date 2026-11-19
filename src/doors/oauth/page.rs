@@ -90,6 +90,7 @@ pub fn lang_of(headers: &HeaderMap) -> Lang {
         .get(header::ACCEPT_LANGUAGE)
         .and_then(|value| value.to_str().ok())
         .and_then(|value| value.split(',').next())
+        .and_then(|tag| tag.split(';').next())
         .map(|value| value.trim().to_ascii_lowercase());
     Lang::from_code(first.as_deref())
 }

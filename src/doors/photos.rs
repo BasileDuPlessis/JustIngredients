@@ -8,9 +8,10 @@
 //!   while the key or connection that asked may still write. A GET never uses it (link previews,
 //!   an assistant fetching it); the secret is in the path and there is no cookie, so another
 //!   site's form gains nothing.
-//! - The link is checked before the body is read; the photo is read in chunks, 10 MB at most;
-//!   at most [`MAX_READINGS`] readings at once (Gemini's slots are the bot's too), beyond: "busy,
-//!   try again", the link still usable.
+//! - The link is checked before the body is read; the photo is read in chunks, 10 MB at most,
+//!   within [`UPLOAD_TIMEOUT`] (a stalled phone does not hold a place); then a reading slot is
+//!   taken: [`MAX_READINGS`] at once (a reading holds ~37 MB on a 256 MB machine, and Gemini's
+//!   slots are the bot's too), beyond: "busy, try again", the link still usable.
 //! - The form answers 303 to the page, which reloads itself while the photo is read: the reading
 //!   goes on whatever becomes of the page (a phone going back to the assistant).
 //! - Pages: no script, never framed nor cached, no referrer, the form posting to us only.
@@ -43,8 +44,13 @@ pub const MAX_PHOTO_BYTES: usize = 10 * 1024 * 1024;
 /// The largest body read: the photo and the form's framing.
 const MAX_BODY_BYTES: usize = MAX_PHOTO_BYTES + 64 * 1024;
 
-/// Photos read at once from the pages (the bot's own photos share Gemini's slots).
-pub const MAX_READINGS: usize = 2;
+/// Photos read at once from the pages: a reading holds the photo, its base64 and the request
+/// to Gemini (~37 MB for 10 MB) on a 256 MB machine, and the bot's own photos share Gemini's
+/// slots.
+pub const MAX_READINGS: usize = 1;
+
+/// Longest wait for a photo's upload.
+pub const UPLOAD_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Page requests handled at once (each may hold a photo in memory).
 const MAX_AT_ONCE: usize = 3;
@@ -69,6 +75,8 @@ pub struct PhotoPages {
     at_once: Semaphore,
     /// Photos sent per address.
     posts: RateLimiter,
+    /// Pages shown per address (each reads the database).
+    views: RateLimiter,
 }
 
 impl PhotoPages {
@@ -79,6 +87,7 @@ impl PhotoPages {
             readings: Arc::new(Semaphore::new(MAX_READINGS)),
             at_once: Semaphore::new(MAX_AT_ONCE),
             posts: RateLimiter::new(20, 60),
+            views: RateLimiter::new(60, 60),
         })
     }
 
@@ -127,7 +136,8 @@ fn unknown_link(lang: Lang) -> Response {
     )
 }
 
-fn busy(lang: Lang) -> Response {
+/// "Busy": a shown page reloads itself (a reading's page must not stop on it).
+fn busy(lang: Lang, reload: bool) -> Response {
     page(
         lang,
         StatusCode::SERVICE_UNAVAILABLE,
@@ -137,7 +147,10 @@ fn busy(lang: Lang) -> Response {
             "<p>Trop de photos en cours : réessayez dans un instant.</p>",
             "<p>Too many photos at once: try again in a moment.</p>",
         ),
-        PageOptions::default(),
+        PageOptions {
+            form: false,
+            refresh_secs: reload.then_some(REFRESH_SECS * 2),
+        },
     )
 }
 
@@ -308,21 +321,28 @@ fn page_for(lang: Lang, secret: &str, state: &ImportState) -> Response {
 async fn show(
     State(pages): State<Arc<PhotoPages>>,
     Path(secret): Path<String>,
+    ConnectInfo(peer): ConnectInfo<SocketAddr>,
     headers: HeaderMap,
 ) -> Response {
     let lang = lang_of(&headers);
     if !has_secret_shape(&secret) {
         return unknown_link(lang);
     }
+    if !pages
+        .views
+        .is_allowed(&super::address_key(&headers, peer.ip()))
+    {
+        return busy(lang, true);
+    }
     let Some(_place) = pages.place().await else {
-        return busy(lang);
+        return busy(lang, true);
     };
     match photos::link_state(&pages.pool, &secret).await {
         Ok(Some(state)) => page_for(lang, &secret, &state),
         Ok(None) => unknown_link(lang),
         Err(error) => {
             warn!(error = %error, "Photo page: could not read the link");
-            busy(lang)
+            busy(lang, true)
         }
     }
 }
@@ -379,10 +399,10 @@ async fn upload(
         .posts
         .is_allowed(&super::address_key(&headers, peer.ip()))
     {
-        return busy(lang);
+        return busy(lang, false);
     }
     let Some(_place) = pages.place().await else {
-        return busy(lang);
+        return busy(lang, false);
     };
     let here = format!("{PATH}/{secret}");
     // The link first: a body is read only for a link that takes a photo
@@ -392,25 +412,16 @@ async fn upload(
         Ok(None) => return unknown_link(lang),
         Err(error) => {
             warn!(error = %error, "Photo page: could not read the link");
-            return busy(lang);
+            return busy(lang, false);
         }
     }
-    let Ok(reading) = Arc::clone(&pages.readings).try_acquire_owned() else {
-        return form(
-            lang,
-            StatusCode::SERVICE_UNAVAILABLE,
-            &secret,
-            Some(text(
-                lang,
-                "Trop de photos en cours de lecture : réessayez dans un instant.",
-                "Too many photos being read: try again in a moment.",
-            )),
-        );
-    };
     let Ok(multipart) = multipart else {
         return form(lang, StatusCode::BAD_REQUEST, &secret, None);
     };
-    let bytes = match receive(multipart).await {
+    let received = tokio::time::timeout(UPLOAD_TIMEOUT, receive(multipart))
+        .await
+        .unwrap_or(Received::Broken);
+    let bytes = match received {
         Received::Photo(bytes) => bytes,
         Received::Missing => {
             return form(
@@ -440,8 +451,25 @@ async fn upload(
         Ok(None) => return see_other(&here),
         Err(error) => {
             warn!(error = %error, "Photo page: could not claim the link");
-            return busy(lang);
+            return busy(lang, false);
         }
+    };
+    // A reading slot once the photo is here and the link claimed (an upload under way holds
+    // none); without one, the link is given back
+    let Ok(reading) = Arc::clone(&pages.readings).try_acquire_owned() else {
+        if let Err(error) = photos::release(&pages.pool, claimed).await {
+            warn!(error = %error, "Photo page: could not give the link back");
+        }
+        return form(
+            lang,
+            StatusCode::SERVICE_UNAVAILABLE,
+            &secret,
+            Some(text(
+                lang,
+                "Une autre photo est en cours de lecture : réessayez dans un instant.",
+                "Another photo is being read: try again in a moment.",
+            )),
+        );
     };
     info!(
         import = claimed.id,

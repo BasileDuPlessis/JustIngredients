@@ -1,6 +1,6 @@
 # Recipe photos through an assistant (tranche 3 of the engine): study
 
-Status: validated by the owner (2026-11-19: the four recommendations of §6), reviewed and revised (§7, with two more decisions); task 1 done (the daily limit in the database). The owner asked for it after Claude read a photo
+Status: tasks 1 to 4 done and reviewed (§8): the daily limit in the database, imports and drafts, the upload page, the MCP tools; task 5 (ChatGPT's file input) waits for a trial with ChatGPT; next: staging test from claude.ai on the phone, then production. Validated by the owner (2026-11-19, §6 and §7). The owner asked for it after Claude read a photo
 itself and created the recipe with `create_recipe` ("la transcription est bonne mais nous devons
 garder la main avec Gemini").
 
@@ -197,3 +197,29 @@ shared extractor and the events hold. Changes:
 Tasks, revised: 1 done; 2 `engine::photos` imports and drafts (migration 16), the save shared with
 the bot; 3 the upload page; 4 the tools; 5 ChatGPT, after its trial; 6 tests, review, docs,
 staging, production.
+
+## 8. What the code review changed (2026-11-19)
+
+An independent review of tasks 1 to 4 found no confirmed security or data bug (checked: claims
+and the single save, the atomic limit, the link's secret, the page's headers, no text read
+returned to the assistant, the write gate, parity with the bot). Fixed, with tests:
+
+- **One reading at once from the pages** (it was two): a reading holds ~37 MB (the photo, its
+  base64, Gemini's request) on the 256 MB machine.
+- **The upload has 2 minutes** (a stalled phone held a place); the link is claimed, then a
+  reading slot taken; without one the link is given back ("another photo is being read").
+- **Readings cut by a restart** are sent again at once: at startup, `reading` imports go back to
+  waiting, told "interrupted" (one machine); the stale time becomes 15 minutes, far above a
+  reading's longest, so a live one is never read twice.
+- **A draft whose lines cannot be read back** is never saved as an empty recipe (unavailable).
+- **The pages shown** are limited per address (60 a minute), and "busy" reloads itself while a
+  reading's page waits.
+- **The text read leaves the import** once saved (the recipes hold it), and at expiry; the purge's
+  steps run whatever the others did.
+- **A 429 from Gemini** (never billed) is given back to the day's count.
+- Small: `lines: null` accepted; a range ("2-3") said to stay to confirm; a browser's first
+  language read without its weight.
+
+Left for later: `import_photo` could refuse at once when the day's photos are used up (today the
+link takes the photo and says so); a page answered before its body is read may show "connection
+reset" in some browsers (413, busy).

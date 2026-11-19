@@ -26,8 +26,10 @@ use crate::text_processing::MeasurementMatch;
 pub const LINK_LIFETIME_SECS: i64 = 15 * 60;
 /// How long a draft waits to be saved.
 pub const DRAFT_LIFETIME_SECS: i64 = 24 * 3600;
-/// A reading started this long ago was cut (a restart): the link takes the photo again.
-pub const READING_STALE_SECS: i64 = 5 * 60;
+/// A reading started this long ago was lost (its task ended without a word): the link takes the
+/// photo again. A restart does not wait for it: [`recover_interrupted`] runs at startup. Far
+/// above a reading's longest (Gemini's queue and its timeout), so a live one is never read twice.
+pub const READING_STALE_SECS: i64 = 15 * 60;
 
 /// Days of counts kept (only today's is read).
 const KEEP_DAYS: i32 = 7;
@@ -62,10 +64,32 @@ impl DailyCalls for StoredDailyCalls {
     }
 }
 
-/// Deletes the counts of past days and the imports expired a day ago.
+/// Deletes the counts of past days, the text read of expired drafts, and the imports expired a
+/// day ago; each step whatever the others did.
 pub async fn purge(pool: &PgPool) -> Result<u64, EngineError> {
-    Ok(crate::db::purge_photo_days(pool, KEEP_DAYS).await?
-        + crate::db::purge_photo_imports(pool).await?)
+    let steps = [
+        crate::db::purge_photo_days(pool, KEEP_DAYS).await,
+        crate::db::forget_expired_photo_drafts(pool).await,
+        crate::db::purge_photo_imports(pool).await,
+    ];
+    let mut done = 0;
+    let mut failed = None;
+    for step in steps {
+        match step {
+            Ok(rows) => done += rows,
+            Err(error) => failed = Some(error),
+        }
+    }
+    match failed {
+        Some(error) => Err(error.into()),
+        None => Ok(done),
+    }
+}
+
+/// Readings cut by the previous run (a deploy, a crash): their links take the photo again, told
+/// why. Run at startup, before the pages are served (one machine runs the bot).
+pub async fn recover_interrupted(pool: &PgPool) -> Result<u64, EngineError> {
+    Ok(crate::db::recover_photo_readings(pool, ReadingFailure::Interrupted.as_str()).await?)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -218,11 +242,14 @@ pub enum ImportState {
     Expired,
 }
 
-fn lines_of(row: &crate::db::PhotoImportRow) -> Vec<MeasurementMatch> {
-    row.ingredients
+/// The draft's lines as stored; an error when they cannot be read back (never an empty list:
+/// that would save an empty recipe).
+fn lines_of(row: &crate::db::PhotoImportRow) -> anyhow::Result<Vec<MeasurementMatch>> {
+    let lines = row
+        .ingredients
         .clone()
-        .and_then(|lines| serde_json::from_value(lines).ok())
-        .unwrap_or_default()
+        .ok_or_else(|| anyhow::anyhow!("a draft without its lines"))?;
+    Ok(serde_json::from_value(lines)?)
 }
 
 fn state_of(row: &crate::db::PhotoImportRow) -> ImportState {
@@ -244,7 +271,12 @@ fn state_of(row: &crate::db::PhotoImportRow) -> ImportState {
             last_failure: failure,
         },
         "ready" => {
-            let lines = lines_of(row);
+            let Ok(lines) = lines_of(row) else {
+                tracing::warn!(import = row.id, "A photo draft's lines cannot be read");
+                return ImportState::Failed {
+                    failure: ReadingFailure::Unavailable,
+                };
+            };
             let parts = row.title.as_deref().map_or_else(Vec::new, |title| {
                 crate::recipe_parts::part_names(title, &crate::recipe_parts::split_parts(&lines))
             });
@@ -313,6 +345,12 @@ pub async fn claim(pool: &PgPool, secret: &str) -> Result<Option<Claimed>, Engin
                 owner: Owner::telegram(telegram_id),
             }),
     )
+}
+
+/// Gives back a claimed import that will not be read now (no reading slot): its link takes the
+/// photo again.
+pub async fn release(pool: &PgPool, claimed: Claimed) -> Result<(), EngineError> {
+    Ok(crate::db::release_photo_import(pool, claimed.id).await?)
 }
 
 /// Reads the photo of a claimed import with the bot's pipeline, and keeps the draft, or why
@@ -475,7 +513,10 @@ pub async fn save(
         ImportState::Saved { recipe_ids } => return saved_again(pool, owner, &recipe_ids).await,
         other => return Err(SaveError::NotReady(other)),
     }
-    let mut lines = lines_of(&row);
+    let mut lines = lines_of(&row)?;
+    if lines.is_empty() {
+        return Err(SaveError::from(anyhow::anyhow!("a draft without lines")));
+    }
     for (number, typed) in corrections {
         let index = number
             .checked_sub(1)

@@ -89,8 +89,22 @@ the token in Claude Code's own settings file). Check with `/mcp` inside Claude C
 | `rename_recipe` (read-write key) | `id`, `name` | the name stored, made unique ("Tarte (2)") |
 | `set_memo` (read-write key) | `id`, `memo` (`null` clears) | the memo stored, cleaned as in the bot |
 | `create_recipe` (read-write key) | `name`, `ingredients` (one line each) | the new recipe's id and name |
+| `import_photo` (read-write) | none | an upload link for the user (15 minutes) and the import's id |
+| `get_photo_draft` (read-write) | `id` | waiting, being read, the draft (title, parts, numbered lines, those to confirm), failed, saved, expired |
+| `save_photo_draft` (read-write) | `id`, `name`?, `lines`? (`[{line, text}]`, flagged lines only) | the recipes created (linked, one per part) |
+| `discard_photo_draft` (read-write) | `id` | done |
 
-A read-only key or connection is shown the first four only and cannot call the others. A change made through
+A read-only key or connection is shown the first four only and cannot call the others.
+
+**Recipe photos** are read by JustIngredients itself, with the bot's rules (parts, units, the
+spoon check, the cache, the daily limit shared with Telegram), never by the assistant: say "import
+this recipe photo" and the assistant calls `import_photo`. It gives a link: open it on the phone
+(camera or library) or the computer, send the photo (JPEG, PNG, WebP, 10 MB at most; it is not
+kept). The page reads it (up to a minute), then says "Photo lue: retournez dans votre
+assistant". The assistant shows the ingredients; a line marked to confirm (an unsure quantity,
+"2-3 c. à soupe") needs your answer, and a photo without a title needs a name. Once you agree,
+the recipes are saved, linked, and appear in the bot's list. Each reading counts in your photos of
+the day (50). ChatGPT's own file input is not used yet (to try first, specs/tasks/mcp-photos.md). A change made through
 an assistant updates the recipe's cards in Telegram within seconds (the bot follows the engine's
 events).
 
@@ -112,6 +126,10 @@ that cannot answer (unknown id, bad argument) says why in its result, which the 
 
 - Every change is an event (`events`, origin `mcp`, the key's or the grant's id), kept 30 days;
   a new connection too (`oauth.connected`).
+- Photo imports (`photo_imports`: the link's secret by SHA-256, the draft, the saved ids) are
+  deleted a day after they expire; the daily counts (`user_photo_days`, Paris days) after a week.
+  At most 2 photos read at once from the pages (Gemini's slots are shared with Telegram), 20
+  posts a minute per address. Logs: `Photo import started`, `received`, `read`, never the link.
 - One log line per request (`Door request`: door, status, duration, `key:N` or `grant:N`; never
   the request's content nor the token); the sign-in logs its steps (`OAuth sign-in started`,
   `Telegram answered`, `approved`, `grant made`), never a code, state or token; counters `ji_api_requests_total{door, status}`,
@@ -121,4 +139,4 @@ that cannot answer (unknown id, bad argument) says why in its result, which the 
   origin `https://<app>.fly.dev`); without them the door takes keys only.
 - Tests: `tests/mcp_tests.rs` (JSON-RPC over a real socket, two users), `tests/doors_tests.rs`
   (the guard), `tests/oauth_tests.rs` (a whole sign-in with a fake Telegram, every refusal),
-  `tests/engine_tests.rs`.
+  `tests/photo_tests.rs` (the upload page with a fake Gemini), `tests/engine_tests.rs`.

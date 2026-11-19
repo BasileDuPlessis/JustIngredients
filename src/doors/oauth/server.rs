@@ -1082,6 +1082,11 @@ mod tests {
             HeaderValue::from_static("fr-FR,fr;q=0.9,en;q=0.8"),
         );
         assert_eq!(lang_of(&headers), Lang::Fr);
+        headers.insert(
+            header::ACCEPT_LANGUAGE,
+            HeaderValue::from_static("fr;q=0.9, en;q=0.8"),
+        );
+        assert_eq!(lang_of(&headers), Lang::Fr, "a first tag with its weight");
     }
 
     #[test]

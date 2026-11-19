@@ -189,10 +189,14 @@ impl GuardedExtractor {
         let extraction = match self.inner.extract(image).await {
             Ok(extraction) => extraction,
             Err(error) => {
-                // Refused before any request (breaker open, configuration): not a paid call
+                // Refused before any request (breaker open, configuration), or refused for the
+                // rate (429, never billed): not a paid call
                 if matches!(
                     error,
-                    ExtractionError::CircuitOpen | ExtractionError::Config(_)
+                    ExtractionError::CircuitOpen
+                        | ExtractionError::Config(_)
+                        | ExtractionError::RateLimited { .. }
+                        | ExtractionError::Api { status: 429, .. }
                 ) {
                     self.give_back_daily_call(image.requester(), day).await;
                 }
@@ -466,6 +470,37 @@ mod tests {
 
     fn date(year: i32, month: u32, day: u32) -> NaiveDate {
         NaiveDate::from_ymd_opt(year, month, day).unwrap_or_default()
+    }
+
+    /// Answers 429 (the service refused for the rate): never billed.
+    #[derive(Debug)]
+    struct RateLimitedExtractor;
+
+    impl IngredientExtractor for RateLimitedExtractor {
+        fn name(&self) -> &'static str {
+            "rate-limited"
+        }
+
+        fn extract<'a>(&'a self, _image: &'a ImageInput) -> ExtractionFuture<'a> {
+            Box::pin(async {
+                Err(ExtractionError::Api {
+                    status: 429,
+                    message: "quota".to_string(),
+                })
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn a_call_refused_for_the_rate_is_not_counted() -> Result<(), ExtractionError> {
+        let guarded = GuardedExtractor::new(Arc::new(RateLimitedExtractor), 2).with_daily_limit(1);
+        for seed in 1..=3 {
+            assert!(matches!(
+                guarded.extract(&image(seed)?.requested_by(7)).await,
+                Err(ExtractionError::Api { status: 429, .. })
+            ));
+        }
+        Ok(())
     }
 
     #[test]

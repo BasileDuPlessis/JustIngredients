@@ -509,7 +509,7 @@ struct SaveArguments {
     #[serde(default)]
     name: Option<String>,
     #[serde(default)]
-    lines: Vec<CorrectedLine>,
+    lines: Option<Vec<CorrectedLine>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -526,6 +526,7 @@ async fn save_photo_draft(
 ) -> Result<Value, Refusal> {
     let SaveArguments { id, name, lines } = arguments(arguments_value)?;
     let corrections: Vec<(usize, String)> = lines
+        .unwrap_or_default()
         .into_iter()
         .map(|line| (line.line, line.text))
         .collect();
@@ -554,7 +555,7 @@ async fn save_photo_draft(
                 .map(|(line, name)| format!("{line} ({name})"))
                 .collect();
             Err(Refusal::Told(format!(
-                "These lines need the user's quantity before saving: {}. Ask the user, then pass lines: [{{\"line\": n, \"text\": \"the line as a cook writes it\"}}].",
+                "These lines need the user's quantity before saving: {}. Ask the user (one quantity: a range such as \"2-3\" stays to confirm), then pass lines: [{{\"line\": n, \"text\": \"the line as a cook writes it\"}}].",
                 listed.join(", ")
             )))
         }
