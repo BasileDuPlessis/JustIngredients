@@ -463,7 +463,7 @@ async fn claude_connects_with_telegram_and_uses_the_tools(pool: PgPool) -> Resul
     assert!(access.starts_with("jio_") && refresh.starts_with("jir_"));
 
     // The tools, with writing
-    assert_eq!(tool_count(address, access).await?, (200, 7));
+    assert_eq!(tool_count(address, access).await?, (200, 11));
 
     // Renewed: a new pair (unknown scopes asked are ignored)
     let (status, renewed, _) = token(
@@ -478,7 +478,7 @@ async fn claude_connects_with_telegram_and_uses_the_tools(pool: PgPool) -> Resul
     .await?;
     assert_eq!(status, 200, "{renewed}");
     let renewed_access = renewed["access_token"].as_str().context("renewed")?;
-    assert_eq!(tool_count(address, renewed_access).await?, (200, 7));
+    assert_eq!(tool_count(address, renewed_access).await?, (200, 11));
 
     // The code presented again: refused, and the grant it made is revoked
     let (status, refused, _) = token(

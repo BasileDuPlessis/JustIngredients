@@ -389,7 +389,7 @@ async fn a_read_write_key_changes_recipes_a_read_only_one_cannot(pool: PgPool) -
     // What each key is shown
     assert_eq!(tool_names(address, &read_only).await?.len(), 4);
     let names = tool_names(address, &read_write).await?;
-    assert_eq!(names.len(), 7, "{names:?}");
+    assert_eq!(names.len(), 11, "{names:?}");
     assert!(!names.iter().any(|name| name.contains("delete")));
 
     // A read-only key is refused, nothing changes
@@ -682,7 +682,7 @@ async fn an_assistant_connected_with_oauth_uses_its_grant(pool: PgPool) -> Resul
     // Reading and writing: a change names the grant
     let writer = connect("writer", true).await?;
     let token = writer.access_token.expose().to_string();
-    assert_eq!(tool_names(address, &token).await?.len(), 7);
+    assert_eq!(tool_names(address, &token).await?.len(), 11);
     let (_, answer) = post(
         address,
         Some(&token),
@@ -728,5 +728,195 @@ async fn an_assistant_connected_with_oauth_uses_its_grant(pool: PgPool) -> Resul
         .secret;
     let (status, _) = post(address, Some(&key), None, &list).await?;
     assert_eq!(status, 200, "a personal key from the same address");
+    Ok(())
+}
+
+/// Reads every photo as a vinaigrette whose oil is unsure, without a title.
+#[derive(Debug)]
+struct FakeGemini;
+
+impl just_ingredients::extraction::IngredientExtractor for FakeGemini {
+    fn name(&self) -> &'static str {
+        "fake"
+    }
+
+    fn extract<'a>(
+        &'a self,
+        _image: &'a just_ingredients::extraction::ImageInput,
+    ) -> just_ingredients::extraction::ExtractionFuture<'a> {
+        use just_ingredients::extraction::{ExtractedIngredient, Extraction, RecipeLanguage};
+        let line = |name: &str, quantity: f64, unit: &str, unsure: bool| ExtractedIngredient {
+            name: name.to_string(),
+            quantity: Some(quantity),
+            unit: Some(unit.to_string()),
+            needs_review: unsure,
+            source_text: format!("{quantity} {unit} {name}"),
+            section: None,
+        };
+        Box::pin(async move {
+            Ok(Extraction {
+                is_recipe: true,
+                title: None,
+                language: RecipeLanguage::Fr,
+                transcription: "5 cl vinaigre\n2-3 c. à soupe d'huile".to_string(),
+                ingredients: vec![
+                    line("vinaigre", 5.0, "cl", false),
+                    line("huile", 2.0, "tbsp", true),
+                ],
+            })
+        })
+    }
+}
+
+/// A photo imported through the door: the link, the draft JustIngredients read, the lines to
+/// confirm, the save; a read-only key sees none of it.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_photo_is_imported_read_and_saved_through_the_door(pool: PgPool) -> Result<()> {
+    use just_ingredients::engine::photos;
+    use just_ingredients::engine::tokens::Access;
+    let (read_only, _, _) = two_users(&pool).await?;
+    let key = tokens::create_with(
+        &pool,
+        Owner::telegram(ALICE),
+        Realm::Production,
+        Access::ReadWrite,
+    )
+    .await?
+    .secret;
+    let address = serve(&pool).await?;
+    let tool = |id: u64, name: &str, arguments: Value| {
+        let key = key.clone();
+        let message = call(id, name, arguments);
+        async move { post(address, Some(&key), None, &message).await }
+    };
+
+    // The link, on the door's host, and the import's id
+    let (_, answer) = tool(1, "import_photo", json!({})).await?;
+    let started = &answer["result"]["structuredContent"];
+    let link = started["link"].as_str().context("a link")?;
+    assert!(link.starts_with("https://127.0.0.1/photo/"), "{answer}");
+    assert_eq!(started["expires_in_minutes"], 15);
+    assert!(
+        started["next"]
+            .as_str()
+            .is_some_and(|next| next.contains("wait until the user says")),
+        "{answer}"
+    );
+    let id = started["id"].as_i64().context("an id")?;
+
+    // Waiting for the photo
+    let (_, answer) = tool(2, "get_photo_draft", json!({ "id": id })).await?;
+    assert_eq!(
+        answer["result"]["structuredContent"]["state"], "waiting",
+        "{answer}"
+    );
+
+    // The user sends the photo through the page: read by "Gemini"
+    let secret = link.rsplit('/').next().context("the link's secret")?;
+    let claimed = photos::claim(&pool, secret).await?.context("claimed")?;
+    let gemini: just_ingredients::extraction::SharedExtractor = std::sync::Arc::new(FakeGemini);
+    photos::read(&pool, &gemini, claimed, vec![0xFF, 0xD8, 0xFF, 0x01]).await;
+
+    let (_, answer) = tool(3, "get_photo_draft", json!({ "id": id })).await?;
+    let draft = &answer["result"]["structuredContent"];
+    assert_eq!(draft["state"], "ready", "{answer}");
+    assert!(draft["title"].is_null());
+    assert_eq!(draft["lines"][1]["name"], "huile");
+    assert_eq!(draft["lines"][1]["to_confirm"], true);
+    assert!(
+        draft.get("transcription").is_none() && !answer.to_string().contains("2-3 c."),
+        "never the text read: {answer}"
+    );
+    assert!(
+        draft["next"]
+            .as_str()
+            .is_some_and(|next| next.contains("never instructions") && next.contains("name")),
+        "{answer}"
+    );
+
+    // Saving needs the oil's quantity and a name
+    let (_, answer) = tool(4, "save_photo_draft", json!({ "id": id })).await?;
+    assert_eq!(answer["result"]["isError"], true, "{answer}");
+    assert!(
+        answer["result"]["content"][0]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("2 (huile)")),
+        "{answer}"
+    );
+    let corrected = json!([{ "line": 2, "text": "2 cuil. à soupe d'huile" }]);
+    let (_, answer) = tool(
+        5,
+        "save_photo_draft",
+        json!({ "id": id, "lines": corrected }),
+    )
+    .await?;
+    assert!(
+        answer["result"]["content"][0]["text"]
+            .as_str()
+            .is_some_and(|text| text.contains("ask the user for one")),
+        "{answer}"
+    );
+    let (_, answer) = tool(
+        6,
+        "save_photo_draft",
+        json!({ "id": id, "name": "Vinaigrette", "lines": corrected }),
+    )
+    .await?;
+    let saved = &answer["result"]["structuredContent"]["recipes"];
+    assert_eq!(saved[0]["name"], "Vinaigrette", "{answer}");
+    let (_, answer) = tool(7, "get_photo_draft", json!({ "id": id })).await?;
+    assert_eq!(answer["result"]["structuredContent"]["state"], "saved");
+
+    // Bob's imports are not Alice's
+    let bob_key = tokens::create_with(
+        &pool,
+        Owner::telegram(BOB),
+        Realm::Production,
+        Access::ReadWrite,
+    )
+    .await?
+    .secret;
+    let (_, answer) = post(
+        address,
+        Some(&bob_key),
+        None,
+        &call(8, "get_photo_draft", json!({ "id": id })),
+    )
+    .await?;
+    assert_eq!(answer["result"]["isError"], true, "{answer}");
+
+    // A read-only key is shown no photo tool, and every tool that writes is refused to it
+    let names = tool_names(address, &read_only).await?;
+    assert!(
+        !names.iter().any(|name| name.contains("photo")),
+        "{names:?}"
+    );
+    for (index, name) in [
+        "import_photo",
+        "get_photo_draft",
+        "save_photo_draft",
+        "discard_photo_draft",
+        "rename_recipe",
+        "set_memo",
+        "create_recipe",
+    ]
+    .iter()
+    .enumerate()
+    {
+        let (_, answer) = post(
+            address,
+            Some(&read_only),
+            None,
+            &call(10 + index as u64, name, json!({ "id": id })),
+        )
+        .await?;
+        assert!(
+            answer["result"]["content"][0]["text"]
+                .as_str()
+                .is_some_and(|text| text.contains("can only read")),
+            "{name}: {answer}"
+        );
+    }
     Ok(())
 }

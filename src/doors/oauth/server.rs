@@ -724,8 +724,10 @@ fn consent_html(view: &ConsentView<'_>) -> Response {
         ),
         write = text(
             lang,
-            "Les modifier aussi : renommer, écrire des mémos, créer des recettes (jamais supprimer)",
-            "Change them too: rename, write memos, create recipes (never delete)"
+            "Les modifier aussi : renommer, écrire des mémos, créer des recettes, y compris depuis \
+             une photo que JustIngredients lit (comptée dans vos photos du jour) ; jamais supprimer",
+            "Change them too: rename, write memos, create recipes, from a photo JustIngredients \
+             reads too (counted in your photos of the day); never delete"
         ),
         back = text(
             lang,

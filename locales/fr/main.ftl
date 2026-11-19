@@ -139,7 +139,7 @@ current-recipe-name = Nom actuel
 
 # Clés d'accès (assistants IA, serveur MCP) : /cle, pendant la bêta
 api-keys-title = 🔑 Clés d'accès
-api-keys-explain = Une clé permet à un assistant IA (Claude Code, Cursor, VS Code…) de lire vos recettes. Une clé « lecture et écriture » lui permet aussi de renommer une recette, d'écrire son mémo et d'en créer une à partir d'un texte ; aucune ne peut supprimer. Gardez-la pour vous.
+api-keys-explain = Une clé permet à un assistant IA (Claude Code, Cursor, VS Code…) de lire vos recettes. Une clé « lecture et écriture » lui permet aussi de renommer une recette, d'écrire son mémo et d'en créer une à partir d'un texte ou d'une photo (lue par JustIngredients, comptée dans vos photos du jour) ; aucune ne peut supprimer. Gardez-la pour vous.
 api-keys-none = Aucune clé pour l'instant.
 api-keys-line = • { $hint }… ({ $access }) créée le { $created }, { $used }
 api-keys-never-used = jamais utilisée

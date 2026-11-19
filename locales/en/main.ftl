@@ -140,7 +140,7 @@ current-recipe-name = Current name
 
 # Access keys (AI assistants, MCP server): /key, during the beta
 api-keys-title = 🔑 Access keys
-api-keys-explain = A key lets an AI assistant (Claude Code, Cursor, VS Code…) read your recipes. A "read and write" key also lets it rename a recipe, write its memo and create one from text; none can delete. Keep it to yourself.
+api-keys-explain = A key lets an AI assistant (Claude Code, Cursor, VS Code…) read your recipes. A "read and write" key also lets it rename a recipe, write its memo and create one from text or a photo (read by JustIngredients, counted in your photos of the day); none can delete. Keep it to yourself.
 api-keys-none = No key yet.
 api-keys-line = • { $hint }… ({ $access }) created { $created }, { $used }
 api-keys-never-used = never used
