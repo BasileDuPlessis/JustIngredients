@@ -233,6 +233,8 @@ fn state_of(row: &crate::db::PhotoImportRow) -> ImportState {
         },
         "discarded" => ImportState::Discarded,
         _ if !row.alive => ImportState::Expired,
+        // A link whose key or connection was revoked (or lost writing) takes no photo
+        "waiting" | "reading" if !row.may_write => ImportState::Expired,
         "reading" if row.reading_stale => ImportState::Waiting {
             last_failure: Some(ReadingFailure::Interrupted),
         },

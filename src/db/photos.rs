@@ -115,12 +115,18 @@ pub struct PhotoImportRow {
     pub alive: bool,
     /// A reading started long enough ago to have been cut by a restart.
     pub reading_stale: bool,
+    /// The key or connection that asked is still active and allowed to write.
+    pub may_write: bool,
 }
 
 /// `reading_stale_secs`: after this long, a reading is taken as interrupted.
 const IMPORT_COLUMNS: &str = "id, telegram_id, status, failure, ingredients, transcription, title, \
      saved_recipe_ids, link_expires_at > now() AS link_open, expires_at > now() AS alive, \
-     COALESCE(reading_started_at < now() - make_interval(secs => $2), FALSE) AS reading_stale";
+     COALESCE(reading_started_at < now() - make_interval(secs => $2), FALSE) AS reading_stale, \
+     (EXISTS (SELECT 1 FROM api_tokens t WHERE t.id = photo_imports.token_id \
+              AND t.revoked_at IS NULL AND 'recipes:write' = ANY(t.scopes)) \
+      OR EXISTS (SELECT 1 FROM oauth_grants g WHERE g.id = photo_imports.grant_id \
+                 AND g.revoked_at IS NULL AND 'recipes:write' = ANY(g.scopes))) AS may_write";
 
 /// The import whose link's secret hashes to `upload_hash`.
 pub async fn photo_import_by_link(

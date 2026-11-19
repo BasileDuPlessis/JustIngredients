@@ -107,6 +107,10 @@ pub enum Action {
     ApiKeyCreated,
     /// A personal API token revoked.
     ApiKeyRevoked,
+    /// A photo sent through an assistant's upload link (`doors::photos`).
+    PhotoImportReceived,
+    /// A photo's draft saved through an assistant.
+    PhotoImportSaved,
 }
 
 impl Action {
@@ -131,6 +135,8 @@ impl Action {
             Self::NoteCleared => "note_cleared",
             Self::ApiKeyCreated => "api_key_created",
             Self::ApiKeyRevoked => "api_key_revoked",
+            Self::PhotoImportReceived => "photo_import_received",
+            Self::PhotoImportSaved => "photo_import_saved",
         }
     }
 }

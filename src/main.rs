@@ -84,6 +84,28 @@ async fn main() -> Result<()> {
     );
     info!("Request deduplicator initialized for duplicate message prevention");
 
+    // Ingredient extraction engine (Gemini), before the doors: the photo pages read with it.
+    // No network here; its access is checked below.
+    if let Ok(backend) = env::var("EXTRACTION_BACKEND") {
+        warn!(
+            value = %backend,
+            "EXTRACTION_BACKEND is no longer read: the Tesseract fallback was removed, Gemini is used"
+        );
+    }
+    let gemini = Arc::new(GeminiExtractor::new(&app_config.extraction.gemini)?);
+    // Concurrency limit and result cache in front of the engine (cost and memory protection)
+    let extractor: SharedExtractor = Arc::new(
+        GuardedExtractor::new(
+            Arc::clone(&gemini) as SharedExtractor,
+            app_config.extraction.gemini.max_concurrency,
+        )
+        .with_daily_limit(app_config.extraction.daily_limit_per_user)
+        // Counted in the database: shared by every door, kept across deploys
+        .with_daily_calls(Arc::new(
+            just_ingredients::engine::photos::StoredDailyCalls::new((*shared_pool).clone()),
+        )),
+    );
+
     // The metrics, the public health server and the internal metrics one (logging already
     // runs).
     // Readiness waits for a Telegram success from the start, not only once the heartbeat runs
@@ -135,6 +157,13 @@ async fn main() -> Result<()> {
         ));
         info!(issuer = %settings.issuer, "OAuth authorization server served");
     }
+    // The photo upload pages of the assistants' imports
+    doors = doors.merge(just_ingredients::doors::photos::router(
+        just_ingredients::doors::photos::PhotoPages::new(
+            (*shared_pool).clone(),
+            Arc::clone(&extractor),
+        ),
+    ));
     observability::start(Some(Arc::clone(&shared_pool)), &app_config, doors).await?;
     // The usage history: visits and daily totals, the user and recipe gauges
     tokio::spawn(observability::usage::run(Arc::clone(&shared_pool)));
@@ -142,14 +171,6 @@ async fn main() -> Result<()> {
     // Initialize localization manager
     let localization_manager = localization::create_localization_manager()?;
 
-    // Ingredient extraction engine (Gemini)
-    if let Ok(backend) = env::var("EXTRACTION_BACKEND") {
-        warn!(
-            value = %backend,
-            "EXTRACTION_BACKEND is no longer read: the Tesseract fallback was removed, Gemini is used"
-        );
-    }
-    let gemini = GeminiExtractor::new(&app_config.extraction.gemini)?;
     // Its failure does not stop the bot (lists and recipes still work): the owner is told once
     // the alerts run, below
     let gemini_check = gemini.verify_access().await;
@@ -161,18 +182,6 @@ async fn main() -> Result<()> {
             "Gemini API access check failed: photos will fail until the key or model is fixed"
         ),
     }
-    // Concurrency limit and result cache in front of the engine (cost and memory protection)
-    let extractor: SharedExtractor = Arc::new(
-        GuardedExtractor::new(
-            Arc::new(gemini),
-            app_config.extraction.gemini.max_concurrency,
-        )
-        .with_daily_limit(app_config.extraction.daily_limit_per_user)
-        // Counted in the database: shared by every door, kept across deploys
-        .with_daily_calls(Arc::new(
-            just_ingredients::engine::photos::StoredDailyCalls::new((*shared_pool).clone()),
-        )),
-    );
     info!(
         backend = extractor.name(),
         model = %app_config.extraction.gemini.model,

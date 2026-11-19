@@ -19,7 +19,7 @@
 //!   addresses. Sign-ins started are limited per address (an IPv6 /64) and in all; at most
 //!   [`MAX_AT_ONCE`] requests at once, the database's connections being few.
 
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -36,8 +36,9 @@ use tracing::{info, warn};
 
 use super::OAuthSettings;
 use super::clients::{self, Client};
-use super::page::{escape, see_other};
+use super::page::{escape, lang_of, see_other, text};
 use super::telegram::{Attempt, CALLBACK_PATH, TelegramLogin};
+use crate::doors::address_key;
 use crate::engine::oauth::{self, Callback, CodeExchange, Decision, GrantError, SignInRequest};
 use crate::engine::tokens::{Realm, SCOPE_RECIPES_READ, SCOPE_RECIPES_WRITE};
 use crate::engine::{Lang, Owner};
@@ -137,42 +138,8 @@ pub fn router(server: Arc<AuthorizationServer>) -> Router {
         .with_state(server)
 }
 
-/// The client's address for the limits: Fly's `Fly-Client-IP`, else the peer; an IPv6 address
-/// by its /64, the block one subscriber usually holds.
-pub fn address_key(headers: &HeaderMap, peer: IpAddr) -> String {
-    let address = headers
-        .get("fly-client-ip")
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.trim().parse::<IpAddr>().ok())
-        .unwrap_or(peer);
-    match address {
-        IpAddr::V6(v6) if v6.to_ipv4_mapped().is_none() => {
-            let [a, b, c, d, ..] = v6.segments();
-            format!("{a:x}:{b:x}:{c:x}:{d:x}::/64")
-        }
-        IpAddr::V6(v6) => v6
-            .to_ipv4_mapped()
-            .map_or_else(|| v6.to_string(), |v4| v4.to_string()),
-        IpAddr::V4(v4) => v4.to_string(),
-    }
-}
-
 // ---------------------------------------------------------------------------------------------
 // Texts
-
-/// The language of a page: French when the browser asks for it first, else English.
-fn lang_of(headers: &HeaderMap) -> Lang {
-    let first = headers
-        .get(header::ACCEPT_LANGUAGE)
-        .and_then(|value| value.to_str().ok())
-        .and_then(|value| value.split(',').next())
-        .map(|value| value.trim().to_ascii_lowercase());
-    Lang::from_code(first.as_deref())
-}
-
-fn text(lang: Lang, fr: &'static str, en: &'static str) -> &'static str {
-    if lang.is_french() { fr } else { en }
-}
 
 /// A page saying why the sign-in stops here, without going back to the assistant; it ends the
 /// browser's binding.
@@ -1055,6 +1022,8 @@ async fn token(
 
 #[cfg(test)]
 mod tests {
+    use std::net::IpAddr;
+
     use super::*;
 
     #[test]

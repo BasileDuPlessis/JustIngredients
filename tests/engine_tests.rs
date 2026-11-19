@@ -1694,6 +1694,11 @@ mod photo_imports {
                 .is_none(),
             "revoked"
         );
+        assert_eq!(
+            photos::link_state(&pool, started.secret.expose()).await?,
+            Some(ImportState::Expired),
+            "the page says so, instead of offering the form again"
+        );
 
         let reader = tokens::create(&pool, Owner::telegram(ALICE), Realm::Production).await?;
         let read_only =
