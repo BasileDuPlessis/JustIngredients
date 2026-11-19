@@ -1,6 +1,6 @@
 # OAuth for AI assistants (tranche 4 of the engine): study
 
-Status: validated by the owner (2026-11-12) and revised after an independent review (§7); tasks 0 to 8 done and reviewed (§8): the Telegram trial passed and claude.ai connected on staging (2026-11-13: sign-in, approval, grant, tools); the trial page is removed; docs in [../mcp.md](../mcp.md). Next: the real bot's BotFather set-up and production. ChatGPT not tried yet (it asks for its desktop app).
+Status: validated by the owner (2026-11-12) and revised after an independent review (§7); **in production (v44, `5d85fda`, 2026-11-19)**: tasks 0 to 8 done and reviewed (§8); claude.ai connected on staging (2026-11-13) and in production (2026-11-19: grant 1, tools answering through it). Docs in [../mcp.md](../mcp.md). ChatGPT not tried yet (it asks for its desktop app). A network that blocks Telegram (the owner's office network resets TLS to oauth.telegram.org) breaks the sign-in step only: sign in once from another network (the phone's data), the assistant then works from anywhere.
 Goal: the user adds JustIngredients to **claude.ai** (web, desktop, mobile apps) or **ChatGPT** by
 its URL, signs in **with Telegram**, approves what the assistant may do, and is done: no
 terminal, no key to copy. The personal keys of `/cle` keep working for Claude Code, Cursor, VS
