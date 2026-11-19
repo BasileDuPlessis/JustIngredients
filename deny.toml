@@ -17,6 +17,9 @@ ignore = [
     # -i libsqlite3-sys` prints nothing), and no SQLite file is ever opened. sqlx 0.8 pins 0.30;
     # the fix is 0.39. Drop this line when sqlx or teloxide_tests move on.
     { id = "RUSTSEC-2026-0459", reason = "dev-only: SQLite through teloxide_tests, never opened" },
+    # chrono is unmaintained (no vulnerability, no fixed version): sqlx, teloxide and rmcp use it
+    # too, so leaving it waits for them; jiff is the advised replacement. Revisit when they move.
+    { id = "RUSTSEC-2026-0543", reason = "unmaintained, not vulnerable; sqlx, teloxide, rmcp use it" },
 ]
 
 [sources]
