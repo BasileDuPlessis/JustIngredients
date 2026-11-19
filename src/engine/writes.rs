@@ -49,13 +49,15 @@ pub struct DeletedRecipe {
 }
 
 /// A transaction for a change and its event: the events lock is its first lock (`db::events`).
-async fn begin(pool: &PgPool) -> Result<sqlx::Transaction<'static, Postgres>, EngineError> {
+pub(super) async fn begin(
+    pool: &PgPool,
+) -> Result<sqlx::Transaction<'static, Postgres>, EngineError> {
     let mut tx = pool.begin().await.map_err(anyhow::Error::from)?;
     crate::db::lock_events(&mut tx).await?;
     Ok(tx)
 }
 
-async fn commit(tx: sqlx::Transaction<'_, Postgres>) -> Result<(), EngineError> {
+pub(super) async fn commit(tx: sqlx::Transaction<'_, Postgres>) -> Result<(), EngineError> {
     Ok(tx.commit().await.map_err(anyhow::Error::from)?)
 }
 
@@ -99,8 +101,22 @@ pub async fn create(
     parts: &[RecipePart<'_>],
 ) -> Result<Vec<SavedRecipe>, EngineError> {
     let mut tx = begin(pool).await?;
+    let saved = create_in(&mut tx, actor, language_code, content, parts).await?;
+    commit(tx).await?;
+    Ok(saved)
+}
+
+/// [`create`] in `tx`, a transaction from [`begin`] (for a change that goes with it: a photo's
+/// draft marked saved).
+pub(super) async fn create_in(
+    tx: &mut sqlx::Transaction<'_, Postgres>,
+    actor: Actor,
+    language_code: Option<&str>,
+    content: &str,
+    parts: &[RecipePart<'_>],
+) -> Result<Vec<SavedRecipe>, EngineError> {
     let saved = crate::db::save_recipe_parts_in(
-        &mut tx,
+        tx,
         actor.owner.telegram_id(),
         language_code,
         content,
@@ -114,7 +130,7 @@ pub async fn create(
             .filter(|id| *id != recipe.recipe_id)
             .collect();
         record(
-            &mut tx,
+            tx,
             actor,
             EventKind::RecipeCreated,
             recipe.recipe_id,
@@ -122,7 +138,6 @@ pub async fn create(
         )
         .await?;
     }
-    commit(tx).await?;
     Ok(saved)
 }
 

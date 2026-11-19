@@ -206,21 +206,8 @@ pub async fn save_ingredients_to_database(
 
     // User, recipes, names, ingredients and links in one transaction: nothing is left
     // half-saved
-    let photo_parts = crate::recipe_parts::split_parts(ingredients);
-    let names = crate::recipe_parts::part_names(recipe_name, &photo_parts);
-    let parts: Vec<crate::db::RecipePart> = photo_parts
-        .iter()
-        .zip(names)
-        .map(|(part, name)| crate::db::RecipePart {
-            name,
-            ingredients: part
-                .lines
-                .iter()
-                .filter_map(|&line| ingredients.get(line))
-                .map(crate::ingredient_editing::to_new_ingredient)
-                .collect(),
-        })
-        .collect();
+    // The parts as every door saves a photo: one per part, linked (`engine::photos`)
+    let parts = crate::engine::photos::photo_parts(ingredients, recipe_name);
     // Through the engine: the recipes and their events in one transaction
     let actor = crate::engine::writes::Actor::telegram(crate::engine::Owner::telegram(telegram_id));
     let saved = match crate::engine::writes::create(

@@ -39,6 +39,7 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
         "oauth_requests",
         "oauth_codes",
         "user_photo_days",
+        "photo_imports",
     ];
     for table_name in required_tables {
         let exists: bool = sqlx::query_scalar(

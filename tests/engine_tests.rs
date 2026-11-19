@@ -1431,3 +1431,397 @@ mod photos {
         Ok(())
     }
 }
+
+// Photo imports: link, reading, draft, save (`specs/tasks/mcp-photos.md`, task 2)
+
+mod photo_imports {
+    use std::sync::{Arc, Mutex, PoisonError};
+
+    use anyhow::{Context, Result, bail};
+    use just_ingredients::db::init_database_schema;
+    use just_ingredients::engine::photos::{self, ImportState, ReadingFailure, SaveError};
+    use just_ingredients::engine::tokens::{self, Access, Credential, Realm};
+    use just_ingredients::engine::writes::Actor;
+    use just_ingredients::engine::{EngineError, Owner};
+    use just_ingredients::extraction::{
+        ExtractedIngredient, Extraction, ExtractionError, ExtractionFuture, ImageInput,
+        IngredientExtractor, RecipeLanguage, SharedExtractor,
+    };
+    use sqlx::PgPool;
+
+    use super::{ALICE, BOB};
+
+    /// Answers what it is given, once per call.
+    #[derive(Debug)]
+    struct Fake {
+        answer: Mutex<Result<Extraction, ExtractionError>>,
+    }
+
+    impl IngredientExtractor for Fake {
+        fn name(&self) -> &'static str {
+            "fake"
+        }
+
+        fn extract<'a>(&'a self, _image: &'a ImageInput) -> ExtractionFuture<'a> {
+            let answer = self
+                .answer
+                .lock()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+            Box::pin(async move { answer })
+        }
+    }
+
+    fn line(
+        name: &str,
+        quantity: Option<f64>,
+        unit: Option<&str>,
+        section: Option<&str>,
+    ) -> ExtractedIngredient {
+        ExtractedIngredient {
+            name: name.to_string(),
+            quantity,
+            unit: unit.map(str::to_string),
+            needs_review: false,
+            source_text: format!("{} {name}", quantity.unwrap_or_default()),
+            section: section.map(str::to_string),
+        }
+    }
+
+    /// A tart in two parts, with a title.
+    fn tart() -> Extraction {
+        Extraction {
+            is_recipe: true,
+            title: Some("Tarte aux poireaux".to_string()),
+            language: RecipeLanguage::Fr,
+            transcription: "Pâte\n250 g farine\nGarniture\n3 poireaux".to_string(),
+            ingredients: vec![
+                line("farine", Some(250.0), Some("g"), Some("Pâte")),
+                line("beurre", Some(125.0), Some("g"), Some("Pâte")),
+                line("poireaux", Some(3.0), None, Some("Garniture")),
+                line("crème", Some(20.0), Some("cl"), Some("Garniture")),
+            ],
+        }
+    }
+
+    fn extractor(answer: Result<Extraction, ExtractionError>) -> (SharedExtractor, Arc<Fake>) {
+        let fake = Arc::new(Fake {
+            answer: Mutex::new(answer),
+        });
+        (fake.clone(), fake)
+    }
+
+    fn photo() -> Vec<u8> {
+        vec![0xFF, 0xD8, 0xFF, 0x01]
+    }
+
+    /// Alice's read-write key, and an import started with it.
+    async fn import(pool: &PgPool) -> Result<(Credential, photos::NewImport)> {
+        init_database_schema(pool).await?;
+        just_ingredients::db::get_or_create_user(pool, ALICE, Some("fr")).await?;
+        let key = tokens::create_with(
+            pool,
+            Owner::telegram(ALICE),
+            Realm::Production,
+            Access::ReadWrite,
+        )
+        .await?;
+        let credential = Credential::Key(key.id);
+        let started = photos::start_import(pool, Owner::telegram(ALICE), credential).await?;
+        Ok((credential, started))
+    }
+
+    fn actor(credential: Credential) -> Actor {
+        Actor {
+            owner: Owner::telegram(ALICE),
+            origin: just_ingredients::engine::events::Origin::Mcp,
+            credential: Some(credential),
+        }
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn a_photo_becomes_a_draft_then_linked_recipes_once(pool: PgPool) -> Result<()> {
+        let (credential, started) = import(&pool).await?;
+        let secret = started.secret.expose();
+        assert_eq!(
+            photos::link_state(&pool, secret).await?,
+            Some(ImportState::Waiting { last_failure: None })
+        );
+        assert_eq!(photos::link_state(&pool, "made-up").await?, None);
+
+        // Claimed once: a double tap claims nothing
+        let claimed = photos::claim(&pool, secret).await?.context("claimed")?;
+        assert_eq!(claimed.id, started.id);
+        assert!(photos::claim(&pool, secret).await?.is_none(), "once");
+        assert_eq!(
+            photos::link_state(&pool, secret).await?,
+            Some(ImportState::Reading)
+        );
+
+        let (extractor, _) = extractor(Ok(tart()));
+        photos::read(&pool, &extractor, claimed, photo()).await;
+        let Some(ImportState::Ready {
+            title,
+            parts,
+            lines,
+        }) = photos::import_state(&pool, Owner::telegram(ALICE), started.id).await?
+        else {
+            bail!("a draft");
+        };
+        assert_eq!(title.as_deref(), Some("Tarte aux poireaux"));
+        assert_eq!(
+            parts,
+            ["Tarte aux poireaux", "Tarte aux poireaux (garniture)"]
+        );
+        assert_eq!(lines.len(), 4);
+        assert_eq!(lines[0].line, 1);
+        assert_eq!(lines[0].quantity.as_deref(), Some("250"));
+        assert_eq!(lines[2].part.as_deref(), Some("Garniture"));
+        assert!(
+            photos::import_state(&pool, Owner::telegram(BOB), started.id)
+                .await?
+                .is_none(),
+            "Alice's only"
+        );
+
+        // Saved as two linked recipes, with the text read; saved again: the same recipes
+        let saved = photos::save(&pool, actor(credential), started.id, None, &[]).await?;
+        assert_eq!(saved.recipes.len(), 2);
+        assert_eq!(saved.recipes[0].1, "Tarte aux poireaux");
+        let again = photos::save(&pool, actor(credential), started.id, None, &[]).await?;
+        assert_eq!(again, saved, "saved once");
+        let (content, links): (String, i64) = sqlx::query_as(
+            "SELECT r.content, (SELECT count(*) FROM recipe_links l WHERE r.id IN (l.recipe_a, l.recipe_b)) \
+             FROM recipes r WHERE r.id = $1",
+        )
+        .bind(saved.recipes[0].0)
+        .fetch_one(&pool)
+        .await?;
+        assert!(content.contains("250 g farine"), "the text read: {content}");
+        assert_eq!(links, 1, "linked to its part");
+        let events: Vec<(String, Option<i64>)> = sqlx::query_as(
+            "SELECT origin, token_id FROM events WHERE kind = 'recipe.created' ORDER BY id",
+        )
+        .fetch_all(&pool)
+        .await?;
+        assert_eq!(events.len(), 2);
+        assert!(
+            events
+                .iter()
+                .all(|(origin, token)| origin == "mcp" && *token == credential.key_id())
+        );
+        assert!(matches!(
+            photos::import_state(&pool, Owner::telegram(ALICE), started.id).await?,
+            Some(ImportState::Saved { .. })
+        ));
+        assert!(
+            photos::claim(&pool, secret).await?.is_none(),
+            "a saved import takes no photo"
+        );
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn the_bots_review_rules_hold_before_saving(pool: PgPool) -> Result<()> {
+        let (credential, started) = import(&pool).await?;
+        let mut unsure = line("huile", Some(2.0), Some("tbsp"), None);
+        unsure.needs_review = true;
+        let (extractor, _) = extractor(Ok(Extraction {
+            is_recipe: true,
+            title: None,
+            language: RecipeLanguage::Fr,
+            transcription: "farine\n2-3 c. à soupe d'huile".to_string(),
+            ingredients: vec![line("farine", Some(200.0), Some("g"), None), unsure],
+        }));
+        let claimed = photos::claim(&pool, started.secret.expose())
+            .await?
+            .context("claimed")?;
+        photos::read(&pool, &extractor, claimed, photo()).await;
+
+        let save = |name: Option<&'static str>, corrections: Vec<(usize, String)>| {
+            let pool = pool.clone();
+            async move { photos::save(&pool, actor(credential), started.id, name, &corrections).await }
+        };
+        match save(None, Vec::new()).await {
+            Err(SaveError::ToConfirm(lines)) => assert_eq!(lines, [(2, "huile".to_string())]),
+            other => bail!("{other:?}"),
+        }
+        assert!(
+            matches!(
+                save(None, vec![(1, "300 g farine".to_string())]).await,
+                Err(SaveError::NotFlagged(1))
+            ),
+            "only flagged lines change"
+        );
+        assert!(matches!(
+            save(None, vec![(9, "1 g sel".to_string())]).await,
+            Err(SaveError::NotFlagged(9))
+        ));
+        assert!(matches!(
+            save(None, vec![(2, "0 g huile".to_string())]).await,
+            Err(SaveError::InvalidLine { line: 2, .. })
+        ));
+        let fixed = vec![(2, "2 cuil. à soupe d'huile".to_string())];
+        assert!(matches!(
+            save(None, fixed.clone()).await,
+            Err(SaveError::NeedsName)
+        ));
+        let saved = save(Some("Vinaigrette"), fixed).await?;
+        assert_eq!(saved.recipes.len(), 1);
+        let oil: (Option<f64>, Option<String>) = sqlx::query_as(
+            "SELECT quantity::float8, unit FROM ingredients WHERE recipe_id = $1 AND name LIKE '%huile%'",
+        )
+        .bind(saved.recipes[0].0)
+        .fetch_one(&pool)
+        .await?;
+        assert_eq!(oil, (Some(2.0), Some("tbsp".to_string())));
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn a_link_works_only_while_its_key_may_write(pool: PgPool) -> Result<()> {
+        let (credential, started) = import(&pool).await?;
+        let Some(key) = credential.key_id() else {
+            bail!("a key");
+        };
+        tokens::revoke(&pool, Owner::telegram(ALICE), key).await?;
+        assert!(
+            photos::claim(&pool, started.secret.expose())
+                .await?
+                .is_none(),
+            "revoked"
+        );
+
+        let reader = tokens::create(&pool, Owner::telegram(ALICE), Realm::Production).await?;
+        let read_only =
+            photos::start_import(&pool, Owner::telegram(ALICE), Credential::Key(reader.id)).await?;
+        assert!(
+            photos::claim(&pool, read_only.secret.expose())
+                .await?
+                .is_none(),
+            "a read-only key"
+        );
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn a_reading_without_a_draft_leaves_the_link_open_but_the_daily_limit(
+        pool: PgPool,
+    ) -> Result<()> {
+        let (_, started) = import(&pool).await?;
+        let secret = started.secret.expose();
+        let mut not_a_recipe = tart();
+        not_a_recipe.is_recipe = false;
+        let (extractor, fake) = extractor(Ok(not_a_recipe));
+        let claimed = photos::claim(&pool, secret).await?.context("claimed")?;
+        photos::read(&pool, &extractor, claimed, photo()).await;
+        assert_eq!(
+            photos::link_state(&pool, secret).await?,
+            Some(ImportState::Waiting {
+                last_failure: Some(ReadingFailure::NotARecipe)
+            })
+        );
+
+        // Not an image: unreadable, the link still open
+        let claimed = photos::claim(&pool, secret)
+            .await?
+            .context("claimed again")?;
+        photos::read(&pool, &extractor, claimed, b"%PDF-1.4".to_vec()).await;
+        assert_eq!(
+            photos::link_state(&pool, secret).await?,
+            Some(ImportState::Waiting {
+                last_failure: Some(ReadingFailure::Unreadable)
+            })
+        );
+
+        // The daily limit ends the link
+        *fake.answer.lock().unwrap_or_else(PoisonError::into_inner) =
+            Err(ExtractionError::DailyLimitReached { limit: 50 });
+        let claimed = photos::claim(&pool, secret)
+            .await?
+            .context("claimed a third time")?;
+        photos::read(&pool, &extractor, claimed, photo()).await;
+        assert_eq!(
+            photos::link_state(&pool, secret).await?,
+            Some(ImportState::Failed {
+                failure: ReadingFailure::DailyLimit
+            })
+        );
+        assert!(photos::claim(&pool, secret).await?.is_none());
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn interrupted_expired_discarded_and_purged(pool: PgPool) -> Result<()> {
+        let (credential, started) = import(&pool).await?;
+        let secret = started.secret.expose();
+
+        // A reading cut by a restart: the link takes the photo again
+        photos::claim(&pool, secret).await?.context("claimed")?;
+        sqlx::query("UPDATE photo_imports SET reading_started_at = now() - interval '10 minutes'")
+            .execute(&pool)
+            .await?;
+        assert_eq!(
+            photos::link_state(&pool, secret).await?,
+            Some(ImportState::Waiting {
+                last_failure: Some(ReadingFailure::Interrupted)
+            })
+        );
+        assert!(photos::claim(&pool, secret).await?.is_some(), "sent again");
+
+        // An expired link
+        let late = photos::start_import(&pool, Owner::telegram(ALICE), credential).await?;
+        sqlx::query(
+            "UPDATE photo_imports SET link_expires_at = now() - interval '1 second' WHERE id = $1",
+        )
+        .bind(late.id)
+        .execute(&pool)
+        .await?;
+        assert!(photos::claim(&pool, late.secret.expose()).await?.is_none());
+
+        // Discarded: its draft goes, it cannot be saved
+        let dropped = photos::start_import(&pool, Owner::telegram(ALICE), credential).await?;
+        photos::discard(&pool, Owner::telegram(ALICE), dropped.id).await?;
+        assert!(matches!(
+            photos::discard(&pool, Owner::telegram(BOB), dropped.id).await,
+            Err(EngineError::NotFound)
+        ));
+        assert_eq!(
+            photos::import_state(&pool, Owner::telegram(ALICE), dropped.id).await?,
+            Some(ImportState::Discarded)
+        );
+
+        sqlx::query("UPDATE photo_imports SET expires_at = now() - interval '2 days'")
+            .execute(&pool)
+            .await?;
+        assert_eq!(photos::purge(&pool).await?, 3);
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn two_saves_at_once_make_one_set_of_recipes(pool: PgPool) -> Result<()> {
+        let (credential, started) = import(&pool).await?;
+        let (extractor, _) = extractor(Ok(tart()));
+        let claimed = photos::claim(&pool, started.secret.expose())
+            .await?
+            .context("claimed")?;
+        photos::read(&pool, &extractor, claimed, photo()).await;
+        let (a, b) = tokio::join!(
+            photos::save(&pool, actor(credential), started.id, None, &[]),
+            photos::save(&pool, actor(credential), started.id, None, &[]),
+        );
+        let (a, b) = (a?, b?);
+        assert_eq!(a, b);
+        let count: i64 = sqlx::query_scalar("SELECT count(*) FROM recipes")
+            .fetch_one(&pool)
+            .await?;
+        assert_eq!(count, 2, "one set of recipes");
+        Ok(())
+    }
+}
