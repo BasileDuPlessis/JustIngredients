@@ -1,6 +1,6 @@
 # Recipe photos through an assistant (tranche 3 of the engine): study
 
-Status: validated by the owner (2026-11-19: the four recommendations of §6), under review; nothing implemented. The owner asked for it after Claude read a photo
+Status: validated by the owner (2026-11-19: the four recommendations of §6), reviewed and revised (§7, with two more decisions); task 1 done (the daily limit in the database). The owner asked for it after Claude read a photo
 itself and created the recipe with `create_recipe` ("la transcription est bonne mais nous devons
 garder la main avec Gemini").
 
@@ -134,3 +134,66 @@ the conversation to a file input; how the upload page feels on the owner's phone
    day per user, as today (recommended).
 4. Photo tools only for keys and connections that may change recipes (recommended).
 5. The photo is never kept (as in the bot).
+
+## 7. What the review changed (2026-11-19), and two more decisions
+
+An independent review checked the study against the code. The premise, the cache and limit, the
+shared extractor and the events hold. Changes:
+
+- **A draft keeps what the bot's review keeps**: the lines as `arrange(to_measurement_matches(..))`
+  gives them (with their sections, as `MeasurementMatch` JSON, the dialogue's format), the
+  transcription (`writes::create`'s `content`: it decides "tbsp" or "cuil. à soupe" on the card,
+  and the search), the title. Saving runs the bot's own steps (`split_parts`, `part_names`,
+  `to_new_ingredient`, one `create` with every part, which links them), moved into the engine and
+  shared with the bot.
+- **The bot's review rules hold**: no save while a line is flagged ⚠️
+  (`requires_quantity_confirmation`, IMP-004) and no save without a name. **The owner's decision**:
+  the assistant asks the user and sends the answer; `save_photo_draft(id, name?, lines?)`, where
+  `lines` replaces **flagged lines only**, each given as a typed line ("2 cuil. à soupe d'huile",
+  read by the typed-line parser). Without them, the save is refused with the flagged lines and
+  their numbers. Other ingredient edits stay in the bot.
+- **The reading runs on its own, in the background**: claimed from the page's form, it is spawned
+  under a photo limit (2 at once, beyond: "busy, try again", the link still usable), whatever
+  becomes of the page's request (a phone switching back to the assistant). The import goes
+  `waiting` → `reading` → `ready` or `failed(reason)`; `reading_started_at` turns a reading
+  interrupted by a restart into "send it again". The form answers 303 to `/photo/{id}`, which
+  refreshes itself while reading (`<meta http-equiv="refresh">`, no script). `get_photo_draft` waits
+  up to 20 s for a change, then answers where it is. No per-tool timeout is needed: the door's 10 s
+  hold for every tool.
+- **ChatGPT's file input only for ChatGPT, after a staging trial** (**the owner's decision**: the
+  upload page first). A `download_url` is input any write key could set: the file parameter is
+  listed only when the connection's client is ChatGPT's, its host pinned once learned. Before that
+  (task 5), a trial connects ChatGPT on staging and logs the file object's shape and host.
+- **The link**: its secret hashed, apart from the import's id; claimed atomically (a double tap);
+  used up only by a reading that gives a result (too large, busy or unavailable keep it); a GET
+  never uses it (link previews, an assistant fetching it); at the post, the key or connection must
+  still be active and allowed to write (the page is outside the guard). No CSRF issue: the secret is
+  in the path, there is no cookie.
+- **The page**: `form-action 'self'` (the sign-in pages say `'none'`); axum's `multipart` feature,
+  the body limit raised on this route only (a little over 10 MB), the link checked before the
+  body is read, the body read in chunks with a cap; its own per-address limit and in-flight cap;
+  the route written `/photo/{id}` (axum 0.8).
+- **HEIC is not read** (`ImageMime`: JPEG, PNG, WebP; other formats are converted, HEIC refused):
+  the page asks for `accept="image/*"`, for which iOS sends JPEG. A phone's original photo is far
+  bigger than Telegram's: 10 MB at most, 2 readings at once.
+- **The daily limit** (task 1, done): kept inside `GuardedExtractor`, after both cache checks (a
+  cache hit is free), a reading from a door always names its user; one statement; a call refused
+  before Gemini given back; a count that cannot be read refuses the call (the bill first). **The
+  day becomes Paris's** (it was UTC): the docs and the limit's message say "today".
+- **Save atomically**: the import is claimed (its owner, not saved, not expired) inside the
+  transaction that creates the recipes, after the events lock; the saved ids are kept, so a retried
+  save answers the same recipes.
+- **Tools**: drafts looked up by (id, owner); the write gate derived from the write tools' list
+  (tested: every write tool refused to a read-only key); `get_photo_draft` never returns the
+  transcription nor a line's source text, says what is data (text read from a photo may carry
+  instructions), and every failure (not a recipe, no ingredients, daily limit, unreadable, busy,
+  expired). `import_photo` says: give the link, then wait for the user to say it is sent (no
+  polling); "do not read recipe photos yourself" goes in `import_photo`'s and `create_recipe`'s
+  descriptions (whether claude.ai shows server instructions is not documented). Counted per door.
+- **Purge** always runs (the OAuth purge only runs with OAuth): imports, drafts and past days.
+- The consent page and `/cle` say that writing now includes photo readings (paid).
+- engine-api.md planned a `photos:write` scope: write access covers it (the owner's decision 4).
+
+Tasks, revised: 1 done; 2 `engine::photos` imports and drafts (migration 16), the save shared with
+the bot; 3 the upload page; 4 the tools; 5 ChatGPT, after its trial; 6 tests, review, docs,
+staging, production.
