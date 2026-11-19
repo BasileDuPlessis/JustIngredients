@@ -1275,3 +1275,159 @@ mod oauth {
         Ok(())
     }
 }
+
+// Photo readings: the daily count in the database (`specs/tasks/mcp-photos.md`, task 1)
+
+mod photos {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    use anyhow::Result;
+    use just_ingredients::db::init_database_schema;
+    use just_ingredients::engine::photos::StoredDailyCalls;
+    use just_ingredients::extraction::guard::GuardedExtractor;
+    use just_ingredients::extraction::{
+        ExtractedIngredient, Extraction, ExtractionError, ExtractionFuture, ImageInput,
+        IngredientExtractor, RecipeLanguage,
+    };
+    use sqlx::PgPool;
+
+    use super::{ALICE, BOB};
+
+    /// Reads every photo as salt, counting its calls; fails as asked.
+    #[derive(Debug, Default)]
+    struct Fake {
+        calls: AtomicUsize,
+        refuse_before_calling: bool,
+    }
+
+    impl IngredientExtractor for Fake {
+        fn name(&self) -> &'static str {
+            "fake"
+        }
+
+        fn extract<'a>(&'a self, _image: &'a ImageInput) -> ExtractionFuture<'a> {
+            Box::pin(async move {
+                if self.refuse_before_calling {
+                    return Err(ExtractionError::CircuitOpen);
+                }
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                Ok(Extraction {
+                    is_recipe: true,
+                    title: None,
+                    language: RecipeLanguage::Fr,
+                    transcription: "sel".to_string(),
+                    ingredients: vec![ExtractedIngredient {
+                        name: "sel".to_string(),
+                        quantity: None,
+                        unit: None,
+                        needs_review: false,
+                        source_text: "sel".to_string(),
+                        section: None,
+                    }],
+                })
+            })
+        }
+    }
+
+    fn photo(seed: u8, user: i64) -> Result<ImageInput> {
+        Ok(ImageInput::from_bytes(vec![0xFF, 0xD8, 0xFF, seed])?.requested_by(user))
+    }
+
+    fn guarded(pool: &PgPool, fake: Arc<Fake>, limit: u32) -> GuardedExtractor {
+        GuardedExtractor::new(fake, 2)
+            .with_daily_limit(limit)
+            .with_daily_calls(Arc::new(StoredDailyCalls::new(pool.clone())))
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn the_daily_limit_is_kept_in_the_database_across_deploys(pool: PgPool) -> Result<()> {
+        init_database_schema(&pool).await?;
+        let fake = Arc::new(Fake::default());
+        let first = guarded(&pool, Arc::clone(&fake), 2);
+        first.extract(&photo(1, ALICE)?).await?;
+        first.extract(&photo(2, ALICE)?).await?;
+        assert!(matches!(
+            first.extract(&photo(3, ALICE)?).await,
+            Err(ExtractionError::DailyLimitReached { limit: 2 })
+        ));
+
+        // A deploy: a new guard (an empty cache), the same database, the same count
+        let after_deploy = guarded(&pool, Arc::clone(&fake), 2);
+        assert!(matches!(
+            after_deploy.extract(&photo(4, ALICE)?).await,
+            Err(ExtractionError::DailyLimitReached { .. })
+        ));
+        assert_eq!(
+            fake.calls.load(Ordering::SeqCst),
+            2,
+            "nothing paid past the limit"
+        );
+        assert_eq!(
+            just_ingredients::db::photo_calls_today(&pool, ALICE).await?,
+            2
+        );
+
+        // Bob has his own count; a photo already read is free (the cache of that guard)
+        after_deploy.extract(&photo(4, BOB)?).await?;
+        after_deploy.extract(&photo(4, BOB)?).await?;
+        assert_eq!(
+            just_ingredients::db::photo_calls_today(&pool, BOB).await?,
+            1
+        );
+
+        // A call refused before Gemini (the breaker open) is given back
+        let refusing = Arc::new(Fake {
+            refuse_before_calling: true,
+            ..Fake::default()
+        });
+        let broken = guarded(&pool, refusing, 2);
+        assert!(broken.extract(&photo(9, BOB)?).await.is_err());
+        assert_eq!(
+            just_ingredients::db::photo_calls_today(&pool, BOB).await?,
+            1
+        );
+
+        // Yesterday's count is another day's, and past days are purged
+        sqlx::query("UPDATE user_photo_days SET day = day - 1 WHERE telegram_id = $1")
+            .bind(ALICE)
+            .execute(&pool)
+            .await?;
+        first.extract(&photo(5, ALICE)?).await?;
+        sqlx::query("UPDATE user_photo_days SET day = day - 30 WHERE calls = 2")
+            .execute(&pool)
+            .await?;
+        assert_eq!(just_ingredients::engine::photos::purge(&pool).await?, 1);
+        Ok(())
+    }
+
+    #[sqlx::test(migrations = false)]
+    #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+    async fn readings_at_once_never_pass_the_limit(pool: PgPool) -> Result<()> {
+        init_database_schema(&pool).await?;
+        let fake = Arc::new(Fake::default());
+        let guard = Arc::new(guarded(&pool, Arc::clone(&fake), 3));
+        let mut readings = Vec::new();
+        for seed in 0..10_u8 {
+            let guard = Arc::clone(&guard);
+            readings.push(tokio::spawn(async move {
+                let image = photo(seed, ALICE)?;
+                anyhow::Ok(guard.extract(&image).await.is_ok())
+            }));
+        }
+        let mut read = 0;
+        for reading in readings {
+            if reading.await?? {
+                read += 1;
+            }
+        }
+        assert_eq!(read, 3);
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 3);
+        assert_eq!(
+            just_ingredients::db::photo_calls_today(&pool, ALICE).await?,
+            3
+        );
+        Ok(())
+    }
+}

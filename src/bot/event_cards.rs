@@ -71,6 +71,10 @@ pub async fn run(bot: Bot, pool: Arc<PgPool>, localization: Arc<LocalizationMana
                 Ok(purged) => debug!(events = purged, "Old events purged"),
                 Err(error) => warn!(error = %error, "Could not purge old events"),
             }
+            // The engine's other daily housekeeping: past days' photo counts
+            if let Err(error) = crate::engine::photos::purge(&pool).await {
+                warn!(error = %error, "Could not purge past photo counts");
+            }
             last_purge = Some(tokio::time::Instant::now());
         }
         if let Err(error) = handle_pending(&bot, &pool, &localization).await {

@@ -199,7 +199,7 @@ pub enum ExtractionError {
     /// Calls are suspended by the circuit breaker after repeated failures.
     #[error("extraction temporarily disabled after repeated failures")]
     CircuitOpen,
-    /// The user already sent `limit` photos to read today (UTC).
+    /// The user already sent `limit` photos to read today.
     #[error("daily extraction limit reached ({limit} per user)")]
     DailyLimitReached { limit: u32 },
 }

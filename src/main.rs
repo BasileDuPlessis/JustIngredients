@@ -167,7 +167,11 @@ async fn main() -> Result<()> {
             Arc::new(gemini),
             app_config.extraction.gemini.max_concurrency,
         )
-        .with_daily_limit(app_config.extraction.daily_limit_per_user),
+        .with_daily_limit(app_config.extraction.daily_limit_per_user)
+        // Counted in the database: shared by every door, kept across deploys
+        .with_daily_calls(Arc::new(
+            just_ingredients::engine::photos::StoredDailyCalls::new((*shared_pool).clone()),
+        )),
     );
     info!(
         backend = extractor.name(),

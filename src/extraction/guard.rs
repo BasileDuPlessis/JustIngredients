@@ -4,12 +4,18 @@
 //!   queue timeout gets the "busy" message instead of waiting forever;
 //! - successful results are cached by SHA-256 of the image bytes, so the same photo sent again
 //!   (or forwarded by another user) is never paid twice. The cache is bounded in size and age;
-//! - each user gets at most a daily number of paid calls (UTC days, in memory, so a restart
-//!   resets it). Cache hits and images without a requester do not count.
+//! - each user gets at most a daily number of paid calls. Cache hits and images without a
+//!   requester do not count. The count is kept by a [`DailyCalls`]: in the database in
+//!   production (`engine::photos`: shared by every door, kept across deploys, Paris days), in
+//!   memory otherwise (UTC days, a restart resets it).
 
 use std::collections::{HashMap, VecDeque};
-use std::sync::{Mutex, MutexGuard, PoisonError};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::time::{Duration, Instant};
+
+use chrono::NaiveDate;
 
 use sha2::{Digest, Sha256};
 use tokio::sync::Semaphore;
@@ -35,18 +41,58 @@ struct ResultCache {
     order: VecDeque<ImageHash>,
 }
 
-/// Paid calls of each user during one UTC day.
+/// Future returned by a [`DailyCalls`].
+pub type DailyFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// Where each user's paid calls of the day are counted.
+pub trait DailyCalls: Send + Sync + std::fmt::Debug {
+    /// Counts one paid call of `user` today, unless they already made `limit`: the day it was
+    /// counted on, `None` when the limit is reached. An error when the count cannot be read: the
+    /// call is not made.
+    fn take(&self, user: i64, limit: u32) -> DailyFuture<'_, anyhow::Result<Option<NaiveDate>>>;
+
+    /// Gives back a call counted on `day` that never reached the service.
+    fn give_back(&self, user: i64, day: NaiveDate) -> DailyFuture<'_, ()>;
+}
+
+/// [`DailyCalls`] in memory, UTC days: tests and local runs (a restart resets it).
+#[derive(Debug, Default)]
+pub struct MemoryDailyCalls {
+    usage: Mutex<DailyUsage>,
+}
+
+impl MemoryDailyCalls {
+    fn lock(&self) -> MutexGuard<'_, DailyUsage> {
+        // Plain counters: a panic while holding the lock cannot leave them inconsistent.
+        self.usage.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+impl DailyCalls for MemoryDailyCalls {
+    fn take(&self, user: i64, limit: u32) -> DailyFuture<'_, anyhow::Result<Option<NaiveDate>>> {
+        let day = chrono::Utc::now().date_naive();
+        let taken = self.lock().take(user, day, limit);
+        Box::pin(async move { Ok(taken.then_some(day)) })
+    }
+
+    fn give_back(&self, user: i64, day: NaiveDate) -> DailyFuture<'_, ()> {
+        self.lock().give_back(user, day);
+        Box::pin(async {})
+    }
+}
+
+/// Paid calls of each user during one day.
 #[derive(Debug, Default)]
 struct DailyUsage {
-    day: u64,
+    day: Option<NaiveDate>,
     calls: HashMap<i64, u32>,
 }
 
 impl DailyUsage {
     /// Counts one call of `user` on `day`, unless they already made `limit` calls that day.
-    fn take(&mut self, user: i64, day: u64, limit: u32) -> bool {
-        if self.day != day {
-            self.day = day;
+    fn take(&mut self, user: i64, day: NaiveDate, limit: u32) -> bool {
+        if self.day != Some(day) {
+            self.day = Some(day);
             self.calls.clear();
         }
         let calls = self.calls.entry(user).or_insert(0);
@@ -58,8 +104,8 @@ impl DailyUsage {
     }
 
     /// Gives back a call counted on `day` that did not reach the service.
-    fn give_back(&mut self, user: i64, day: u64) {
-        if self.day == day
+    fn give_back(&mut self, user: i64, day: NaiveDate) {
+        if self.day == Some(day)
             && let Some(calls) = self.calls.get_mut(&user)
         {
             *calls = calls.saturating_sub(1);
@@ -77,7 +123,7 @@ pub struct GuardedExtractor {
     cache_capacity: usize,
     cache_ttl: Duration,
     daily_limit: Option<u32>,
-    usage: Mutex<DailyUsage>,
+    daily_calls: Arc<dyn DailyCalls>,
 }
 
 impl GuardedExtractor {
@@ -91,13 +137,20 @@ impl GuardedExtractor {
             cache_capacity: DEFAULT_CACHE_CAPACITY,
             cache_ttl: DEFAULT_CACHE_TTL,
             daily_limit: None,
-            usage: Mutex::new(DailyUsage::default()),
+            daily_calls: Arc::new(MemoryDailyCalls::default()),
         }
     }
 
-    /// Limits each user to `limit` paid calls per UTC day.
+    /// Limits each user to `limit` paid calls a day (counted in memory unless
+    /// [`Self::with_daily_calls`]).
     pub fn with_daily_limit(mut self, limit: u32) -> Self {
         self.daily_limit = Some(limit);
+        self
+    }
+
+    /// Counts the daily calls in `daily_calls` (the database in production).
+    pub fn with_daily_calls(mut self, daily_calls: Arc<dyn DailyCalls>) -> Self {
+        self.daily_calls = daily_calls;
         self
     }
 
@@ -132,7 +185,7 @@ impl GuardedExtractor {
             return Ok(cached);
         }
 
-        let day = self.take_daily_call(image.requester())?;
+        let day = self.take_daily_call(image.requester()).await?;
         let extraction = match self.inner.extract(image).await {
             Ok(extraction) => extraction,
             Err(error) => {
@@ -141,7 +194,7 @@ impl GuardedExtractor {
                     error,
                     ExtractionError::CircuitOpen | ExtractionError::Config(_)
                 ) {
-                    self.give_back_daily_call(image.requester(), day);
+                    self.give_back_daily_call(image.requester(), day).await;
                 }
                 return Err(error);
             }
@@ -155,30 +208,29 @@ impl GuardedExtractor {
     }
 
     /// Counts a paid call toward the requester's daily limit, failing when it is reached.
-    /// Returns the UTC day it was counted on.
-    fn take_daily_call(&self, requester: Option<i64>) -> Result<u64, ExtractionError> {
-        let day = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map_or(0, |since| since.as_secs() / 86_400);
+    /// Returns the day it was counted on (none without a limit or a requester). A count that
+    /// cannot be read refuses the call as "busy": the bill is protected first.
+    async fn take_daily_call(
+        &self,
+        requester: Option<i64>,
+    ) -> Result<Option<NaiveDate>, ExtractionError> {
         let (Some(limit), Some(user)) = (self.daily_limit, requester) else {
-            return Ok(day);
+            return Ok(None);
         };
-        if self.lock_usage().take(user, day, limit) {
-            Ok(day)
-        } else {
-            Err(ExtractionError::DailyLimitReached { limit })
+        match self.daily_calls.take(user, limit).await {
+            Ok(Some(day)) => Ok(Some(day)),
+            Ok(None) => Err(ExtractionError::DailyLimitReached { limit }),
+            Err(error) => {
+                tracing::warn!(error = %error, "Could not count a photo reading: refused");
+                Err(ExtractionError::RateLimited { retry_after: None })
+            }
         }
     }
 
-    fn give_back_daily_call(&self, requester: Option<i64>, day: u64) {
-        if let (Some(_), Some(user)) = (self.daily_limit, requester) {
-            self.lock_usage().give_back(user, day);
+    async fn give_back_daily_call(&self, requester: Option<i64>, day: Option<NaiveDate>) {
+        if let (Some(user), Some(day)) = (requester, day) {
+            self.daily_calls.give_back(user, day).await;
         }
-    }
-
-    fn lock_usage(&self) -> MutexGuard<'_, DailyUsage> {
-        // Plain counters: a panic while holding the lock cannot leave them inconsistent.
-        self.usage.lock().unwrap_or_else(PoisonError::into_inner)
     }
 
     fn lock(&self) -> MutexGuard<'_, ResultCache> {
@@ -400,24 +452,60 @@ mod tests {
         ));
 
         let mut usage = DailyUsage::default();
-        assert!(usage.take(7, 100, 1));
-        usage.give_back(7, 100);
-        assert!(usage.take(7, 100, 1), "given back");
-        usage.give_back(7, 99);
+        let (day, before) = (date(2026, 11, 19), date(2026, 11, 18));
+        assert!(usage.take(7, day, 1));
+        usage.give_back(7, day);
+        assert!(usage.take(7, day, 1), "given back");
+        usage.give_back(7, before);
         assert!(
-            !usage.take(7, 100, 1),
+            !usage.take(7, day, 1),
             "a give-back for another day is ignored"
         );
         Ok(())
     }
 
+    fn date(year: i32, month: u32, day: u32) -> NaiveDate {
+        NaiveDate::from_ymd_opt(year, month, day).unwrap_or_default()
+    }
+
     #[test]
     fn daily_counts_start_again_the_next_day() {
         let mut usage = DailyUsage::default();
-        assert!(usage.take(7, 100, 1));
-        assert!(!usage.take(7, 100, 1));
-        assert!(usage.take(7, 101, 1), "a new day");
+        assert!(usage.take(7, date(2026, 11, 19), 1));
+        assert!(!usage.take(7, date(2026, 11, 19), 1));
+        assert!(usage.take(7, date(2026, 11, 20), 1), "a new day");
         assert_eq!(usage.calls.len(), 1, "the previous day is forgotten");
+    }
+
+    /// A count that cannot be read refuses the call ("busy") and costs nothing.
+    #[derive(Debug)]
+    struct BrokenDailyCalls;
+
+    impl DailyCalls for BrokenDailyCalls {
+        fn take(&self, _: i64, _: u32) -> DailyFuture<'_, anyhow::Result<Option<NaiveDate>>> {
+            Box::pin(async { Err(anyhow::anyhow!("database down")) })
+        }
+
+        fn give_back(&self, _: i64, _: NaiveDate) -> DailyFuture<'_, ()> {
+            Box::pin(async {})
+        }
+    }
+
+    #[tokio::test]
+    async fn an_unreadable_count_refuses_the_call() -> Result<(), ExtractionError> {
+        let fake = Arc::new(FakeExtractor::default());
+        let guarded = GuardedExtractor::new(fake.clone(), 2)
+            .with_daily_limit(5)
+            .with_daily_calls(Arc::new(BrokenDailyCalls));
+        assert!(matches!(
+            guarded.extract(&image(1)?.requested_by(7)).await,
+            Err(ExtractionError::RateLimited { .. })
+        ));
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 0, "nothing paid");
+        // Without a requester (no user to count), the reading goes on
+        guarded.extract(&image(1)?).await?;
+        assert_eq!(fake.calls.load(Ordering::SeqCst), 1);
+        Ok(())
     }
 
     #[tokio::test]

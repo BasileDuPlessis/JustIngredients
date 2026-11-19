@@ -624,10 +624,16 @@ async fn test_migration_system(pool: PgPool) -> Result<()> {
 
 async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
     // Every migration applied and recorded by sqlx
-    assert_eq!(migrations::current_version(pool).await?, 14);
+    assert_eq!(migrations::current_version(pool).await?, 15);
     validate_database_schema(pool).await?;
 
     // Reverted with the down scripts, one version at a time, then all
+    migrations::undo_to(pool, 14).await?;
+    assert_eq!(migrations::current_version(pool).await?, 14);
+    assert!(
+        validate_database_schema(pool).await.is_err(),
+        "user_photo_days is required"
+    );
     migrations::undo_to(pool, 13).await?;
     assert_eq!(migrations::current_version(pool).await?, 13);
     assert!(
@@ -688,7 +694,7 @@ async fn test_migration_system_impl(pool: &PgPool) -> Result<()> {
 
     // And applied again from nothing
     init_database_schema(pool).await?;
-    assert_eq!(migrations::current_version(pool).await?, 14);
+    assert_eq!(migrations::current_version(pool).await?, 15);
     validate_database_schema(pool).await?;
 
     Ok(())
@@ -1697,7 +1703,7 @@ async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
             .await?;
     assert_eq!(
         rows.iter().map(|(v, _)| *v).collect::<Vec<_>>(),
-        (1..=14).collect::<Vec<_>>()
+        (1..=15).collect::<Vec<_>>()
     );
     assert!(
         rows.iter()
@@ -1709,7 +1715,7 @@ async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
         rows.iter()
             .filter(|(v, _)| *v >= 9)
             .all(|(_, time)| *time > 0),
-        "9 to 14 ran"
+        "9 to 15 ran"
     );
     validate_database_schema(&pool).await?;
     let legacy: i64 = sqlx::query_scalar("SELECT count(*) FROM schema_migrations")
@@ -1719,7 +1725,7 @@ async fn test_legacy_migrations_are_adopted(pool: PgPool) -> Result<()> {
 
     // A second start finds everything applied
     init_database_schema(&pool).await?;
-    assert_eq!(migrations::current_version(&pool).await?, 14);
+    assert_eq!(migrations::current_version(&pool).await?, 15);
     Ok(())
 }
 
@@ -1732,7 +1738,7 @@ async fn test_legacy_migrations_then_the_new_ones(pool: PgPool) -> Result<()> {
     make_legacy(&pool, 7).await?;
 
     init_database_schema(&pool).await?;
-    assert_eq!(migrations::current_version(&pool).await?, 14);
+    assert_eq!(migrations::current_version(&pool).await?, 15);
     validate_database_schema(&pool).await?;
     let run: i64 =
         sqlx::query_scalar("SELECT execution_time FROM _sqlx_migrations WHERE version = 8")
@@ -1760,7 +1766,7 @@ async fn test_a_database_ahead_of_the_binary_starts(pool: PgPool) -> Result<()> 
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM _sqlx_migrations")
         .fetch_one(&pool)
         .await?;
-    assert_eq!(count, 15, "nothing applied or removed");
+    assert_eq!(count, 16, "nothing applied or removed");
     Ok(())
 }
 
@@ -1780,7 +1786,7 @@ async fn test_owner_key_migration_adds_missing_users(pool: PgPool) -> Result<()>
     get_or_create_user(&pool, 503, Some("fr")).await?;
 
     init_database_schema(&pool).await?;
-    assert_eq!(migrations::current_version(&pool).await?, 14);
+    assert_eq!(migrations::current_version(&pool).await?, 15);
     let owners: Vec<i64> = sqlx::query_scalar(
         "SELECT telegram_id FROM users WHERE telegram_id IN (501, 502, 503) ORDER BY telegram_id",
     )
