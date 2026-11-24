@@ -20,7 +20,8 @@ specs/
     ├── recipe-notes.md                   # Study and design of the recipe note (short free text per recipe)
     ├── engine-api.md                     # Study: one engine, several doors (HTTP API, MCP, events)
     ├── oauth.md                          # OAuth sign-in for claude.ai and ChatGPT (tranche 4, in production)
-    ├── mcp-photos.md                     # Study: recipe photos through an assistant, read by Gemini (tranche 3)
+    ├── mcp-photos.md                     # Recipe photos through an assistant, read by Gemini (tranche 3, in production)
+    ├── recipe-scaling.md                 # Study: scaling a recipe's quantities (×2, 4 eggs, a bigger dish)
     ├── linked-recipes.md                 # Design of phase U9 (linked recipes)
     ├── ingredient-sections.md            # Abandoned design, replaced by linked-recipes.md
     ├── observability.md                  # Plan O (Fly metrics, dashboards, alerts)
