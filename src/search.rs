@@ -66,7 +66,7 @@ pub fn fold(text: &str) -> String {
 /// A folded word without its plural ending, applied to the query and to the recipes alike:
 /// "pommes" → "pomme", "choux" → "chou", "gateaux" → "gateau", "tomatoes" → "tomato",
 /// "cherries" → "cherry". Short words stay as they are ("riz", "noix" → "noi" on both sides).
-fn singular(word: &str) -> String {
+pub fn singular(word: &str) -> String {
     if word.chars().count() <= 3 {
         return word.to_string();
     }

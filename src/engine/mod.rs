@@ -7,6 +7,7 @@ pub mod events;
 pub mod oauth;
 pub mod photos;
 pub mod recipes;
+pub mod scaling;
 pub mod tokens;
 pub mod writes;
 
