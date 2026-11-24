@@ -1,6 +1,6 @@
 # Recipe photos through an assistant (tranche 3 of the engine): study
 
-Status: tasks 1 to 4 done and reviewed (§8): the daily limit in the database, imports and drafts, the upload page, the MCP tools; task 5 (ChatGPT's file input) waits for a trial with ChatGPT; next: staging test from claude.ai on the phone, then production. Validated by the owner (2026-11-19, §6 and §7). The owner asked for it after Claude read a photo
+Status: **in production (v45, `f28f884`, 2026-11-24)**: tasks 1 to 4 and 6 done and reviewed (§8); task 5 (ChatGPT's file input) waits for a trial with ChatGPT. Tested on staging end to end (2026-11-24) by `~/.claude/ji-scripts/photo_e2e.sh`: `protocol` (the tools, the real test photo posted, staging's Gemini, the draft saved once) and `claude` (a headless Claude Code session asked to import a photo gave the link, waited, then read the draft and saved it), both with a read-write staging key in `~/.claude/ji-scripts/staging-key`. Validated by the owner (2026-11-19, §6 and §7).
 itself and created the recipe with `create_recipe` ("la transcription est bonne mais nous devons
 garder la main avec Gemini").
 
