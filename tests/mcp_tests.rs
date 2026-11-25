@@ -920,3 +920,67 @@ async fn a_photo_is_imported_read_and_saved_through_the_door(pool: PgPool) -> Re
     }
     Ok(())
 }
+
+/// A recipe scaled for an assistant: the quantities shown scaled and rounded, the recipe as
+/// saved unchanged, each refusal told.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn an_assistant_gets_a_recipe_scaled(pool: PgPool) -> Result<()> {
+    let (token, tart, _) = two_users(&pool).await?;
+    let address = serve(&pool).await?;
+    let get = |id: u64, arguments: Value| {
+        let token = token.clone();
+        let message = call(id, "get_recipe", arguments);
+        async move { post(address, Some(&token), None, &message).await }
+    };
+
+    let (_, answer) = get(
+        1,
+        json!({ "id": tart, "units": "recipe", "lang": "fr", "scale": 2 }),
+    )
+    .await?;
+    let recipe = &answer["result"]["structuredContent"];
+    assert_eq!(recipe["scale"]["text"], "× 2", "{answer}");
+    assert_eq!(recipe["ingredients"][0]["shown"]["text"], "4 tasses");
+    assert_eq!(
+        recipe["ingredients"][0]["stored"]["quantity"], 2.0,
+        "saved as is"
+    );
+    assert_eq!(recipe["ingredients"][1]["shown"]["text"], "2 cuil. à café");
+
+    // An ingredient's new quantity
+    let (_, answer) = get(
+        2,
+        json!({ "id": tart, "units": "recipe", "lang": "fr", "scale": "3 cuil. à café de levure chimique" }),
+    )
+    .await?;
+    let recipe = &answer["result"]["structuredContent"];
+    assert_eq!(recipe["scale"]["factor"], 3.0, "{answer}");
+    assert_eq!(recipe["ingredients"][0]["shown"]["text"], "6 tasses");
+
+    // Refusals, told to the assistant
+    for (scale, told) in [
+        (json!("4 oeufs"), "no ingredient called"),
+        (json!(50), "out of range"),
+        (json!("beaucoup"), "not understood"),
+        (json!(true), "must be a number or a text"),
+    ] {
+        let (_, answer) = get(3, json!({ "id": tart, "scale": scale })).await?;
+        assert_eq!(answer["result"]["isError"], true, "{scale}: {answer}");
+        assert!(
+            answer["result"]["content"][0]["text"]
+                .as_str()
+                .is_some_and(|text| text.contains(told)),
+            "{scale}: {answer}"
+        );
+    }
+
+    // Without a scale: as saved, no scale in the answer
+    let (_, answer) = get(4, json!({ "id": tart, "units": "recipe", "lang": "fr" })).await?;
+    assert!(answer["result"]["structuredContent"].get("scale").is_none());
+    assert_eq!(
+        answer["result"]["structuredContent"]["ingredients"][0]["shown"]["text"],
+        "2 tasses"
+    );
+    Ok(())
+}

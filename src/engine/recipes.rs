@@ -58,6 +58,21 @@ pub struct RecipeView {
     pub ingredients: Vec<ShownIngredient>,
     /// The other recipes of the same photo (UX plan U9), alphabetical.
     pub linked: Vec<RecipeEntry>,
+    /// The quantities shown are scaled (`engine::scaling`): the factor and why. The recipe as
+    /// saved is in each ingredient's `stored`.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scale: Option<ScaleShown>,
+}
+
+/// A scale as a view tells it.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct ScaleShown {
+    pub factor: f64,
+    /// "× 4/3 (œufs : 3 → 4)".
+    pub text: String,
+    /// The factor as a button carries it: "4/3".
+    #[serde(skip)]
+    pub ratio: super::scaling::Ratio,
 }
 
 /// What a [`RecipeView`] is made of, as read from the database.
@@ -125,6 +140,47 @@ pub async fn recipe(
     view: Option<UnitView>,
     lang: Lang,
 ) -> Result<RecipeView, EngineError> {
+    scaled_recipe(pool, owner, recipe_id, view, lang, None).await
+}
+
+/// The scale `asked` for a recipe of the owner ("x2", "4 oeufs", "20x30 → 30x40"), read against
+/// its ingredients; [`EngineError::Scale`] with why it is refused, [`EngineError::NotFound`] for
+/// a recipe that is not the owner's.
+pub async fn scale_of(
+    pool: &PgPool,
+    owner: Owner,
+    recipe_id: i64,
+    asked: &str,
+) -> Result<super::scaling::Scale, EngineError> {
+    let telegram_id = owner.telegram_id();
+    if crate::db::read_recipe_with_name(pool, telegram_id, recipe_id)
+        .await?
+        .is_none()
+    {
+        return Err(EngineError::NotFound);
+    }
+    let ingredients = crate::db::get_recipe_ingredients(pool, telegram_id, recipe_id).await?;
+    let lines: Vec<super::scaling::Line<'_>> = ingredients
+        .iter()
+        .map(|ingredient| super::scaling::Line {
+            name: &ingredient.name,
+            quantity: ingredient.quantity,
+            unit: ingredient.unit.as_deref(),
+        })
+        .collect();
+    super::scaling::parse(asked, &lines).map_err(EngineError::Scale)
+}
+
+/// [`recipe`], its quantities times `scale`, rounded as a cook would (`engine::scaling`); the
+/// recipe is not changed.
+pub async fn scaled_recipe(
+    pool: &PgPool,
+    owner: Owner,
+    recipe_id: i64,
+    view: Option<UnitView>,
+    lang: Lang,
+    scale: Option<&super::scaling::Scale>,
+) -> Result<RecipeView, EngineError> {
     let telegram_id = owner.telegram_id();
     let Some(recipe) = crate::db::read_recipe_with_name(pool, telegram_id, recipe_id).await? else {
         return Err(EngineError::NotFound);
@@ -170,23 +226,52 @@ pub async fn recipe(
         },
         view,
         lang,
+        scale,
     ))
 }
 
-/// A recipe as read, its measures in `view`, the texts in `lang`.
-pub fn build_view(read: ReadRecipe<'_>, view: UnitView, lang: Lang) -> RecipeView {
+/// A recipe as read, its measures in `view` (times `scale`, if any), the texts in `lang`.
+pub fn build_view(
+    read: ReadRecipe<'_>,
+    view: UnitView,
+    lang: Lang,
+    scale: Option<&super::scaling::Scale>,
+) -> RecipeView {
+    let factor = scale
+        .map(|scale| scale.ratio)
+        .filter(|ratio| !ratio.is_one())
+        .map(super::scaling::Ratio::value);
     let ingredients = read
         .ingredients
         .iter()
         .map(|ingredient| {
-            let measure = unit_view::show_measure(
-                ingredient.quantity,
-                ingredient.unit.as_deref(),
-                &ingredient.name,
-                view,
-                lang.is_french(),
-                read.english_recipe,
-            );
+            let show = |quantity: Option<f64>| {
+                unit_view::show_measure(
+                    quantity,
+                    ingredient.unit.as_deref(),
+                    &ingredient.name,
+                    view,
+                    lang.is_french(),
+                    read.english_recipe,
+                )
+            };
+            let measure = match (ingredient.quantity, factor) {
+                (Some(quantity), Some(factor)) if quantity > 0.0 => {
+                    // A view that converts rounds the exact scaled value itself; otherwise the
+                    // scaled value is rounded in its own unit, as a cook would
+                    let converted = show(Some(quantity * factor));
+                    if converted.converted {
+                        converted
+                    } else {
+                        show(Some(super::scaling::scaled(
+                            quantity,
+                            ingredient.unit.as_deref(),
+                            factor,
+                        )))
+                    }
+                }
+                _ => show(ingredient.quantity),
+            };
             ShownIngredient {
                 name: ingredient.name.clone(),
                 stored: StoredMeasure {
@@ -207,6 +292,13 @@ pub fn build_view(read: ReadRecipe<'_>, view: UnitView, lang: Lang) -> RecipeVie
         unit_view: view,
         ingredients,
         linked: read.linked.to_vec(),
+        scale: scale
+            .filter(|scale| !scale.ratio.is_one())
+            .map(|scale| ScaleShown {
+                factor: scale.ratio.value(),
+                text: scale.describe(lang.is_french()),
+                ratio: scale.ratio,
+            }),
     }
 }
 
@@ -319,6 +411,7 @@ mod tests {
             },
             UnitView::Weight,
             Lang::Fr,
+            None,
         );
         assert_eq!(view.ingredients[0].stored.quantity, Some(2.0));
         assert_eq!(view.ingredients[0].stored.unit.as_deref(), Some("cup"));
@@ -342,6 +435,78 @@ mod tests {
             json.map(|json| json["linked"][0].get("memo").is_none()),
             Ok(true),
             "no memo key without a memo"
+        );
+    }
+
+    #[test]
+    fn a_scaled_view_rounds_like_a_cook_and_keeps_the_saved_measures() {
+        use crate::engine::scaling::{Ratio, Reason, Scale};
+        let at = chrono::Utc::now();
+        let line = |name: &str, quantity: Option<f64>, unit: Option<&str>| crate::db::Ingredient {
+            id: 1,
+            user_id: 1,
+            recipe_id: Some(7),
+            name: name.to_string(),
+            quantity,
+            unit: unit.map(str::to_string),
+            created_at: at,
+            updated_at: at,
+        };
+        let ingredients = [
+            line("farine", Some(250.0), Some("g")),
+            line("oeufs", Some(3.0), None),
+            line("sel", Some(1.0), Some("tsp")),
+            line("lait", Some(1.0), Some("cup")),
+            line("poivre", None, None),
+        ];
+        let read = ReadRecipe {
+            id: 7,
+            name: Some("Tarte"),
+            note: None,
+            ingredients: &ingredients,
+            linked: &[],
+            english_recipe: false,
+        };
+        let scale = Scale {
+            ratio: Ratio::new(4, 3).unwrap_or(Ratio { num: 1, den: 1 }),
+            reason: Reason::Ingredient {
+                name: "oeufs".to_string(),
+                from: "3".to_string(),
+                to: "4".to_string(),
+            },
+        };
+        let view = build_view(read, UnitView::Recipe, Lang::Fr, Some(&scale));
+        let shown: Vec<&str> = view
+            .ingredients
+            .iter()
+            .map(|ingredient| ingredient.shown.text.as_str())
+            .collect();
+        assert_eq!(
+            shown,
+            ["335 g", "4", "1 ⅓ cuil. à café", "1 ⅓ tasse", ""],
+            "grams to 5 g, eggs whole, spoons and cups to a third, no quantity unchanged"
+        );
+        assert_eq!(
+            view.ingredients[0].stored.quantity,
+            Some(250.0),
+            "saved as is"
+        );
+        assert_eq!(
+            view.scale.as_ref().map(|scale| scale.text.as_str()),
+            Some("× 4/3 (oeufs : 3 → 4)")
+        );
+
+        // A view that converts rounds the exact scaled value itself: 4/3 cup of milk in grams
+        let weight = build_view(read, UnitView::Weight, Lang::Fr, Some(&scale));
+        assert_ne!(weight.ingredients[3].shown.text, "1 ⅓ tasse");
+        assert!(weight.ingredients[3].shown.converted);
+
+        // Times one is no scale at all
+        let one = Scale::factor(Ratio { num: 1, den: 1 });
+        assert!(
+            build_view(read, UnitView::Recipe, Lang::Fr, Some(&one))
+                .scale
+                .is_none()
         );
     }
 }

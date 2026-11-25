@@ -229,11 +229,35 @@ impl From<EngineError> for Refusal {
             EngineError::TooMany { max } => {
                 Self::Told(format!("At most {max} ingredient lines: split the recipe."))
             }
+            EngineError::Scale(reason) => Self::Told(scale_refused(&reason)),
             EngineError::InvalidLine { line, reason } => Self::Told(format!(
                 "Ingredient line {line} refused: {reason}. One ingredient per line, e.g. \
                  \"200 g de farine\" or \"2 oeufs\"."
             )),
             other => Self::Failed(other),
+        }
+    }
+}
+
+/// Why a scale was refused, for the assistant.
+fn scale_refused(reason: &crate::engine::scaling::ScaleError) -> String {
+    use crate::engine::scaling::ScaleError;
+    match reason {
+        ScaleError::NotUnderstood => "scale not understood: give a factor (2, 0.5, \"2/3\", \
+            \"150 %\"), an ingredient's new quantity (\"4 oeufs\"), dishes (\"20x30 → 30x40\", \
+            \"Ø24 → Ø28\") or servings (\"de 4 à 6 personnes\")."
+            .into(),
+        ScaleError::OutOfRange => "scale out of range: between a tenth and ten times.".into(),
+        ScaleError::NoSuchIngredient(name) => {
+            format!("The recipe has no ingredient called \"{name}\".")
+        }
+        ScaleError::Ambiguous(names) => format!(
+            "Several ingredients match: {}. Name one exactly.",
+            names.join(", ")
+        ),
+        ScaleError::NoQuantity(name) => format!("\"{name}\" has no quantity to scale from."),
+        ScaleError::OtherUnit(name) => {
+            format!("\"{name}\" is measured in another kind of unit: give it in the recipe's unit.")
         }
     }
 }
@@ -338,13 +362,35 @@ struct GetRecipeArguments {
     units: Option<String>,
     #[serde(default)]
     lang: Option<String>,
+    /// A number (2, 0.5) or what a cook would say ("2/3", "4 oeufs", "20x30 → 30x40").
+    #[serde(default)]
+    scale: Option<Value>,
 }
 
 async fn get(pool: &PgPool, owner: Owner, arguments_value: Value) -> Result<Value, Refusal> {
-    let GetRecipeArguments { id, units, lang } = arguments(arguments_value)?;
+    let GetRecipeArguments {
+        id,
+        units,
+        lang,
+        scale,
+    } = arguments(arguments_value)?;
     let view = unit_view(units.as_deref())?;
     let lang = language(pool, owner, language_code(lang.as_deref())?).await;
-    let recipe = recipes::recipe(pool, owner, id, view, lang).await?;
+    let scale = match scale {
+        None | Some(Value::Null) => None,
+        Some(Value::Number(number)) => Some(number.to_string()),
+        Some(Value::String(text)) => Some(text),
+        Some(_) => {
+            return Err(Refusal::Told(
+                "scale must be a number or a text such as \"2/3\" or \"4 oeufs\".".into(),
+            ));
+        }
+    };
+    let scale = match scale.as_deref() {
+        Some(asked) => Some(recipes::scale_of(pool, owner, id, asked).await?),
+        None => None,
+    };
+    let recipe = recipes::scaled_recipe(pool, owner, id, view, lang, scale.as_ref()).await?;
     serde_json::to_value(recipe)
         .map_err(|error| Refusal::Failed(EngineError::Internal(error.into())))
 }
@@ -798,12 +844,21 @@ fn tools() -> Vec<Tool> {
             "get_recipe",
             "One recipe of the user: name, memo, ingredients (each with its measure as saved and \
              as shown in the unit view), and the recipes linked to it (other parts of the same \
-             page).",
+             page). With scale, the quantities shown are scaled and rounded for the kitchen \
+             (eggs whole, grams to 5 g, spoons to a quarter or a third), the recipe unchanged: \
+             use it rather than multiplying yourself, and give the linked recipes the same scale.",
             schema(
                 json!({
                     "id": { "type": "integer", "description": "From list_recipes or search_recipes" },
                     "units": units,
                     "lang": lang,
+                    "scale": {
+                        "type": ["number", "string"],
+                        "description": "Optional: a factor (2, 0.5, \"2/3\", \"150 %\"), an \
+                            ingredient's new quantity (\"4 oeufs\", \"400 g de farine\"), \
+                            dishes by their size (\"20x30 → 30x40\", \"Ø24 → Ø28\") or \
+                            servings (\"de 4 à 6 personnes\"); between a tenth and ten times"
+                    },
                 }),
                 &["id"],
             ),

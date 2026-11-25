@@ -819,6 +819,7 @@ mod tests {
             },
             view,
             crate::engine::Lang::from_code(language_code),
+            None,
         );
         render_recipe_card(&recipe, language_code, localization)
     }

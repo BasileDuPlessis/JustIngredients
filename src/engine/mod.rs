@@ -93,6 +93,9 @@ pub enum EngineError {
     /// The owner already has as many as allowed (tokens: `tokens::MAX_ACTIVE`).
     #[error("limit reached")]
     LimitReached,
+    /// A scale that cannot be read or applied (`scaling::parse`), with why.
+    #[error("scale refused: {0}")]
+    Scale(scaling::ScaleError),
     /// The database or another service failed.
     #[error(transparent)]
     Internal(#[from] anyhow::Error),
