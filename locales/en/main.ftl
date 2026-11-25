@@ -232,3 +232,19 @@ review-part-main-heading = 🧩 The recipe: { $heading }
 review-part-linked = 🧩 Linked recipe: { $heading }
 recipe-created-linked-line = ✅ Recipe “{ $name }” created, linked to “{ $main }”
 card-linked-recipes = 🔗 Linked recipes: { $names }
+
+# Scaling a recipe's quantities (specs/tasks/recipe-scaling.md)
+scale-button = Scale quantities
+scale-original-button = Original quantities
+scale-other-button = Other…
+scale-back-button = Back
+scale-prompt = Scale the quantities of "{ $name }": what would you like?
+scale-prompt-examples = For example: x3, 2/3, 1.5; one ingredient's quantity (4 eggs, 400 g flour); another dish (20x30 → 30x40, Ø24 → Ø28); servings (from 4 to 6 servings).
+scale-not-understood = I did not understand this scale.
+scale-out-of-range = This scale is too large or too small: between a tenth and ten times.
+scale-no-such-ingredient = The recipe has no ingredient "{ $name }".
+scale-ambiguous = Several ingredients match: { $names }. Write its exact name.
+scale-no-quantity = "{ $name }" has no quantity to scale.
+scale-other-unit = "{ $name }" is measured in another unit: give it in the recipe's unit.
+card-scaled = Quantities { $scale }, rounded.
+card-scaled-times = Times and temperatures unchanged: a bigger dish may need longer.

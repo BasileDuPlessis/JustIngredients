@@ -111,6 +111,8 @@ pub enum Action {
     PhotoImportReceived,
     /// A photo's draft saved through an assistant.
     PhotoImportSaved,
+    /// A card's quantities scaled (or set back as saved).
+    RecipeScaled,
 }
 
 impl Action {
@@ -137,6 +139,7 @@ impl Action {
             Self::ApiKeyRevoked => "api_key_revoked",
             Self::PhotoImportReceived => "photo_import_received",
             Self::PhotoImportSaved => "photo_import_saved",
+            Self::RecipeScaled => "recipe_scaled",
         }
     }
 }

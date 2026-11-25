@@ -457,14 +457,49 @@ pub const MAX_LINKED_SHOWN: usize = 10;
 /// Callback of a linked recipe's button on a card: `recipe_link:<id>` (UX plan U9).
 pub const RECIPE_LINK_PREFIX: &str = "recipe_link:";
 
+/// Callback data of the scaling buttons starts with this (`bot::scaling`): `menu:<id>`,
+/// `set:<id>:<num>/<den>` (1/1: as saved), `ask:<id>`, `back:<id>`.
+pub const SCALE_PREFIX: &str = "recipe_scale:";
+
+/// The scaling menu of a card: × 2, ÷ 2, another scale typed, back to the card's buttons. The
+/// factors apply to the recipe as saved (× 2 twice is × 2).
+pub fn scale_menu_keyboard(
+    recipe_id: i64,
+    language_code: Option<&str>,
+    localization: &Arc<crate::localization::LocalizationManager>,
+) -> InlineKeyboardMarkup {
+    InlineKeyboardMarkup::new(vec![
+        vec![
+            InlineKeyboardButton::callback("× 2", format!("{SCALE_PREFIX}set:{recipe_id}:2/1")),
+            InlineKeyboardButton::callback("÷ 2", format!("{SCALE_PREFIX}set:{recipe_id}:1/2")),
+        ],
+        vec![create_localized_button_with_emoji(
+            localization,
+            "✏️",
+            "scale-other-button",
+            format!("{SCALE_PREFIX}ask:{recipe_id}"),
+            language_code,
+        )],
+        vec![create_localized_button_with_emoji(
+            localization,
+            "◀️",
+            "scale-back-button",
+            format!("{SCALE_PREFIX}back:{recipe_id}"),
+            language_code,
+        )],
+    ])
+}
+
 /// The card's keyboard: rename and edit, delete, one button per linked recipe (U9), then the
 /// list.
 pub fn create_recipe_details_keyboard(
     recipe_id: i64,
     linked: &[crate::db::RecipeSummary],
+    scale: Option<crate::engine::scaling::Ratio>,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
+    let scale = scale.filter(|ratio| !ratio.is_one());
     let mut buttons = vec![
         vec![
             create_localized_button_with_emoji(
@@ -499,10 +534,32 @@ pub fn create_recipe_details_keyboard(
             ),
         ],
     ];
+    // Scaling: the menu, and back to the recipe as saved when scaled
+    let mut scaling = vec![create_localized_button_with_emoji(
+        localization,
+        "⚖️",
+        "scale-button",
+        format!("{SCALE_PREFIX}menu:{recipe_id}"),
+        language_code,
+    )];
+    if scale.is_some() {
+        scaling.push(create_localized_button_with_emoji(
+            localization,
+            "↩️",
+            "scale-original-button",
+            format!("{SCALE_PREFIX}set:{recipe_id}:1/1"),
+            language_code,
+        ));
+    }
+    buttons.push(scaling);
+    // A linked recipe opens at the card's scale: a dish in parts is scaled whole
+    let at_scale = scale
+        .map(|ratio| format!(":{}", ratio.encode()))
+        .unwrap_or_default();
     buttons.extend(linked.iter().take(MAX_LINKED_SHOWN).map(|recipe| {
         vec![InlineKeyboardButton::callback(
             format!("🔗 {}", crate::recipe_parts::short_name(&recipe.name, 40)),
-            format!("{RECIPE_LINK_PREFIX}{}", recipe.id),
+            format!("{RECIPE_LINK_PREFIX}{}{at_scale}", recipe.id),
         )]
     }));
     // The single exit of a card shown at the bottom (U6.1)
@@ -630,7 +687,25 @@ pub fn render_recipe_card(
     if let Some(note) = &recipe.note {
         card += Html::text("\n📌 ") + Html::text(note);
     }
+    // A scaled card says so, and that times do not follow
+    if let Some(scale) = &recipe.scale {
+        card += Html::text(&format!(
+            "\n⚖️ {}",
+            t_args_lang(
+                localization,
+                "card-scaled",
+                &[("scale", &scale.text)],
+                language_code,
+            )
+        ));
+    }
     card += Html::text("\n\n") + Html::text(&list);
+    if recipe.scale.is_some() {
+        card += Html::text(&format!(
+            "\n\n⏱️ {}",
+            t_lang(localization, "card-scaled-times", language_code)
+        ));
+    }
     let footer = match recipe.unit_view {
         crate::unit_view::UnitView::Recipe => None,
         crate::unit_view::UnitView::Weight => Some("unit-view-footer-weight"),
@@ -706,7 +781,7 @@ mod tests {
     fn the_recipe_card_offers_rename_edit_note_delete_and_the_list() {
         let localization =
             crate::localization::create_localization_manager().expect("localization");
-        let keyboard = create_recipe_details_keyboard(7, &[], Some("fr"), &localization);
+        let keyboard = create_recipe_details_keyboard(7, &[], None, Some("fr"), &localization);
         let data: Vec<Vec<String>> = keyboard
             .inline_keyboard
             .iter()
@@ -726,6 +801,7 @@ mod tests {
             vec![
                 vec!["recipe_action:rename:7", "recipe_action:edit_ingredients:7"],
                 vec!["recipe_action:note:7", "recipe_action:delete:7"],
+                vec!["recipe_scale:menu:7"],
                 vec!["show_list"],
             ]
         );
@@ -850,7 +926,13 @@ mod tests {
             "{}",
             card.as_str()
         );
-        let keyboard = create_recipe_details_keyboard(7, &[sauce], Some("fr"), &localization);
+        let keyboard = create_recipe_details_keyboard(
+            7,
+            std::slice::from_ref(&sauce),
+            None,
+            Some("fr"),
+            &localization,
+        );
         let rows: Vec<(String, String)> = keyboard
             .inline_keyboard
             .iter()
@@ -862,15 +944,80 @@ mod tests {
                 (row[0].text.clone(), data)
             })
             .collect();
+        assert_eq!(rows[2].1, "recipe_scale:menu:7", "scaling, after delete");
         assert_eq!(
-            rows[2],
+            rows[3],
             (
                 "🔗 Malva pudding (sauce)".to_string(),
                 "recipe_link:12".to_string()
             ),
-            "after delete, before the list"
+            "the linked recipes, before the list"
         );
-        assert_eq!(rows[3].1, "show_list");
+        assert_eq!(rows[4].1, "show_list");
+
+        // A scaled card: back to the recipe as saved, and the linked recipes at its scale
+        let ratio = crate::engine::scaling::Ratio::new(4, 3);
+        let scaled = create_recipe_details_keyboard(
+            7,
+            std::slice::from_ref(&sauce),
+            ratio,
+            Some("fr"),
+            &localization,
+        );
+        let data: Vec<Vec<String>> = scaled
+            .inline_keyboard
+            .iter()
+            .map(|row| {
+                row.iter()
+                    .map(|button| match &button.kind {
+                        teloxide::types::InlineKeyboardButtonKind::CallbackData(data) => {
+                            data.clone()
+                        }
+                        _ => String::new(),
+                    })
+                    .collect()
+            })
+            .collect();
+        assert_eq!(data[2], ["recipe_scale:menu:7", "recipe_scale:set:7:1/1"]);
+        assert_eq!(data[3], ["recipe_link:12:4/3"]);
+        assert!(
+            data.iter().flatten().all(|data| data.len() <= 64),
+            "Telegram's 64 bytes"
+        );
+    }
+
+    #[test]
+    fn a_scaled_card_says_its_scale_and_that_times_do_not_follow() {
+        let localization =
+            crate::localization::create_localization_manager().expect("localization");
+        let mut recipe = crate::engine::recipes::RecipeView {
+            id: 7,
+            name: Some("Tarte".to_string()),
+            note: Some("Four 180 °C".to_string()),
+            unit_view: crate::unit_view::UnitView::Recipe,
+            ingredients: Vec::new(),
+            linked: Vec::new(),
+            scale: None,
+        };
+        let plain = render_recipe_card(&recipe, Some("fr"), &localization);
+        assert!(!plain.as_str().contains("⚖️"));
+        recipe.scale = Some(crate::engine::recipes::ScaleShown {
+            factor: 4.0 / 3.0,
+            text: "× 4/3 (œufs : 3 → 4)".to_string(),
+            ratio: crate::engine::scaling::Ratio { num: 4, den: 3 },
+        });
+        let card = render_recipe_card(&recipe, Some("fr"), &localization);
+        assert!(
+            card.as_str()
+                .contains("⚖️ Quantités × 4/3 (œufs : 3 → 4), arrondies."),
+            "{}",
+            card.as_str()
+        );
+        assert!(card.as_str().contains("⏱️ Temps et températures inchangés"));
+        assert!(
+            card.as_str().find("📌") < card.as_str().find("⚖️"),
+            "under the memo"
+        );
     }
 
     #[test]

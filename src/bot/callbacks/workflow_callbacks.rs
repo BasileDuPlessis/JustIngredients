@@ -53,7 +53,10 @@ pub async fn handle_cancel_action(
             )
             .await;
         }
-        Some(crate::dialogue::RecipeDialogueState::RenamingRecipe { recipe_id, .. }) => {
+        Some(
+            crate::dialogue::RecipeDialogueState::RenamingRecipe { recipe_id, .. }
+            | crate::dialogue::RecipeDialogueState::ScalingRecipe { recipe_id, .. },
+        ) => {
             crate::bot::home::back_to_card(
                 bot,
                 &pool,

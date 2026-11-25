@@ -1570,3 +1570,310 @@ async fn a_new_key_ends_the_running_action(pool: PgPool) -> Result<()> {
     );
     Ok(())
 }
+
+/// Opens `recipe_id` from a list button: the card is sent at the bottom, recorded as active.
+async fn open_card(
+    bot: &mut MockBot<anyhow::Error, teloxide_tests::mock_bot::DistributionKey>,
+    recipe_id: i64,
+) -> Result<teloxide::types::Message> {
+    use teloxide_tests::MockCallbackQuery;
+    bot.update(
+        MockCallbackQuery::new()
+            .data(format!("recipe_instance:{recipe_id}"))
+            .message(MockMessageText::new().text("📚").build()),
+    );
+    bot.dispatch().await;
+    bot.get_responses()
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the card")
+}
+
+/// The text of the last message the bot edited.
+fn last_edit(bot: &MockBot<anyhow::Error, teloxide_tests::mock_bot::DistributionKey>) -> String {
+    bot.get_responses()
+        .edited_messages_text
+        .last()
+        .and_then(|edit| edit.message.text().map(str::to_string))
+        .unwrap_or_default()
+}
+
+/// The scale recorded for card `id`.
+async fn card_scale(pool: &PgPool, id: teloxide::types::MessageId) -> Result<Option<String>> {
+    Ok(
+        sqlx::query_scalar(
+            "SELECT scale FROM chat_messages WHERE chat_id = $1 AND message_id = $2",
+        )
+        .bind(OWNER)
+        .bind(i64::from(id.0))
+        .fetch_one(pool)
+        .await?,
+    )
+}
+
+/// A tart of 3 eggs and 250 g of flour, saved.
+async fn save_tart(pool: &PgPool) -> Result<i64> {
+    use just_ingredients::db::{NewIngredient, save_recipe};
+    let saved = save_recipe(
+        pool,
+        OWNER,
+        Some("fr"),
+        "",
+        "Tarte",
+        &[
+            NewIngredient {
+                name: "oeufs",
+                quantity: Some(3.0),
+                unit: None,
+            },
+            NewIngredient {
+                name: "farine",
+                quantity: Some(250.0),
+                unit: Some("g"),
+            },
+        ],
+    )
+    .await?;
+    Ok(saved.recipe_id)
+}
+
+/// ⚖️ on a card: the menu, × 2 scales the card in place and records it, ↩️ shows it as saved
+/// again; the recipe is never changed.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_card_is_doubled_then_shown_as_saved(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::get_recipe_ingredients;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let recipe_id = save_tart(&pool).await?;
+    let mut bot = mock_bot(MockMessageText::new().text("/start"), services.clone());
+    let card = open_card(&mut bot, recipe_id).await?;
+    let press = |data: String| MockCallbackQuery::new().data(data).message(card.clone());
+
+    bot.update(press(format!("recipe_scale:menu:{recipe_id}")));
+    bot.dispatch().await;
+    assert_eq!(
+        button_data(&bot.get_responses(), "recipe_scale:set:").as_deref(),
+        Some(format!("recipe_scale:set:{recipe_id}:2/1").as_str()),
+        "the menu offers × 2"
+    );
+
+    bot.update(press(format!("recipe_scale:set:{recipe_id}:2/1")));
+    bot.dispatch().await;
+    let doubled = last_edit(&bot);
+    assert!(doubled.contains("× 2"), "{doubled}");
+    assert!(doubled.contains("500 g"), "{doubled}");
+    assert!(doubled.contains('6'), "{doubled}");
+    assert!(!doubled.contains("250"), "{doubled}");
+    assert_eq!(card_scale(&pool, card.id).await?.as_deref(), Some("2/1"));
+    assert!(
+        button_data(
+            &bot.get_responses(),
+            &format!("recipe_scale:set:{recipe_id}:1/1")
+        )
+        .is_some(),
+        "a scaled card offers the quantities as saved"
+    );
+
+    bot.update(press(format!("recipe_scale:set:{recipe_id}:1/1")));
+    bot.dispatch().await;
+    let saved = last_edit(&bot);
+    assert!(saved.contains("250 g"), "{saved}");
+    assert!(!saved.contains("⚖️ "), "{saved}");
+    assert_eq!(card_scale(&pool, card.id).await?, None);
+
+    let ingredients = get_recipe_ingredients(&pool, OWNER, recipe_id).await?;
+    let mut quantities: Vec<_> = ingredients.iter().filter_map(|i| i.quantity).collect();
+    quantities.sort_by(f64::total_cmp);
+    assert_eq!(quantities, [3.0, 250.0], "the recipe is unchanged");
+    Ok(())
+}
+
+/// "Autre…": a scale not understood keeps the question open and says why; "4 oeufs" shows the
+/// card at 4/3 at the bottom, recorded with its scale; a rename afterwards keeps the scale.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_typed_scale_is_read_refused_or_shown(pool: PgPool) -> Result<()> {
+    use just_ingredients::dialogue::RecipeDialogueState;
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let localization = Arc::clone(&services.messages.localization);
+    let recipe_id = save_tart(&pool).await?;
+    let mut bot = mock_bot(MockMessageText::new().text("/start"), services.clone());
+    let card = open_card(&mut bot, recipe_id).await?;
+    let chat = card.chat.id;
+
+    bot.update(
+        MockCallbackQuery::new()
+            .data(format!("recipe_scale:ask:{recipe_id}"))
+            .message(card.clone()),
+    );
+    bot.dispatch().await;
+    assert!(matches!(
+        action(&services, chat).await?,
+        Some(RecipeDialogueState::ScalingRecipe { .. })
+    ));
+
+    bot.update(MockMessageText::new().text("beaucoup"));
+    bot.dispatch().await;
+    let refused = t_lang(&localization, "scale-not-understood", None);
+    assert!(
+        bot.get_responses()
+            .sent_messages
+            .iter()
+            .any(|message| message.text().is_some_and(|text| text.contains(&refused))),
+        "the refusal says why"
+    );
+    assert!(
+        matches!(
+            action(&services, chat).await?,
+            Some(RecipeDialogueState::ScalingRecipe { .. })
+        ),
+        "the question stays open"
+    );
+
+    bot.update(MockMessageText::new().text("4 oeufs"));
+    bot.dispatch().await;
+    assert!(action(&services, chat).await?.is_none());
+    let scaled = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the scaled card")?;
+    let text = scaled.text().unwrap_or_default().to_string();
+    assert!(text.contains("× 4/3"), "{text}");
+    assert!(text.contains("3 → 4"), "{text}");
+    assert!(text.contains("335 g"), "{text}");
+    assert_eq!(card_scale(&pool, scaled.id).await?.as_deref(), Some("4/3"));
+
+    // A rename refreshes the card at its scale
+    bot.update(
+        MockCallbackQuery::new()
+            .data(format!("recipe_action:rename:{recipe_id}"))
+            .message(scaled.clone()),
+    );
+    bot.dispatch().await;
+    bot.update(MockMessageText::new().text("Tarte aux oeufs"));
+    bot.dispatch().await;
+    let refreshed = bot
+        .get_responses()
+        .edited_messages_text
+        .iter()
+        .rev()
+        .find(|edit| edit.message.id == scaled.id)
+        .and_then(|edit| edit.message.text().map(str::to_string))
+        .context("the card refreshed")?;
+    assert!(refreshed.contains("Tarte aux oeufs"), "{refreshed}");
+    assert!(refreshed.contains("× 4/3"), "{refreshed}");
+    assert!(refreshed.contains("335 g"), "{refreshed}");
+    Ok(())
+}
+
+/// ❌ on the scale question of a doubled card: the question ends, the card gets its buttons
+/// back still doubled (it went into the history while the question was open).
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_scale_question_cancelled_keeps_the_card_as_it_was(pool: PgPool) -> Result<()> {
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let recipe_id = save_tart(&pool).await?;
+    let mut bot = mock_bot(MockMessageText::new().text("/start"), services.clone());
+    let card = open_card(&mut bot, recipe_id).await?;
+    let chat = card.chat.id;
+    bot.update(
+        MockCallbackQuery::new()
+            .data(format!("recipe_scale:set:{recipe_id}:2/1"))
+            .message(card.clone()),
+    );
+    bot.dispatch().await;
+
+    bot.update(
+        MockCallbackQuery::new()
+            .data(format!("recipe_scale:ask:{recipe_id}"))
+            .message(card.clone()),
+    );
+    bot.dispatch().await;
+    bot.update(
+        MockCallbackQuery::new()
+            .data("cancel_action")
+            .message(MockMessageText::new().text("⚖️").build()),
+    );
+    bot.dispatch().await;
+    assert!(action(&services, chat).await?.is_none());
+    assert_eq!(card_scale(&pool, card.id).await?.as_deref(), Some("2/1"));
+    let buttons = bot
+        .get_responses()
+        .edited_messages_reply_markup
+        .last()
+        .and_then(|edit| edit.message.reply_markup().cloned())
+        .context("the card's buttons back")?;
+    assert!(
+        buttons
+            .inline_keyboard
+            .iter()
+            .flatten()
+            .any(|button| matches!(
+                &button.kind,
+                teloxide::types::InlineKeyboardButtonKind::CallbackData(data)
+                    if *data == format!("recipe_scale:set:{recipe_id}:1/1")
+            )),
+        "still doubled: {buttons:?}"
+    );
+    Ok(())
+}
+
+/// From a doubled card, a linked recipe's button opens it doubled too.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_linked_recipe_opens_at_the_same_scale(pool: PgPool) -> Result<()> {
+    use just_ingredients::db::{NewIngredient, save_recipe};
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let recipe_id = save_tart(&pool).await?;
+    let sauce = save_recipe(
+        &pool,
+        OWNER,
+        Some("fr"),
+        "",
+        "Sauce",
+        &[NewIngredient {
+            name: "crème",
+            quantity: Some(20.0),
+            unit: Some("cl"),
+        }],
+    )
+    .await?;
+    sqlx::query("INSERT INTO recipe_links (recipe_a, recipe_b) VALUES ($1, $2)")
+        .bind(recipe_id.min(sauce.recipe_id))
+        .bind(recipe_id.max(sauce.recipe_id))
+        .execute(&pool)
+        .await?;
+    let mut bot = mock_bot(MockMessageText::new().text("/start"), services.clone());
+    let card = open_card(&mut bot, recipe_id).await?;
+
+    bot.update(
+        MockCallbackQuery::new()
+            .data(format!("recipe_scale:set:{recipe_id}:2/1"))
+            .message(card.clone()),
+    );
+    bot.dispatch().await;
+    let link = button_data(&bot.get_responses(), "recipe_link:").context("the linked button")?;
+    assert_eq!(link, format!("recipe_link:{}:2/1", sauce.recipe_id));
+
+    bot.update(MockCallbackQuery::new().data(link).message(card));
+    bot.dispatch().await;
+    let opened = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the sauce's card")?;
+    let text = opened.text().unwrap_or_default().to_string();
+    assert!(text.contains("Sauce"), "{text}");
+    assert!(text.contains("× 2"), "{text}");
+    assert!(text.contains("40 cl"), "{text}");
+    assert_eq!(card_scale(&pool, opened.id).await?.as_deref(), Some("2/1"));
+    Ok(())
+}

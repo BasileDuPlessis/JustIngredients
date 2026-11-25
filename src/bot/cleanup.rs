@@ -93,6 +93,10 @@ async fn delete_or_strip(bot: &Bot, chat: ChatId, messages: Vec<crate::db::ChatM
             }
             if let Some(recipe_id) = message.recipe_id {
                 record_card_as(chat, id, recipe_id, CARD).await;
+                // Taken, then recorded again: it keeps the scale it shows
+                if message.scale.is_some() {
+                    keep_scale(chat, id, message.scale.as_deref()).await;
+                }
             }
         } else if message.deletable {
             ids.push(id);
@@ -205,6 +209,14 @@ async fn delete(bot: &Bot, chat: ChatId, ids: Vec<MessageId>) {
     }
 }
 
+/// Records again the scale a card shows, as its text (`Ratio::encode`).
+async fn keep_scale(chat: ChatId, id: MessageId, scale: Option<&str>) {
+    let Some(pool) = pool() else { return };
+    if let Err(e) = crate::db::set_chat_message_scale(&pool, chat.0, id.0, scale).await {
+        debug!(error = %e, "Could not keep a card's scale");
+    }
+}
+
 async fn record_card_as(chat: ChatId, id: MessageId, recipe_id: i64, kind: &str) {
     let Some(pool) = pool() else { return };
     if let Err(e) = crate::db::record_chat_message(&pool, chat.0, id.0, kind, Some(recipe_id)).await
@@ -278,6 +290,32 @@ pub async fn record_active_card(chat: ChatId, id: MessageId, recipe_id: i64) {
     record_card_as(chat, id, recipe_id, ACTIVE_CARD).await;
 }
 
+/// Records the scale card `id` shows (`None`: the recipe as saved).
+pub async fn set_card_scale(
+    chat: ChatId,
+    id: MessageId,
+    scale: Option<crate::engine::scaling::Ratio>,
+) {
+    let Some(pool) = pool() else { return };
+    let scale = scale
+        .filter(|ratio| !ratio.is_one())
+        .map(|ratio| ratio.encode());
+    if let Err(e) = crate::db::set_chat_message_scale(&pool, chat.0, id.0, scale.as_deref()).await {
+        debug!(error = %e, "Could not record a card's scale");
+    }
+}
+
+/// The scale of the newest recorded card of a recipe (the one reactivated after an action).
+pub async fn newest_card_scale(
+    chat: ChatId,
+    recipe_id: i64,
+) -> Option<crate::engine::scaling::Ratio> {
+    recipe_cards(chat, recipe_id)
+        .await
+        .last()
+        .and_then(|card| card.scale)
+}
+
 /// Gives a history card of a recipe its buttons back and makes it the active card: `card`, or
 /// the newest recorded card of the recipe. Returns whether it worked.
 pub async fn reactivate_card(
@@ -321,6 +359,8 @@ pub struct RecipeCard {
     pub deletable: bool,
     /// The card at the bottom, with its buttons.
     pub active: bool,
+    /// The scale its quantities are shown at (`engine::scaling`), `None` as saved.
+    pub scale: Option<crate::engine::scaling::Ratio>,
 }
 
 /// The recorded cards of a recipe, in the history and at the bottom, oldest first.
@@ -335,6 +375,11 @@ pub async fn recipe_cards(chat: ChatId, recipe_id: i64) -> Vec<RecipeCard> {
                 id: MessageId(card.message_id),
                 deletable: card.deletable,
                 active: card.kind == ACTIVE_CARD,
+                scale: card
+                    .scale
+                    .as_deref()
+                    .and_then(crate::engine::scaling::Ratio::decode)
+                    .filter(|ratio| !ratio.is_one()),
             })
             .collect(),
         Err(e) => {
@@ -357,6 +402,7 @@ pub async fn remove_recipe_cards(bot: &Bot, chat: ChatId, recipe_id: i64, keep: 
             kind: CARD.to_string(),
             recipe_id: Some(recipe_id),
             deletable: card.deletable,
+            scale: None,
         };
         delete_or_strip(bot, chat, vec![message]).await;
     }

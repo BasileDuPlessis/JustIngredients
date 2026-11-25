@@ -205,9 +205,17 @@ pub async fn back_to_card(
     language_code: Option<&str>,
 ) {
     cleanup::delete_action_messages(bot, chat_id).await;
-    // Private chats only: the chat id is the owner's id
-    let keyboard =
-        super::cards::card_keyboard(pool, chat_id.0, recipe_id, language_code, localization).await;
+    // Private chats only: the chat id is the owner's id. The card keeps its scale, if any.
+    let scale = cleanup::newest_card_scale(chat_id, recipe_id).await;
+    let keyboard = super::cards::card_keyboard(
+        pool,
+        chat_id.0,
+        recipe_id,
+        scale,
+        language_code,
+        localization,
+    )
+    .await;
     if !cleanup::reactivate_card(bot, chat_id, recipe_id, card, keyboard).await {
         send_home_at(
             bot,

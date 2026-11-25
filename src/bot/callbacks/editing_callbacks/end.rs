@@ -290,9 +290,15 @@ async fn saved_recipe_card(
         .recipe_name
         .unwrap_or_else(|| "Unnamed Recipe".to_string());
     let message = render_recipe_summary(&name, &matches, lang, ctx.localization);
-    let keyboard =
-        crate::bot::cards::card_keyboard(pool, telegram_id, recipe_id, lang, ctx.localization)
-            .await;
+    let keyboard = crate::bot::cards::card_keyboard(
+        pool,
+        telegram_id,
+        recipe_id,
+        None,
+        lang,
+        ctx.localization,
+    )
+    .await;
     Ok(Some(SavedRecipeCard {
         name,
         message,
@@ -361,6 +367,7 @@ pub async fn cancel_saved_editing(
                 pool,
                 telegram_id,
                 recipe_id,
+                None,
                 language_code,
                 localization,
             )

@@ -144,6 +144,8 @@ async fn route_any_state(
     if crate::bot::api_keys::is_key_button(data) {
         crate::bot::api_keys::handle_button(bot, q, data, pool, dialogue, api, localization)
             .await?;
+    } else if crate::bot::scaling::is_button(data) {
+        crate::bot::scaling::handle_button(bot, q, data, pool, dialogue, localization).await?;
     } else if data.starts_with("recipe_instance:") {
         handle_recipe_selection_by_id(bot, msg, data, Arc::clone(pool), &q.from, localization)
             .await?;
@@ -203,19 +205,27 @@ async fn route_any_state(
         .await?;
     } else if let Some(linked) = data.strip_prefix(crate::bot::ui_builder::RECIPE_LINK_PREFIX) {
         // A linked recipe opened from the card at the bottom: that card goes into
-        // the history and the linked one takes its place (U9). A second tap reaches
-        // a card already in the history: nothing more to do.
+        // the history and the linked one takes its place (U9), at the card's scale (a
+        // dish in parts is scaled whole). A second tap reaches a card already in the
+        // history: nothing more to do.
+        let (id, scale) = linked
+            .split_once(':')
+            .map_or((linked, None), |(id, scale)| {
+                (id, crate::engine::scaling::Ratio::decode(scale))
+            });
         if let (Ok(recipe_id), MaybeInaccessibleMessage::Regular(message)) =
-            (linked.parse::<i64>(), msg)
+            (id.parse::<i64>(), msg)
             && crate::bot::cleanup::is_active_card(message.chat.id, message.id).await
         {
             crate::observability::action(crate::observability::Action::LinkedOpened);
-            crate::bot::cards::show_card(
+            let scale = scale.map(crate::engine::scaling::Scale::factor);
+            crate::bot::cards::show_scaled_card(
                 bot,
                 pool,
                 message.chat.id,
                 None,
                 recipe_id,
+                scale.as_ref(),
                 q.from.language_code.as_deref(),
                 localization,
             )

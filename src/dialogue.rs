@@ -77,6 +77,12 @@ pub enum RecipeDialogueState {
         creation: bool,
         language_code: Option<String>,
     },
+    /// A scale typed for a recipe's card ("x3", "4 oeufs", "20x30 → 30x40"): the card comes
+    /// back scaled (`bot::scaling`).
+    ScalingRecipe {
+        recipe_id: i64,
+        language_code: Option<String>,
+    },
     EditingSavedIngredients {
         recipe_id: i64,
         original_ingredients: Vec<Ingredient>, // Keep original for comparison

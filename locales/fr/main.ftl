@@ -231,3 +231,19 @@ review-part-main-heading = 🧩 La recette : { $heading }
 review-part-linked = 🧩 Recette liée : { $heading }
 recipe-created-linked-line = ✅ Recette « { $name } » créée, liée à « { $main } »
 card-linked-recipes = 🔗 Recettes liées : { $names }
+
+# Scaling a recipe's quantities (specs/tasks/recipe-scaling.md)
+scale-button = Ajuster les quantités
+scale-original-button = Quantités d'origine
+scale-other-button = Autre…
+scale-back-button = Retour
+scale-prompt = Ajuster les quantités de « { $name } » : que voulez-vous ?
+scale-prompt-examples = Par exemple : x3, 2/3, 1,5 ; une quantité d'un ingrédient (4 oeufs, 400 g de farine) ; un autre plat (20x30 → 30x40, Ø24 → Ø28) ; des portions (de 4 à 6 personnes).
+scale-not-understood = Je n'ai pas compris cet ajustement.
+scale-out-of-range = Cet ajustement est trop grand ou trop petit : entre un dixième et dix fois.
+scale-no-such-ingredient = La recette n'a pas d'ingrédient « { $name } ».
+scale-ambiguous = Plusieurs ingrédients correspondent : { $names }. Écrivez son nom exact.
+scale-no-quantity = « { $name } » n'a pas de quantité à ajuster.
+scale-other-unit = « { $name } » est mesuré dans une autre unité : donnez-le dans l'unité de la recette.
+card-scaled = Quantités { $scale }, arrondies.
+card-scaled-times = Temps et températures inchangés : un plat plus grand peut demander plus de cuisson.

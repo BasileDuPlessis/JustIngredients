@@ -1,6 +1,8 @@
 //! Recipe cards in the chat history (UX plan U5.4): one card per recipe, always current. Opening
 //! a recipe replaces its earlier card and moves the list below it; a rename or an edit updates
-//! the recorded cards in place (a bot can edit its messages at any time).
+//! the recorded cards in place (a bot can edit its messages at any time). A card may show its
+//! quantities scaled (`specs/tasks/recipe-scaling.md`): its record keeps the scale, so an update
+//! keeps it; the recipe itself never changes.
 
 use std::sync::Arc;
 
@@ -9,6 +11,7 @@ use sqlx::postgres::PgPool;
 use teloxide::prelude::*;
 use tracing::{debug, info};
 
+use crate::engine::scaling::{Ratio, Scale};
 use crate::localization::{LocalizationManager, t_lang};
 
 use super::cleanup;
@@ -24,13 +27,14 @@ async fn render(
     pool: &PgPool,
     telegram_id: i64,
     recipe_id: i64,
+    scale: Option<&Scale>,
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> Result<Option<Html>> {
     let owner = crate::engine::Owner::telegram(telegram_id);
     let lang = crate::engine::Lang::from_code(language_code);
     // The user's own unit view (U8)
-    match crate::engine::recipes::recipe(pool, owner, recipe_id, None, lang).await {
+    match crate::engine::recipes::scaled_recipe(pool, owner, recipe_id, None, lang, scale).await {
         Ok(recipe) => Ok(Some(render_recipe_card(
             &recipe,
             language_code,
@@ -51,11 +55,16 @@ pub async fn card_html(
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> Result<Option<String>> {
-    Ok(
-        render(pool, telegram_id, recipe_id, language_code, localization)
-            .await?
-            .map(|card| card.as_str().to_string()),
+    Ok(render(
+        pool,
+        telegram_id,
+        recipe_id,
+        None,
+        language_code,
+        localization,
     )
+    .await?
+    .map(|card| card.as_str().to_string()))
 }
 
 /// The recipes linked to a card's recipe (U9); none when they cannot be read.
@@ -106,16 +115,71 @@ pub async fn linked_ids(pool: &PgPool, telegram_id: i64, recipe_id: i64) -> Vec<
         .collect()
 }
 
-/// The keyboard of a recipe's card, with a button per linked recipe.
+/// The keyboard of a recipe's card, with a button per linked recipe; a scaled card's opens them
+/// at its scale.
 pub async fn card_keyboard(
     pool: &PgPool,
     telegram_id: i64,
     recipe_id: i64,
+    scale: Option<Ratio>,
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> teloxide::types::InlineKeyboardMarkup {
     let linked = linked_recipes(pool, telegram_id, recipe_id).await;
-    create_recipe_details_keyboard(recipe_id, &linked, language_code, localization)
+    create_recipe_details_keyboard(recipe_id, &linked, scale, language_code, localization)
+}
+
+/// Shows card `card` of a recipe at `scale` (`None`: as saved), in place, with its buttons, and
+/// records it. Returns whether it worked (a gone recipe or message does not).
+#[allow(clippy::too_many_arguments)]
+pub async fn show_scaled_in_place(
+    bot: &Bot,
+    pool: &PgPool,
+    chat_id: ChatId,
+    card: teloxide::types::MessageId,
+    recipe_id: i64,
+    scale: Option<&Scale>,
+    language_code: Option<&str>,
+    localization: &Arc<LocalizationManager>,
+) -> Result<bool> {
+    let telegram_id = chat_id.0;
+    let Some(text) = render(
+        pool,
+        telegram_id,
+        recipe_id,
+        scale,
+        language_code,
+        localization,
+    )
+    .await?
+    else {
+        return Ok(false);
+    };
+    let ratio = scale
+        .map(|scale| scale.ratio)
+        .filter(|ratio| !ratio.is_one());
+    let keyboard = card_keyboard(
+        pool,
+        telegram_id,
+        recipe_id,
+        ratio,
+        language_code,
+        localization,
+    )
+    .await;
+    match edit_html(bot, chat_id, card, text)
+        .reply_markup(keyboard)
+        .await
+    {
+        Ok(_) => {
+            cleanup::set_card_scale(chat_id, card, ratio).await;
+            Ok(true)
+        }
+        Err(e) => {
+            debug!(error = %e, "Could not show a card scaled");
+            Ok(false)
+        }
+    }
 }
 
 /// Opens a recipe from the button on `pressed`: the card replaces the list at the bottom, with
@@ -132,10 +196,47 @@ pub async fn show_card(
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> Result<()> {
+    show_scaled_card(
+        bot,
+        pool,
+        chat_id,
+        pressed,
+        recipe_id,
+        None,
+        language_code,
+        localization,
+    )
+    .await
+}
+
+/// [`show_card`], its quantities at `scale` (a linked recipe opened from a scaled card, a scale
+/// typed by the user).
+#[allow(clippy::too_many_arguments)]
+pub async fn show_scaled_card(
+    bot: &Bot,
+    pool: &PgPool,
+    chat_id: ChatId,
+    pressed: Option<teloxide::types::MessageId>,
+    recipe_id: i64,
+    scale: Option<&Scale>,
+    language_code: Option<&str>,
+    localization: &Arc<LocalizationManager>,
+) -> Result<()> {
     let started = std::time::Instant::now();
     // Private chats only: the chat id is the user's id, the recipe's owner
     let telegram_id = chat_id.0;
-    let Some(card) = render(pool, telegram_id, recipe_id, language_code, localization).await?
+    let ratio = scale
+        .map(|scale| scale.ratio)
+        .filter(|ratio| !ratio.is_one());
+    let Some(card) = render(
+        pool,
+        telegram_id,
+        recipe_id,
+        scale,
+        language_code,
+        localization,
+    )
+    .await?
     else {
         let message = t_lang(localization, "recipe-not-found", language_code);
         let answer = cleanup::send_transient(bot, chat_id, message).await?;
@@ -150,7 +251,15 @@ pub async fn show_card(
     {
         return Ok(());
     }
-    let keyboard = card_keyboard(pool, telegram_id, recipe_id, language_code, localization).await;
+    let keyboard = card_keyboard(
+        pool,
+        telegram_id,
+        recipe_id,
+        ratio,
+        language_code,
+        localization,
+    )
+    .await;
 
     // The list pressed becomes the card
     let in_place = match pressed {
@@ -170,7 +279,10 @@ pub async fn show_card(
     };
     let shown = started.elapsed();
     match in_place {
-        Some(card_id) => cleanup::list_became_card(bot, chat_id, card_id, recipe_id).await,
+        Some(card_id) => {
+            cleanup::list_became_card(bot, chat_id, card_id, recipe_id).await;
+            cleanup::set_card_scale(chat_id, card_id, ratio).await;
+        }
         None => {
             // Opened from a home message or list of an older version: that message goes
             if let Some(pressed) = pressed {
@@ -181,6 +293,7 @@ pub async fn show_card(
             cleanup::delete_lists(bot, chat_id).await;
             let sent = send_html(bot, chat_id, card).reply_markup(keyboard).await?;
             cleanup::record_active_card(chat_id, sent.id, recipe_id).await;
+            cleanup::set_card_scale(chat_id, sent.id, ratio).await;
         }
     }
     crate::observability::card_shown(started.elapsed());
@@ -215,22 +328,50 @@ pub async fn refresh_cards(
     if cards.is_empty() {
         return false;
     }
-    let card = match render(pool, telegram_id, recipe_id, language_code, localization).await {
-        Ok(Some(card)) => card,
-        Ok(None) => return false,
-        Err(e) => {
-            debug!(error = %e, "Could not read the recipe to update its cards");
-            return false;
-        }
-    };
+    // Each card at its own scale: read once per scale
+    let mut rendered: Vec<(Option<Ratio>, Html)> = Vec::new();
     // Every consultation stays in the history: only the most recent ones are updated, so a recipe
     // opened many times does not make a rename slow or hit Telegram's rate limit
     for recorded in cards.into_iter().rev().take(MAX_CARDS_REFRESHED) {
-        let request = edit_html(bot, chat_id, recorded.id, card.clone());
+        let card = match rendered.iter().find(|(scale, _)| *scale == recorded.scale) {
+            Some((_, card)) => card.clone(),
+            None => {
+                let scale = recorded.scale.map(Scale::factor);
+                match render(
+                    pool,
+                    telegram_id,
+                    recipe_id,
+                    scale.as_ref(),
+                    language_code,
+                    localization,
+                )
+                .await
+                {
+                    Ok(Some(card)) => {
+                        rendered.push((recorded.scale, card.clone()));
+                        card
+                    }
+                    Ok(None) => return false,
+                    Err(e) => {
+                        debug!(error = %e, "Could not read the recipe to update its cards");
+                        return false;
+                    }
+                }
+            }
+        };
+        let request = edit_html(bot, chat_id, recorded.id, card);
         let result = if recorded.active {
             request
                 .reply_markup(
-                    card_keyboard(pool, telegram_id, recipe_id, language_code, localization).await,
+                    card_keyboard(
+                        pool,
+                        telegram_id,
+                        recipe_id,
+                        recorded.scale,
+                        language_code,
+                        localization,
+                    )
+                    .await,
                 )
                 .await
         } else {

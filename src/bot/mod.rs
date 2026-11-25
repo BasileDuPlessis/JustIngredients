@@ -27,6 +27,7 @@ pub mod media_handlers;
 pub mod message_handler;
 pub mod note;
 pub mod recipe_list;
+pub mod scaling;
 pub mod ui_builder;
 pub mod ui_components;
 pub mod unit_choice;

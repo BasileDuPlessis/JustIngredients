@@ -69,6 +69,23 @@ pub(super) async fn answer_in_action(
                 .await
                 .map(|()| true);
         }
+        Some(RecipeDialogueState::ScalingRecipe {
+            recipe_id,
+            language_code: dialogue_lang_code,
+        }) => {
+            return super::scaling::answer_text(
+                bot,
+                &pool,
+                msg.chat.id,
+                &dialogue_ctx.dialogue,
+                recipe_id,
+                text,
+                localization,
+                dialogue_lang_code.as_deref().or(language_code),
+            )
+            .await
+            .map(|()| true);
+        }
         Some(state @ RecipeDialogueState::AddingIngredientToSavedRecipe { .. }) => {
             return answer_added_ingredient(dialogue_ctx, pool, language_code, text, state)
                 .await

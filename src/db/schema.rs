@@ -88,6 +88,9 @@ pub async fn validate_database_schema(pool: &PgPool) -> Result<()> {
     )
     .await?;
 
+    // A card's scale (migration 17)
+    validate_table_columns(pool, "chat_messages", &[("scale", "text")]).await?;
+
     // OAuth (migrations 13 and 14): events name the grant they came through
     validate_table_columns(pool, "events", &[("grant_id", "bigint")]).await?;
     validate_table_columns(

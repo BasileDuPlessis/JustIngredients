@@ -32,6 +32,9 @@ pub struct ChatMessage {
     pub recipe_id: Option<i64>,
     /// Sent less than 48 hours ago: Telegram still lets the bot delete it.
     pub deletable: bool,
+    /// A card's scale ("4/3"), when its quantities are shown scaled (migration 17).
+    #[sqlx(default)]
+    pub scale: Option<String>,
 }
 
 /// Records a message of `chat` with its `kind` (and recipe, for a card). Recording it again
@@ -81,7 +84,8 @@ pub async fn take_chat_messages_except(
     let rows = sqlx::query_as::<_, ChatMessage>(
         "DELETE FROM chat_messages WHERE chat_id = $1 AND kind = ANY($2) \
          AND message_id IS DISTINCT FROM $3 \
-         RETURNING message_id, kind, recipe_id, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable",
+         RETURNING message_id, kind, recipe_id, scale, \
+         sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable",
     )
     .bind(chat_id)
     .bind(&kinds)
@@ -143,6 +147,23 @@ pub async fn is_chat_message_recorded(
     Ok(found.is_some())
 }
 
+/// Records the scale a card shows ("4/3"), or that it shows the recipe as saved (`None`).
+pub async fn set_chat_message_scale(
+    pool: &PgPool,
+    chat_id: i64,
+    message_id: i32,
+    scale: Option<&str>,
+) -> Result<()> {
+    sqlx::query("UPDATE chat_messages SET scale = $3 WHERE chat_id = $1 AND message_id = $2")
+        .bind(chat_id)
+        .bind(i64::from(message_id))
+        .bind(scale)
+        .execute(pool)
+        .await
+        .context("Failed to record a card's scale")?;
+    Ok(())
+}
+
 /// The recorded messages of `chat` of the given kinds about `recipe_id` (the cards of a recipe),
 /// oldest first, still recorded.
 pub async fn find_recipe_messages(
@@ -153,7 +174,8 @@ pub async fn find_recipe_messages(
 ) -> Result<Vec<ChatMessage>> {
     let kinds: Vec<String> = kinds.iter().map(|kind| (*kind).to_string()).collect();
     let rows = sqlx::query_as::<_, ChatMessage>(
-        "SELECT message_id, kind, recipe_id, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable \
+        "SELECT message_id, kind, recipe_id, sent_at > CURRENT_TIMESTAMP - INTERVAL '48 hours' AS deletable, \
+                scale \
          FROM chat_messages WHERE chat_id = $1 AND kind = ANY($2) AND recipe_id = $3 ORDER BY message_id",
     )
     .bind(chat_id)
