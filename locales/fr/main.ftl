@@ -243,6 +243,7 @@ scale-not-understood = Je n'ai pas compris cet ajustement.
 scale-out-of-range = Cet ajustement est trop grand ou trop petit : entre un dixième et dix fois.
 scale-no-such-ingredient = La recette n'a pas d'ingrédient « { $name } ».
 scale-ambiguous = Plusieurs ingrédients correspondent : { $names }. Écrivez son nom exact.
+scale-repeated = « { $name } » apparaît plusieurs fois avec des quantités différentes : donnez plutôt un facteur (x2, 2/3…).
 scale-no-quantity = « { $name } » n'a pas de quantité à ajuster.
 scale-other-unit = « { $name } » est mesuré dans une autre unité : donnez-le dans l'unité de la recette.
 card-scaled = Quantités { $scale }, arrondies.

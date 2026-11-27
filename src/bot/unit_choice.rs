@@ -141,12 +141,17 @@ pub async fn handle_choice(
     super::cleanup::untrack(chat_id, msg.id).await;
     match recipe {
         Some(recipe_id) => {
-            super::cards::show_card(
+            // The card comes back in the new view at the scale it had
+            let scale = super::cleanup::newest_card_scale(chat_id, recipe_id)
+                .await
+                .map(crate::engine::scaling::Scale::factor);
+            super::cards::show_scaled_card(
                 bot,
                 pool,
                 chat_id,
                 None,
                 recipe_id,
+                scale.as_ref(),
                 language_code,
                 localization,
             )

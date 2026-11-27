@@ -71,6 +71,31 @@ pub fn show_measure(
     french: bool,
     english_recipe: bool,
 ) -> ShownMeasure {
+    show(quantity, unit, name, view, french, english_recipe, false)
+}
+
+/// [`show_measure`] of a computed quantity (a scaled one, `engine::scaling`): metric values
+/// converted by the view are rounded too ("333 ml" in the French view: "33 cl", not "33,3 cl").
+pub fn show_computed_measure(
+    quantity: Option<f64>,
+    unit: Option<&str>,
+    name: &str,
+    view: UnitView,
+    french: bool,
+    english_recipe: bool,
+) -> ShownMeasure {
+    show(quantity, unit, name, view, french, english_recipe, true)
+}
+
+fn show(
+    quantity: Option<f64>,
+    unit: Option<&str>,
+    name: &str,
+    view: UnitView,
+    french: bool,
+    english_recipe: bool,
+    computed: bool,
+) -> ShownMeasure {
     let normalized = normalize_measurement(quantity, unit);
     let canonical = normalized.unit.as_deref().and_then(canonicalize_unit);
     let (Some(quantity), Some(canonical)) = (
@@ -97,8 +122,8 @@ pub fn show_measure(
     let ingredient = find_ingredient(name);
     let shown = match view {
         UnitView::Recipe => None,
-        UnitView::Weight => weight_view(amount, canonical, ingredient, french),
-        UnitView::French => french_view(amount, canonical, ingredient, french),
+        UnitView::Weight => weight_view(amount, canonical, ingredient, french, computed),
+        UnitView::French => french_view(amount, canonical, ingredient, french, computed),
         UnitView::Us => us_view(amount, canonical, ingredient, french),
     };
     match shown {
@@ -136,17 +161,18 @@ fn is_metric_volume(unit: CanonicalUnit) -> bool {
     matches!(unit, CanonicalUnit::Milliliter | CanonicalUnit::Liter)
 }
 
-/// Grams of what can be weighed, from 1 g: grams as saved, kg and mg exactly, lb, oz and
-/// volumes of an ingredient of the table rounded.
+/// Grams of what can be weighed, from 1 g: grams as saved, kg and mg exactly (rounded when
+/// `computed`), lb, oz and volumes of an ingredient of the table rounded.
 fn weight_view(
     amount: Amount,
     unit: CanonicalUnit,
     ingredient: Option<&Ingredient>,
     french: bool,
+    computed: bool,
 ) -> Option<String> {
     let (grams, exact) = match amount {
         Amount::Mass(_) if unit == CanonicalUnit::Gram => return None,
-        Amount::Mass(grams) => (grams, is_metric_mass(unit)),
+        Amount::Mass(grams) => (grams, is_metric_mass(unit) && !computed),
         Amount::Volume(millilitres) => (ingredient?.grams(millilitres), false),
     };
     if grams < SMALLEST_WEIGHED_GRAMS {
@@ -163,6 +189,7 @@ fn french_view(
     unit: CanonicalUnit,
     ingredient: Option<&Ingredient>,
     french: bool,
+    computed: bool,
 ) -> Option<String> {
     match amount {
         Amount::Mass(_) if is_metric_mass(unit) => None,
@@ -173,7 +200,7 @@ fn french_view(
             None
         }
         Amount::Volume(millilitres) if is_metric_volume(unit) => {
-            Some(metric_volume(millilitres, true, french))
+            Some(metric_volume(millilitres, !computed, french))
         }
         Amount::Volume(millilitres) => match ingredient {
             Some(ingredient) if !ingredient.liquid => {

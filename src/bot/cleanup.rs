@@ -305,6 +305,21 @@ pub async fn set_card_scale(
     }
 }
 
+/// The scale recorded for card `id`, if it is a recorded card.
+pub async fn card_scale(chat: ChatId, id: MessageId) -> Option<crate::engine::scaling::Ratio> {
+    let pool = pool()?;
+    match crate::db::chat_message_scale(&pool, chat.0, id.0).await {
+        Ok(scale) => scale
+            .as_deref()
+            .and_then(crate::engine::scaling::Ratio::decode)
+            .filter(|ratio| !ratio.is_one()),
+        Err(e) => {
+            debug!(error = %e, "Could not read a card's scale");
+            None
+        }
+    }
+}
+
 /// The scale of the newest recorded card of a recipe (the one reactivated after an action).
 pub async fn newest_card_scale(
     chat: ChatId,

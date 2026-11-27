@@ -257,9 +257,17 @@ pub fn build_view(
             };
             let measure = match (ingredient.quantity, factor) {
                 (Some(quantity), Some(factor)) if quantity > 0.0 => {
-                    // A view that converts rounds the exact scaled value itself; otherwise the
-                    // scaled value is rounded in its own unit, as a cook would
-                    let converted = show(Some(quantity * factor));
+                    // A view that converts rounds the exact scaled value itself, metric ones
+                    // included; otherwise the scaled value is rounded in its own unit, as a cook
+                    // would
+                    let converted = unit_view::show_computed_measure(
+                        Some(quantity * factor),
+                        ingredient.unit.as_deref(),
+                        &ingredient.name,
+                        view,
+                        lang.is_french(),
+                        read.english_recipe,
+                    );
                     if converted.converted {
                         converted
                     } else {
@@ -500,6 +508,32 @@ mod tests {
         let weight = build_view(read, UnitView::Weight, Lang::Fr, Some(&scale));
         assert_ne!(weight.ingredients[3].shown.text, "1 ⅓ tasse");
         assert!(weight.ingredients[3].shown.converted);
+
+        // Metric values converted by the view are rounded too (review, 2026-11-25)
+        let metric = [
+            line("lait", Some(250.0), Some("ml")),
+            line("crème", Some(0.5), Some("l")),
+            line("farine", Some(1.0), Some("kg")),
+        ];
+        let read = ReadRecipe {
+            ingredients: &metric,
+            ..read
+        };
+        let shown = |view: UnitView, scale: &Scale| -> Vec<String> {
+            build_view(read, view, Lang::Fr, Some(scale))
+                .ingredients
+                .into_iter()
+                .map(|ingredient| ingredient.shown.text)
+                .collect()
+        };
+        let french = shown(UnitView::French, &scale);
+        assert_eq!(french[..2], ["33 cl", "67 cl"], "{french:?}");
+        assert_eq!(french[2], "1,35 kg", "{french:?}");
+        let weight = shown(UnitView::Weight, &scale);
+        assert!(weight[2].ends_with("335 g"), "{weight:?}");
+        let third = Scale::factor(Ratio { num: 1, den: 3 });
+        let recipe = shown(UnitView::Recipe, &third);
+        assert_eq!(recipe[1], "0,17 l", "a sixth of a litre: {recipe:?}");
 
         // Times one is no scale at all
         let one = Scale::factor(Ratio { num: 1, den: 1 });

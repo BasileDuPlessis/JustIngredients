@@ -84,7 +84,7 @@ the token in Claude Code's own settings file). Check with `/mcp` inside Claude C
 |---|---|---|
 | `list_recipes` | none | every recipe (id, name, memo), sorted by name, at most 500 |
 | `search_recipes` | `query` | recipes found by words of their language, best first |
-| `get_recipe` | `id`, `units`?, `lang`? | name, memo, ingredients (measure as saved and as shown), linked recipes |
+| `get_recipe` | `id`, `units`?, `lang`?, `scale`? | name, memo, ingredients (measure as saved and as shown), linked recipes; with `scale`, the quantities scaled and rounded, and the factor with its reason |
 | `convert_quantity` | `quantity`, `unit`, `ingredient`, `to`, `lang`? | the measure as a card would show it |
 | `rename_recipe` (read-write key) | `id`, `name` | the name stored, made unique ("Tarte (2)") |
 | `set_memo` (read-write key) | `id`, `memo` (`null` clears) | the memo stored, cleaned as in the bot |
@@ -95,6 +95,15 @@ the token in Claude Code's own settings file). Check with `/mcp` inside Claude C
 | `discard_photo_draft` (read-write) | `id` | done |
 
 A read-only key or connection is shown the first four only and cannot call the others.
+
+**Scaling a recipe** (specs/tasks/recipe-scaling.md): `get_recipe`'s `scale` is a number (`2`,
+`0.5`) or what a user would type on the card: `"x3"`, `"2/3"`, `"150 %"`, `"4 oeufs"` (an
+ingredient's new quantity), `"20x30 -> 30x40"` or `"Ø24 -> Ø28"` (dishes of the same depth),
+`"4 -> 6 personnes"`. The answer's `scale` gives the factor and its reason ("× 4/3 (oeufs : 3 →
+4)"); each `shown` measure is scaled and rounded as a cook would (counts to whole units, at least
+1), `quantity` and `unit` stay as saved. Times and temperatures in the memo are not scaled. The
+recipe is never changed. A factor outside 1/10 to 10, or a scale not understood, is refused with
+why.
 
 **Recipe photos** are read by JustIngredients itself, with the bot's rules (parts, units, the
 spoon check, the cache, the daily limit shared with Telegram), never by the assistant: say "import

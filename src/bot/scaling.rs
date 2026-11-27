@@ -79,7 +79,7 @@ pub async fn handle_button(
             .await?;
         }
         "back" => {
-            let scale = cleanup::newest_card_scale(chat_id, recipe_id).await;
+            let scale = cleanup::card_scale(chat_id, message.id).await;
             let keyboard = super::cards::card_keyboard(
                 pool,
                 chat_id.0,
@@ -217,6 +217,12 @@ fn refusal(
             localization,
             "scale-ambiguous",
             &[("names", &names.join(", "))],
+            language_code,
+        ),
+        ScaleError::Repeated(name) => t_args_lang(
+            localization,
+            "scale-repeated",
+            &[("name", name)],
             language_code,
         ),
         ScaleError::NoQuantity(name) => t_args_lang(

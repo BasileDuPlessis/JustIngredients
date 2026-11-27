@@ -1,6 +1,6 @@
 # Scaling a recipe's quantities: study
 
-Status: validated by the owner (2026-11-24, §6: a view, the typed answer, linked recipes follow, servings later; **counts rounded to whole units**); nothing implemented yet. The owner's request: "modifier les quantités
+Status: **tasks 1 to 3 done (2026-11-25)**, task 4 under way (§7). Validated by the owner (2026-11-24, §6: a view, the typed answer, linked recipes follow, servings later; **counts rounded to whole units**). The owner's request: "modifier les quantités
 d'une recette proportionnellement": a recipe with 3 eggs made with 4; a recipe for a 20×30 cm dish
 made in a 30×40 cm one; a recipe doubled, halved, two thirds.
 
@@ -116,3 +116,48 @@ French view keeps spoons); servings read from photos (§6); saving the scaled re
 5. Assistants can ask a recipe scaled (`get_recipe(scale)`) (recommended).
 6. Later, separately: read "Pour 6 personnes" on photos and store it, to offer "pour 4 personnes"
    in one tap.
+
+## 7. As built (2026-11-25)
+
+- `engine::scaling` (task 1): `parse(text, lines) -> Scale { ratio, reason }`; the factor is kept
+  as a fraction (`Ratio`, a denominator up to 12 when it is within 0.5 %, else thousandths),
+  written "4/3" in buttons; `scaled(quantity, unit, factor)` rounds as a cook would. The label
+  shows fractions up to quarters ("× 4/3", "÷ 2"), else a decimal ("× 1,36").
+- `engine::recipes::scaled_recipe(.., scale)` (task 2): a measure the unit view converts is
+  rounded by the view from its exact scaled value; one shown in its saved unit is rounded by
+  `scaled`. `get_recipe(scale)` for assistants (specs/mcp.md §3).
+- The card (task 3): ⚖️ opens × 2, ÷ 2, "Autre…" and ◀️; a scaled card shows "⚖️ Quantités × 2,
+  arrondies." under the memo and "⏱️ Temps et températures inchangés…" under the list, with "↩️
+  Quantités d'origine". Only the card at the bottom acts. **A migration was needed**:
+  `chat_messages.scale` (17) records each card's scale, so refreshes (a rename, an edit, an
+  assistant's memo) show each card at its own scale, and a card sent into the history while the
+  "Autre…" question is open gets its buttons back at its scale. Handler tests cover the menu,
+  × 2 and back, a refused then accepted typed scale, a rename keeping the scale, ❌, and a linked
+  recipe opened at the same scale.
+- Staging test of the assistants' side: `~/.claude/ji-scripts/scale_e2e.sh` (a test recipe
+  created with the staging key, scaled seven ways, three refusals, unchanged after).
+
+## 8. What the code review changed (2026-11-25)
+
+An independent review of tasks 1 to 3 checked the parser's ranges, `Ratio` and the buttons' 64
+bytes, the recorded scale on every path, buttons of other cards and users, the dialogue's
+endings, and the MCP refusals. Fixed, with tests:
+
+- **Metric values converted by the view were not rounded**: the French view writes millilitres
+  and litres in cl, the weight view kilograms in g, exactly. A scaled measure is now shown
+  through `unit_view::show_computed_measure`, which rounds those too (25 cl × 4/3: "33 cl", not
+  "33,333 cl"). Kilograms and litres under 1 round to the hundredth ("0,17 l", not "0,15 l").
+- **`/unites` brought the card back as saved**: it comes back at its scale, in the new view.
+- **The scale is read from the card pressed** (◀️ of the menu, ❌ of an action on a named card),
+  not from the recipe's newest card.
+- **The same scale tapped twice** said "recipe not found" (Telegram's "message is not modified"):
+  only a recipe gone says so now.
+- **An ingredient twice** ("beurre" for the dough and the mould): the same measure twice gives
+  one scale; different ones are told to give a factor instead (`scale-repeated`), rather than
+  "write its exact name", which nothing could satisfy.
+- Small: a typed range ("2-3 oeufs") is not read as its lower bound; dishes' areas no longer
+  overflow; an assistant's number in exponent form (1e-7) is read as a number; the card's
+  "(lait : 25 cl → 50 cl)" keeps the saved unit on both sides.
+
+Left as is: a card refreshed after a rename or a memo keeps its factor but not its reason ("× 4/3"
+instead of "× 4/3 (œufs : 3 → 4)"): only the factor is recorded.

@@ -130,7 +130,8 @@ pub async fn card_keyboard(
 }
 
 /// Shows card `card` of a recipe at `scale` (`None`: as saved), in place, with its buttons, and
-/// records it. Returns whether it worked (a gone recipe or message does not).
+/// records it. Returns `false` when the recipe is gone. A card Telegram did not edit (the same
+/// scale tapped twice: "message is not modified") stays as it is.
 #[allow(clippy::too_many_arguments)]
 pub async fn show_scaled_in_place(
     bot: &Bot,
@@ -177,7 +178,7 @@ pub async fn show_scaled_in_place(
         }
         Err(e) => {
             debug!(error = %e, "Could not show a card scaled");
-            Ok(false)
+            Ok(true)
         }
     }
 }

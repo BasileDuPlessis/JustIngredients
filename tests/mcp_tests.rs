@@ -962,6 +962,7 @@ async fn an_assistant_gets_a_recipe_scaled(pool: PgPool) -> Result<()> {
     for (scale, told) in [
         (json!("4 oeufs"), "no ingredient called"),
         (json!(50), "out of range"),
+        (json!(1e-7), "out of range"),
         (json!("beaucoup"), "not understood"),
         (json!(true), "must be a number or a text"),
     ] {

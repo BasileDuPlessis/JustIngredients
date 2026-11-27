@@ -244,6 +244,7 @@ scale-not-understood = I did not understand this scale.
 scale-out-of-range = This scale is too large or too small: between a tenth and ten times.
 scale-no-such-ingredient = The recipe has no ingredient "{ $name }".
 scale-ambiguous = Several ingredients match: { $names }. Write its exact name.
+scale-repeated = "{ $name }" appears several times with different quantities: give a factor instead (x2, 2/3…).
 scale-no-quantity = "{ $name }" has no quantity to scale.
 scale-other-unit = "{ $name }" is measured in another unit: give it in the recipe's unit.
 card-scaled = Quantities { $scale }, rounded.

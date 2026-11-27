@@ -176,6 +176,10 @@ pub enum ScaleError {
     /// "4 sucre" in a recipe with sugar and icing sugar.
     #[error("ambiguous: {0:?}")]
     Ambiguous(Vec<String>),
+    /// "100 g de beurre" in a recipe with butter twice, in different quantities (the dough and
+    /// the mould): a factor says it instead.
+    #[error("repeated: {0}")]
+    Repeated(String),
     /// The ingredient has no quantity to scale from ("sel").
     #[error("no quantity: {0}")]
     NoQuantity(String),
@@ -315,13 +319,17 @@ fn exact_area(text: &str, round_hint: bool) -> Option<(u32, bool)> {
     let text = text.trim();
     if let Some((width, length)) = text.split_once('x') {
         return Some((
-            width.trim().parse::<u32>().ok()? * length.trim().parse::<u32>().ok()?,
+            width
+                .trim()
+                .parse::<u32>()
+                .ok()?
+                .checked_mul(length.trim().parse::<u32>().ok()?)?,
             false,
         ));
     }
     let digits = text.trim_start_matches(|c: char| !c.is_ascii_digit());
     let diameter: u32 = digits.parse().ok()?;
-    (round_hint || digits.len() != text.len()).then_some((diameter * diameter, true))
+    (round_hint || digits.len() != text.len()).then_some((diameter.checked_mul(diameter)?, true))
 }
 
 /// A folded name without plurals, for "oeufs" against "œuf".
@@ -363,6 +371,10 @@ fn measure(quantity: f64, unit: Option<&str>) -> Measure {
 fn ingredient(text: &str, lines: &[Line<'_>]) -> Result<Scale, ScaleError> {
     let typed = crate::validation::parse_ingredient_from_text(text)
         .map_err(|_| ScaleError::NotUnderstood)?;
+    // "2-3 oeufs" is not one quantity (the parser keeps the lower bound, flagged)
+    if typed.requires_quantity_confirmation {
+        return Err(ScaleError::NotUnderstood);
+    }
     let wanted = crate::validation::parse_quantity(&typed.quantity)
         .filter(|quantity| *quantity > 0.0)
         .ok_or(ScaleError::NotUnderstood)?;
@@ -385,6 +397,17 @@ fn ingredient(text: &str, lines: &[Line<'_>]) -> Result<Scale, ScaleError> {
     let line = match found.as_slice() {
         [] => return Err(ScaleError::NoSuchIngredient(typed.ingredient_name)),
         [line] => *line,
+        [first, rest @ ..] if rest.iter().all(|line| key(line.name) == key(first.name)) => {
+            // The same ingredient twice: the same measure says one scale, others none
+            if rest
+                .iter()
+                .all(|line| line.quantity == first.quantity && line.unit == first.unit)
+            {
+                *first
+            } else {
+                return Err(ScaleError::Repeated(first.name.to_string()));
+            }
+        }
         several => {
             return Err(ScaleError::Ambiguous(
                 several.iter().map(|line| line.name.to_string()).collect(),
@@ -430,7 +453,8 @@ fn ingredient(text: &str, lines: &[Line<'_>]) -> Result<Scale, ScaleError> {
     scale.reason = Reason::Ingredient {
         name: line.name.to_string(),
         from: show(saved, line.unit),
-        to: show(wanted, typed.measurement.as_deref().or(line.unit)),
+        // In the saved unit, as the "from" side ("25 cl → 50 cl", not "→ 500 ml")
+        to: show(saved * value, line.unit),
     };
     Ok(scale)
 }
@@ -551,6 +575,10 @@ pub fn scaled(quantity: f64, unit: Option<&str>, factor: f64) -> f64 {
     let rounded_canonical = match normalized.unit.as_deref().and_then(canonicalize_unit) {
         Some(CanonicalUnit::Gram) if in_canonical < 100.0 => to_step(in_canonical, 1.0),
         Some(CanonicalUnit::Gram) => to_step(in_canonical, 5.0),
+        // "0,17 l", not "0,15 l" for a sixth of a litre
+        Some(CanonicalUnit::Kilogram | CanonicalUnit::Liter) if in_canonical < 1.0 => {
+            to_step(in_canonical, 0.01)
+        }
         Some(CanonicalUnit::Kilogram | CanonicalUnit::Liter) => to_step(in_canonical, 0.05),
         Some(CanonicalUnit::Milligram) => to_step(in_canonical, 1.0),
         Some(CanonicalUnit::Milliliter) => {
@@ -701,6 +729,31 @@ mod tests {
             Err(ScaleError::OtherUnit("farine".to_string())),
             "a volume for a mass"
         );
+        // Review, 2026-11-25: the "to" side in the saved unit; a range is not one quantity
+        assert_eq!(
+            parse("1 l de lait", &tart()).map(|scale| scale.describe(true)),
+            Ok("× 4 (lait : 25 cl → 100 cl)".to_string())
+        );
+        assert_eq!(parse("2-3 oeufs", &tart()), Err(ScaleError::NotUnderstood));
+    }
+
+    #[test]
+    fn an_ingredient_twice() {
+        let butter = |quantity: f64| Line {
+            name: "beurre",
+            quantity: Some(quantity),
+            unit: Some("g"),
+        };
+        assert_eq!(
+            parse("100 g de beurre", &[butter(50.0), butter(20.0)]),
+            Err(ScaleError::Repeated("beurre".to_string())),
+            "the dough and the mould: a factor says it"
+        );
+        assert_eq!(
+            parse("100 g de beurre", &[butter(50.0), butter(50.0)]).map(|scale| scale.ratio),
+            Ok(Ratio { num: 2, den: 1 }),
+            "the same measure twice says one scale"
+        );
     }
 
     #[test]
@@ -750,6 +803,8 @@ mod tests {
         for typed in ["", "beaucoup", "x", "/0", "abc 3"] {
             assert!(parse(typed, &tart()).is_err(), "{typed}");
         }
+        // Areas too big for whole numbers: computed, not wrapped around
+        assert_eq!(ratio("50000x50000 → 100000x100000"), Some((4, 1)));
         for typed in ["x20", "/20", "1/50", "2000 %", "0"] {
             assert_eq!(
                 parse(typed, &tart()).err(),

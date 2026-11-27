@@ -255,6 +255,9 @@ fn scale_refused(reason: &crate::engine::scaling::ScaleError) -> String {
             "Several ingredients match: {}. Name one exactly.",
             names.join(", ")
         ),
+        ScaleError::Repeated(name) => format!(
+            "\"{name}\" appears several times with different quantities: give a factor instead (2, \"2/3\")."
+        ),
         ScaleError::NoQuantity(name) => format!("\"{name}\" has no quantity to scale from."),
         ScaleError::OtherUnit(name) => {
             format!("\"{name}\" is measured in another kind of unit: give it in the recipe's unit.")
@@ -378,7 +381,8 @@ async fn get(pool: &PgPool, owner: Owner, arguments_value: Value) -> Result<Valu
     let lang = language(pool, owner, language_code(lang.as_deref())?).await;
     let scale = match scale {
         None | Some(Value::Null) => None,
-        Some(Value::Number(number)) => Some(number.to_string()),
+        // As a decimal, never "1e-7" (the parser reads no exponent)
+        Some(Value::Number(number)) => number.as_f64().map(|value| value.to_string()),
         Some(Value::String(text)) => Some(text),
         Some(_) => {
             return Err(Refusal::Told(

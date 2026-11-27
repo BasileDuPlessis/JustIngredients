@@ -60,6 +60,23 @@ pub async fn record_chat_message(
     Ok(())
 }
 
+/// The scale recorded for message `message_id` (`None`: not recorded, or as saved).
+pub async fn chat_message_scale(
+    pool: &PgPool,
+    chat_id: i64,
+    message_id: i32,
+) -> Result<Option<String>> {
+    let scale: Option<Option<String>> = sqlx::query_scalar(
+        "SELECT scale FROM chat_messages WHERE chat_id = $1 AND message_id = $2",
+    )
+    .bind(chat_id)
+    .bind(i64::from(message_id))
+    .fetch_optional(pool)
+    .await
+    .context("Failed to read a card's scale")?;
+    Ok(scale.flatten())
+}
+
 /// Forgets a recorded message: it stays in the chat.
 pub async fn forget_chat_message(pool: &PgPool, chat_id: i64, message_id: i32) -> Result<()> {
     sqlx::query("DELETE FROM chat_messages WHERE chat_id = $1 AND message_id = $2")

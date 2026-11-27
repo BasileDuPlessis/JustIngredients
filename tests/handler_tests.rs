@@ -1877,3 +1877,45 @@ async fn a_linked_recipe_opens_at_the_same_scale(pool: PgPool) -> Result<()> {
     assert_eq!(card_scale(&pool, opened.id).await?.as_deref(), Some("2/1"));
     Ok(())
 }
+
+/// `/unites` on a doubled card: the card comes back in the chosen view, still doubled.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_doubled_card_stays_doubled_in_another_unit_view(pool: PgPool) -> Result<()> {
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let recipe_id = save_tart(&pool).await?;
+    let mut bot = mock_bot(MockMessageText::new().text("/start"), services.clone());
+    let card = open_card(&mut bot, recipe_id).await?;
+    bot.update(
+        MockCallbackQuery::new()
+            .data(format!("recipe_scale:set:{recipe_id}:2/1"))
+            .message(card),
+    );
+    bot.dispatch().await;
+
+    bot.update(MockMessageText::new().text("/unites"));
+    bot.dispatch().await;
+    let weight =
+        button_data(&bot.get_responses(), "unit_view:weight:").context("the weight view button")?;
+    assert_eq!(weight, format!("unit_view:weight:{recipe_id}"));
+    let chooser = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the chooser")?;
+    bot.update(MockCallbackQuery::new().data(weight).message(chooser));
+    bot.dispatch().await;
+    let again = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the card again")?;
+    let text = again.text().unwrap_or_default().to_string();
+    assert!(text.contains("× 2"), "{text}");
+    assert!(text.contains("500 g"), "{text}");
+    assert_eq!(card_scale(&pool, again.id).await?.as_deref(), Some("2/1"));
+    Ok(())
+}
