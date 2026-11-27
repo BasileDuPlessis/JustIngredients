@@ -170,9 +170,14 @@ instead of "× 4/3 (œufs : 3 → 4)"): only the factor is recorded.
   above and keeps the menu, so the result shows at once. The steps now apply to the scale shown
   (× 2 twice is × 4, ÷ 2 goes back), within a tenth and ten times (a step beyond is not offered);
   each button carries the scale it leads to (`pick:<id>:<num>/<den>`), so a double tap changes
-  nothing. The menu also has "↩️ Quantités d'origine"; ◀️ gives the card its buttons back. A typed
-  answer ("Autre…") still applies to the recipe as saved, and the card comes back with the menu
-  open.
+  nothing. The menu also has "↩️ Quantités d'origine"; ◀️ gives the card its buttons back. After
+  a typed answer ("Autre…") the card comes back with the menu open.
+- **A typed factor applies to the quantities shown** (the owner: ÷ 2, then "x2" typed, went back
+  to the recipe's quantities ×2 instead of the ones shown): "x2", "/2", "2/3", "150 %" multiply
+  the scale shown, as the buttons do; a target ("4 oeufs", dishes, servings) describes the
+  recipe as saved and starts from it. The question says so when the card is scaled
+  ("Quantités affichées : ÷ 2. Un facteur s'y applique ; une quantité d'ingrédient, un plat ou
+  des portions partent de la recette."). The dialogue keeps the scale shown (`shown`).
 - **No Ø to type**: round dishes are read as "d24 à d28" (the owner's form), "rond 24 à 28",
   "diamètre 24 en 28", "un moule de 24 cm de diamètre à 28"; "plat", "moule", "un", "de" are
   skipped. The examples shown say "20x30 à 30x40, rond : d24 à d28" (no → either: also hard to

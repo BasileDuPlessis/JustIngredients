@@ -239,6 +239,7 @@ scale-other-button = Autre…
 scale-back-button = Retour
 scale-prompt = Ajuster les quantités de « { $name } » : que voulez-vous ?
 scale-prompt-examples = Par exemple : x3, 2/3, 1,5 ; une quantité d'un ingrédient (4 oeufs, 400 g de farine) ; un autre plat (20x30 à 30x40, rond : d24 à d28) ; des portions (de 4 à 6 personnes).
+scale-prompt-shown = Quantités affichées : { $scale }. Un facteur (x2, /2, 2/3…) s'y applique ; une quantité d'ingrédient, un plat ou des portions partent de la recette.
 scale-not-understood = Je n'ai pas compris cet ajustement.
 scale-out-of-range = Cet ajustement est trop grand ou trop petit : entre un dixième et dix fois.
 scale-no-such-ingredient = La recette n'a pas d'ingrédient « { $name } ».

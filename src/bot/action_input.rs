@@ -72,6 +72,7 @@ pub(super) async fn answer_in_action(
         Some(RecipeDialogueState::ScalingRecipe {
             recipe_id,
             language_code: dialogue_lang_code,
+            shown,
         }) => {
             return super::scaling::answer_text(
                 bot,
@@ -79,6 +80,9 @@ pub(super) async fn answer_in_action(
                 msg.chat.id,
                 &dialogue_ctx.dialogue,
                 recipe_id,
+                shown
+                    .as_deref()
+                    .and_then(crate::engine::scaling::Ratio::decode),
                 text,
                 localization,
                 dialogue_lang_code.as_deref().or(language_code),

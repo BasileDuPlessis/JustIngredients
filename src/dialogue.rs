@@ -78,10 +78,13 @@ pub enum RecipeDialogueState {
         language_code: Option<String>,
     },
     /// A scale typed for a recipe's card ("x3", "4 oeufs", "20x30 → 30x40"): the card comes
-    /// back scaled (`bot::scaling`).
+    /// back scaled (`bot::scaling`). `shown`: the scale the card showed when asked ("1/2"), which
+    /// a typed factor applies to; none, the recipe as saved.
     ScalingRecipe {
         recipe_id: i64,
         language_code: Option<String>,
+        #[serde(default)]
+        shown: Option<String>,
     },
     EditingSavedIngredients {
         recipe_id: i64,

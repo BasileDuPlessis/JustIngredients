@@ -1997,3 +1997,77 @@ async fn a_doubled_card_stays_doubled_in_another_unit_view(pool: PgPool) -> Resu
     assert_eq!(card_scale(&pool, again.id).await?.as_deref(), Some("2/1"));
     Ok(())
 }
+
+/// A factor typed applies to the quantities shown, as the buttons do (÷ 2, then "x2": as saved,
+/// the owner's trial on 2026-11-27); a target ("4 oeufs") starts from the recipe as saved.
+#[sqlx::test(migrations = false)]
+#[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
+async fn a_typed_factor_applies_to_the_quantities_shown(pool: PgPool) -> Result<()> {
+    use teloxide_tests::MockCallbackQuery;
+    let services = services(&pool, Vec::new()).await?;
+    let localization = Arc::clone(&services.messages.localization);
+    let recipe_id = save_tart(&pool).await?;
+    let mut bot = mock_bot(MockMessageText::new().text("/start"), services.clone());
+    let card = open_card(&mut bot, recipe_id).await?;
+    bot.update(
+        MockCallbackQuery::new()
+            .data(format!("recipe_scale:pick:{recipe_id}:1/2"))
+            .message(card.clone()),
+    );
+    bot.dispatch().await;
+    assert!(last_edit(&bot).contains("125 g"), "halved");
+
+    let ask = |card: teloxide::types::Message| {
+        MockCallbackQuery::new()
+            .data(format!("recipe_scale:ask:{recipe_id}"))
+            .message(card)
+    };
+    bot.update(ask(card.clone()));
+    bot.dispatch().await;
+    let prompt = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .and_then(|message| message.text().map(str::to_string))
+        .unwrap_or_default();
+    let shown = t_lang(&localization, "scale-prompt-shown", None);
+    let shown = shown.split('{').next().unwrap_or_default().trim();
+    assert!(
+        prompt.contains(shown) && prompt.contains("÷ 2"),
+        "the question says what a factor applies to: {prompt}"
+    );
+
+    bot.update(MockMessageText::new().text("x2"));
+    bot.dispatch().await;
+    let back = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .cloned()
+        .context("the card")?;
+    let text = back.text().unwrap_or_default().to_string();
+    assert!(text.contains("250 g"), "÷ 2 then x2: as saved: {text}");
+    assert!(!text.contains("⚖️ "), "{text}");
+    assert_eq!(card_scale(&pool, back.id).await?, None);
+
+    // Halved again, then a target: from the recipe as saved
+    bot.update(
+        MockCallbackQuery::new()
+            .data(format!("recipe_scale:pick:{recipe_id}:1/2"))
+            .message(back.clone()),
+    );
+    bot.dispatch().await;
+    bot.update(ask(back));
+    bot.dispatch().await;
+    bot.update(MockMessageText::new().text("4 oeufs"));
+    bot.dispatch().await;
+    let target = bot
+        .get_responses()
+        .sent_messages
+        .last()
+        .and_then(|message| message.text().map(str::to_string))
+        .unwrap_or_default();
+    assert!(target.contains("× 4/3"), "{target}");
+    assert!(target.contains("335 g"), "{target}");
+    Ok(())
+}

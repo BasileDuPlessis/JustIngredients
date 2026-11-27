@@ -240,6 +240,7 @@ scale-other-button = Other…
 scale-back-button = Back
 scale-prompt = Scale the quantities of "{ $name }": what would you like?
 scale-prompt-examples = For example: x3, 2/3, 1.5; one ingredient's quantity (4 eggs, 400 g flour); another dish (20x30 to 30x40, round: d24 to d28); servings (from 4 to 6 servings).
+scale-prompt-shown = Quantities shown: { $scale }. A factor (x2, /2, 2/3…) applies to them; an ingredient's quantity, a dish or servings start from the recipe.
 scale-not-understood = I did not understand this scale.
 scale-out-of-range = This scale is too large or too small: between a tenth and ten times.
 scale-no-such-ingredient = The recipe has no ingredient "{ $name }".

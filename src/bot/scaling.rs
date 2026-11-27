@@ -2,8 +2,10 @@
 //! quantités" opens a menu that stays open while the user adjusts: ÷ 2 and × 2 of the scale shown
 //! (× 2 twice is × 4), the card's quantities updated above at each tap; "Autre…", which asks for
 //! one typed answer ("x3", "2/3", "4 oeufs", "20x30 à 30x40", "d24 à d28", "de 4 à 6
-//! personnes"), read by `engine::scaling` against the recipe as saved; "↩️ Quantités d'origine";
-//! ◀️ back to the card's buttons. The recipe is never changed.
+//! personnes"), read by `engine::scaling`: a factor applies to the quantities shown, as the
+//! buttons do (÷ 2, then "x3" typed: × 3/2); a target (an ingredient's quantity, dishes, servings)
+//! to the recipe as saved, which it describes; "↩️ Quantités d'origine"; ◀️ back to the card's
+//! buttons. The recipe is never changed.
 
 use std::sync::Arc;
 
@@ -17,7 +19,7 @@ use super::cards::Buttons;
 use super::cleanup::{self, send_transient};
 use super::ui_builder::{SCALE_PREFIX, scale_menu_keyboard};
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
-use crate::engine::scaling::{Ratio, Scale, ScaleError};
+use crate::engine::scaling::{Ratio, Reason, Scale, ScaleError};
 use crate::engine::{EngineError, Owner};
 use crate::localization::{LocalizationManager, t_args_lang, t_lang};
 
@@ -113,12 +115,14 @@ pub async fn handle_button(
             }
         }
         "ask" => {
+            let shown = cleanup::card_scale(chat_id, message.id).await;
             ask(
                 bot,
                 pool,
                 chat_id,
                 dialogue,
                 recipe_id,
+                shown,
                 localization,
                 language_code,
             )
@@ -166,13 +170,16 @@ async fn show(
 }
 
 /// "Autre…": asks for the scale, typed. The question goes at the bottom with "Annuler" (the card
-/// goes into the history, as for a rename); the typed answer is read by `engine::scaling`.
+/// goes into the history, as for a rename); the typed answer is read by `engine::scaling`. A card
+/// shown at a scale says that a factor applies to it.
+#[allow(clippy::too_many_arguments)]
 async fn ask(
     bot: &Bot,
     pool: &PgPool,
     chat_id: ChatId,
     dialogue: &RecipeDialogue,
     recipe_id: i64,
+    shown: Option<Ratio>,
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
 ) -> Result<()> {
@@ -185,7 +192,7 @@ async fn ask(
         dialogue.exit().await?;
     }
     cleanup::delete_lists(bot, chat_id).await;
-    let text = format!(
+    let mut text = format!(
         "⚖️ {}\n\n{}",
         t_args_lang(
             localization,
@@ -195,6 +202,16 @@ async fn ask(
         ),
         t_lang(localization, "scale-prompt-examples", language_code)
     );
+    if let Some(shown) = shown {
+        let french = crate::engine::Lang::from_code(language_code).is_french();
+        text.push_str("\n\n");
+        text.push_str(&t_args_lang(
+            localization,
+            "scale-prompt-shown",
+            &[("scale", &shown.label(french))],
+            language_code,
+        ));
+    }
     let sent = bot
         .send_message(chat_id, text)
         .reply_markup(teloxide::types::InlineKeyboardMarkup::new(vec![vec![
@@ -209,9 +226,22 @@ async fn ask(
         .update(RecipeDialogueState::ScalingRecipe {
             recipe_id,
             language_code: language_code.map(str::to_string),
+            shown: shown.map(Ratio::encode),
         })
         .await?;
     Ok(())
+}
+
+/// A typed scale as the card will show it: a factor ("x2", "2/3") times the scale shown, as the
+/// menu's buttons; a target ("4 oeufs", dishes, servings) as asked, from the recipe as saved.
+fn on_shown(scale: Scale, shown: Option<Ratio>) -> Result<Scale, ScaleError> {
+    match (&scale.reason, shown) {
+        (Reason::Factor, Some(shown)) => shown
+            .times(scale.ratio)
+            .map(Scale::factor)
+            .ok_or(ScaleError::OutOfRange),
+        _ => Ok(scale),
+    }
 }
 
 /// What the user is told when a typed scale is refused.
@@ -258,7 +288,8 @@ fn refusal(
     format!("{reason}\n\n{examples}")
 }
 
-/// The typed scale: the card comes back at the bottom, scaled, the menu still open. A scale
+/// The typed scale: the card comes back at the bottom, scaled, the menu still open. A factor
+/// applies to the scale the card showed (`shown`), a target to the recipe as saved. A scale
 /// refused keeps the question open with why; a cancel word does what "Annuler" does.
 #[allow(clippy::too_many_arguments)]
 pub async fn answer_text(
@@ -267,6 +298,7 @@ pub async fn answer_text(
     chat_id: ChatId,
     dialogue: &RecipeDialogue,
     recipe_id: i64,
+    shown: Option<Ratio>,
     text: &str,
     localization: &Arc<LocalizationManager>,
     language_code: Option<&str>,
@@ -286,7 +318,10 @@ pub async fn answer_text(
         return Ok(());
     }
     let owner = Owner::telegram(chat_id.0);
-    match crate::engine::recipes::scale_of(pool, owner, recipe_id, text).await {
+    let asked = crate::engine::recipes::scale_of(pool, owner, recipe_id, text)
+        .await
+        .and_then(|scale| on_shown(scale, shown).map_err(EngineError::Scale));
+    match asked {
         Ok(scale) => {
             crate::dialogue::end_after_write(dialogue).await;
             crate::observability::action(crate::observability::Action::RecipeScaled);
