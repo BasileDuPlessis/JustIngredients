@@ -80,6 +80,18 @@ impl Ratio {
         self.num == self.den
     }
 
+    /// This ratio times `other` ("× 4/3" doubled: "× 8/3"), if it stays within the accepted
+    /// factors.
+    pub fn times(self, other: Self) -> Option<Self> {
+        let ratio = Self::new(
+            self.num.checked_mul(other.num)?,
+            self.den.checked_mul(other.den)?,
+        )?;
+        (MIN_FACTOR..=MAX_FACTOR)
+            .contains(&ratio.value())
+            .then_some(ratio)
+    }
+
     /// "× 2", "÷ 2", "× 4/3", "× 3/2", "× 1,36" (fractions in halves, thirds and quarters only).
     pub fn label(self, french: bool) -> String {
         if self.den == 1 {
@@ -197,10 +209,11 @@ const BETWEEN: &str = r"\s*(?:→|->|=>|>|\bà\b|\ba\b|\ben\b|\bvers\b|\bto\b|\b
 const PEOPLE: &str = r"(?:personnes?|pers\.?|parts?|portions?|servings?|people)";
 
 // The patterns are constants, compiled by the tests of this module: they cannot fail at run time.
-/// "20x30 → 30x40", "de 20 x 30 cm à 30x40", "ø24 → ø28", "rond 24 cm en 28".
+/// "20x30 → 30x40", "de 20 x 30 cm à 30x40", "d24 à d28", "ø24 → ø28", "rond 24 cm en 28" (after
+/// [`dish_words`]).
 #[allow(clippy::expect_used)]
 static DISHES: LazyLock<Regex> = LazyLock::new(|| {
-    let shape = r"((?:ø|diam(?:etre)?|rond)\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*x\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s*(?:cm)?";
+    let shape = r"((?:ø|d|rond)\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?\s*x\s*\d+(?:[.,]\d+)?|\d+(?:[.,]\d+)?)\s*(?:cm)?";
     Regex::new(&format!(r"^(?:de\s+|from\s+)?{shape}{BETWEEN}{shape}$"))
         .expect("Invalid dishes regex pattern")
 });
@@ -242,6 +255,36 @@ static PERCENT: LazyLock<Regex> = LazyLock::new(|| {
 #[allow(clippy::expect_used)]
 static PLAIN: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(&format!(r"^{NUMBER}$")).expect("Invalid number regex pattern"));
+
+/// Dishes said in words, as [`DISHES`] reads them: "un moule rond de 24 à un de 28" is "rond 24
+/// à 28", "diamètre 24 en 28" and "24 cm de diamètre à 28" are "rond 24 en 28", "rond 24 à 28"
+/// (the Ø is hard to find on a phone: "d24" too).
+fn dish_words(cleaned: &str) -> String {
+    let mut words: Vec<&str> = Vec::new();
+    for word in cleaned.split_whitespace() {
+        let word = match word {
+            "diametre" | "diametres" | "diam" | "diam." | "round" | "cercle" | "circle" => "rond",
+            "plat" | "plats" | "moule" | "moules" | "dish" | "pan" | "tin" | "un" | "une"
+            | "de" | "du" | "d'un" | "d'une" | "from" => continue,
+            word => word,
+        };
+        // "24 cm rond": the marker goes before its size
+        if word == "rond" {
+            let size = match words.as_slice() {
+                [.., size, "cm"] if size.starts_with(|c: char| c.is_ascii_digit()) => Some(2),
+                [.., size] if size.starts_with(|c: char| c.is_ascii_digit()) => Some(1),
+                _ => None,
+            };
+            if let Some(back) = size {
+                let at = words.len() - back;
+                words.insert(at, "rond");
+                continue;
+            }
+        }
+        words.push(word);
+    }
+    words.join(" ")
+}
 
 fn number(text: &str) -> Option<f64> {
     text.replace(',', ".")
@@ -492,7 +535,7 @@ pub fn parse(text: &str, lines: &[Line<'_>]) -> Result<Scale, ScaleError> {
             reason: Reason::Servings { from, to },
         });
     }
-    if let Some(captures) = DISHES.captures(&cleaned) {
+    if let Some(captures) = DISHES.captures(&dish_words(&cleaned)) {
         return dishes(&captures);
     }
     if let Some(captures) = MULTIPLY.captures(&cleaned) {
@@ -776,6 +819,23 @@ mod tests {
             "the second shape follows"
         );
         assert_eq!(ratio("ø24 cm en ø28 cm"), Some((49, 36)));
+        // Without the Ø, hard to find on a phone (the owner, 2026-11-27)
+        for typed in [
+            "d24 à d28",
+            "d24 → d28",
+            "D24 -> D28",
+            "d 24 en d 28",
+            "diamètre 24 à 28",
+            "un moule rond de 24 à un moule rond de 28",
+            "moule de 24 cm de diamètre à 28",
+        ] {
+            assert_eq!(ratio(typed), Some((49, 36)), "{typed}");
+        }
+        assert_eq!(ratio("plat de 20x30 à un plat de 30x40"), Some((2, 1)));
+        assert_eq!(
+            parse("d24 à d28", &[]).map(|scale| scale.describe(true)),
+            Ok("× 1,36 (plat Ø24 → Ø28)".to_string())
+        );
         // A round dish of 24 (452 cm²) to a 20×30 one (600 cm²)
         let mixed = parse("Ø24 → 20x30", &[]).map(|scale| scale.ratio.value());
         assert!(
@@ -823,6 +883,19 @@ mod tests {
         assert_eq!(Ratio::decode("100/1"), None, "out of range");
         assert_eq!(Ratio::decode("0/3"), None);
         assert_eq!(Ratio::decode("abc"), None);
+        let double = Ratio { num: 2, den: 1 };
+        let half = Ratio { num: 1, den: 2 };
+        assert_eq!(
+            ratio.and_then(|ratio| ratio.times(double)),
+            Some(Ratio { num: 8, den: 3 })
+        );
+        assert_eq!(double.times(half), Some(Ratio { num: 1, den: 1 }));
+        assert_eq!(
+            Ratio { num: 8, den: 1 }.times(double),
+            None,
+            "beyond ten times"
+        );
+        assert_eq!(Ratio { num: 1, den: 8 }.times(half), None, "below a tenth");
         assert!(
             Ratio::approximate(1.36).is_some_and(|ratio| (ratio.value() - 1.36).abs() < 0.007),
             "close enough"

@@ -226,6 +226,7 @@ async fn route_any_state(
                 None,
                 recipe_id,
                 scale.as_ref(),
+                crate::bot::cards::Buttons::Card,
                 q.from.language_code.as_deref(),
                 localization,
             )

@@ -1,8 +1,9 @@
 //! Scaling a recipe's quantities from its card (`specs/tasks/recipe-scaling.md`): "⚖️ Ajuster les
-//! quantités" opens × 2, ÷ 2 and "Autre…", which asks for one typed answer ("x3", "2/3", "4
-//! oeufs", "20x30 → 30x40", "Ø24 → Ø28", "de 4 à 6 personnes"), read by `engine::scaling`. The
-//! card then shows its quantities scaled and rounded, with "↩️ Quantités d'origine"; the recipe
-//! is never changed. A factor applies to the recipe as saved (× 2 twice is × 2).
+//! quantités" opens a menu that stays open while the user adjusts: ÷ 2 and × 2 of the scale shown
+//! (× 2 twice is × 4), the card's quantities updated above at each tap; "Autre…", which asks for
+//! one typed answer ("x3", "2/3", "4 oeufs", "20x30 à 30x40", "d24 à d28", "de 4 à 6
+//! personnes"), read by `engine::scaling` against the recipe as saved; "↩️ Quantités d'origine";
+//! ◀️ back to the card's buttons. The recipe is never changed.
 
 use std::sync::Arc;
 
@@ -12,6 +13,7 @@ use teloxide::prelude::*;
 use teloxide::types::MaybeInaccessibleMessage;
 use tracing::debug;
 
+use super::cards::Buttons;
 use super::cleanup::{self, send_transient};
 use super::ui_builder::{SCALE_PREFIX, scale_menu_keyboard};
 use crate::dialogue::{RecipeDialogue, RecipeDialogueState};
@@ -52,20 +54,32 @@ pub async fn handle_button(
     }
     match action {
         "menu" => {
+            let current = cleanup::card_scale(chat_id, message.id).await;
             if let Err(e) = bot
                 .edit_message_reply_markup(chat_id, message.id)
-                .reply_markup(scale_menu_keyboard(recipe_id, language_code, localization))
+                .reply_markup(scale_menu_keyboard(
+                    recipe_id,
+                    current,
+                    language_code,
+                    localization,
+                ))
                 .await
             {
                 debug!(error = %e, "Could not show the scaling menu");
             }
         }
-        "set" => {
-            let ratio = parts.next().and_then(Ratio::decode);
-            let scale = ratio.filter(|ratio| !ratio.is_one()).map(Scale::factor);
-            if ratio.is_some() {
-                crate::observability::action(crate::observability::Action::RecipeScaled);
-            }
+        // "pick": from the menu, which stays open; "set": from the card's buttons
+        "pick" | "set" => {
+            let Some(ratio) = parts.next().and_then(Ratio::decode) else {
+                return Ok(());
+            };
+            crate::observability::action(crate::observability::Action::RecipeScaled);
+            let scale = (!ratio.is_one()).then(|| Scale::factor(ratio));
+            let buttons = if action == "pick" {
+                Buttons::ScaleMenu
+            } else {
+                Buttons::Card
+            };
             show(
                 bot,
                 pool,
@@ -73,6 +87,7 @@ pub async fn handle_button(
                 message.id,
                 recipe_id,
                 scale.as_ref(),
+                buttons,
                 language_code,
                 localization,
             )
@@ -123,6 +138,7 @@ async fn show(
     card: teloxide::types::MessageId,
     recipe_id: i64,
     scale: Option<&Scale>,
+    buttons: Buttons,
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> Result<()> {
@@ -133,6 +149,7 @@ async fn show(
         card,
         recipe_id,
         scale,
+        buttons,
         language_code,
         localization,
     )
@@ -241,8 +258,8 @@ fn refusal(
     format!("{reason}\n\n{examples}")
 }
 
-/// The typed scale: the card comes back at the bottom, scaled. A scale refused keeps the question
-/// open with why; a cancel word does what "Annuler" does.
+/// The typed scale: the card comes back at the bottom, scaled, the menu still open. A scale
+/// refused keeps the question open with why; a cancel word does what "Annuler" does.
 #[allow(clippy::too_many_arguments)]
 pub async fn answer_text(
     bot: &Bot,
@@ -281,6 +298,8 @@ pub async fn answer_text(
                 None,
                 recipe_id,
                 Some(&scale),
+                // Still adjusting: the menu stays open under the card
+                Buttons::ScaleMenu,
                 language_code,
                 localization,
             )

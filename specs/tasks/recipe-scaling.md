@@ -1,6 +1,6 @@
 # Scaling a recipe's quantities: study
 
-Status: **tasks 1 to 3 done (2026-11-25)**, task 4 under way (§7). Validated by the owner (2026-11-24, §6: a view, the typed answer, linked recipes follow, servings later; **counts rounded to whole units**). The owner's request: "modifier les quantités
+Status: **tasks 1 to 3 done (2026-11-25)**, reviewed (§8), on staging; the owner's trial changed the menu and the dishes' forms (§9). Validated by the owner (2026-11-24, §6: a view, the typed answer, linked recipes follow, servings later; **counts rounded to whole units**). The owner's request: "modifier les quantités
 d'une recette proportionnellement": a recipe with 3 eggs made with 4; a recipe for a 20×30 cm dish
 made in a 30×40 cm one; a recipe doubled, halved, two thirds.
 
@@ -161,3 +161,19 @@ endings, and the MCP refusals. Fixed, with tests:
 
 Left as is: a card refreshed after a rename or a memo keeps its factor but not its reason ("× 4/3"
 instead of "× 4/3 (œufs : 3 → 4)"): only the factor is recorded.
+
+## 9. The owner's trial on staging (2026-11-27)
+
+"C'est bien", with two changes, made:
+
+- **The menu stays open while adjusting**: a tap on ÷ 2 or × 2 updates the card's quantities
+  above and keeps the menu, so the result shows at once. The steps now apply to the scale shown
+  (× 2 twice is × 4, ÷ 2 goes back), within a tenth and ten times (a step beyond is not offered);
+  each button carries the scale it leads to (`pick:<id>:<num>/<den>`), so a double tap changes
+  nothing. The menu also has "↩️ Quantités d'origine"; ◀️ gives the card its buttons back. A typed
+  answer ("Autre…") still applies to the recipe as saved, and the card comes back with the menu
+  open.
+- **No Ø to type**: round dishes are read as "d24 à d28" (the owner's form), "rond 24 à 28",
+  "diamètre 24 en 28", "un moule de 24 cm de diamètre à 28"; "plat", "moule", "un", "de" are
+  skipped. The examples shown say "20x30 à 30x40, rond : d24 à d28" (no → either: also hard to
+  type); the card still writes "plat Ø24 → Ø28".

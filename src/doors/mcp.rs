@@ -245,7 +245,7 @@ fn scale_refused(reason: &crate::engine::scaling::ScaleError) -> String {
     match reason {
         ScaleError::NotUnderstood => "scale not understood: give a factor (2, 0.5, \"2/3\", \
             \"150 %\"), an ingredient's new quantity (\"4 oeufs\"), dishes (\"20x30 → 30x40\", \
-            \"Ø24 → Ø28\") or servings (\"de 4 à 6 personnes\")."
+            \"d24 → d28\") or servings (\"de 4 à 6 personnes\")."
             .into(),
         ScaleError::OutOfRange => "scale out of range: between a tenth and ten times.".into(),
         ScaleError::NoSuchIngredient(name) => {
@@ -860,7 +860,7 @@ fn tools() -> Vec<Tool> {
                         "type": ["number", "string"],
                         "description": "Optional: a factor (2, 0.5, \"2/3\", \"150 %\"), an \
                             ingredient's new quantity (\"4 oeufs\", \"400 g de farine\"), \
-                            dishes by their size (\"20x30 → 30x40\", \"Ø24 → Ø28\") or \
+                            dishes by their size (\"20x30 → 30x40\", \"d24 → d28\") or \
                             servings (\"de 4 à 6 personnes\"); between a tenth and ten times"
                     },
                 }),

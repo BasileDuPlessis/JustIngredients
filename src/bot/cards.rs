@@ -129,7 +129,42 @@ pub async fn card_keyboard(
     create_recipe_details_keyboard(recipe_id, &linked, scale, language_code, localization)
 }
 
-/// Shows card `card` of a recipe at `scale` (`None`: as saved), in place, with its buttons, and
+/// The buttons of a card shown: its own, or the scaling menu while the user adjusts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Buttons {
+    Card,
+    ScaleMenu,
+}
+
+/// The keyboard of a card shown at `scale` with `buttons`.
+async fn keyboard_of(
+    pool: &PgPool,
+    telegram_id: i64,
+    recipe_id: i64,
+    scale: Option<Ratio>,
+    buttons: Buttons,
+    language_code: Option<&str>,
+    localization: &Arc<LocalizationManager>,
+) -> teloxide::types::InlineKeyboardMarkup {
+    match buttons {
+        Buttons::Card => {
+            card_keyboard(
+                pool,
+                telegram_id,
+                recipe_id,
+                scale,
+                language_code,
+                localization,
+            )
+            .await
+        }
+        Buttons::ScaleMenu => {
+            super::ui_builder::scale_menu_keyboard(recipe_id, scale, language_code, localization)
+        }
+    }
+}
+
+/// Shows card `card` of a recipe at `scale` (`None`: as saved), in place, with `buttons`, and
 /// records it. Returns `false` when the recipe is gone. A card Telegram did not edit (the same
 /// scale tapped twice: "message is not modified") stays as it is.
 #[allow(clippy::too_many_arguments)]
@@ -140,6 +175,7 @@ pub async fn show_scaled_in_place(
     card: teloxide::types::MessageId,
     recipe_id: i64,
     scale: Option<&Scale>,
+    buttons: Buttons,
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> Result<bool> {
@@ -159,11 +195,12 @@ pub async fn show_scaled_in_place(
     let ratio = scale
         .map(|scale| scale.ratio)
         .filter(|ratio| !ratio.is_one());
-    let keyboard = card_keyboard(
+    let keyboard = keyboard_of(
         pool,
         telegram_id,
         recipe_id,
         ratio,
+        buttons,
         language_code,
         localization,
     )
@@ -204,6 +241,7 @@ pub async fn show_card(
         pressed,
         recipe_id,
         None,
+        Buttons::Card,
         language_code,
         localization,
     )
@@ -211,7 +249,7 @@ pub async fn show_card(
 }
 
 /// [`show_card`], its quantities at `scale` (a linked recipe opened from a scaled card, a scale
-/// typed by the user).
+/// typed by the user, with the scaling menu still open), with `buttons`.
 #[allow(clippy::too_many_arguments)]
 pub async fn show_scaled_card(
     bot: &Bot,
@@ -220,6 +258,7 @@ pub async fn show_scaled_card(
     pressed: Option<teloxide::types::MessageId>,
     recipe_id: i64,
     scale: Option<&Scale>,
+    buttons: Buttons,
     language_code: Option<&str>,
     localization: &Arc<LocalizationManager>,
 ) -> Result<()> {
@@ -252,11 +291,12 @@ pub async fn show_scaled_card(
     {
         return Ok(());
     }
-    let keyboard = card_keyboard(
+    let keyboard = keyboard_of(
         pool,
         telegram_id,
         recipe_id,
         ratio,
+        buttons,
         language_code,
         localization,
     )

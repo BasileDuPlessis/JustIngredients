@@ -98,7 +98,7 @@ A read-only key or connection is shown the first four only and cannot call the o
 
 **Scaling a recipe** (specs/tasks/recipe-scaling.md): `get_recipe`'s `scale` is a number (`2`,
 `0.5`) or what a user would type on the card: `"x3"`, `"2/3"`, `"150 %"`, `"4 oeufs"` (an
-ingredient's new quantity), `"20x30 -> 30x40"` or `"Ø24 -> Ø28"` (dishes of the same depth),
+ingredient's new quantity), `"20x30 -> 30x40"` or `"d24 -> d28"` (dishes of the same depth, round ones by their diameter),
 `"4 -> 6 personnes"`. The answer's `scale` gives the factor and its reason ("× 4/3 (oeufs : 3 →
 4)"); each `shown` measure is scaled and rounded as a cook would (counts to whole units, at least
 1), `quantity` and `unit` stay as saved. Times and temperatures in the memo are not scaled. The

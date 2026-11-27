@@ -1599,6 +1599,49 @@ fn last_edit(bot: &MockBot<anyhow::Error, teloxide_tests::mock_bot::Distribution
         .unwrap_or_default()
 }
 
+/// The callback data of a keyboard's buttons, row by row.
+fn callbacks(keyboard: Option<&teloxide::types::InlineKeyboardMarkup>) -> Vec<String> {
+    keyboard
+        .map(|keyboard| {
+            keyboard
+                .inline_keyboard
+                .iter()
+                .flatten()
+                .filter_map(|button| match &button.kind {
+                    teloxide::types::InlineKeyboardButtonKind::CallbackData(data) => {
+                        Some(data.clone())
+                    }
+                    _ => None,
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// The buttons of the last message the bot edited with its text.
+fn text_buttons(
+    bot: &MockBot<anyhow::Error, teloxide_tests::mock_bot::DistributionKey>,
+) -> Vec<String> {
+    callbacks(
+        bot.get_responses()
+            .edited_messages_text
+            .last()
+            .and_then(|edit| edit.message.reply_markup()),
+    )
+}
+
+/// The buttons of the last message the bot edited without its text.
+fn markup_buttons(
+    bot: &MockBot<anyhow::Error, teloxide_tests::mock_bot::DistributionKey>,
+) -> Vec<String> {
+    callbacks(
+        bot.get_responses()
+            .edited_messages_reply_markup
+            .last()
+            .and_then(|edit| edit.message.reply_markup()),
+    )
+}
+
 /// The scale recorded for card `id`.
 async fn card_scale(pool: &PgPool, id: teloxide::types::MessageId) -> Result<Option<String>> {
     Ok(
@@ -1638,11 +1681,12 @@ async fn save_tart(pool: &PgPool) -> Result<i64> {
     Ok(saved.recipe_id)
 }
 
-/// ⚖️ on a card: the menu, × 2 scales the card in place and records it, ↩️ shows it as saved
-/// again; the recipe is never changed.
+/// ⚖️ on a card: the menu stays open while the user adjusts, each tap updating the card above
+/// (× 2, × 2 again is × 4, ÷ 2); ◀️ gives the card its buttons back, its ↩️ shows it as saved.
+/// The recipe is never changed.
 #[sqlx::test(migrations = false)]
 #[ignore = "requires Postgres: set DATABASE_URL and run with --include-ignored"]
-async fn a_card_is_doubled_then_shown_as_saved(pool: PgPool) -> Result<()> {
+async fn a_card_is_adjusted_in_the_open_menu_then_shown_as_saved(pool: PgPool) -> Result<()> {
     use just_ingredients::db::get_recipe_ingredients;
     use teloxide_tests::MockCallbackQuery;
     let services = services(&pool, Vec::new()).await?;
@@ -1654,26 +1698,51 @@ async fn a_card_is_doubled_then_shown_as_saved(pool: PgPool) -> Result<()> {
     bot.update(press(format!("recipe_scale:menu:{recipe_id}")));
     bot.dispatch().await;
     assert_eq!(
-        button_data(&bot.get_responses(), "recipe_scale:set:").as_deref(),
-        Some(format!("recipe_scale:set:{recipe_id}:2/1").as_str()),
-        "the menu offers × 2"
+        markup_buttons(&bot),
+        [
+            format!("recipe_scale:pick:{recipe_id}:1/2"),
+            format!("recipe_scale:pick:{recipe_id}:2/1"),
+            format!("recipe_scale:ask:{recipe_id}"),
+            format!("recipe_scale:back:{recipe_id}"),
+        ],
+        "÷ 2, × 2, Autre…, ◀️"
     );
 
-    bot.update(press(format!("recipe_scale:set:{recipe_id}:2/1")));
+    bot.update(press(format!("recipe_scale:pick:{recipe_id}:2/1")));
     bot.dispatch().await;
     let doubled = last_edit(&bot);
     assert!(doubled.contains("× 2"), "{doubled}");
     assert!(doubled.contains("500 g"), "{doubled}");
-    assert!(doubled.contains('6'), "{doubled}");
-    assert!(!doubled.contains("250"), "{doubled}");
     assert_eq!(card_scale(&pool, card.id).await?.as_deref(), Some("2/1"));
+    assert_eq!(
+        text_buttons(&bot),
+        [
+            format!("recipe_scale:pick:{recipe_id}:1/1"),
+            format!("recipe_scale:pick:{recipe_id}:4/1"),
+            format!("recipe_scale:ask:{recipe_id}"),
+            format!("recipe_scale:pick:{recipe_id}:1/1"),
+            format!("recipe_scale:back:{recipe_id}"),
+        ],
+        "the menu stays open, from × 2: ÷ 2, × 2, Autre…, ↩️, ◀️"
+    );
+
+    bot.update(press(format!("recipe_scale:pick:{recipe_id}:4/1")));
+    bot.dispatch().await;
+    let quadrupled = last_edit(&bot);
+    assert!(quadrupled.contains("× 4"), "{quadrupled}");
+    assert!(quadrupled.contains("12 oeufs"), "{quadrupled}");
+    assert_eq!(card_scale(&pool, card.id).await?.as_deref(), Some("4/1"));
+
+    bot.update(press(format!("recipe_scale:pick:{recipe_id}:2/1")));
+    bot.dispatch().await;
+    assert!(last_edit(&bot).contains("500 g"), "÷ 2 of × 4");
+
+    bot.update(press(format!("recipe_scale:back:{recipe_id}")));
+    bot.dispatch().await;
     assert!(
-        button_data(
-            &bot.get_responses(),
-            &format!("recipe_scale:set:{recipe_id}:1/1")
-        )
-        .is_some(),
-        "a scaled card offers the quantities as saved"
+        markup_buttons(&bot).contains(&format!("recipe_scale:set:{recipe_id}:1/1")),
+        "the card's buttons, with ↩️: {:?}",
+        markup_buttons(&bot)
     );
 
     bot.update(press(format!("recipe_scale:set:{recipe_id}:1/1")));
@@ -1747,6 +1816,15 @@ async fn a_typed_scale_is_read_refused_or_shown(pool: PgPool) -> Result<()> {
     assert!(text.contains("3 → 4"), "{text}");
     assert!(text.contains("335 g"), "{text}");
     assert_eq!(card_scale(&pool, scaled.id).await?.as_deref(), Some("4/3"));
+    let menu = callbacks(scaled.reply_markup());
+    assert_eq!(
+        menu[..2],
+        [
+            format!("recipe_scale:pick:{recipe_id}:2/3"),
+            format!("recipe_scale:pick:{recipe_id}:8/3"),
+        ],
+        "still adjusting: the menu is open, from × 4/3"
+    );
 
     // A rename refreshes the card at its scale
     bot.update(

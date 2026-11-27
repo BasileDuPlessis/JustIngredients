@@ -458,21 +458,39 @@ pub const MAX_LINKED_SHOWN: usize = 10;
 pub const RECIPE_LINK_PREFIX: &str = "recipe_link:";
 
 /// Callback data of the scaling buttons starts with this (`bot::scaling`): `menu:<id>`,
-/// `set:<id>:<num>/<den>` (1/1: as saved), `ask:<id>`, `back:<id>`.
+/// `pick:<id>:<num>/<den>` (a scale chosen in the menu, which stays open), `set:<id>:<num>/<den>`
+/// (from the card's buttons; 1/1: as saved), `ask:<id>`, `back:<id>`.
 pub const SCALE_PREFIX: &str = "recipe_scale:";
 
-/// The scaling menu of a card: × 2, ÷ 2, another scale typed, back to the card's buttons. The
-/// factors apply to the recipe as saved (× 2 twice is × 2).
+/// The scaling menu of a card shown at `current`: ÷ 2 and × 2 of it (× 2 twice is × 4, within a
+/// tenth and ten times), another scale typed, the quantities as saved, back to the card's
+/// buttons. It stays open while the user adjusts: each button carries the scale it shows, so a
+/// second tap on the same one changes nothing.
 pub fn scale_menu_keyboard(
     recipe_id: i64,
+    current: Option<crate::engine::scaling::Ratio>,
     language_code: Option<&str>,
     localization: &Arc<crate::localization::LocalizationManager>,
 ) -> InlineKeyboardMarkup {
-    InlineKeyboardMarkup::new(vec![
-        vec![
-            InlineKeyboardButton::callback("× 2", format!("{SCALE_PREFIX}set:{recipe_id}:2/1")),
-            InlineKeyboardButton::callback("÷ 2", format!("{SCALE_PREFIX}set:{recipe_id}:1/2")),
-        ],
+    use crate::engine::scaling::Ratio;
+    let current = current.unwrap_or(Ratio { num: 1, den: 1 });
+    let pick = |label: &str, by: Ratio| {
+        current.times(by).map(|ratio| {
+            InlineKeyboardButton::callback(
+                label,
+                format!("{SCALE_PREFIX}pick:{recipe_id}:{}", ratio.encode()),
+            )
+        })
+    };
+    let steps: Vec<InlineKeyboardButton> = [
+        pick("÷ 2", Ratio { num: 1, den: 2 }),
+        pick("× 2", Ratio { num: 2, den: 1 }),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    let mut rows = vec![
+        steps,
         vec![create_localized_button_with_emoji(
             localization,
             "✏️",
@@ -480,14 +498,24 @@ pub fn scale_menu_keyboard(
             format!("{SCALE_PREFIX}ask:{recipe_id}"),
             language_code,
         )],
-        vec![create_localized_button_with_emoji(
+    ];
+    if !current.is_one() {
+        rows.push(vec![create_localized_button_with_emoji(
             localization,
-            "◀️",
-            "scale-back-button",
-            format!("{SCALE_PREFIX}back:{recipe_id}"),
+            "↩️",
+            "scale-original-button",
+            format!("{SCALE_PREFIX}pick:{recipe_id}:1/1"),
             language_code,
-        )],
-    ])
+        )]);
+    }
+    rows.push(vec![create_localized_button_with_emoji(
+        localization,
+        "◀️",
+        "scale-back-button",
+        format!("{SCALE_PREFIX}back:{recipe_id}"),
+        language_code,
+    )]);
+    InlineKeyboardMarkup::new(rows)
 }
 
 /// The card's keyboard: rename and edit, delete, one button per linked recipe (U9), then the

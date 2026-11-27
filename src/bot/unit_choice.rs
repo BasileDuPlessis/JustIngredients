@@ -152,6 +152,7 @@ pub async fn handle_choice(
                 None,
                 recipe_id,
                 scale.as_ref(),
+                super::cards::Buttons::Card,
                 language_code,
                 localization,
             )
