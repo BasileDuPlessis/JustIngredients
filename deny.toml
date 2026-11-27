@@ -20,6 +20,11 @@ ignore = [
     # chrono is unmaintained (no vulnerability, no fixed version): sqlx, teloxide and rmcp use it
     # too, so leaving it waits for them; jiff is the advised replacement. Revisit when they move.
     { id = "RUSTSEC-2026-0543", reason = "unmaintained, not vulnerable; sqlx, teloxide, rmcp use it" },
+    # cookie 0.16 (private cookies' nonces repeated across fork(); fixed in 0.18.3) comes only
+    # through actix-web, the fake Telegram server of teloxide_tests: the release build has no
+    # cookie crate (`cargo tree -e no-dev -i cookie` finds nothing), the tests never fork nor
+    # seal private cookies. Drop this line when teloxide_tests moves on.
+    { id = "RUSTSEC-2026-0594", reason = "dev-only: the tests' fake Telegram server, no private cookies" },
 ]
 
 [sources]
